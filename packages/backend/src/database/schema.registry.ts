@@ -118,4 +118,8 @@ export const tableDefinitions: TableDefinition[] = [
         name: 'workspace_sync',
         sql: schemaSql.createWorkspaceSyncTableSQL
     },
+    {
+        name: 'sync_tombstones',
+        sql: schemaSql.createSyncTombstonesTableSQL
+    },
 ];

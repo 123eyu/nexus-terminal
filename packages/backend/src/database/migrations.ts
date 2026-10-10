@@ -334,6 +334,46 @@ const definedMigrations: Migration[] = [
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
         `
+    },
+    {
+        id: 13,
+        name: 'Add uuid column to syncable entities and create sync_tombstones table',
+        check: async (db: Database): Promise<boolean> => {
+            const tombstonesExists = await tableExists(db, 'sync_tombstones');
+            const connUuidExists = await columnExists(db, 'connections', 'uuid');
+            return !tombstonesExists || !connUuidExists;
+        },
+        sql: `
+            -- 1. 创建删除墓碑表 (记录被删除的实体，防止跨端同步逆向复活)
+            CREATE TABLE IF NOT EXISTS sync_tombstones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                uuid TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_tombstones_type_uuid ON sync_tombstones(entity_type, uuid);
+
+            -- 2. 为各核心实体表添加 uuid 字段 (如果尚未存在)
+            ALTER TABLE connections ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE proxies ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE ssh_keys ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE tags ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE quick_commands ADD COLUMN uuid TEXT NULL;
+
+            -- 3. 创建 UUID 索引
+            CREATE INDEX IF NOT EXISTS idx_connections_uuid ON connections(uuid);
+            CREATE INDEX IF NOT EXISTS idx_proxies_uuid ON proxies(uuid);
+            CREATE INDEX IF NOT EXISTS idx_ssh_keys_uuid ON ssh_keys(uuid);
+            CREATE INDEX IF NOT EXISTS idx_tags_uuid ON tags(uuid);
+            CREATE INDEX IF NOT EXISTS idx_quick_commands_uuid ON quick_commands(uuid);
+
+            -- 4. 为已存在的数据补齐标准 UUID v4
+            UPDATE connections SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+            UPDATE proxies SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+            UPDATE ssh_keys SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+            UPDATE tags SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+            UPDATE quick_commands SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+        `
     }
 ];
 

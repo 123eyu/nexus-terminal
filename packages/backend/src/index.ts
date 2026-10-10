@@ -98,6 +98,7 @@ import pathHistoryRoutes from './path-history/path-history.routes';
 import favoritePathsRouter from './favorite-paths/favorite-paths.routes';
 import workspaceSyncRouter from './workspace-sync/workspace-sync.routes';
 import desktopRouter from './settings/desktop.routes';
+import syncRouter from './sync/sync.routes';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
 
@@ -303,6 +304,7 @@ const startServer = () => {
     app.use('/api/v1/favorite-paths', favoritePathsRouter);
     app.use('/api/v1/workspace-sync', workspaceSyncRouter);
     app.use('/api/v1/desktop', desktopRouter);
+    app.use('/api/v1/sync', syncRouter);
     
     // 状态检查接口
     app.get('/api/v1/status', (req: Request, res: Response) => {

@@ -111,4 +111,121 @@ router.post('/exit', (req: Request, res: Response): void => {
   }, 100);
 });
 
+// ==========================================
+// 桌面端专属：VPS 云端数据同步本地接口
+// ==========================================
+import { syncService } from '../sync/sync.service';
+
+/**
+ * 获取桌面端云端同步配置
+ */
+router.get('/sync/config', (req: Request, res: Response): void => {
+  const settings = readDesktopSettings();
+  res.json({
+    success: true,
+    config: {
+      vpsUrl: settings.syncVpsUrl || '',
+      apiKey: settings.syncApiKey || '',
+      conflictStrategy: settings.syncConflictStrategy || 'lww',
+      lastSyncTime: settings.syncLastTime || 0,
+      autoSyncOnOpen: settings.syncAutoOnOpen ?? false
+    }
+  });
+});
+
+/**
+ * 保存桌面端云端同步配置
+ */
+router.post('/sync/config', (req: Request, res: Response): void => {
+  const { vpsUrl, apiKey, conflictStrategy, autoSyncOnOpen } = req.body;
+  const current = readDesktopSettings();
+  const updated: DesktopSettings = {
+    ...current,
+    syncVpsUrl: vpsUrl !== undefined ? String(vpsUrl).trim() : current.syncVpsUrl,
+    syncApiKey: apiKey !== undefined ? String(apiKey).trim() : current.syncApiKey,
+    syncConflictStrategy: conflictStrategy || current.syncConflictStrategy || 'lww',
+    syncAutoOnOpen: typeof autoSyncOnOpen === 'boolean' ? autoSyncOnOpen : current.syncAutoOnOpen
+  };
+
+  try {
+    writeDesktopSettings(updated);
+    res.json({ success: true, message: '云端同步配置已保存', config: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: '保存配置失败', details: err.message });
+  }
+});
+
+/**
+ * 测试与 VPS 云端服务器的连通性
+ */
+router.post('/sync/test', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { vpsUrl, apiKey } = req.body;
+    const settings = readDesktopSettings();
+    const targetUrl = (vpsUrl || settings.syncVpsUrl || '').trim();
+    const targetApiKey = (apiKey || settings.syncApiKey || '').trim();
+
+    if (!targetUrl) {
+      res.status(400).json({ success: false, error: '请输入 VPS 服务器地址' });
+      return;
+    }
+    if (!targetApiKey) {
+      res.status(400).json({ success: false, error: '请输入同步 API Key' });
+      return;
+    }
+
+    const testResult = await syncService.testRemoteConnection(targetUrl, targetApiKey);
+    res.json({
+      success: true,
+      latencyMs: testResult.latencyMs,
+      serverInfo: testResult.data
+    });
+  } catch (err: any) {
+    console.warn('[DesktopSync] 连通性测试失败:', err.message);
+    res.status(502).json({
+      success: false,
+      error: `无法连接到 VPS 服务器: ${err.message}`
+    });
+  }
+});
+
+/**
+ * 触发一次全量双向增量同步
+ */
+router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const settings = readDesktopSettings();
+    const vpsUrl = (req.body.vpsUrl || settings.syncVpsUrl || '').trim();
+    const apiKey = (req.body.apiKey || settings.syncApiKey || '').trim();
+
+    if (!vpsUrl || !apiKey) {
+      res.status(400).json({
+        success: false,
+        error: '未配置 VPS 域名或 API Key，无法执行同步'
+      });
+      return;
+    }
+
+    const lastSyncTime = settings.syncLastTime || 0;
+    const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime);
+
+    // 同步成功，更新本地最后同步时间戳
+    settings.syncLastTime = result.serverTime;
+    writeDesktopSettings(settings);
+
+    res.json({
+      success: true,
+      message: '双向数据同步成功',
+      lastSyncTime: result.serverTime,
+      stats: result.stats
+    });
+  } catch (err: any) {
+    console.error('[DesktopSync] 执行同步失败:', err);
+    res.status(500).json({
+      success: false,
+      error: `数据同步执行失败: ${err.message}`
+    });
+  }
+});
+
 export default router;

@@ -255,4 +255,14 @@ CREATE TABLE IF NOT EXISTS workspace_sync (
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-`;
+`;
+
+export const createSyncTombstonesTableSQL = `
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    uuid TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+`;
+

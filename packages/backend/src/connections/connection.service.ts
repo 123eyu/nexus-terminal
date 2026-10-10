@@ -2,6 +2,7 @@ import * as ConnectionRepository from './connection.repository';
 import { encrypt, decrypt } from '../utils/crypto';
 import { AuditLogService } from '../audit/audit.service';
 import * as SshKeyService from '../ssh_keys/ssh_key.service'; 
+import { recordTombstone } from '../sync/tombstone.service';
 import {
     ConnectionBase,
     ConnectionWithTags,
@@ -448,6 +449,13 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
  * 删除连接
  */
 export const deleteConnection = async (id: number): Promise<boolean> => {
+    try {
+        const existing = await ConnectionRepository.findConnectionByIdWithTags(id);
+        if (existing && (existing as any).uuid) {
+            await recordTombstone('connection', (existing as any).uuid);
+        }
+    } catch (e) {}
+
     const deleted = await ConnectionRepository.deleteConnection(id);
     if (deleted) {
         // 删除成功后记录审计操作
