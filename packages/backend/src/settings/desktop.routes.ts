@@ -207,7 +207,8 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     }
 
     const lastSyncTime = settings.syncLastTime || 0;
-    const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime);
+    const mode = req.body.mode || 'bidirectional';
+    const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime, mode);
 
     // 同步成功，更新本地最后同步时间戳
     settings.syncLastTime = result.serverTime;

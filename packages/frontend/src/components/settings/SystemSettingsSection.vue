@@ -169,12 +169,21 @@
           </div>
 
           <!-- 冲突解决机制说明 -->
-          <div class="p-3 bg-header/40 border border-border/60 rounded-md text-xs text-text-secondary flex items-start gap-2">
-            <i class="fas fa-info-circle text-primary mt-0.5"></i>
-            <div>
-              <span class="font-medium text-foreground">{{ $t('settings.desktop.conflictPolicyTitle', '冲突解决策略: 最新修改时间优先 (LWW)') }}</span>
-              <p class="mt-0.5">{{ $t('settings.desktop.conflictPolicyDesc', '双端基于实体 UUID 增量对齐，时间戳最新者自动生效；被删除的主机将通过墓碑记录同步清理，防止逆向复活。') }}</p>
+          <div class="p-3 bg-header/40 border border-border/60 rounded-md text-xs text-text-secondary flex items-start justify-between gap-3">
+            <div class="flex items-start gap-2 flex-1">
+              <i class="fas fa-info-circle text-primary mt-0.5"></i>
+              <div>
+                <span class="font-medium text-foreground">{{ $t('settings.desktop.conflictPolicyTitle', '冲突解决策略: 最新修改时间优先 (LWW)') }}</span>
+                <p class="mt-0.5">{{ $t('settings.desktop.conflictPolicyDesc', '双端基于实体 UUID 增量对齐，时间戳最新者自动生效；被删除的主机将通过墓碑记录同步清理，防止逆向复活。') }}</p>
+              </div>
             </div>
+            <button
+              type="button"
+              @click="desktopSyncStore.requestSync(true)"
+              class="px-2.5 py-1 text-xs text-primary hover:text-primary/80 border border-primary/30 rounded hover:bg-primary/5 transition whitespace-nowrap self-center"
+            >
+              {{ $t('settings.desktop.chooseAlignment', '数据对齐向导') }}
+            </button>
           </div>
 
           <!-- 状态提示 -->
@@ -367,7 +376,7 @@ const handleTriggerSyncNow = async () => {
   if (!isSyncButtonEnabled.value) return;
   // 先自动保存一次最新配置
   await handleSaveSyncConfig();
-  await desktopSyncStore.triggerSync();
+  await desktopSyncStore.requestSync();
 };
 
 const handleUpdateCloseBehavior = async () => {

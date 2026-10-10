@@ -288,9 +288,9 @@ const handleSyncButtonClick = async () => {
   if (isDesktop.value) {
     if (!desktopSyncStore.isConfigured) return;
     try {
-      // 桌面端先保存当前工作区到本地库，随后与 VPS 进行全量双向增量同步
+      // 桌面端先保存当前工作区到本地库，随后请求与 VPS 进行同步 (初次同步自动弹窗对齐方向)
       await workspaceSyncStore.saveWorkspaceToCloud();
-      await desktopSyncStore.triggerSync();
+      await desktopSyncStore.requestSync();
     } catch (err) {
       console.error('[TerminalTabBar] 触发云端同步异常:', err);
     }

@@ -15,6 +15,7 @@ export interface SyncEntityItem {
 export interface SyncExchangePayload {
   clientTime: number;
   lastSyncTime?: number;
+  mode?: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
   entities: {
     tags?: SyncEntityItem[];
     ssh_keys?: SyncEntityItem[];
@@ -636,18 +637,41 @@ export const syncService = {
   },
 
   /**
+   * 清空所有可同步的实体表与墓碑 (用于强制覆盖场景)
+   */
+  async clearSyncTables(): Promise<void> {
+    const db = await getDbInstance();
+    await runDb(db, 'DELETE FROM connection_tags');
+    await runDb(db, 'DELETE FROM connections');
+    await runDb(db, 'DELETE FROM proxies');
+    await runDb(db, 'DELETE FROM ssh_keys');
+    await runDb(db, 'DELETE FROM tags');
+    await runDb(db, 'DELETE FROM quick_commands');
+    await runDb(db, 'DELETE FROM sync_tombstones');
+  },
+
+  /**
    * 服务端处理双向数据交换
    */
   async processExchange(payload: SyncExchangePayload, apiKey?: string): Promise<SyncExchangeResult> {
     const key = apiKey || process.env.SYNC_API_KEY || 'default-fallback-key';
     const serverTime = Math.floor(Date.now() / 1000);
     const clientLastSyncTime = payload.lastSyncTime || 0;
+    const mode = payload.mode || 'bidirectional';
 
-    // 1. 应用客户端推送过来的数据
+    // 若客户端指定“以本地为准覆盖云端”：服务端先清空已有实体库
+    if (mode === 'local_to_cloud') {
+      console.log('[SyncService] 收到强制以本地覆盖云端请求，正在清空服务端存量数据...');
+      await this.clearSyncTables();
+    }
+
+    // 1. 应用客户端推送过来的数据 (若为 cloud_to_local 则客户端不推数据，直接跳过)
     const { pushed, conflictsResolved } = await this.applyIncomingData(payload, key);
 
     // 2. 导出服务端自 clientLastSyncTime 之后更新的数据并返回
-    const exportResult = await this.exportIncrementalData(clientLastSyncTime, key);
+    // 若为 cloud_to_local，客户端需要获取服务端全量数据 (sinceTimestamp = 0)
+    const exportSince = (mode === 'cloud_to_local') ? 0 : clientLastSyncTime;
+    const exportResult = await this.exportIncrementalData(exportSince, key);
 
     let pulledCount = 0;
     Object.values(exportResult.entities).forEach(list => {
@@ -755,9 +779,14 @@ export const syncService = {
   },
 
   /**
-   * 客户端主动向 VPS 触发全量双向同步
+   * 客户端主动向 VPS 触发全量同步 (支持 bidirectional, cloud_to_local, local_to_cloud)
    */
-  async triggerClientSync(vpsUrl: string, apiKey: string, lastSyncTime: number = 0): Promise<{
+  async triggerClientSync(
+    vpsUrl: string,
+    apiKey: string,
+    lastSyncTime: number = 0,
+    mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional'
+  ): Promise<{
     success: boolean;
     serverTime: number;
     stats: {
@@ -769,14 +798,23 @@ export const syncService = {
     const cleanUrl = vpsUrl.replace(/\/+$/, '');
     const exchangeEndpoint = `${cleanUrl}/api/v1/sync/exchange`;
 
-    // 1. 搜集客户端自上次同步以来产生的新数据与删除墓碑
-    const clientIncremental = await this.exportIncrementalData(lastSyncTime, apiKey);
+    let clientEntities: SyncExchangePayload['entities'] = {};
+    let clientTombstones: Array<{ entity_type: string; uuid: string; deleted_at: number }> = [];
+
+    // 若不是“以云端为准”，客户端搜集并推送数据
+    if (mode !== 'cloud_to_local') {
+      const exportSince = (mode === 'local_to_cloud') ? 0 : lastSyncTime;
+      const clientIncremental = await this.exportIncrementalData(exportSince, apiKey);
+      clientEntities = clientIncremental.entities;
+      clientTombstones = clientIncremental.tombstones;
+    }
 
     const payload: SyncExchangePayload = {
       clientTime: Math.floor(Date.now() / 1000),
-      lastSyncTime,
-      entities: clientIncremental.entities,
-      tombstones: clientIncremental.tombstones
+      lastSyncTime: (mode === 'bidirectional') ? lastSyncTime : 0,
+      mode,
+      entities: clientEntities,
+      tombstones: clientTombstones
     };
 
     // 2. 发起 HTTP 请求到 VPS exchange 接口
@@ -795,7 +833,13 @@ export const syncService = {
 
     const exchangeData: SyncExchangeResult = res.data;
 
-    // 3. 客户端本地应用 VPS 返回的变更
+    // 3. 客户端本地应用变更：
+    // 若用户选择“以云端为准覆盖本地”，本地先清空再全量写入云端数据
+    if (mode === 'cloud_to_local') {
+      console.log('[SyncService:Client] 正在以云端为准清空本地并写入全量数据...');
+      await this.clearSyncTables();
+    }
+
     const applyStats = await this.applyIncomingData(
       {
         entities: exchangeData.syncedEntities,

@@ -21,6 +21,7 @@ import RemoteDesktopModal from './components/RemoteDesktopModal.vue';
 import VncModal from './components/VncModal.vue';
 import ConfirmDialog from './components/common/ConfirmDialog.vue';
 import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
+import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
 
 const { t } = useI18n();
@@ -379,6 +380,9 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
 
     <!-- +++ 桌面客户端关闭主窗口确认模态框 +++ -->
     <CloseConfirmModal />
+
+    <!-- +++ 桌面客户端初次同步数据对齐向导模态框 +++ -->
+    <FirstSyncModal />
 
   </div>
 </template>

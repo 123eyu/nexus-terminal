@@ -113,7 +113,13 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   /**
    * 触发一次双向增量同步
    */
-  const triggerSync = async (): Promise<boolean> => {
+  const showFirstSyncModal = ref(false);
+  const isFirstSync = computed(() => !lastSyncTime.value || lastSyncTime.value === 0);
+
+  /**
+   * 触发一次同步 (支持模式: bidirectional, cloud_to_local, local_to_cloud)
+   */
+  const triggerSync = async (mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional'): Promise<boolean> => {
     if (!isConfigured.value) {
       syncError.value = '未配置 VPS 域名或 API Key，无法执行同步';
       return false;
@@ -122,11 +128,13 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     isSyncing.value = true;
     syncError.value = null;
     syncSuccessMessage.value = null;
+    showFirstSyncModal.value = false;
 
     try {
       const res = await axios.post('/api/v1/desktop/sync/trigger', {
         vpsUrl: vpsUrl.value,
-        apiKey: apiKey.value
+        apiKey: apiKey.value,
+        mode
       });
 
       if (res.data?.success) {
@@ -154,6 +162,18 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     }
   };
 
+  /**
+   * 请求同步：初次同步时弹出方向选择确认，否则直接执行双向合并
+   */
+  const requestSync = async (forcePrompt: boolean = false): Promise<boolean> => {
+    if (!isConfigured.value) return false;
+    if (isFirstSync.value || forcePrompt) {
+      showFirstSyncModal.value = true;
+      return false;
+    }
+    return triggerSync('bidirectional');
+  };
+
   return {
     isDesktop,
     vpsUrl,
@@ -169,9 +189,12 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     syncError,
     syncSuccessMessage,
     isConfigured,
+    isFirstSync,
+    showFirstSyncModal,
     fetchConfig,
     saveConfig,
     testConnection,
-    triggerSync
+    triggerSync,
+    requestSync
   };
 });
