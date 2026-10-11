@@ -126,11 +126,12 @@ jobs:
             Write-Warning "未找到便携版目录 dist-desktop/portable"
           }
 
-          # 3. 计算 SHA256 校验和清单
-          Get-ChildItem -Path "release-artifacts/*" -File | ForEach-Object {
+          # 3. 计算 SHA256 校验和清单 (仅对 .exe 与 .zip 产物计算，规避写入自身时的文件锁死锁)
+          $checksums = Get-ChildItem -Path "release-artifacts" -File | Where-Object { $_.Name -like "*.exe" -or $_.Name -like "*.zip" } | ForEach-Object {
             $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
-            "$($hash.Hash.ToLower())  $($_.Name)"
-          } | Out-File -FilePath "release-artifacts/checksums-sha256.txt" -Encoding utf8
+            ('{0}  {1}' -f $hash.Hash.ToLower(), $_.Name)
+          }
+          $checksums | Set-Content -Path "release-artifacts/checksums-sha256.txt" -Encoding utf8
           Write-Host "已生成 SHA256 校验清单:"
           Get-Content "release-artifacts/checksums-sha256.txt"
 
