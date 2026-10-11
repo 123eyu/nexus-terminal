@@ -135,6 +135,7 @@ onBeforeUnmount(() => {
             props.maxHeight,
             props.panelClass
           ]"
+          style="background-color: var(--app-bg-color);"
         >
           <!-- 顶部拖拽手势热区 (包含手柄与顶栏) -->
           <div

@@ -7,7 +7,8 @@
       @keydown.esc="handleClose"
     >
       <div
-        class="bg-background border border-border/80 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all animate-scale-up"
+        class="bg-header border border-border/80 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all animate-scale-up"
+        style="background-color: var(--header-bg-color);"
       >
         <!-- 弹窗头部 -->
         <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-header/40">

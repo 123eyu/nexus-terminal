@@ -1,294 +1,329 @@
 <template>
-  <div class="flex h-[calc(100vh-3.5rem)] overflow-hidden bg-background">
-    <!-- 左侧：文件夹导航面板 -->
-    <aside class="w-64 flex-shrink-0 flex flex-col border-r border-border bg-card/40 backdrop-blur-xs select-none">
-      <!-- 文件夹面板头部 -->
-      <div class="p-3.5 border-b border-border flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="w-6 h-6 rounded-md bg-amber-500/10 text-amber-500 flex items-center justify-center">
-            <i class="fas fa-folder text-xs"></i>
-          </div>
-          <span class="text-xs font-semibold text-foreground tracking-wide uppercase">{{ t('folders.title', '文件夹') }}</span>
+  <div class="h-full flex flex-col p-3 md:p-6 bg-background text-foreground overflow-hidden">
+    <!-- Top Navigation Bar & Stats -->
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+          <i class="fas fa-terminal text-base"></i>
         </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold tracking-tight text-foreground">{{ t('nav.quickCommands', '快捷指令') }}</h1>
+          <p class="text-xs text-text-secondary">
+            {{ t('quickCommands.dragTip', '按文件夹层级管理常用指令，支持拖拽快速归类与多视图切换') }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2">
         <button
           type="button"
-          @click="startCreatingFolder"
-          class="px-2 py-1 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-1 cursor-pointer"
-          :title="t('folders.newFolder', '新建文件夹')"
+          @click="openAddCommandModal"
+          class="h-9 px-3.5 bg-primary text-white rounded-lg shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary/50 transition duration-150 flex items-center gap-1.5 text-xs md:text-sm font-semibold cursor-pointer"
         >
-          <i class="fas fa-plus text-[10px]"></i>
-          <span>{{ t('common.create', '新建') }}</span>
+          <i class="fas fa-plus"></i>
+          <span>{{ t('quickCommands.add', '新建指令') }}</span>
         </button>
       </div>
+    </div>
 
-      <!-- 快速新建文件夹行内输入框 -->
-      <div v-if="isCreatingFolder" class="p-2 border-b border-border bg-card animate-fadeIn">
-        <div class="flex items-center gap-1.5">
-          <input
-            ref="newFolderInputRef"
-            v-model="newFolderName"
-            type="text"
-            :placeholder="t('folders.newFolderPlaceholder', '文件夹名称...')"
-            class="flex-1 min-w-0 px-2 py-1 text-xs border border-primary rounded-md bg-input text-foreground focus:outline-none"
-            @keydown.enter.prevent="handleCreateFolderConfirm"
-            @keydown.esc.prevent="isCreatingFolder = false"
-          />
+    <!-- Main Dual-Pane Workspace Container -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden border border-border/70 rounded-2xl bg-background shadow-sm">
+      <!-- ==================== Left: Folder Sidebar ==================== -->
+      <aside class="w-full md:w-64 lg:w-72 flex-shrink-0 border-b md:border-b-0 md:border-r border-border/60 bg-background/60 flex flex-col overflow-hidden select-none">
+        <!-- Sidebar Header: Quick Navigation -->
+        <div class="p-3 border-b border-border/50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i class="fas fa-folder-tree text-amber-400 text-sm"></i>
+            <span class="text-xs font-semibold text-foreground tracking-wide uppercase">{{ t('folders.title', '文件夹') }}</span>
+          </div>
           <button
             type="button"
-            @click="handleCreateFolderConfirm"
-            class="px-2 py-1 text-xs bg-primary text-white rounded-md hover:bg-primary-hover cursor-pointer"
+            @click="startCreatingFolder"
+            class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-text-secondary hover:text-foreground transition-colors cursor-pointer"
+            :title="t('folders.newFolder', '新建文件夹')"
           >
-            <i class="fas fa-check text-[10px]"></i>
-          </button>
-          <button
-            type="button"
-            @click="isCreatingFolder = false"
-            class="px-2 py-1 text-xs text-text-secondary hover:text-foreground rounded-md hover:bg-muted cursor-pointer"
-          >
-            <i class="fas fa-times text-[10px]"></i>
+            <i class="fas fa-plus text-xs"></i>
           </button>
         </div>
-      </div>
 
-      <!-- 文件夹列表区 -->
-      <div class="flex-1 overflow-y-auto p-2 space-y-0.5">
-        <!-- 1. 全部指令 -->
-        <div
-          @click="activeFolder = 'all'"
-          @dragover.prevent="dragOverFolderId = 'all'"
-          @dragleave="dragOverFolderId = null"
-          @drop.prevent="handleDropOnFolder('all')"
-          class="group flex items-center justify-between px-3 h-9 rounded-lg text-xs font-medium cursor-pointer transition-colors duration-150 border border-transparent"
-          :class="[
-            activeFolder === 'all'
-              ? 'bg-primary/15 text-primary font-semibold border-primary/20'
-              : 'text-text-secondary hover:bg-muted hover:text-foreground',
-            dragOverFolderId === 'all' ? 'ring-2 ring-primary ring-inset' : ''
-          ]"
-        >
-          <div class="flex items-center gap-2.5 truncate">
-            <i class="fas fa-layer-group text-xs w-4 text-center"></i>
-            <span class="truncate">{{ t('folders.allCommands', '全部指令') }}</span>
-          </div>
-          <span class="text-[11px] px-1.5 h-5 min-w-[20px] flex items-center justify-center rounded-full bg-muted/60 text-text-secondary group-hover:text-foreground">
-            {{ allCommandsCount }}
-          </span>
-        </div>
-
-        <!-- 2. 未分类 -->
-        <div
-          @click="activeFolder = 'uncategorized'"
-          @dragover.prevent="dragOverFolderId = 'uncategorized'"
-          @dragleave="dragOverFolderId = null"
-          @drop.prevent="handleDropOnFolder('uncategorized')"
-          class="group flex items-center justify-between px-3 h-9 rounded-lg text-xs font-medium cursor-pointer transition-colors duration-150 border border-transparent"
-          :class="[
-            activeFolder === 'uncategorized'
-              ? 'bg-primary/15 text-primary font-semibold border-primary/20'
-              : 'text-text-secondary hover:bg-muted hover:text-foreground',
-            dragOverFolderId === 'uncategorized' ? 'ring-2 ring-primary ring-inset' : ''
-          ]"
-        >
-          <div class="flex items-center gap-2.5 truncate">
-            <i class="fas fa-inbox text-xs w-4 text-center"></i>
-            <span class="truncate">{{ t('folders.uncategorized', '未分类') }}</span>
-          </div>
-          <span class="text-[11px] px-1.5 h-5 min-w-[20px] flex items-center justify-center rounded-full bg-muted/60 text-text-secondary group-hover:text-foreground">
-            {{ uncategorizedCommandsCount }}
-          </span>
-        </div>
-
-        <div class="h-px bg-border/40 my-1 mx-1"></div>
-
-        <!-- 3. 自定义文件夹 -->
-        <div
-          v-for="folder in quickCommandTagsStore.folders"
-          :key="folder.id"
-          @click="editingFolderId !== folder.id ? activeFolder = folder.id : null"
-          @dragover.prevent="dragOverFolderId = folder.id"
-          @dragleave="dragOverFolderId = null"
-          @drop.prevent="handleDropOnFolder(folder.id)"
-          class="group relative flex items-center justify-between px-3 h-9 rounded-lg text-xs font-medium cursor-pointer transition-colors duration-150 border border-transparent"
-          :class="[
-            activeFolder === folder.id
-              ? 'bg-primary/15 text-primary font-semibold border-primary/20'
-              : 'text-text-secondary hover:bg-muted hover:text-foreground',
-            dragOverFolderId === folder.id ? 'ring-2 ring-primary ring-inset' : ''
-          ]"
-        >
-          <!-- 行内重命名模式 -->
-          <div v-if="editingFolderId === folder.id" class="flex items-center gap-1.5 w-full h-full" @click.stop>
+        <!-- 快速新建文件夹行内输入框 -->
+        <div v-if="isCreatingFolder" class="p-2 border-b border-border bg-background animate-fadeIn">
+          <div class="flex items-center gap-1.5">
             <input
-              ref="editFolderInputRef"
-              v-model="editingFolderName"
+              ref="newFolderInputRef"
+              v-model="newFolderName"
               type="text"
-              class="flex-1 min-w-0 px-2 py-0.5 text-xs border border-primary rounded bg-input text-foreground focus:outline-none"
-              @keydown.enter.prevent="handleFinishRenameFolder"
-              @keydown.esc.prevent="editingFolderId = null"
-              @blur="handleFinishRenameFolder"
+              :placeholder="t('folders.newFolderPlaceholder', '文件夹名称...')"
+              class="flex-1 min-w-0 px-2 py-1 text-xs border border-primary rounded-md bg-input text-foreground focus:outline-none"
+              @keydown.enter.prevent="handleCreateFolderConfirm"
+              @keydown.esc.prevent="isCreatingFolder = false"
             />
+            <button
+              type="button"
+              @click="handleCreateFolderConfirm"
+              class="px-2 py-1 text-xs bg-primary text-white rounded-md hover:bg-primary-hover cursor-pointer"
+            >
+              <i class="fas fa-check text-[10px]"></i>
+            </button>
+            <button
+              type="button"
+              @click="isCreatingFolder = false"
+              class="px-2 py-1 text-xs text-text-secondary hover:text-foreground rounded-md hover:bg-muted cursor-pointer"
+            >
+              <i class="fas fa-times text-[10px]"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- 文件夹列表区 -->
+        <div class="flex-1 overflow-y-auto p-2 space-y-1">
+          <!-- 1. 全部指令 -->
+          <div
+            @click="activeFolder = 'all'"
+            @dragover.prevent="dragOverFolderId = 'all'"
+            @dragleave="dragOverFolderId = null"
+            @drop.prevent="handleDropOnFolder('all')"
+            class="group flex items-center justify-between px-3 h-9 min-h-[36px] max-h-[36px] box-border rounded-xl text-xs md:text-sm font-medium cursor-pointer transition-all duration-150 border border-transparent"
+            :class="[
+              activeFolder === 'all'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
+                : 'text-text-secondary hover:bg-muted/60 hover:text-foreground',
+              dragOverFolderId === 'all' ? 'ring-2 ring-primary ring-inset' : ''
+            ]"
+          >
+            <div class="flex items-center gap-2.5 truncate">
+              <i class="fas fa-layer-group text-xs w-4 text-center text-primary"></i>
+              <span class="truncate">{{ t('folders.allCommands', '全部指令') }}</span>
+            </div>
+            <span
+              class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
+              :class="activeFolder === 'all' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+            >
+              {{ allCommandsCount }}
+            </span>
           </div>
 
-          <!-- 常态展示模式 -->
-          <template v-else>
-            <div class="flex items-center gap-2.5 truncate min-w-0 flex-1 mr-1">
-              <!-- 文件夹色标圆点 -->
-              <span
-                v-if="folder.background_color"
-                class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                :style="{ backgroundColor: folder.background_color }"
-              ></span>
-              <i
-                v-else
-                class="fas fa-folder text-xs w-4 text-center text-amber-400 group-hover:text-amber-500 transition-colors flex-shrink-0"
-              ></i>
+          <!-- 2. 未分类 -->
+          <div
+            @click="activeFolder = 'uncategorized'"
+            @dragover.prevent="dragOverFolderId = 'uncategorized'"
+            @dragleave="dragOverFolderId = null"
+            @drop.prevent="handleDropOnFolder('uncategorized')"
+            class="group flex items-center justify-between px-3 h-9 min-h-[36px] max-h-[36px] box-border rounded-xl text-xs md:text-sm font-medium cursor-pointer transition-all duration-150 border border-transparent"
+            :class="[
+              activeFolder === 'uncategorized'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
+                : 'text-text-secondary hover:bg-muted/60 hover:text-foreground',
+              dragOverFolderId === 'uncategorized' ? 'ring-2 ring-primary ring-inset' : ''
+            ]"
+          >
+            <div class="flex items-center gap-2.5 truncate">
+              <i class="fas fa-inbox text-xs w-4 text-center text-text-secondary"></i>
+              <span class="truncate">{{ t('folders.uncategorized', '未分类') }}</span>
+            </div>
+            <span
+              class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
+              :class="activeFolder === 'uncategorized' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+            >
+              {{ uncategorizedCommandsCount }}
+            </span>
+          </div>
 
-              <span class="truncate">{{ folder.name }}</span>
+          <div class="h-px bg-border/40 my-1.5 mx-1"></div>
+
+          <!-- 3. 自定义文件夹 -->
+          <div
+            v-for="folder in quickCommandTagsStore.folders"
+            :key="folder.id"
+            @click="editingFolderId !== folder.id ? activeFolder = folder.id : null"
+            @dragover.prevent="dragOverFolderId = folder.id"
+            @dragleave="dragOverFolderId = null"
+            @drop.prevent="handleDropOnFolder(folder.id)"
+            class="group relative flex items-center justify-between px-3 h-9 min-h-[36px] max-h-[36px] box-border rounded-xl text-xs md:text-sm font-medium cursor-pointer transition-all duration-150 border border-transparent"
+            :class="[
+              activeFolder === folder.id
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
+                : 'text-text-secondary hover:bg-muted/60 hover:text-foreground',
+              dragOverFolderId === folder.id ? 'ring-2 ring-primary ring-inset' : ''
+            ]"
+          >
+            <!-- 行内重命名模式 -->
+            <div v-if="editingFolderId === folder.id" class="flex items-center gap-1.5 w-full h-full" @click.stop>
+              <input
+                ref="editFolderInputRef"
+                v-model="editingFolderName"
+                type="text"
+                class="flex-1 min-w-0 px-2 py-0.5 text-xs border border-primary rounded bg-input text-foreground focus:outline-none"
+                @keydown.enter.prevent="handleFinishRenameFolder"
+                @keydown.esc.prevent="editingFolderId = null"
+                @blur="handleFinishRenameFolder"
+              />
             </div>
 
-            <div class="flex items-center gap-1 flex-shrink-0 h-6">
-              <!-- Hover 动作区：设色、重命名、删除 -->
-              <div class="hidden group-hover:flex items-center gap-0.5" @click.stop>
-                <!-- 文件夹调色板 -->
-                <div class="relative inline-flex items-center" @click.stop>
-                  <button
-                    type="button"
-                    @click.stop="toggleFolderColorPicker(folder.id, $event)"
-                    class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
-                    :title="t('folders.folderColor', '文件夹背景颜色')"
-                  >
-                    <i class="fas fa-palette"></i>
-                  </button>
-                  <ColorPickerPopover
-                    :visible="activeColorPickerFolderId === folder.id"
-                    :trigger-el="activeColorPickerTriggerEl"
-                    :model-value="folder.background_color"
-                    @update:model-value="handleSaveFolderColor(folder.id, $event)"
-                    @close="activeColorPickerFolderId = null; activeColorPickerTriggerEl = null"
-                  />
-                </div>
+            <!-- 常态展示模式 -->
+            <template v-else>
+              <div class="flex items-center gap-2.5 truncate min-w-0 flex-1 mr-1">
+                <!-- 文件夹色标圆点 -->
+                <span
+                  v-if="folder.background_color"
+                  class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
+                  :style="{ backgroundColor: folder.background_color }"
+                ></span>
+                <i
+                  v-else
+                  class="fas fa-folder text-xs w-4 text-center text-amber-400 group-hover:text-amber-500 transition-colors flex-shrink-0"
+                ></i>
 
-                <!-- 重命名 -->
-                <button
-                  type="button"
-                  @click.stop="handleStartRenameFolder(folder)"
-                  class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
-                  :title="t('folders.renameFolder', '重命名文件夹')"
-                >
-                  <i class="fas fa-pencil-alt"></i>
-                </button>
-
-                <!-- 删除 -->
-                <button
-                  type="button"
-                  @click.stop="handleDeleteFolder(folder)"
-                  class="w-6 h-6 p-0 rounded text-text-secondary hover:text-error hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
-                  :title="t('folders.deleteFolder', '删除文件夹')"
-                >
-                  <i class="fas fa-trash-alt"></i>
-                </button>
+                <span class="truncate">{{ folder.name }}</span>
               </div>
 
-              <!-- 数量角标 (非 Hover 或常态) -->
-              <span class="text-[11px] px-1.5 h-5 min-w-[20px] flex items-center justify-center rounded-full bg-muted/60 text-text-secondary group-hover:hidden">
-                {{ getFolderCommandsCount(folder.id) }}
-              </span>
+              <div class="flex items-center gap-1 flex-shrink-0 h-6">
+                <!-- Hover 动作区：设色、重命名、删除 -->
+                <div class="hidden group-hover:flex items-center gap-0.5" @click.stop>
+                  <!-- 文件夹调色板 -->
+                  <div class="relative inline-flex items-center" @click.stop>
+                    <button
+                      type="button"
+                      @click.stop="toggleFolderColorPicker(folder.id, $event)"
+                      class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
+                      :title="t('folders.folderColor', '文件夹背景颜色')"
+                    >
+                      <i class="fas fa-palette"></i>
+                    </button>
+                    <ColorPickerPopover
+                      :visible="activeColorPickerFolderId === folder.id"
+                      :trigger-el="activeColorPickerTriggerEl"
+                      :model-value="folder.background_color"
+                      @update:model-value="handleSaveFolderColor(folder.id, $event)"
+                      @close="activeColorPickerFolderId = null; activeColorPickerTriggerEl = null"
+                    />
+                  </div>
+
+                  <!-- 重命名 -->
+                  <button
+                    type="button"
+                    @click.stop="handleStartRenameFolder(folder)"
+                    class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
+                    :title="t('folders.renameFolder', '重命名文件夹')"
+                  >
+                    <i class="fas fa-pencil-alt"></i>
+                  </button>
+
+                  <!-- 删除 -->
+                  <button
+                    type="button"
+                    @click.stop="handleDeleteFolder(folder)"
+                    class="w-6 h-6 p-0 rounded text-text-secondary hover:text-error hover:bg-background/80 text-[10px] flex items-center justify-center transition-colors cursor-pointer"
+                    :title="t('folders.deleteFolder', '删除文件夹')"
+                  >
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </div>
+
+                <!-- 数量角标 (非 Hover 或常态) -->
+                <span
+                  class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium group-hover:hidden"
+                  :class="activeFolder === folder.id ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+                >
+                  {{ getFolderCommandsCount(folder.id) }}
+                </span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ==================== Right: Command Content Workspace ==================== -->
+      <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
+        <!-- Top Toolbar -->
+        <div class="p-3 md:p-4 border-b border-border/60 flex flex-wrap items-center justify-between gap-3 bg-background/90 backdrop-blur-xs flex-shrink-0">
+          <!-- 标题与统计 -->
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2">
+              <i
+                :class="[
+                  'fas',
+                  activeFolder === 'all'
+                    ? 'fa-layer-group text-primary'
+                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open text-amber-400')
+                ]"
+              ></i>
+              <h2 class="text-base md:text-lg font-semibold text-foreground truncate">
+                {{ activeFolderTitle }}
+              </h2>
             </div>
-          </template>
-        </div>
-      </div>
-    </aside>
-
-    <!-- 右侧：指令内容工作区 -->
-    <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-      <!-- 顶部控制条 -->
-      <div class="p-3.5 border-b border-border flex items-center justify-between gap-3 flex-shrink-0 bg-card/20 backdrop-blur-xs">
-        <!-- 标题与统计 -->
-        <div class="flex items-center gap-2 min-w-0">
-          <h2 class="text-base font-semibold text-foreground truncate">
-            {{ activeFolderTitle }}
-          </h2>
-          <span class="text-xs px-2 py-0.5 rounded-full bg-muted text-text-secondary font-medium">
-            {{ displayedCommands.length }}
-          </span>
-        </div>
-
-        <!-- 右侧工具栏：搜索、排序、视图切换、新建指令 -->
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <!-- 搜索框 -->
-          <div class="relative w-48 sm:w-64">
-            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary"></i>
-            <input
-              type="text"
-              v-model="searchQuery"
-              :placeholder="t('quickCommands.searchPlaceholder', '搜索名称或指令...')"
-              class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-border/60 bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all shadow-xs"
-            />
-            <button
-              v-if="searchQuery"
-              @click="searchQuery = ''"
-              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-text-secondary hover:text-foreground cursor-pointer"
-            >
-              <i class="fas fa-times"></i>
-            </button>
+            <span class="text-xs text-text-secondary bg-muted px-2 py-0.5 rounded-full font-medium">
+              {{ displayedCommands.length }}
+            </span>
           </div>
 
-          <!-- 排序切换 -->
-          <button
-            type="button"
-            @click="toggleSortBy"
-            class="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-border/60 bg-card hover:bg-muted text-text-secondary hover:text-foreground transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-            :title="sortButtonTitle"
-          >
-            <i :class="sortButtonIcon"></i>
-            <span class="hidden md:inline">{{ sortButtonText }}</span>
-          </button>
+          <!-- 右侧工具栏：搜索、排序、视图切换 -->
+          <div class="flex flex-wrap items-center gap-2 ml-auto">
+            <!-- 搜索框 -->
+            <div class="relative w-40 sm:w-56">
+              <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary pointer-events-none"></i>
+              <input
+                type="text"
+                v-model="searchQuery"
+                :placeholder="t('quickCommands.searchPlaceholder', '搜索指令...')"
+                class="w-full h-8 pl-8 pr-7 text-xs bg-input border border-border/70 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition duration-150"
+              />
+              <button
+                v-if="searchQuery"
+                @click="searchQuery = ''"
+                class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-text-secondary hover:text-foreground cursor-pointer"
+              >
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
 
-          <!-- 视图模式切换 -->
-          <div class="flex items-center border border-border/60 rounded-lg p-0.5 bg-card shadow-xs">
+            <!-- 排序切换 -->
             <button
               type="button"
-              @click="viewMode = 'grid'"
-              class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
-              :class="viewMode === 'grid' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
-              :title="t('quickCommands.viewModeGrid', '网格视图')"
+              @click="toggleSortBy"
+              class="h-8 px-2.5 text-xs font-medium rounded-lg border border-border/70 bg-card hover:bg-muted text-text-secondary hover:text-foreground transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              :title="sortButtonTitle"
             >
-              <i class="fas fa-th-large"></i>
+              <i :class="sortButtonIcon"></i>
+              <span class="hidden md:inline">{{ sortButtonText }}</span>
             </button>
-            <button
-              type="button"
-              @click="viewMode = 'pills'"
-              class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
-              :class="viewMode === 'pills' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
-              :title="t('quickCommands.viewModePills', '药丸流式视图')"
-            >
-              <i class="fas fa-capsules"></i>
-            </button>
-            <button
-              type="button"
-              @click="viewMode = 'list'"
-              class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
-              :class="viewMode === 'list' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
-              :title="t('quickCommands.viewModeList', '列表视图')"
-            >
-              <i class="fas fa-bars"></i>
-            </button>
+
+            <!-- 视图模式切换 -->
+            <div class="flex items-center border border-border/70 rounded-lg p-0.5 bg-card shadow-xs">
+              <button
+                type="button"
+                @click="viewMode = 'grid'"
+                class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
+                :class="viewMode === 'grid' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
+                :title="t('quickCommands.viewModeGrid', '网格视图')"
+              >
+                <i class="fas fa-th-large"></i>
+              </button>
+              <button
+                type="button"
+                @click="viewMode = 'pills'"
+                class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
+                :class="viewMode === 'pills' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
+                :title="t('quickCommands.viewModePills', '药丸流式视图')"
+              >
+                <i class="fas fa-capsules"></i>
+              </button>
+              <button
+                type="button"
+                @click="viewMode = 'list'"
+                class="px-2 py-1 text-xs rounded-md transition-colors cursor-pointer"
+                :class="viewMode === 'list' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary hover:text-foreground'"
+                :title="t('quickCommands.viewModeList', '列表视图')"
+              >
+                <i class="fas fa-bars"></i>
+              </button>
+            </div>
           </div>
-
-          <!-- 新建指令按钮 -->
-          <button
-            type="button"
-            @click="openAddCommandModal"
-            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
-          >
-            <i class="fas fa-plus text-[11px]"></i>
-            <span>{{ t('quickCommands.add', '添加快捷指令') }}</span>
-          </button>
         </div>
-      </div>
 
-      <!-- 内容卡片流与网格 -->
-      <div class="flex-1 overflow-y-auto p-4">
+        <!-- 内容卡片流与网格 -->
+        <div class="flex-1 overflow-y-auto p-4 md:p-6">
         <!-- 加载中状态 -->
         <div v-if="quickCommandsStore.isLoading" class="flex flex-col items-center justify-center h-64 text-text-secondary">
           <i class="fas fa-circle-notch fa-spin text-2xl mb-3 text-primary"></i>
@@ -538,6 +573,7 @@
         </div>
       </div>
     </main>
+    </div>
 
     <!-- 新建/编辑快捷指令模态框 -->
     <AddEditQuickCommandForm

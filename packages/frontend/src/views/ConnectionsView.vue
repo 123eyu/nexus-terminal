@@ -684,9 +684,9 @@ const handleConnectAllFilteredConnections = async () => {
     </div>
 
     <!-- Main Dual-Pane Workspace Container -->
-    <div class="flex-1 flex flex-col md:flex-row overflow-hidden border border-border/70 rounded-2xl bg-card shadow-sm">
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden border border-border/70 rounded-2xl bg-background shadow-sm">
       <!-- ==================== Left: Folder Sidebar ==================== -->
-      <aside class="w-full md:w-64 lg:w-72 flex-shrink-0 border-b md:border-b-0 md:border-r border-border/60 bg-muted/20 flex flex-col overflow-hidden">
+      <aside class="w-full md:w-64 lg:w-72 flex-shrink-0 border-b md:border-b-0 md:border-r border-border/60 bg-background/60 flex flex-col overflow-hidden">
         <!-- Sidebar Header: Quick Navigation -->
         <div class="p-3 border-b border-border/50 space-y-1">
           <!-- All Connections -->
@@ -791,7 +791,7 @@ const handleConnectAllFilteredConnections = async () => {
             @dragover="handleDragOver(folder.id, $event)"
             @dragleave="handleDragLeave"
             @drop="handleDropOnFolder(folder.id, $event)"
-            class="group w-full flex items-center justify-between px-3 h-9 rounded-xl text-xs md:text-sm transition-all duration-150 cursor-pointer border border-transparent"
+            class="group w-full flex items-center justify-between px-3 h-9 min-h-[36px] max-h-[36px] box-border rounded-xl text-xs md:text-sm transition-all duration-150 cursor-pointer border border-transparent"
             :class="[
               activeFolder === folder.id
                 ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
@@ -901,9 +901,9 @@ const handleConnectAllFilteredConnections = async () => {
       </aside>
 
       <!-- ==================== Right: Connection Content Area ==================== -->
-      <main class="flex-1 flex flex-col overflow-hidden bg-background/50">
+      <main class="flex-1 flex flex-col overflow-hidden bg-background">
         <!-- Top Toolbar -->
-        <div class="p-3 md:p-4 border-b border-border/60 flex flex-wrap items-center justify-between gap-3 bg-card/60 backdrop-blur-xs flex-shrink-0">
+        <div class="p-3 md:p-4 border-b border-border/60 flex flex-wrap items-center justify-between gap-3 bg-background/90 backdrop-blur-xs flex-shrink-0">
           <!-- Folder Title and Item Count -->
           <div class="flex items-center gap-2 min-w-0">
             <div class="flex items-center gap-2">

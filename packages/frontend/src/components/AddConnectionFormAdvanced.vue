@@ -79,84 +79,24 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
 </script>
 
 <template>
-  <!-- Advanced Options Section -->
-  <div class="space-y-4 p-4 border border-border rounded-md bg-header/30">
-    <h4 class="text-base font-semibold mb-3 pb-2 border-b border-border/50">{{ t('connections.form.sectionAdvanced', '高级选项') }}</h4>
-    
-    <!-- Connection Mode Switcher (Only for SSH) -->
-    <div v-if="props.formData.type === 'SSH'">
-      <label class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.connectionMode', '连接方式') }}</label>
-      <div class="flex rounded-md shadow-sm mb-4">
-        <button
-          type="button"
-          @click="setConnectionMode('proxy')"
-          :class="['flex-1 px-3 py-2 border border-border text-sm font-medium focus:outline-none rounded-l-md',
-                   props.advancedConnectionMode === 'proxy' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border']"
-        >
-          {{ t('connections.form.connectionModeProxy', '代理') }}
-        </button>
-        <button
-          type="button"
-          @click="setConnectionMode('jump')"
-          :class="['flex-1 px-3 py-2 border-t border-b border-r border-border text-sm font-medium focus:outline-none -ml-px rounded-r-md',
-                   props.advancedConnectionMode === 'jump' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border']"
-        >
-          {{ t('connections.form.connectionModeJumpHost', '跳板机') }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Proxy Select - Show only for SSH and if 'proxy' mode is selected -->
-    <div v-if="props.formData.type === 'SSH' && props.advancedConnectionMode === 'proxy'">
-      <label for="conn-proxy" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.proxy') }} ({{ t('connections.form.optional') }})</label>
-      <select id="conn-proxy" v-model="props.formData.proxy_id"
-              class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;">
-        <option :value="null">{{ t('connections.form.noProxy') }}</option>
-        <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
-          {{ proxy.name }} ({{ proxy.type }} - {{ proxy.host }}:{{ proxy.port }})
-        </option>
-      </select>
-      <div v-if="props.isProxyLoading" class="mt-1 text-xs text-text-secondary">{{ t('proxies.loading') }}</div>
-      <div v-if="props.proxyStoreError" class="mt-1 text-xs text-error">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
-    </div>
-
-    <!-- Jump Host Configuration - Show only for SSH and if 'jump' mode is selected -->
-    <div v-if="props.formData.type === 'SSH' && props.advancedConnectionMode === 'jump'" class="space-y-3">
-      <label class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.jumpHostsTitle', '跳板机链配置') }}</label>
-      <div v-if="!props.formData.jump_chain || props.formData.jump_chain.length === 0" class="text-sm text-muted-foreground italic">
-      </div>
-      <template v-if="props.formData.jump_chain">
-        <div v-for="(jumpHostId, index) in props.formData.jump_chain" :key="index" class="flex items-center space-x-2 p-2 border border-border rounded-md bg-background/50">
-          <span class="text-sm font-medium text-text-secondary whitespace-nowrap">{{ t('connections.form.jumpHostLabel', '跳板机') }} {{ index + 1 }}:</span>
-          <select v-model="props.formData.jump_chain[index]"
-                  class="flex-grow px-3 py-1.5 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
-                style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;">
-          <option :value="null">{{ t('connections.form.selectJumpHost', '请选择跳板机') }}</option>
-          <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">
-            {{ host.name }}
-          </option>
-        </select>
-        <button type="button" @click="props.removeJumpHost(index)"
-                class="p-1.5 text-destructive hover:text-destructive/80 focus:outline-none focus:ring-1 focus:ring-destructive rounded-md"
-                :title="t('connections.form.removeJumpHostTitle', '移除此跳板机')">
-          <svg xmlns="http://www.w3.org/2000/svg" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
+  <!-- 高级配置卡片：立体浮凸卡片 -->
+  <div
+    class="rounded-2xl border border-border/80 p-4 md:p-5 space-y-4 shadow-md"
+    style="background-color: var(--card-bg-color, var(--header-bg-color));"
+  >
+    <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-md bg-purple-500/15 text-purple-400 flex items-center justify-center text-xs">
+          <i class="fas fa-sliders-h"></i>
         </div>
-      </template>
-      <button type="button" @click="props.addJumpHost()"
-              class="w-full flex items-center justify-center space-x-2 px-3 py-2 border border-dashed border-primary text-primary rounded-md hover:bg-primary/10 focus:outline-none focus:ring-1 focus:ring-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        <span>{{ t('connections.form.addJumpHost', '添加跳板机') }}</span>
-      </button>
-       <div v-if="props.connections.filter(c => c.type === 'SSH' && (!props.isEditMode || c.id !== props.formData.id)).length === 0" class="text-xs text-warning-foreground p-2 bg-warning/20 rounded-md">
-        {{ t('connections.form.noAvailableSshConnectionsForJump', '没有可用的SSH连接作为跳板机。请先创建一些SSH连接。') }}
+        <h4 class="text-xs font-semibold text-foreground tracking-wide uppercase">{{ t('connections.form.sectionAdvanced', '高级选项') }}</h4>
       </div>
     </div>
 
+    <!-- 所属文件夹 -->
     <div>
-      <label class="block text-sm font-medium text-text-secondary mb-1">
-        <i class="fas fa-folder text-amber-400 mr-1.5"></i>
+      <label class="block text-xs font-medium text-text-secondary mb-1.5">
+        <i class="fas fa-folder text-amber-400 mr-1"></i>
         {{ t('folders.title', '所属文件夹') }}
       </label>
       <FolderSelect
@@ -170,12 +110,111 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ props.tagStoreError }}</div>
     </div>
     
-    <!-- Notes Section -->
+    <!-- 连接方式切换 (仅 SSH 支持) -->
+    <div v-if="props.formData.type === 'SSH'">
+      <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionMode', '网络穿透方式') }}</label>
+      <div
+        class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70"
+        style="background-color: var(--app-bg-color);"
+      >
+        <button
+          type="button"
+          @click="setConnectionMode('proxy')"
+          class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          :class="props.advancedConnectionMode === 'proxy' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+        >
+          <i class="fas fa-shield-alt text-[10px]"></i>
+          <span>{{ t('connections.form.connectionModeProxy', '网络代理') }}</span>
+        </button>
+        <button
+          type="button"
+          @click="setConnectionMode('jump')"
+          class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+          :class="props.advancedConnectionMode === 'jump' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+        >
+          <i class="fas fa-random text-[10px]"></i>
+          <span>{{ t('connections.form.connectionModeJumpHost', '跳板机链') }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 代理选择 -->
+    <div v-if="props.formData.type === 'SSH' && props.advancedConnectionMode === 'proxy'">
+      <label for="conn-proxy" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.proxy') }}</label>
+      <select
+        id="conn-proxy"
+        v-model="props.formData.proxy_id"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary appearance-none bg-no-repeat bg-right pr-8 transition-all shadow-2xs"
+        style="background-color: var(--app-bg-color); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
+      >
+        <option :value="null">{{ t('connections.form.noProxy', '不使用代理 (直连)') }}</option>
+        <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
+          {{ proxy.name }} ({{ proxy.type }} - {{ proxy.host }}:{{ proxy.port }})
+        </option>
+      </select>
+      <div v-if="props.isProxyLoading" class="mt-1 text-xs text-text-secondary">{{ t('proxies.loading') }}</div>
+      <div v-if="props.proxyStoreError" class="mt-1 text-xs text-error">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
+    </div>
+
+    <!-- 跳板机链配置 -->
+    <div v-if="props.formData.type === 'SSH' && props.advancedConnectionMode === 'jump'" class="space-y-2.5">
+      <label class="block text-xs font-medium text-text-secondary mb-1">{{ t('connections.form.jumpHostsTitle', '跳板机链配置') }}</label>
+      <template v-if="props.formData.jump_chain">
+        <div
+          v-for="(jumpHostId, index) in props.formData.jump_chain"
+          :key="index"
+          class="flex items-center space-x-2 p-2 border border-border/70 rounded-xl"
+          style="background-color: var(--app-bg-color);"
+        >
+          <span class="text-xs font-medium text-text-secondary whitespace-nowrap pl-1">{{ t('connections.form.jumpHostLabel', '跳板机') }} {{ index + 1 }}:</span>
+          <select
+            v-model="props.formData.jump_chain[index]"
+            class="flex-grow px-3 py-1.5 text-xs border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
+            style="background-color: var(--card-bg-color, var(--header-bg-color)); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
+          >
+            <option :value="null">{{ t('connections.form.selectJumpHost', '请选择跳板机') }}</option>
+            <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">
+              {{ host.name }}
+            </option>
+          </select>
+          <button
+            type="button"
+            @click="props.removeJumpHost(index)"
+            class="p-1.5 text-error hover:bg-error/10 focus:outline-none rounded-lg transition-colors cursor-pointer"
+            :title="t('connections.form.removeJumpHostTitle', '移除此跳板机')"
+          >
+            <i class="fas fa-trash-alt text-xs"></i>
+          </button>
+        </div>
+      </template>
+      <button
+        type="button"
+        @click="props.addJumpHost()"
+        class="w-full flex items-center justify-center space-x-2 px-3 py-2 border border-dashed border-primary/50 text-primary text-xs font-medium rounded-xl hover:bg-primary/10 focus:outline-none transition-colors cursor-pointer"
+      >
+        <i class="fas fa-plus text-xs"></i>
+        <span>{{ t('connections.form.addJumpHost', '添加跳板机节点') }}</span>
+      </button>
+      <div
+        v-if="props.connections.filter(c => c.type === 'SSH' && (!props.isEditMode || c.id !== props.formData.id)).length === 0"
+        class="text-xs text-text-secondary p-2.5 border border-border/70 rounded-xl"
+        style="background-color: var(--app-bg-color);"
+      >
+        {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 连接作为跳板机') }}
+      </div>
+    </div>
+
+    <!-- 备注信息 -->
     <div>
-      <label for="conn-notes" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.notes', '备注') }}</label>
-      <textarea id="conn-notes" v-model="props.formData.notes" rows="3"
-                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-                :placeholder="t('connections.form.notesPlaceholder', '输入连接备注...')"></textarea>
+      <label for="conn-notes" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.notes', '备注说明') }}</label>
+      <textarea
+        id="conn-notes"
+        v-model="props.formData.notes"
+        rows="2"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+        style="background-color: var(--app-bg-color);"
+        :placeholder="t('connections.form.notesPlaceholder', '可选，输入连接补充说明...')"
+      ></textarea>
     </div>
   </div>
 </template>

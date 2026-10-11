@@ -71,10 +71,9 @@
             <!-- Grouped View -->
             <div v-if="showQuickCommandTagsBoolean">
                 <div v-for="groupData in filteredAndGroupedCommands" :key="groupData.groupName" class="mb-1 last:mb-0">
-                    <!-- Group Header - Modified for folder system -->
                     <div
-                        class="group font-semibold flex items-center justify-between text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150"
-                        :style="{ padding: isCompactMode ? `calc(0.25rem * var(--qc-row-size-multiplier)) calc(0.6rem * var(--qc-row-size-multiplier))` : `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.7rem * var(--qc-row-size-multiplier))` }"
+                        class="group font-semibold flex items-center justify-between text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150 h-9 min-h-[36px] max-h-[36px] box-border"
+                        :style="{ padding: isCompactMode ? `0 calc(0.6rem * var(--qc-row-size-multiplier))` : `0 calc(0.7rem * var(--qc-row-size-multiplier))` }"
                         :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
                         @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
                     >
@@ -125,8 +124,12 @@
                             </div>
                         </div>
 
-                        <!-- Hover Actions for Folder -->
-                        <div v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="hidden group-hover:flex items-center gap-0.5 flex-shrink-0 h-6" @click.stop>
+                        <!-- Actions for Folder (常驻占位防抖动，仅透明度过渡) -->
+                        <div
+                            v-if="groupData.tagId !== null && editingTagId !== groupData.tagId"
+                            class="flex items-center gap-0.5 flex-shrink-0 h-6 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto"
+                            @click.stop
+                        >
                             <!-- Folder Color Picker -->
                             <div v-if="groupData.tagId !== null" class="relative inline-flex items-center" @click.stop>
                                 <button
@@ -397,7 +400,8 @@
     <!-- Context Menu for Quick Commands -->
     <div
       v-if="quickCommandContextMenuVisible"
-      class="fixed bg-background border border-border/60 shadow-xl rounded-lg py-1.5 z-50 min-w-[190px] quick-command-context-menu backdrop-blur-md"
+      class="fixed bg-header border border-border/60 shadow-xl rounded-lg py-1.5 z-50 min-w-[190px] quick-command-context-menu"
+      style="background-color: var(--header-bg-color);"
       :style="{ top: `${quickCommandContextMenuPosition.y}px`, left: `${quickCommandContextMenuPosition.x}px` }"
       @click.stop
     >
@@ -456,7 +460,8 @@
           <!-- 子菜单：所有文件夹列表 -->
           <div
             v-if="showMoveSubMenu"
-            class="absolute left-full top-0 ml-1 bg-popover border border-border shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
+            class="absolute left-full top-0 ml-1 bg-header border border-border shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
+            style="background-color: var(--header-bg-color);"
             @click.stop
           >
             <div
@@ -499,7 +504,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
       @click.self="isCreatingFolderModal = false"
     >
-      <div class="bg-card border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn" @click.stop>
+      <div class="bg-header border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn" style="background-color: var(--header-bg-color);" @click.stop>
         <div class="flex items-center gap-2 mb-3">
           <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
             <i class="fas fa-folder-plus text-sm"></i>

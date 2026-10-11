@@ -19,66 +19,114 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <!-- Authentication Section -->
-  <div class="space-y-4 p-4 border border-border rounded-md bg-header/30">
-    <h4 class="text-base font-semibold mb-3 pb-2 border-b border-border/50">{{ t('connections.form.sectionAuth', '认证信息') }}</h4>
-    <div>
-      <label for="conn-username" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.username') }}</label>
-      <input type="text" id="conn-username" v-model="props.formData.username" required
-             class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" />
+  <!-- 认证凭据卡片：立体浮凸卡片 -->
+  <div
+    class="rounded-2xl border border-border/80 p-4 md:p-5 space-y-4 shadow-md"
+    style="background-color: var(--card-bg-color, var(--header-bg-color));"
+  >
+    <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded-md bg-amber-500/15 text-amber-500 flex items-center justify-center text-xs">
+          <i class="fas fa-key"></i>
+        </div>
+        <h4 class="text-xs font-semibold text-foreground tracking-wide uppercase">{{ t('connections.form.sectionAuth', '认证凭据') }}</h4>
+      </div>
     </div>
 
-    <!-- SSH Specific Auth -->
+    <!-- 用户名 -->
+    <div>
+      <label for="conn-username" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.username') }}</label>
+      <input
+        type="text"
+        id="conn-username"
+        v-model="props.formData.username"
+        required
+        placeholder="root"
+        class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+        style="background-color: var(--app-bg-color);"
+      />
+    </div>
+
+    <!-- SSH 认证方式选择 -->
     <template v-if="props.formData.type === 'SSH'">
       <div>
-        <label class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.authMethod') }}</label>
-        <div class="flex rounded-md shadow-sm">
-          <button type="button"
-                  @click="props.formData.auth_method = 'password'"
-                  :class="['flex-1 px-3 py-2 border border-border text-sm font-medium focus:outline-none',
-                           props.formData.auth_method === 'password' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border',
-                           'rounded-l-md']">
-            {{ t('connections.form.authMethodPassword') }}
+        <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.authMethod') }}</label>
+        <div
+          class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70"
+          style="background-color: var(--app-bg-color);"
+        >
+          <button
+            type="button"
+            @click="props.formData.auth_method = 'password'"
+            class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            :class="props.formData.auth_method === 'password' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          >
+            <i class="fas fa-lock text-[10px]"></i>
+            <span>{{ t('connections.form.authMethodPassword') }}</span>
           </button>
-          <button type="button"
-                  @click="props.formData.auth_method = 'key'"
-                  :class="['flex-1 px-3 py-2 border-t border-b border-r border-border text-sm font-medium focus:outline-none -ml-px',
-                           props.formData.auth_method === 'key' ? 'bg-primary text-white' : 'bg-background text-foreground hover:bg-border',
-                           'rounded-r-md']">
-            {{ t('connections.form.authMethodKey') }}
+          <button
+            type="button"
+            @click="props.formData.auth_method = 'key'"
+            class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            :class="props.formData.auth_method === 'key' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          >
+            <i class="fas fa-certificate text-[10px]"></i>
+            <span>{{ t('connections.form.authMethodKey') }}</span>
           </button>
         </div>
       </div>
 
       <div v-if="props.formData.auth_method === 'password'">
-        <label for="conn-password" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.password') }}</label>
-        <input type="password" id="conn-password" v-model="props.formData.password" :required="props.formData.auth_method === 'password' && !isEditMode" autocomplete="new-password"
-               class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" />
+        <label for="conn-password" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.password') }}</label>
+        <input
+          type="password"
+          id="conn-password"
+          v-model="props.formData.password"
+          :required="props.formData.auth_method === 'password' && !isEditMode"
+          autocomplete="new-password"
+          :placeholder="isEditMode ? '•••••••• (留空保持不变)' : '输入主机密码...'"
+          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+          style="background-color: var(--app-bg-color);"
+        />
       </div>
 
-      <div v-if="props.formData.auth_method === 'key'" class="space-y-4">
-        <div>
-            <label class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.sshKey') }}</label>
-            <SshKeySelector v-model="props.formData.selected_ssh_key_id" />
-        </div>
+      <div v-if="props.formData.auth_method === 'key'" class="space-y-2">
+        <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.sshKey') }}</label>
+        <SshKeySelector v-model="props.formData.selected_ssh_key_id" />
       </div>
     </template>
 
-    <!-- RDP Specific Auth -->
+    <!-- RDP 认证 -->
     <template v-if="props.formData.type === 'RDP'">
-       <div>
-         <label for="conn-password-rdp" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.password') }}</label>
-         <input type="password" id="conn-password-rdp" v-model="props.formData.password" :required="!isEditMode" autocomplete="new-password"
-                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" />
-       </div>
-     </template>
+      <div>
+        <label for="conn-password-rdp" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.password') }}</label>
+        <input
+          type="password"
+          id="conn-password-rdp"
+          v-model="props.formData.password"
+          :required="!isEditMode"
+          autocomplete="new-password"
+          :placeholder="isEditMode ? '•••••••• (留空保持不变)' : '输入远程桌面密码...'"
+          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+          style="background-color: var(--app-bg-color);"
+        />
+      </div>
+    </template>
 
-    <!-- VNC Specific Auth -->
+    <!-- VNC 认证 -->
     <template v-if="props.formData.type === 'VNC'">
       <div>
-        <label for="conn-password-vnc" class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.vncPassword', 'VNC 密码') }}</label>
-        <input type="password" id="conn-password-vnc" v-model="props.formData.vncPassword" :required="!isEditMode" autocomplete="new-password"
-               class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary" />
+        <label for="conn-password-vnc" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.vncPassword', 'VNC 密码') }}</label>
+        <input
+          type="password"
+          id="conn-password-vnc"
+          v-model="props.formData.vncPassword"
+          :required="!isEditMode"
+          autocomplete="new-password"
+          :placeholder="isEditMode ? '•••••••• (留空保持不变)' : '输入 VNC 访问密码...'"
+          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+          style="background-color: var(--app-bg-color);"
+        />
       </div>
     </template>
   </div>

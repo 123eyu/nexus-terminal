@@ -9,7 +9,7 @@ const { t } = useI18n();
 const appearanceStore = useAppearanceStore();
 const notificationsStore = useUiNotificationsStore();
 const {
-  appearanceSettings, // for watcher
+  appearanceSettings,
   currentEditorFontSize,
   currentEditorFontFamily,
 } = storeToRefs(appearanceStore);
@@ -17,9 +17,18 @@ const {
 const editableEditorFontSize = ref(14);
 const editableEditorFontFamily = ref('');
 
+const EDITOR_QUICK_FONTS = [
+  'Consolas',
+  'Fira Code',
+  'JetBrains Mono',
+  'Cascadia Code',
+  'Source Code Pro',
+  'monospace'
+];
+
 const initializeEditableState = () => {
-  editableEditorFontSize.value = currentEditorFontSize.value;
-  editableEditorFontFamily.value = currentEditorFontFamily.value;
+  editableEditorFontSize.value = currentEditorFontSize.value || 14;
+  editableEditorFontFamily.value = currentEditorFontFamily.value || 'Consolas, monospace';
 };
 
 onMounted(initializeEditableState);
@@ -27,7 +36,6 @@ onMounted(initializeEditableState);
 watch(
   () => appearanceSettings.value,
   (newSettings, oldSettings) => {
-    // Check if the specific properties we care about have changed
     const fontSizeChanged = newSettings?.editorFontSize !== oldSettings?.editorFontSize;
     const fontFamilyChanged = newSettings?.editorFontFamily !== oldSettings?.editorFontFamily;
 
@@ -35,56 +43,120 @@ watch(
       editableEditorFontSize.value = newSettings?.editorFontSize || 14;
     }
     if (fontFamilyChanged) {
-      editableEditorFontFamily.value = newSettings?.editorFontFamily || 'Consolas, "Noto Sans SC", "Microsoft YaHei"';
+      editableEditorFontFamily.value = newSettings?.editorFontFamily || 'Consolas, monospace';
     }
   },
   { deep: true }
 );
 
-// 保存编辑器字体大小
 const handleSaveEditorFontSize = async () => {
-    try {
-        const size = Number(editableEditorFontSize.value);
-        if (isNaN(size) || size <= 0) {
-            notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorInvalidEditorFontSize') });
-            return;
-        }
-        await appearanceStore.setEditorFontSize(size);
-        notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.editorFontSizeSaved') });
-    } catch (error: any) {
-        console.error("保存编辑器字体大小失败:", error);
-        notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.editorFontSizeSaveFailed', { message: error.message }) });
+  try {
+    const size = Number(editableEditorFontSize.value);
+    if (isNaN(size) || size <= 0) {
+      notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorInvalidEditorFontSize', '字号数值无效') });
+      return;
     }
+    await appearanceStore.setEditorFontSize(size);
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.editorFontSizeSaved', '编辑器字号已保存') });
+  } catch (error: any) {
+    notificationsStore.addNotification({ type: 'error', message: error.message });
+  }
 };
 
-// 保存编辑器字体家族
 const handleSaveEditorFontFamily = async () => {
-    try {
-        await appearanceStore.setEditorFontFamily(editableEditorFontFamily.value);
-        notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.editorFontFamilySaved') });
-    } catch (error: any) {
-        console.error("保存编辑器字体失败:", error);
-        notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.editorFontFamilySaveFailed', { message: error.message }) });
-    }
+  try {
+    await appearanceStore.setEditorFontFamily(editableEditorFontFamily.value);
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.editorFontFamilySaved', '编辑器字体已保存') });
+  } catch (error: any) {
+    notificationsStore.addNotification({ type: 'error', message: error.message });
+  }
+};
+
+const handleSelectFontPill = async (font: string) => {
+  editableEditorFontFamily.value = font;
+  await handleSaveEditorFontFamily();
 };
 </script>
 
 <template>
-  <section>
-    <h3 class="mt-0 border-b border-border pb-2 mb-4 text-lg font-semibold text-foreground">{{ t('styleCustomizer.otherSettings') }}</h3>
+  <div class="space-y-6">
+    <!-- 代码编辑器字体与字号卡片 -->
+    <div class="bg-card/40 border border-border/70 rounded-xl p-4 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <i class="fas fa-file-code text-primary text-xs"></i>
+          内置代码编辑器
+        </h4>
+        <div class="flex items-center gap-1.5 bg-background/60 border border-border/60 px-2 py-0.5 rounded-lg text-xs">
+          <span class="text-muted-foreground text-[11px]">字号:</span>
+          <input
+            type="number"
+            v-model.number="editableEditorFontSize"
+            @change="handleSaveEditorFontSize"
+            @keydown.enter.prevent="handleSaveEditorFontSize"
+            min="10"
+            max="36"
+            class="w-11 bg-transparent text-foreground text-center font-mono font-medium focus:outline-none"
+          />
+          <span class="text-muted-foreground text-[10px]">px</span>
+        </div>
+      </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] items-start md:items-center gap-2 md:gap-3 mb-3">
-        <label for="editorFontSizeOther" class="text-left text-foreground text-sm font-medium overflow-hidden text-ellipsis block w-full mb-1 md:mb-0">{{ t('styleCustomizer.editorFontSize') }}:</label>
-        <input type="number" id="editorFontSizeOther" v-model.number="editableEditorFontSize" class="border border-border px-[0.7rem] py-2 rounded text-sm bg-background text-foreground max-w-[100px] justify-self-start box-border transition duration-200 ease-in-out focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" min="1" />
-        <button @click="handleSaveEditorFontSize" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap justify-self-start mt-1 md:mt-0">{{ t('common.save') }}</button>
+      <!-- 字体家族输入与保存 -->
+      <div class="space-y-2">
+        <div class="flex items-center gap-2">
+          <input
+            type="text"
+            v-model="editableEditorFontFamily"
+            @keydown.enter.prevent="handleSaveEditorFontFamily"
+            @blur="handleSaveEditorFontFamily"
+            placeholder="例如：'Fira Code', Consolas, monospace"
+            class="flex-1 px-3 py-2 text-xs border border-border/70 rounded-lg bg-background text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            type="button"
+            @click="handleSaveEditorFontFamily"
+            class="px-3.5 py-2 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm shrink-0"
+          >
+            保存
+          </button>
+        </div>
+
+        <!-- 常用程序员字体快捷标签 -->
+        <div class="flex items-center gap-1.5 flex-wrap pt-1">
+          <button
+            v-for="font in EDITOR_QUICK_FONTS"
+            :key="font"
+            type="button"
+            @click="handleSelectFontPill(font)"
+            class="px-2.5 py-1 text-xs rounded-md border transition-all font-mono"
+            :class="editableEditorFontFamily.toLowerCase().includes(font.toLowerCase())
+              ? 'bg-primary text-primary-foreground border-primary font-semibold shadow-sm'
+              : 'bg-background/60 text-muted-foreground border-border/60 hover:text-foreground hover:bg-background'"
+          >
+            {{ font }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 实时预览条 -->
+      <div
+        class="p-3.5 rounded-lg border border-border/60 bg-background/80 space-y-1.5"
+        :style="{ fontFamily: editableEditorFontFamily || 'monospace', fontSize: `${editableEditorFontSize}px` }"
+      >
+        <div class="flex items-center justify-between text-[11px] text-muted-foreground border-b border-border/40 pb-1 font-sans">
+          <span class="font-medium text-foreground">预览效果</span>
+          <span class="font-mono text-[10px] text-muted-foreground">
+            {{ editableEditorFontFamily || 'monospace' }} ({{ editableEditorFontSize }}px)
+          </span>
+        </div>
+        <div class="font-mono leading-relaxed overflow-x-auto text-foreground select-all py-1">
+          <span class="text-primary font-semibold">async function</span> <span class="text-blue-400">connectServer</span>(host: <span class="text-emerald-400">string</span>) {<br />
+          &nbsp;&nbsp;<span class="text-purple-400">const</span> status = <span class="text-primary">await</span> client.ping({ timeout: <span class="text-amber-400">3000</span> });<br />
+          &nbsp;&nbsp;<span class="text-purple-400">return</span> status.ok;<br />
+          }
+        </div>
+      </div>
     </div>
-
-    <hr class="my-4 md:my-6">
-
-    <div class="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] items-start md:items-center gap-2 md:gap-3 mb-3">
-        <label for="editorFontFamilyOther" class="text-left text-foreground text-sm font-medium overflow-hidden text-ellipsis block w-full mb-1 md:mb-0">{{ t('styleCustomizer.editorFontFamily') }}:</label>
-        <input type="text" id="editorFontFamilyOther" v-model="editableEditorFontFamily" class="border border-border px-[0.7rem] py-2 rounded text-sm bg-background text-foreground w-full box-border transition duration-200 ease-in-out focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
-        <button @click="handleSaveEditorFontFamily" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap justify-self-start mt-1 md:mt-0">{{ t('common.save') }}</button>
-    </div>
-  </section>
+  </div>
 </template>

@@ -117,86 +117,140 @@ onMounted(() => {
     document.removeEventListener('mouseup', onMouseUp);
   };
 
+  // 监听 Escape 快捷键退出
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      closeCustomizer();
+    }
+  };
+  window.addEventListener('keydown', onKeyDown);
+
   headerElement.addEventListener('mousedown', onMouseDown);
-  headerElement.style.cursor = 'move'; // 设置页眉鼠标样式为可拖动
+  headerElement.style.cursor = 'move';
 
   onUnmounted(() => {
+    window.removeEventListener('keydown', onKeyDown);
     if (headerElement) {
       headerElement.removeEventListener('mousedown', onMouseDown);
-      headerElement.style.cursor = ''; // 重置鼠标样式
+      headerElement.style.cursor = '';
     }
-    // 清理全局监听器
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
   });
 });
-
-
 </script>
 
-
 <template>
-  <div ref="modalRootRef" class="fixed inset-0 z-[1000]" @click.self="closeCustomizer">
-    <div ref="dialogContentRef" class="bg-background text-foreground rounded-lg shadow-[0px_0px_15px_rgb(0_0_0_/_0.15)] w-full h-full md:w-[90%] md:max-w-[800px] md:h-[85vh] md:max-h-[700px] flex flex-col overflow-hidden">
-      <header ref="headerRef" class="flex justify-between items-center px-4 py-3 border-b border-border bg-header flex-shrink-0">
-        <h2 class="m-0 text-lg md:text-xl text-foreground">{{ t('styleCustomizer.title') }}</h2>
-        <button @click="closeCustomizer" class="bg-transparent border-none text-2xl md:text-3xl leading-none cursor-pointer text-text-secondary px-2 py-1 rounded hover:text-foreground hover:bg-black/10">&times;</button>
+  <div ref="modalRootRef" class="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 select-none" @click.self="closeCustomizer">
+    <div
+      ref="dialogContentRef"
+      class="bg-header text-foreground border border-border/80 rounded-2xl shadow-2xl w-full md:w-[94%] md:max-w-[920px] h-[92vh] md:h-[84vh] md:max-h-[720px] flex flex-col overflow-hidden"
+      style="background-color: var(--header-bg-color);"
+    >
+      <!-- 顶部 Header 拖拽栏 -->
+      <header
+        ref="headerRef"
+        class="flex justify-between items-center px-5 py-3.5 border-b border-border/70 bg-header/40 backdrop-blur-xs flex-shrink-0 select-none cursor-move"
+      >
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
+            <i class="fas fa-palette text-sm"></i>
+          </div>
+          <div>
+            <h2 class="text-sm md:text-base font-bold text-foreground tracking-tight leading-none">
+              {{ t('styleCustomizer.title', '外观自定义') }}
+            </h2>
+          </div>
+        </div>
+
+        <!-- 居中抓手标记 -->
+        <div class="hidden md:flex items-center gap-1 opacity-30">
+          <span class="w-1.5 h-1.5 rounded-full bg-foreground"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-foreground"></span>
+          <span class="w-1.5 h-1.5 rounded-full bg-foreground"></span>
+        </div>
+
+        <button
+          type="button"
+          @click="closeCustomizer"
+          class="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-muted/80 transition-colors cursor-pointer"
+          title="Esc"
+        >
+          <i class="fas fa-times text-xs"></i>
+        </button>
       </header>
-      <div class="flex flex-grow overflow-hidden flex-col md:flex-row"> 
-        
-        <nav class="w-full md:w-[180px] border-b md:border-b-0 md:border-r border-border p-2 md:p-4 bg-header flex-shrink-0 overflow-y-auto flex flex-row md:flex-col flex-wrap md:flex-nowrap justify-center md:justify-start"> 
+
+      <!-- 中间主体双栏区 -->
+      <div class="flex flex-grow overflow-hidden flex-col md:flex-row min-h-0">
+        <!-- 左侧精致垂直导航 -->
+        <nav class="w-full md:w-[200px] border-b md:border-b-0 md:border-r border-border/70 p-2.5 md:p-3 bg-muted/20 flex-shrink-0 overflow-y-auto flex flex-row md:flex-col gap-1 md:gap-1.5 justify-start">
           <button
+            type="button"
             @click="currentTab = 'ui'"
-            :class="[
-              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
-              { '!bg-button !text-button-text !font-bold': currentTab === 'ui' }
-            ]"
+            class="flex items-center gap-2.5 px-3 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all text-left cursor-pointer flex-shrink-0"
+            :class="currentTab === 'ui'
+              ? 'bg-primary text-white font-semibold shadow-xs'
+              : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
           >
-            {{ t('styleCustomizer.uiStyles') }}
+            <i class="fas fa-palette w-4 text-center text-xs"></i>
+            <span>{{ t('styleCustomizer.uiStyles', '界面配色') }}</span>
           </button>
+
           <button
+            type="button"
             @click="currentTab = 'terminal'"
-            :class="[
-              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
-              { '!bg-button !text-button-text !font-bold': currentTab === 'terminal' && !isEditingTheme } 
-            ]"
+            class="flex items-center gap-2.5 px-3 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all text-left cursor-pointer flex-shrink-0"
+            :class="currentTab === 'terminal' && !isEditingTheme
+              ? 'bg-primary text-white font-semibold shadow-xs'
+              : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
             :disabled="isEditingTheme"
           >
-            {{ t('styleCustomizer.terminalStyles') }}
+            <i class="fas fa-terminal w-4 text-center text-xs"></i>
+            <span>{{ t('styleCustomizer.terminalStyles', '终端风格') }}</span>
           </button>
+
           <button
+            type="button"
             @click="currentTab = 'highlight'"
-            :class="[
-              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
-              { '!bg-button !text-button-text !font-bold': currentTab === 'highlight' }
-            ]"
+            class="flex items-center gap-2.5 px-3 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all text-left cursor-pointer flex-shrink-0"
+            :class="currentTab === 'highlight'
+              ? 'bg-primary text-white font-semibold shadow-xs'
+              : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
             :disabled="isEditingTheme"
           >
-            {{ t('styleCustomizer.terminalHighlight', '代码高亮') }}
+            <i class="fas fa-highlighter w-4 text-center text-xs"></i>
+            <span>{{ t('styleCustomizer.terminalHighlight', '代码高亮') }}</span>
           </button>
-           <button
-            @click="currentTab = 'background'"
-            :class="[
-              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
-              { '!bg-button !text-button-text !font-bold': currentTab === 'background' }
-            ]"
-            :disabled="isEditingTheme"
-          >
-            {{ t('styleCustomizer.backgroundSettings') }}
-          </button>
+
           <button
-            @click="currentTab = 'other'"
-            :class="[
-              'block w-auto md:w-full px-3 py-2 md:py-[0.7rem] mb-0 md:mb-2 mx-1 md:mx-0 text-center md:text-left bg-transparent border border-transparent rounded cursor-pointer text-foreground text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-text-secondary',
-              { '!bg-button !text-button-text !font-bold': currentTab === 'other' } 
-            ]"
+            type="button"
+            @click="currentTab = 'background'"
+            class="flex items-center gap-2.5 px-3 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all text-left cursor-pointer flex-shrink-0"
+            :class="currentTab === 'background'
+              ? 'bg-primary text-white font-semibold shadow-xs'
+              : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
             :disabled="isEditingTheme"
           >
-            {{ t('styleCustomizer.otherSettings') }}
+            <i class="fas fa-image w-4 text-center text-xs"></i>
+            <span>{{ t('styleCustomizer.backgroundSettings', '背景效果') }}</span>
+          </button>
+
+          <button
+            type="button"
+            @click="currentTab = 'other'"
+            class="flex items-center gap-2.5 px-3 py-2 md:py-2.5 rounded-xl text-xs md:text-sm font-medium transition-all text-left cursor-pointer flex-shrink-0"
+            :class="currentTab === 'other'
+              ? 'bg-primary text-white font-semibold shadow-xs'
+              : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
+            :disabled="isEditingTheme"
+          >
+            <i class="fas fa-sliders-h w-4 text-center text-xs"></i>
+            <span>{{ t('styleCustomizer.otherSettings', '编辑器与其他') }}</span>
           </button>
         </nav>
-        
-        <main class="flex-grow p-3 md:p-4 md:px-6 overflow-y-auto min-h-0">
+
+        <!-- 右侧子页面内容容器 -->
+        <main class="flex-grow p-4 md:p-6 overflow-y-auto min-h-0 bg-background/40">
           <StyleCustomizerUiTab v-if="currentTab === 'ui'" ref="uiTabRef" />
           <StyleCustomizerTerminalTab
             v-if="currentTab === 'terminal'"
@@ -209,13 +263,36 @@ onMounted(() => {
           <StyleCustomizerHighlightTab v-if="currentTab === 'highlight'" />
           <StyleCustomizerBackgroundTab v-if="currentTab === 'background'" />
           <StyleCustomizerOtherTab v-if="currentTab === 'other'" />
-       </main>
+        </main>
       </div>
-      
-      <footer class="flex justify-end p-3 md:p-4 border-t border-border bg-footer flex-shrink-0 flex-wrap gap-2"> 
-        <button v-if="currentTab === 'ui'" @click="handleResetUiTheme" class="px-4 md:px-5 py-2 rounded font-bold ml-2 border border-border bg-header text-foreground hover:bg-border disabled:opacity-60 disabled:cursor-not-allowed text-sm md:text-base">{{ t('styleCustomizer.resetUiTheme') }}</button> 
-        <button v-if="currentTab === 'ui'" @click="handleSaveUiTheme" class="px-4 md:px-5 py-2 rounded font-bold ml-2 border border-button bg-button text-button-text hover:bg-button-hover hover:border-button-hover disabled:opacity-60 disabled:cursor-not-allowed text-sm md:text-base">{{ t('styleCustomizer.saveUiTheme') }}</button> 
-        <button @click="closeCustomizer" class="px-4 md:px-5 py-2 rounded font-bold ml-2 border border-border bg-header text-foreground hover:bg-border disabled:opacity-60 disabled:cursor-not-allowed text-sm md:text-base">{{ t('common.close') }}</button> 
+
+      <!-- 底部清爽操作栏 -->
+      <footer class="flex items-center justify-between px-5 py-3 border-t border-border/70 bg-header/30 backdrop-blur-xs flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <button
+            v-if="currentTab === 'ui'"
+            @click="handleResetUiTheme"
+            class="px-3.5 py-1.5 rounded-lg border border-border/80 bg-muted/40 text-text-secondary hover:text-foreground hover:bg-muted transition-colors text-xs font-medium cursor-pointer"
+          >
+            {{ t('styleCustomizer.resetUiTheme', '重置默认配色') }}
+          </button>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button
+            v-if="currentTab === 'ui'"
+            @click="handleSaveUiTheme"
+            class="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white font-medium text-xs transition-colors shadow-xs cursor-pointer"
+          >
+            {{ t('styleCustomizer.saveUiTheme', '保存界面配色') }}
+          </button>
+          <button
+            @click="closeCustomizer"
+            class="px-4 py-1.5 rounded-lg border border-border/80 bg-muted/40 text-text-secondary hover:text-foreground hover:bg-muted transition-colors text-xs font-medium cursor-pointer"
+          >
+            {{ t('common.close', '关闭') }}
+          </button>
+        </div>
       </footer>
     </div>
   </div>

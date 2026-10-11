@@ -61,7 +61,10 @@ const handleGoHome = () => {
       @click.stop
       @keydown.stop
     >
-      <div class="relative max-w-sm sm:max-w-md w-full bg-surface border border-border/80 rounded-2xl p-5 sm:p-8 shadow-2xl flex flex-col items-center text-center animate-scale-in mx-2">
+      <div
+        class="relative max-w-sm sm:max-w-md w-full bg-header border border-border/80 rounded-2xl p-5 sm:p-8 shadow-2xl flex flex-col items-center text-center animate-scale-in mx-2"
+        style="background-color: var(--header-bg-color);"
+      >
         <!-- 动态发光图标 -->
         <div class="relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary/10 border border-primary/30 text-primary mb-4 sm:mb-6 shadow-inner">
           <i class="fas fa-desktop text-2xl sm:text-3xl animate-pulse"></i>

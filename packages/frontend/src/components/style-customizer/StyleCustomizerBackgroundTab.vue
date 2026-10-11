@@ -6,28 +6,22 @@ import { useUiNotificationsStore } from '../../stores/uiNotifications.store';
 import { storeToRefs } from 'pinia';
 import { useConfirmDialog } from '../../composables/useConfirmDialog';
 
-
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
 const appearanceStore = useAppearanceStore();
 const notificationsStore = useUiNotificationsStore();
 
-// Existing state for background image and overlay
 const {
   terminalBackgroundImage,
   isTerminalBackgroundEnabled,
   currentTerminalBackgroundOverlayOpacity,
-  // terminalCustomHTML, // This will be replaced by preset logic
-  // HTML Preset related state from store
   localHtmlPresets,
   remoteHtmlPresets,
   remoteHtmlPresetsRepositoryUrl,
-  activeHtmlPresetTab, // This is the ref from the store
-  isLoadingHtmlPresets,
+  activeHtmlPresetTab,
   htmlPresetError,
 } = storeToRefs(appearanceStore);
 
-// Actions from store
 const {
   fetchLocalHtmlPresets,
   getLocalHtmlPresetContent,
@@ -41,24 +35,20 @@ const {
   applyHtmlPreset,
 } = appearanceStore;
 
-
 const localTerminalBackgroundEnabled = ref(true);
 const editableTerminalBackgroundOverlayOpacity = ref(0.5);
-// const localTerminalCustomHTML = ref(''); // Replaced by preset editing
 
 const terminalBgFileInput = ref<HTMLInputElement | null>(null);
 const uploadError = ref<string | null>(null);
 
-// Component's internal active tab, synced with store's activeHtmlPresetTab
 const currentActiveTab = ref<'local' | 'remote'>('local');
 
-// State for local preset editing/creating
+// 预设编辑表单状态
 const showPresetEditor = ref(false);
-const editingPreset = ref<{ name: string, content: string } | null>(null); // For editing existing
+const editingPreset = ref<{ name: string, content: string } | null>(null);
 const newPresetName = ref('');
 const newPresetContent = ref('');
 
-// State for remote presets
 const localRemoteHtmlPresetsRepositoryUrl = ref('');
 const localHtmlSearchTerm = ref('');
 const remoteHtmlSearchTerm = ref('');
@@ -66,13 +56,11 @@ const remoteHtmlSearchTerm = ref('');
 const localSpecificLoading = ref(false);
 const remoteSpecificLoading = ref(false);
 
-
 const initializeEditableState = () => {
   localTerminalBackgroundEnabled.value = isTerminalBackgroundEnabled.value;
   editableTerminalBackgroundOverlayOpacity.value = currentTerminalBackgroundOverlayOpacity.value;
-  // localTerminalCustomHTML.value = terminalCustomHTML.value || ''; // Replaced
   uploadError.value = null;
-  currentActiveTab.value = activeHtmlPresetTab.value; // Sync with store state
+  currentActiveTab.value = activeHtmlPresetTab.value;
   localRemoteHtmlPresetsRepositoryUrl.value = remoteHtmlPresetsRepositoryUrl.value || 'https://github.com/Heavrnl/nexus-terminal/tree/main/doc/custom_html_theme';
 };
 
@@ -85,12 +73,9 @@ onMounted(async () => {
     localSpecificLoading.value = false;
   }
 
-  // Fetch remote URL if not already set, or always? Per plan, store initializes it.
-  // If store's remoteHtmlPresetsRepositoryUrl is null, then fetch it.
   if (!remoteHtmlPresetsRepositoryUrl.value) {
     await fetchRemoteHtmlPresetsRepositoryUrl();
   }
-  // If a URL exists, fetch remote presets
   if (remoteHtmlPresetsRepositoryUrl.value) {
     remoteSpecificLoading.value = true;
     try {
@@ -113,7 +98,6 @@ watch(currentTerminalBackgroundOverlayOpacity, (newValue) => {
   }
 });
 
-// Watch store's activeHtmlPresetTab and update local component state
 watch(activeHtmlPresetTab, (newTab) => {
   currentActiveTab.value = newTab;
 });
@@ -123,73 +107,69 @@ watch(remoteHtmlPresetsRepositoryUrl, (newUrl) => {
 });
 
 const handleTriggerTerminalBgUpload = () => {
-    uploadError.value = null;
-    terminalBgFileInput.value?.click();
+  uploadError.value = null;
+  terminalBgFileInput.value?.click();
 };
 
 const handleTerminalBgUpload = async (event: Event) => {
-     const input = event.target as HTMLInputElement;
-    if (input.files && input.files[0]) {
-        const file = input.files[0];
-        try {
-            await appearanceStore.uploadTerminalBackground(file);
-            notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgUploadSuccess') });
-            input.value = '';
-        } catch (error: any) {
-            const determinedErrorMessage = error.message || t('styleCustomizer.uploadFailed');
-            uploadError.value = determinedErrorMessage;
-            notificationsStore.addNotification({ type: 'error', message: determinedErrorMessage });
-            input.value = '';
-        }
+  const input = event.target as HTMLInputElement;
+  if (input.files && input.files[0]) {
+    const file = input.files[0];
+    try {
+      await appearanceStore.uploadTerminalBackground(file);
+      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgUploadSuccess', '背景图片上传成功') });
+      input.value = '';
+    } catch (error: any) {
+      const msg = error.message || t('styleCustomizer.uploadFailed', '上传失败');
+      uploadError.value = msg;
+      notificationsStore.addNotification({ type: 'error', message: msg });
+      input.value = '';
     }
+  }
 };
 
 const handleRemoveTerminalBg = async () => {
-    try {
-        await appearanceStore.removeTerminalBackground();
-        notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgRemoved') });
-    } catch (error: any) {
-         console.error("移除终端背景失败:", error);
-         notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.removeBgFailed', { message: error.message }) });
-    }
+  try {
+    await appearanceStore.removeTerminalBackground();
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgRemoved', '已移除背景图片') });
+  } catch (error: any) {
+    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.removeBgFailed', { message: error.message }) });
+  }
 };
 
 const handleToggleTerminalBackground = async () => {
-    const newValue = !localTerminalBackgroundEnabled.value;
-    localTerminalBackgroundEnabled.value = newValue;
-    try {
-        await appearanceStore.setTerminalBackgroundEnabled(newValue);
-    } catch (error: any) {
-        console.error("更新终端背景启用状态失败:", error);
-        localTerminalBackgroundEnabled.value = !newValue;
-        notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorToggleTerminalBg', { message: error.message }) });
-    }
+  const newValue = !localTerminalBackgroundEnabled.value;
+  localTerminalBackgroundEnabled.value = newValue;
+  try {
+    await appearanceStore.setTerminalBackgroundEnabled(newValue);
+  } catch (error: any) {
+    localTerminalBackgroundEnabled.value = !newValue;
+    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorToggleTerminalBg', { message: error.message }) });
+  }
 };
 
 const handleSaveTerminalBackgroundOverlayOpacity = async () => {
   try {
     const opacity = Number(editableTerminalBackgroundOverlayOpacity.value);
     if (isNaN(opacity) || opacity < 0 || opacity > 1) {
-      notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorInvalidOpacityValue') });
+      notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorInvalidOpacityValue', '透明度数值无效') });
       return;
     }
     await appearanceStore.setTerminalBackgroundOverlayOpacity(opacity);
-    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgOverlayOpacitySaved') });
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.terminalBgOverlayOpacitySaved', '蒙版透明度已保存') });
   } catch (error: any) {
-    console.error("保存终端背景蒙版透明度失败:", error);
     notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.terminalBgOverlayOpacitySaveFailed', { message: error.message }) });
   }
 };
 
-// --- HTML Preset Functions ---
 const switchTab = (tab: 'local' | 'remote') => {
-  appearanceStore.activeHtmlPresetTab = tab; // Update store, which will update currentActiveTab via watcher
+  appearanceStore.activeHtmlPresetTab = tab;
 };
 
 const handleApplyPreset = async (htmlContent: string) => {
   try {
     await applyHtmlPreset(htmlContent);
-    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.htmlPresetApplied') });
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.htmlPresetApplied', '已应用主题') });
   } catch (error: any) {
     notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.htmlPresetApplyFailed', { message: error.message }) });
   }
@@ -197,14 +177,13 @@ const handleApplyPreset = async (htmlContent: string) => {
 
 const handleResetCustomHtml = async () => {
   try {
-    await applyHtmlPreset(''); // Apply empty HTML to reset
-    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.customHtmlResetSuccess', '自定义 HTML 已重置。') });
+    await applyHtmlPreset('');
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.customHtmlResetSuccess', '自定义 HTML 主题已清除') });
   } catch (error: any) {
     notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.customHtmlResetFailed', { message: error.message }) });
   }
 };
 
-// Local preset functions
 const openNewPresetEditor = () => {
   editingPreset.value = null;
   newPresetName.value = '';
@@ -212,27 +191,18 @@ const openNewPresetEditor = () => {
   showPresetEditor.value = true;
 };
 
-const openEditPresetEditor = (preset: { name: string, content: string }) => { // This is for editing CUSTOM themes
+const openEditPresetEditor = (preset: { name: string, content: string }) => {
   editingPreset.value = { ...preset };
-  newPresetName.value = preset.name.replace(/\.html$/, ''); // Remove .html for editing
+  newPresetName.value = preset.name.replace(/\.html$/, '');
   newPresetContent.value = preset.content;
   showPresetEditor.value = true;
 };
 
-// New function to handle "Edit" for a preset theme, which means creating a new custom theme based on it
 const handleEditPresetAsNew = async (preset: { name: string, type: 'preset' | 'custom' }) => {
-  if (preset.type !== 'preset') {
-    console.warn("handleEditPresetAsNew called with a non-preset theme. This should not happen.");
-    // Fallback to regular edit if it's somehow a custom theme
-    const content = await getLocalHtmlPresetContent(preset.name);
-    openEditPresetEditor({ name: preset.name, content });
-    return;
-  }
-
   try {
-    const content = await getLocalHtmlPresetContent(preset.name); // Get content of the preset
-    editingPreset.value = null; // Important: we are creating a NEW theme
-    newPresetName.value = `${preset.name.replace(/\.html$/, '')}(1)`; // Default new name
+    const content = await getLocalHtmlPresetContent(preset.name);
+    editingPreset.value = null;
+    newPresetName.value = `${preset.name.replace(/\.html$/, '')}_副本`;
     newPresetContent.value = content;
     showPresetEditor.value = true;
   } catch (e: any) {
@@ -240,123 +210,74 @@ const handleEditPresetAsNew = async (preset: { name: string, type: 'preset' | 'c
   }
 };
 
-
 const handleSaveLocalPreset = async () => {
-  const desiredBaseName = newPresetName.value.trim(); // Name without .html, from input
+  const desiredBaseName = newPresetName.value.trim();
   const content = newPresetContent.value.trim();
 
   if (!desiredBaseName) {
-    // It's recommended to add this key to your i18n files, e.g., "Preset name cannot be empty."
-    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorPresetNameRequired', '预设名称不能为空。') });
+    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorPresetNameRequired', '预设名称不能为空') });
     return;
   }
-  if (!content) {
-    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorPresetContentRequired') });
-    return;
-  }
+  const fileName = desiredBaseName.endsWith('.html') ? desiredBaseName : `${desiredBaseName}.html`;
 
-  const finalNewFullName = desiredBaseName.endsWith('.html') ? desiredBaseName : `${desiredBaseName}.html`;
-
-  if (editingPreset.value) { // Editing existing
-    const originalFullName = editingPreset.value.name; // Original name with .html
-
-    if (finalNewFullName === originalFullName) { // Name hasn't changed, only content might have
-      try {
-        await updateLocalHtmlPreset(originalFullName, content);
-        notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.localPresetUpdated') });
-        showPresetEditor.value = false;
-      } catch (error: any) {
-        notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.localPresetUpdateFailed', { message: error.message }) });
-      }
-    } else { // Name has changed: "Rename" by creating new and deleting old
-      try {
-        // Attempt to create the new preset first. If this name already exists, createLocalHtmlPreset should throw an error.
-        await createLocalHtmlPreset(finalNewFullName, content);
-        // If creation was successful, delete the old preset
-        await deleteLocalHtmlPreset(originalFullName);
-        // It's recommended to add this key to your i18n files, e.g., "Local preset '{oldName}' has been renamed to '{newName}'."
-        notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.localPresetRenamed', { oldName: originalFullName.replace(/\.html$/, ''), newName: desiredBaseName }) });
-        showPresetEditor.value = false;
-      } catch (error: any) {
-        // It's recommended to add this key to your i18n files, e.g., "Failed to rename local preset: {message}"
-        notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.localPresetRenameFailed', { message: error.message }) });
-      }
+  try {
+    if (editingPreset.value) {
+      await updateLocalHtmlPreset(editingPreset.value.name, content);
+      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.presetUpdatedSuccess', '预设已更新') });
+    } else {
+      await createLocalHtmlPreset(fileName, content);
+      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.presetCreatedSuccess', '预设创建成功') });
     }
-  } else { // Creating new
-    // Validation for new name and content already happened above
-    try {
-      await createLocalHtmlPreset(finalNewFullName, content);
-      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.localPresetCreated') });
-      showPresetEditor.value = false;
-      newPresetName.value = ''; // Clear fields for next new preset
-      newPresetContent.value = '';
-    } catch (error: any) {
-      notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.localPresetCreateFailed', { message: error.message }) });
-    }
+    showPresetEditor.value = false;
+    await fetchLocalHtmlPresets();
+  } catch (error: any) {
+    notificationsStore.addNotification({ type: 'error', message: error.message || t('styleCustomizer.presetSaveFailed', '保存失败') });
   }
 };
 
-const handleDeleteLocalPreset = async (name: string) => {
-  const displayName = name.replace(/\.html$/, '');
+const handleDeleteLocalPreset = async (presetName: string) => {
   const confirmed = await showConfirmDialog({
-    message: t('styleCustomizer.confirmDeletePreset', { name: displayName })
+    title: t('styleCustomizer.confirmDeletePresetTitle', '确认删除预设'),
+    message: t('styleCustomizer.confirmDeletePresetMessage', { name: presetName.replace(/\.html$/, '') }),
+    confirmText: t('common.delete', '删除')
   });
+
   if (confirmed) {
     try {
-      await deleteLocalHtmlPreset(name);
-      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.localPresetDeleted') });
+      await deleteLocalHtmlPreset(presetName);
+      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.presetDeletedSuccess', '预设已删除') });
+      await fetchLocalHtmlPresets();
     } catch (error: any) {
-      notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.localPresetDeleteFailed', { message: error.message }) });
+      notificationsStore.addNotification({ type: 'error', message: error.message });
     }
   }
 };
 
-// Remote preset functions
 const handleSaveRemoteRepositoryUrl = async () => {
-  // Allow saving an empty URL to disable remote presets
+  const trimmedUrl = localRemoteHtmlPresetsRepositoryUrl.value.trim();
   try {
-    await updateRemoteHtmlPresetsRepositoryUrl(localRemoteHtmlPresetsRepositoryUrl.value);
-    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.remoteUrlSaved') });
-    // Optionally fetch presets immediately after saving new URL
-    if (localRemoteHtmlPresetsRepositoryUrl.value) {
-      remoteSpecificLoading.value = true;
-      try {
-        await fetchRemoteHtmlPresets(localRemoteHtmlPresetsRepositoryUrl.value);
-      } finally {
-        remoteSpecificLoading.value = false;
-      }
-    } else {
-      // If URL is cleared, ensure remote presets are cleared and loading indicator is off.
-      // The store's fetchRemoteHtmlPresets might handle clearing presets if URL is empty.
-      if (remoteHtmlPresets.value?.length) remoteHtmlPresets.value = [];
-      remoteSpecificLoading.value = false;
+    await updateRemoteHtmlPresetsRepositoryUrl(trimmedUrl);
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.remoteUrlSaved', '远程仓库地址已保存') });
+    if (trimmedUrl) {
+      await handleLoadRemotePresets();
     }
   } catch (error: any) {
-    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.remoteUrlSaveFailed', { message: error.message }) });
-    remoteSpecificLoading.value = false; // Ensure loading indicator is off on error
+    notificationsStore.addNotification({ type: 'error', message: error.message });
   }
 };
 
 const handleLoadRemotePresets = async () => {
-  if (!remoteHtmlPresetsRepositoryUrl.value) {
-    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorSetRemoteUrlFirst') });
-    return;
-  }
   remoteSpecificLoading.value = true;
   try {
     await fetchRemoteHtmlPresets();
-     if (!htmlPresetError.value) {
-      notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.remotePresetsLoaded') });
-    }
-  } catch (error: any) { // This catch might not be needed if store handles errors
+    notificationsStore.addNotification({ type: 'success', message: t('styleCustomizer.remotePresetsLoaded', '远程主题列表已刷新') });
+  } catch (error: any) {
     notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.remotePresetsLoadFailed', { message: error.message }) });
   } finally {
     remoteSpecificLoading.value = false;
   }
 };
 
-
-// Placeholder for applying a local theme (needs to fetch content first)
 const applyLocalPreset = async (presetName: string) => {
   try {
     const content = await getLocalHtmlPresetContent(presetName);
@@ -366,12 +287,8 @@ const applyLocalPreset = async (presetName: string) => {
   }
 };
 
-// Placeholder for applying a remote theme (needs to fetch content first)
 const applyRemotePreset = async (downloadUrl?: string) => {
-  if (!downloadUrl) {
-    notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorMissingDownloadUrl') });
-    return;
-  }
+  if (!downloadUrl) return;
   try {
     const content = await getRemoteHtmlPresetContent(downloadUrl);
     await handleApplyPreset(content);
@@ -382,299 +299,336 @@ const applyRemotePreset = async (downloadUrl?: string) => {
 
 const filteredLocalHtmlPresets = computed(() => {
   const searchTerm = localHtmlSearchTerm.value.toLowerCase().trim();
-  let presets = [...localHtmlPresets.value]; // Make a copy to sort
+  let presets = [...localHtmlPresets.value];
   if (searchTerm) {
     presets = presets.filter(preset => preset.name.replace(/\.html$/, '').toLowerCase().includes(searchTerm));
   }
-  // Sort by name
   presets.sort((a, b) => a.name.replace(/\.html$/, '').localeCompare(b.name.replace(/\.html$/, '')));
   return presets;
 });
 
 const filteredRemoteHtmlPresets = computed(() => {
   const searchTerm = remoteHtmlSearchTerm.value.toLowerCase().trim();
-  let presets = [...remoteHtmlPresets.value]; // Make a copy to sort
+  let presets = [...remoteHtmlPresets.value];
   if (searchTerm) {
     presets = presets.filter(preset => preset.name.replace(/\.html$/, '').toLowerCase().includes(searchTerm));
   }
   presets.sort((a, b) => a.name.replace(/\.html$/, '').localeCompare(b.name.replace(/\.html$/, '')));
   return presets;
 });
-
-
 </script>
 
 <template>
-  <section>
-    <h3 class="mt-0 border-b border-border pb-2 mb-4 text-lg font-semibold text-foreground">{{ t('styleCustomizer.backgroundSettings') }}</h3>
-
-    <!-- Tab Switcher -->
-
-
-    <hr class="my-4 md:my-8 border-border">
-
-    <!-- Existing Terminal Background Image Settings -->
-    <div class="flex items-center justify-between mb-3">
-      <h4 class="m-0 text-base font-semibold text-foreground">{{ t('styleCustomizer.terminalBackground') }}</h4>
-      <button
-        type="button"
-        @click="handleToggleTerminalBackground"
-        :class="[
-          'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
-          localTerminalBackgroundEnabled ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-        ]"
-        role="switch"
-        :aria-checked="localTerminalBackgroundEnabled"
-      >
-        <span
-          aria-hidden="true"
-          :class="[
-            'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
-            localTerminalBackgroundEnabled ? 'translate-x-5' : 'translate-x-0'
-          ]"
-        ></span>
-      </button>
-    </div>
-
-     <div v-if="localTerminalBackgroundEnabled">
-       <div class="w-full h-[100px] md:h-[150px] border border-dashed border-border mb-2 flex justify-center items-center text-text-secondary bg-cover bg-center bg-no-repeat rounded bg-header relative overflow-hidden" :style="{ backgroundImage: terminalBackgroundImage ? `url(${terminalBackgroundImage})` : 'none' }">
-           <div
-             v-if="terminalBackgroundImage"
-             class="absolute inset-0"
-             :style="{ backgroundColor: `rgba(0, 0, 0, ${editableTerminalBackgroundOverlayOpacity})` }"
-           ></div>
-           <span v-if="!terminalBackgroundImage" class="bg-[var(--app-bg-color)]/80 px-3 py-1.5 rounded text-sm font-medium text-foreground shadow-sm relative z-10">{{ t('styleCustomizer.noBackground') }}</span>
-       </div>
-     <div class="flex gap-2 mb-4 flex-wrap items-center">
-        <button @click="handleTriggerTerminalBgUpload" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed">{{ t('styleCustomizer.uploadTerminalBg') }}</button>
-        <button @click="handleRemoveTerminalBg" :disabled="!terminalBackgroundImage" class="px-3 py-1.5 text-sm border rounded transition duration-200 ease-in-out whitespace-nowrap bg-error/10 text-error border-error/30 hover:bg-error/20 disabled:opacity-60 disabled:cursor-not-allowed">{{ t('styleCustomizer.removeTerminalBg') }}</button>
-        <input type="file" ref="terminalBgFileInput" @change="handleTerminalBgUpload" accept="image/*" class="hidden" />
-     </div>
-
-     <div class="mt-4 pt-4 border-t border-border/50">
-        <label for="terminalBgOverlayOpacity" class="block text-sm font-medium text-foreground mb-1">{{ t('styleCustomizer.terminalBgOverlayOpacity', '终端背景蒙版透明度:') }}</label>
-        <div class="flex items-center gap-3">
-            <input
-              type="range"
-              id="terminalBgOverlayOpacity"
-              v-model.number="editableTerminalBackgroundOverlayOpacity"
-              min="0"
-              max="1"
-              step="0.01"
-              class="w-full cursor-pointer accent-primary"
-            />
-            <span class="text-sm text-foreground min-w-[3em] text-right">{{ editableTerminalBackgroundOverlayOpacity.toFixed(2) }}</span>
-            <button @click="handleSaveTerminalBackgroundOverlayOpacity" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap">{{ t('common.save') }}</button>
-        </div>
-     </div>
-     <!-- Old custom HTML textarea is removed from here -->
-    </div>
-    <div v-else class="p-4 text-center text-text-secondary italic border border-dashed border-border/50 rounded-md">
-      {{ t('styleCustomizer.terminalBgDisabled', '终端背景功能已禁用。') }}
-    </div>
-
-    <hr class="my-6 border-border">
-    <div v-if="localTerminalBackgroundEnabled">
-
-    <!-- Tab Switcher for HTML Background Themes -->
-    <div class="flex items-center gap-2 mb-3">
-      <h4 class="mt-0 text-base font-semibold text-foreground">{{ t('styleCustomizer.htmlBackgroundThemes') }}</h4>
-      <button
-        @click="handleResetCustomHtml"
-        type="button"
-        class="p-1.5 text-xs rounded text-foreground hover:bg-border transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-primary"
-      >
-        <i class="fa-solid fa-rotate-left"></i>
-      </button>
-    </div>
-    <div class="mb-4 flex border-b border-border">
-      <button
-        @click="switchTab('local')"
-        :class="['px-4 py-2 -mb-px border-b-2 transition-colors duration-150', currentActiveTab === 'local' ? 'border-primary text-primary font-semibold' : 'border-transparent hover:border-gray-400 dark:hover:border-gray-500 text-text-secondary hover:text-foreground']"
-      >
-        {{ t('styleCustomizer.localThemes') }}
-      </button>
-      <button
-        @click="switchTab('remote')"
-        :class="['px-4 py-2 -mb-px border-b-2 transition-colors duration-150', currentActiveTab === 'remote' ? 'border-primary text-primary font-semibold' : 'border-transparent hover:border-gray-400 dark:hover:border-gray-500 text-text-secondary hover:text-foreground']"
-      >
-        {{ t('styleCustomizer.remoteThemes') }}
-      </button>
-    </div>
-
-    <!-- Content based on active tab -->
-    <div v-if="currentActiveTab === 'local'">
-      <!-- Flex container for search and new preset button -->
-      <div class="mb-4 flex items-center gap-4">
-        <input
-          type="text"
-          v-model="localHtmlSearchTerm"
-          :placeholder="t('styleCustomizer.searchLocalThemesPlaceholder', '搜索本地主题...')"
-          class="flex-grow border border-border px-[0.7rem] py-2 rounded text-sm bg-background text-foreground box-border transition duration-200 ease-in-out focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-        <button @click="openNewPresetEditor" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap flex-shrink-0">
-          {{ t('styleCustomizer.addNewTheme') }}
+  <div class="space-y-6">
+    <!-- 背景图片与蒙版卡片 -->
+    <div class="bg-card/40 border border-border/70 rounded-xl p-4 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <i class="fas fa-image text-primary text-xs"></i>
+          终端背景图片
+        </h4>
+        <button
+          type="button"
+          @click="handleToggleTerminalBackground"
+          class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+          :class="localTerminalBackgroundEnabled ? 'bg-primary' : 'bg-muted-foreground/30'"
+        >
+          <span
+            class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition duration-200 ease-in-out"
+            :class="localTerminalBackgroundEnabled ? 'translate-x-4' : 'translate-x-0'"
+          ></span>
         </button>
       </div>
 
-      <div v-if="localSpecificLoading" class="text-center p-4 text-text-secondary">
-        {{ t('common.loading') }}
-      </div>
-      <ul v-else-if="filteredLocalHtmlPresets.length > 0" class="list-none p-0 mt-4 max-h-[200px] md:max-h-[280px] overflow-y-auto border border-border rounded bg-background">
-        <li v-for="(preset, index) in filteredLocalHtmlPresets" :key="preset.name"
-           :class="[
-             'block md:grid md:grid-cols-[1fr_auto] items-center px-3 py-2.5 text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out gap-2',
-             index < filteredLocalHtmlPresets.length - 1 ? 'border-b border-border' : '',
-             'hover:bg-header'
-           ]"
+      <div v-if="localTerminalBackgroundEnabled" class="space-y-4">
+        <!-- 预览视窗 -->
+        <div
+          class="w-full h-36 rounded-xl border border-border/70 relative overflow-hidden bg-cover bg-center flex items-center justify-center transition-all group"
+          :style="{ backgroundImage: terminalBackgroundImage ? `url(${terminalBackgroundImage})` : 'none', backgroundColor: 'var(--header-bg-color)' }"
         >
-          <div class="flex items-center gap-2 md:col-start-1 md:col-end-2 overflow-hidden text-ellipsis whitespace-nowrap mb-2 md:mb-0">
-            <span class="text-foreground font-medium" :title="preset.name.replace(/\.html$/, '')">{{ preset.name.replace(/\.html$/, '') }}</span>
-            <span v-if="preset.type === 'preset'" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-200">
-              {{ t('styleCustomizer.presetTag', '预设') }}
-            </span>
-            <span v-else-if="preset.type === 'custom'" class="px-2 py-0.5 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-200">
-              {{ t('styleCustomizer.customTag', '自定义') }}
-            </span>
-          </div>
-          <div class="flex md:col-start-2 md:col-end-3 flex-shrink-0 gap-2 justify-start md:justify-end flex-wrap">
-            <button @click="applyLocalPreset(preset.name)"
-                    :title="t('styleCustomizer.applyThemeTooltip', 'Apply this theme')"
-                    class="px-3 py-1.5 text-xs md:text-sm border rounded transition-colors duration-200 ease-in-out whitespace-nowrap border-border bg-header text-foreground hover:bg-border hover:border-text-secondary">
-              {{ t('common.apply') }}
+          <!-- 蒙版 -->
+          <div
+            v-if="terminalBackgroundImage"
+            class="absolute inset-0 transition-opacity"
+            :style="{ backgroundColor: `rgba(0, 0, 0, ${editableTerminalBackgroundOverlayOpacity})` }"
+          ></div>
+
+          <!-- 操作按钮悬浮或居中 -->
+          <div class="relative z-10 flex items-center gap-2">
+            <button
+              type="button"
+              @click="handleTriggerTerminalBgUpload"
+              class="px-3 py-1.5 text-xs font-medium bg-background/80 hover:bg-background text-foreground backdrop-blur-md border border-border/80 rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+            >
+              <i class="fas fa-cloud-upload-alt text-primary"></i>
+              {{ terminalBackgroundImage ? '更换图片' : '上传背景图' }}
             </button>
             <button
-              v-if="preset.type === 'custom'"
-              @click="async () => {
-                try {
-                  const content = await getLocalHtmlPresetContent(preset.name);
-                  openEditPresetEditor({ name: preset.name, content });
-                } catch (e: any) {
-                  notificationsStore.addNotification({ type: 'error', message: t('styleCustomizer.errorFetchingPresetContentForEdit', { message: e.message }) });
-                }
-              }"
-              :title="t('common.edit')"
-              class="px-3 py-1.5 text-xs md:text-sm border rounded transition-colors duration-200 ease-in-out whitespace-nowrap border-border bg-header text-foreground hover:bg-border hover:border-text-secondary">
-              {{ t('common.edit') }}
-            </button>
-            <button
-              v-if="preset.type === 'preset'"
-              @click="handleEditPresetAsNew(preset)"
-              :title="t('styleCustomizer.editAsNewTooltip', '编辑为新自定义主题')"
-              class="px-3 py-1.5 text-xs md:text-sm border rounded transition-colors duration-200 ease-in-out whitespace-nowrap border-border bg-header text-foreground hover:bg-border hover:border-text-secondary">
-              {{ t('common.edit') }}
-            </button>
-            <button
-              v-if="preset.type === 'custom'"
-              @click="handleDeleteLocalPreset(preset.name)"
-              :title="t('common.delete')"
-              class="px-3 py-1.5 text-xs md:text-sm border rounded transition-colors duration-200 ease-in-out whitespace-nowrap bg-error/10 text-error border-error/30 hover:bg-error/20">
-              {{ t('common.delete') }}
+              v-if="terminalBackgroundImage"
+              type="button"
+              @click="handleRemoveTerminalBg"
+              class="px-3 py-1.5 text-xs font-medium bg-destructive/80 hover:bg-destructive text-destructive-foreground backdrop-blur-md rounded-lg shadow-sm transition-all flex items-center gap-1.5"
+            >
+              <i class="fas fa-trash-alt"></i>
+              清除
             </button>
           </div>
-        </li>
-      </ul>
-      <div v-else-if="htmlPresetError" class="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800" role="alert">
-        {{ htmlPresetError }}
-      </div>
-      <div v-else class="text-center p-4 text-text-secondary italic border border-dashed border-border rounded-md">
-        {{ localHtmlSearchTerm ? t('styleCustomizer.noMatchingLocalPresetsFound', '未找到匹配的本地主题') : t('styleCustomizer.noLocalPresetsFound') }}
+          <input type="file" ref="terminalBgFileInput" @change="handleTerminalBgUpload" accept="image/*" class="hidden" />
+        </div>
+
+        <!-- 蒙版透明度平滑调节 -->
+        <div class="p-3 rounded-lg bg-background/50 border border-border/40 space-y-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-foreground font-medium">暗色蒙版遮罩</span>
+            <span class="font-mono text-primary font-semibold">
+              {{ Math.round(editableTerminalBackgroundOverlayOpacity * 100) }}%
+            </span>
+          </div>
+          <input
+            type="range"
+            v-model.number="editableTerminalBackgroundOverlayOpacity"
+            @change="handleSaveTerminalBackgroundOverlayOpacity"
+            min="0"
+            max="1"
+            step="0.01"
+            class="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+          />
+        </div>
       </div>
     </div>
 
-    <div v-if="currentActiveTab === 'remote'">
-      <!-- URL Input and Buttons Container -->
-      <div class="mb-4">
-        <label for="remoteRepoUrl" class="block text-sm font-medium text-foreground mb-1">{{ t('styleCustomizer.remoteHtmlPresetsRepositoryUrl') }}</label>
+    <!-- HTML 背景动态主题 (仅在开启背景功能时展示) -->
+    <div v-if="localTerminalBackgroundEnabled" class="bg-card/40 border border-border/70 rounded-xl p-4 shadow-sm space-y-4">
+      <div class="flex items-center justify-between">
+        <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <i class="fas fa-code text-primary text-xs"></i>
+          HTML 动态背景主题
+        </h4>
+        <button
+          type="button"
+          @click="handleResetCustomHtml"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 px-2 py-0.5 rounded hover:bg-accent/40"
+          title="清除应用的自定义 HTML"
+        >
+          <i class="fas fa-rotate-left text-[10px]"></i>
+          清除主题
+        </button>
+      </div>
+
+      <!-- 药丸 Tab 切换 -->
+      <div class="flex p-0.5 rounded-lg bg-muted/60 border border-border/50 max-w-xs">
+        <button
+          type="button"
+          @click="switchTab('local')"
+          class="flex-1 py-1 text-xs font-medium rounded-md transition-all text-center"
+          :class="currentActiveTab === 'local' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'"
+        >
+          本地主题
+        </button>
+        <button
+          type="button"
+          @click="switchTab('remote')"
+          class="flex-1 py-1 text-xs font-medium rounded-md transition-all text-center"
+          :class="currentActiveTab === 'remote' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'"
+        >
+          远程生态库
+        </button>
+      </div>
+
+      <!-- 本地主题内容 -->
+      <div v-if="currentActiveTab === 'local'" class="space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="relative flex-1">
+            <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-xs"></i>
+            <input
+              type="text"
+              v-model="localHtmlSearchTerm"
+              placeholder="搜索本地主题..."
+              class="w-full pl-7 pr-2.5 py-1 text-xs border border-border/70 rounded-lg bg-background/70 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <button
+            type="button"
+            @click="openNewPresetEditor"
+            class="px-2.5 py-1 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors flex items-center gap-1 shrink-0 shadow-sm"
+          >
+            <i class="fas fa-plus text-[10px]"></i>
+            新建主题
+          </button>
+        </div>
+
+        <div v-if="localSpecificLoading" class="text-center py-6 text-xs text-muted-foreground">
+          加载中...
+        </div>
+        <div v-else-if="filteredLocalHtmlPresets.length > 0" class="max-h-[220px] overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-1.5 bg-background/50">
+          <div
+            v-for="preset in filteredLocalHtmlPresets"
+            :key="preset.name"
+            class="flex items-center justify-between px-3 py-2 rounded-lg bg-card/50 border border-border/50 hover:border-border transition-all text-xs"
+          >
+            <div class="flex items-center gap-2 min-w-0 pr-2">
+              <span class="truncate text-foreground font-medium" :title="preset.name.replace(/\.html$/, '')">
+                {{ preset.name.replace(/\.html$/, '') }}
+              </span>
+              <span
+                class="text-[10px] px-1.5 py-0.2 rounded shrink-0 font-medium"
+                :class="preset.type === 'preset' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/30' : 'bg-green-500/10 text-green-500 border border-green-500/30'"
+              >
+                {{ preset.type === 'preset' ? '预设' : '自定义' }}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                @click="applyLocalPreset(preset.name)"
+                class="px-2.5 py-1 rounded text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-colors"
+              >
+                应用
+              </button>
+              <button
+                v-if="preset.type === 'custom'"
+                type="button"
+                @click="async () => {
+                  try {
+                    const content = await getLocalHtmlPresetContent(preset.name);
+                    openEditPresetEditor({ name: preset.name, content });
+                  } catch (e: any) {
+                    notificationsStore.addNotification({ type: 'error', message: e.message });
+                  }
+                }"
+                class="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                title="编辑"
+              >
+                <i class="fas fa-edit"></i>
+              </button>
+              <button
+                v-if="preset.type === 'preset'"
+                type="button"
+                @click="handleEditPresetAsNew(preset)"
+                class="px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                title="作为副本编辑"
+              >
+                <i class="fas fa-copy"></i>
+              </button>
+              <button
+                v-if="preset.type === 'custom'"
+                type="button"
+                @click="handleDeleteLocalPreset(preset.name)"
+                class="px-2 py-1 rounded text-xs text-destructive/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                title="删除"
+              >
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-center py-6 text-xs text-muted-foreground italic border border-dashed border-border/50 rounded-lg">
+          暂无可用本地主题
+        </div>
+      </div>
+
+      <!-- 远程主题内容 -->
+      <div v-if="currentActiveTab === 'remote'" class="space-y-3">
         <div class="flex items-center gap-2">
           <input
             type="text"
-            id="remoteRepoUrl"
             v-model="localRemoteHtmlPresetsRepositoryUrl"
-            class="flex-grow p-2 border border-border rounded bg-input text-foreground focus:ring-primary focus:border-primary"
-            :placeholder="t('styleCustomizer.remoteRepoUrlPlaceholder', 'https://github.com/Heavrnl/nexus-terminal/tree/main/doc/custom_html_theme')"
+            class="flex-1 px-3 py-1.5 text-xs border border-border/70 rounded-lg bg-background text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="GitHub 仓库主题目录地址..."
           />
-          <button @click="handleSaveRemoteRepositoryUrl" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap flex-shrink-0">
-            {{ t('common.save') }}
+          <button
+            type="button"
+            @click="handleSaveRemoteRepositoryUrl"
+            class="px-2.5 py-1.5 text-xs font-medium border border-border/70 rounded-lg bg-card hover:bg-accent/30 text-foreground transition-colors shrink-0"
+          >
+            保存地址
           </button>
-          <button @click="handleLoadRemotePresets" :disabled="!remoteHtmlPresetsRepositoryUrl || remoteSpecificLoading" class="px-3 py-1.5 text-sm border border-border rounded bg-header hover:bg-border transition duration-200 ease-in-out whitespace-nowrap disabled:opacity-50 flex-shrink-0">
-           {{ remoteSpecificLoading ? t('common.loading') : t('styleCustomizer.loadRemoteThemes') }}
-         </button>
+          <button
+            type="button"
+            @click="handleLoadRemotePresets"
+            :disabled="!remoteHtmlPresetsRepositoryUrl || remoteSpecificLoading"
+            class="px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shrink-0 disabled:opacity-50"
+          >
+            {{ remoteSpecificLoading ? '刷新中...' : '刷新生态库' }}
+          </button>
         </div>
-      </div>
 
-      <!-- Search Box Container -->
-      <div class="mb-4">
-        <input
-          type="text"
-          v-model="remoteHtmlSearchTerm"
-          :placeholder="t('styleCustomizer.searchRemoteThemesPlaceholder', '搜索远程主题...')"
-          class="border border-border px-[0.7rem] py-2 rounded text-sm bg-background text-foreground w-full box-border transition duration-200 ease-in-out focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-      </div>
-
-      <div v-if="remoteSpecificLoading && currentActiveTab === 'remote'" class="text-center p-4 text-text-secondary">
-        {{ t('common.loading') }}
-      </div>
-      <div v-else-if="htmlPresetError && currentActiveTab === 'remote'" class="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-red-200 dark:text-red-800" role="alert">
-        {{ htmlPresetError }}
-      </div>
-      <div v-else-if="!remoteHtmlPresetsRepositoryUrl" class="text-center p-4 text-text-secondary italic border border-dashed border-border rounded-md">
-        {{ t('styleCustomizer.pleaseSetRemoteUrl') }}
-      </div>
-      <ul v-else-if="filteredRemoteHtmlPresets.length > 0 && remoteHtmlPresetsRepositoryUrl" class="list-none p-0 mt-4 max-h-[200px] md:max-h-[280px] overflow-y-auto border border-border rounded bg-background">
-        <li v-for="(preset, index) in filteredRemoteHtmlPresets" :key="preset.name"
-           :class="[
-             'block md:grid md:grid-cols-[1fr_auto] items-center px-3 py-2.5 text-sm md:text-[0.95rem] transition-colors duration-200 ease-in-out gap-2',
-             index < filteredRemoteHtmlPresets.length - 1 ? 'border-b border-border' : '',
-             'hover:bg-header'
-           ]"
-        >
-          <span class="block md:col-start-1 md:col-end-2 overflow-hidden text-ellipsis whitespace-nowrap mb-2 md:mb-0 text-foreground font-medium" :title="preset.name.replace(/\.html$/, '')">{{ preset.name.replace(/\.html$/, '') }}</span>
-          <div class="flex md:col-start-2 md:col-end-3 flex-shrink-0 gap-2 justify-start md:justify-end flex-wrap">
-            <button @click="applyRemotePreset(preset.downloadUrl)" :disabled="!preset.downloadUrl"
-                    :title="t('styleCustomizer.applyThemeTooltip', 'Apply this theme')"
-                    class="px-3 py-1.5 text-xs md:text-sm border rounded transition-colors duration-200 ease-in-out whitespace-nowrap border-border bg-header text-foreground hover:bg-border hover:border-text-secondary disabled:opacity-50">
-              {{ t('common.apply') }}
+        <div v-if="filteredRemoteHtmlPresets.length > 0" class="max-h-[220px] overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-1.5 bg-background/50">
+          <div
+            v-for="preset in filteredRemoteHtmlPresets"
+            :key="preset.name"
+            class="flex items-center justify-between px-3 py-2 rounded-lg bg-card/50 border border-border/50 hover:border-border transition-all text-xs"
+          >
+            <span class="truncate text-foreground font-medium pr-2" :title="preset.name.replace(/\.html$/, '')">
+              {{ preset.name.replace(/\.html$/, '') }}
+            </span>
+            <button
+              type="button"
+              @click="applyRemotePreset(preset.downloadUrl)"
+              :disabled="!preset.downloadUrl"
+              class="px-2.5 py-1 rounded text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-colors shrink-0"
+            >
+              在线应用
             </button>
           </div>
-        </li>
-      </ul>
-      <div v-else-if="remoteHtmlPresetsRepositoryUrl" class="text-center p-4 text-text-secondary italic border border-dashed border-border rounded-md">
-        {{ remoteHtmlSearchTerm ? t('styleCustomizer.noMatchingRemotePresetsFound', '未找到匹配的远程主题') : t('styleCustomizer.noRemotePresetsFound') }}
-      </div>
-    </div>
-    </div> 
-
-
-    <!-- Preset Editor (Modal or Inline) - Simplified for now -->
-    <div v-if="showPresetEditor" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" @click.self="showPresetEditor = false">
-      <div class="bg-background p-6 rounded-lg shadow-xl w-full max-w-lg">
-        <div class="mb-4">
-          <label for="presetName" class="block text-sm font-medium text-foreground mb-1">{{ t('styleCustomizer.presetName') }}</label>
-          <input
-            type="text"
-            id="presetName"
-            v-model="newPresetName"
-            class="w-full p-2 border border-border rounded bg-input text-foreground focus:ring-primary focus:border-primary"
-            :placeholder="t('styleCustomizer.presetNamePlaceholder', 'my-theme')"
-          />
-        </div>
-        <div class="mb-4">
-          <label for="presetContent" class="block text-sm font-medium text-foreground mb-1">{{ t('styleCustomizer.presetContent') }}</label>
-          <textarea
-            id="presetContent"
-            v-model="newPresetContent"
-            rows="10"
-            class="w-full p-2 border border-border rounded bg-input text-foreground focus:ring-primary focus:border-primary"
-            :placeholder="t('styleCustomizer.customTerminalHTMLPlaceholder', '例如：<h1>Hello</h1>')"
-          ></textarea>
-        </div>
-        <div class="flex justify-end gap-2">
-          <button @click="showPresetEditor = false" class="px-4 py-2 text-sm border border-border rounded bg-header hover:bg-border transition">{{ t('common.cancel') }}</button>
-          <button @click="handleSaveLocalPreset" class="px-4 py-2 text-sm rounded bg-primary text-white hover:bg-primary/90 transition">{{ t('common.save') }}</button>
         </div>
       </div>
     </div>
-  </section>
+
+    <!-- 弹窗：编辑/新建本地主题 -->
+    <div v-if="showPresetEditor" class="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50" @click.self="showPresetEditor = false">
+      <div class="bg-card border border-border/80 p-5 rounded-2xl shadow-2xl w-full max-w-lg space-y-4">
+        <div class="flex items-center justify-between border-b border-border/60 pb-3">
+          <h4 class="text-sm font-semibold text-foreground">
+            {{ editingPreset ? '编辑主题' : '新建 HTML 动态主题' }}
+          </h4>
+          <button type="button" @click="showPresetEditor = false" class="text-muted-foreground hover:text-foreground">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label for="presetName" class="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">主题标识名</label>
+            <input
+              type="text"
+              id="presetName"
+              v-model="newPresetName"
+              placeholder="例如：cyber-matrix"
+              class="w-full px-3 py-2 text-xs border border-border/70 rounded-lg bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label for="presetContent" class="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">HTML / CSS 源码</label>
+            <textarea
+              id="presetContent"
+              v-model="newPresetContent"
+              rows="12"
+              placeholder="<div>...</div>&#10;<style>...</style>"
+              spellcheck="false"
+              class="w-full font-mono text-xs leading-relaxed border border-border/70 rounded-lg p-3 bg-background text-foreground resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2 border-t border-border/60">
+          <button
+            type="button"
+            @click="showPresetEditor = false"
+            class="px-4 py-1.5 text-xs border border-border/70 rounded-lg bg-card hover:bg-accent/30 text-foreground transition-colors"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            @click="handleSaveLocalPreset"
+            class="px-4 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm"
+          >
+            保存主题
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>

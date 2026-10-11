@@ -211,7 +211,10 @@ onMounted(() => {
       class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4"
       @click.self="handleCancel"
     >
-      <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-xl max-h-[90vh] flex flex-col">
+      <div
+        class="bg-header text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-xl max-h-[90vh] flex flex-col"
+        style="background-color: var(--header-bg-color);"
+      >
         <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">
           {{ t('connections.batchEdit.title', '批量编辑连接') }} ({{ props.connectionIds.length }} {{ t('connections.batchEdit.selectedItems', '项') }})
         </h3>

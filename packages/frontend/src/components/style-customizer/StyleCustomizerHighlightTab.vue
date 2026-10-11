@@ -423,9 +423,6 @@ const handleResetToDefault = () => {
           {{ t('styleCustomizer.groupsList', '高亮语义分组') }}
           <span class="font-normal text-text-secondary text-xs">({{ highlightStore.groups.length }})</span>
         </span>
-        <span class="text-xs text-text-secondary">
-          多 Matcher 自由组合 · 共享分组样式与优先级
-        </span>
       </div>
 
       <div class="space-y-2.5">

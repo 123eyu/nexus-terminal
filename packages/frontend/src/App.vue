@@ -398,6 +398,7 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
   max-height: var(--visual-viewport-height, 100dvh);
   overflow: hidden;
   font-family: var(--font-family-sans-serif);
+  background-color: var(--app-bg-color);
 }
 
 main {
@@ -405,5 +406,6 @@ main {
   min-height: 0;
   width: 100%;
   position: relative;
+  background-color: var(--app-bg-color);
 }
 </style>

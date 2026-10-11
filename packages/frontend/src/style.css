@@ -19,7 +19,13 @@
 
   /* Component Colors */
   --color-header: var(--header-bg-color);
+  --color-popover: var(--popover-bg-color, var(--app-bg-color));
   --color-footer: var(--footer-bg-color);
+  --color-card: var(--card-bg-color, var(--app-bg-color));
+  --color-surface: var(--surface-bg-color, var(--app-bg-color));
+  --color-surface-secondary: var(--surface-secondary-bg-color, var(--app-bg-color));
+  --color-muted: var(--muted-bg-color, var(--app-bg-color));
+  --color-accent: var(--link-active-bg-color);
   --color-button: var(--button-bg-color);
   --color-button-text: var(--button-text-color);
   --color-button-hover: var(--button-hover-bg-color);
@@ -54,6 +60,10 @@
   /* 组件颜色 */
   --header-bg-color: #f0f0f0;     /* 头部背景色 */
   --footer-bg-color: #f0f0f0;     /* 底部背景色 */
+  --card-bg-color: var(--app-bg-color); /* 卡片背景色，默认与 app 基础底色解耦保持一致 */
+  --surface-bg-color: var(--app-bg-color); /* 浮层表面背景色 */
+  --surface-secondary-bg-color: var(--app-bg-color); /* 次级表面背景色 */
+  --muted-bg-color: var(--app-bg-color);
   --button-bg-color: #007bff;     /* 按钮背景色 */
   --button-text-color: #ffffff;   /* 按钮文字颜色 */
   --button-hover-bg-color: #0056b3;/* 按钮悬停背景色 */
@@ -124,6 +134,19 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+  background-color: var(--app-bg-color);
+}
+
+#app-container, main {
+  background-color: var(--app-bg-color);
+}
+
+/* 弹窗与悬浮层坚实实体底色保底 */
+.bg-header {
+  background-color: var(--header-bg-color);
+}
+.bg-popover {
+  background-color: var(--header-bg-color);
 }
 
 /* 当软键盘弹起时，底部安全区归零，避免键盘上方产生冗余空白缝隙 */
