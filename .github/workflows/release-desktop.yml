@@ -43,7 +43,6 @@ jobs:
         shell: pwsh
         run: |
           $ref = "${{ github.ref_name }}"
-          $event = "${{ github.event_name }}"
           $pkg = Get-Content package.json | ConvertFrom-Json
           $pkgVersion = $pkg.version
 
@@ -68,55 +67,39 @@ jobs:
             git tag -a $tag -m "Release $tag"
             git push origin $tag
             Write-Host "✅ 标签 $tag 创建并推送成功！"
-            "should_build=true" >> $env:GITHUB_OUTPUT
           } else {
-            Write-Host "ℹ️ 标签 $tag 已存在。"
-            if ($event -eq "workflow_dispatch" -or $ref -like "v*") {
-              Write-Host "👉 手动或指定 Tag 触发，执行全量构建打包流程。"
-              "should_build=true" >> $env:GITHUB_OUTPUT
-            } else {
-              Write-Host "ℹ️ main 分支常规提交且当前版本 $tag 已经发布过，跳过重复构建以节约资源。"
-              "should_build=false" >> $env:GITHUB_OUTPUT
-            }
+            Write-Host "ℹ️ 标签 $tag 已存在，将直接基于该标签发布/更新 Release 产物。"
           }
 
       - name: 配置 Node.js 运行时环境
-        if: steps.tag_step.outputs.should_build == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
       - name: 配置 Rust 稳定版编译工具链
-        if: steps.tag_step.outputs.should_build == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
       - name: 启用 Rust 编译缓存
-        if: steps.tag_step.outputs.should_build == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'packages/desktop/src-tauri -> target'
 
       - name: 安装项目依赖
-        if: steps.tag_step.outputs.should_build == 'true'
         run: npm ci || npm install
 
       - name: 构建前端生产包 (Frontend)
-        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run build --prefix packages/frontend
 
       - name: 构建后端生产代码 (Backend)
-        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run build --prefix packages/backend
 
       - name: 全量打包桌面端 (Tauri v2 + Node Sidecar)
-        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run desktop:build
 
       - name: 归整与压缩 Release 交付产物
-        if: steps.tag_step.outputs.should_build == 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-artifacts -Force | Out-Null
@@ -152,7 +135,6 @@ jobs:
           Get-Content "release-artifacts/checksums-sha256.txt"
 
       - name: 发布至 GitHub Release (默认发布为草稿 Draft，方便撰写文案)
-        if: steps.tag_step.outputs.should_build == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag_step.outputs.tag }}
