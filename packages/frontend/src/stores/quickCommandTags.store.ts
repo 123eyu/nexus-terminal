@@ -121,15 +121,17 @@ export const useQuickCommandTagsStore = defineStore('quickCommandTags', () => {
     }
 
     // 删除快捷指令标签
-    async function deleteTag(id: number): Promise<boolean> {
+    async function deleteTag(id: number, deleteCommands: boolean = false): Promise<boolean> {
         isLoading.value = true;
         error.value = null;
         try {
-            // 使用新的 API 端点
-            await apiClient.delete(`/quick-command-tags/${id}`);
+            // 使用新的 API 端点，支持带参删除指令
+            await apiClient.delete(`/quick-command-tags/${id}`, {
+                params: { deleteCommands }
+            });
             localStorage.removeItem('quickCommandTagsCache');
             await fetchTags();
-            uiNotificationsStore.showSuccess('快捷指令标签已删除');
+            uiNotificationsStore.showSuccess(deleteCommands ? '快捷指令分组及其中指令已删除' : '快捷指令标签已删除');
             return true;
         } catch (err: any) {
             console.error('[QuickCmdTagStore] Failed to delete tag:', err);

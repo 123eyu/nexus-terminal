@@ -397,6 +397,16 @@
       @close="closeForm"
     />
 
+    <!-- 删除分组确认模态框 -->
+    <DeleteQuickCommandFolderModal
+      :visible="showDeleteFolderModal"
+      :folder-name="folderToDelete?.name || ''"
+      :command-count="folderToDelete ? getFolderCommandCount(folderToDelete.id) : 0"
+      :is-loading="isDeletingFolder"
+      @confirm="handleConfirmDeleteFolder"
+      @close="showDeleteFolderModal = false; folderToDelete = null"
+    />
+
     <!-- Context Menu for Quick Commands -->
     <div
       v-if="quickCommandContextMenuVisible"
@@ -550,6 +560,7 @@ import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useI18n } from 'vue-i18n';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
+import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store'; 
 import { useSettingsStore } from '../stores/settings.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
@@ -1335,24 +1346,38 @@ const confirmCreateQuickCommandFolder = async () => {
   }
 };
 
-const handleDeleteFolder = async (folderId: number, folderName: string, event?: Event) => {
-  if (event) event.stopPropagation();
-  const confirmed = await showConfirmDialog({
-    title: t('folders.deleteFolder', '删除文件夹'),
-    message: t('folders.deleteFolderConfirm', { name: folderName }),
-    confirmText: t('common.delete', '删除'),
-  });
-  if (!confirmed) return;
+const showDeleteFolderModal = ref(false);
+const folderToDelete = ref<{ id: number; name: string } | null>(null);
+const isDeletingFolder = ref(false);
 
+const getFolderCommandCount = (folderId: number): number => {
+  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(folderId)).length;
+};
+
+const handleDeleteFolder = (folderId: number, folderName: string, event?: Event) => {
+  if (event) event.stopPropagation();
+  folderToDelete.value = { id: folderId, name: folderName };
+  showDeleteFolderModal.value = true;
+};
+
+const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
+  if (!folderToDelete.value) return;
+  const fid = folderToDelete.value.id;
+  isDeletingFolder.value = true;
   try {
-    const success = await quickCommandTagsStore.deleteFolder(folderId);
+    const success = await quickCommandTagsStore.deleteFolder(fid, deleteCommands);
     if (success) {
-      uiNotificationsStore.showSuccess(t('folders.folderDeleted', '文件夹已删除'));
-      await quickCommandTagsStore.fetchTags();
-      await quickCommandsStore.fetchQuickCommands();
+      showDeleteFolderModal.value = false;
+      folderToDelete.value = null;
+      await Promise.all([
+        quickCommandTagsStore.fetchTags(),
+        quickCommandsStore.fetchQuickCommands()
+      ]);
     }
   } catch (error: any) {
     uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
+  } finally {
+    isDeletingFolder.value = false;
   }
 };
 

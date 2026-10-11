@@ -106,13 +106,14 @@ export const getAllQuickCommands = async (sortBy: 'name' | 'usage_count' = 'name
     if (sortBy === 'usage_count') {
         orderByClause = 'ORDER BY qc.usage_count DESC, qc.name ASC'; // 按使用频率降序，同频率按名称升序
     }
-    // 使用 LEFT JOIN 连接关联表，并使用 GROUP_CONCAT 获取标签 ID 字符串
+    // 使用 LEFT JOIN 连接关联表与标签表，确保只提取真实存在的有效标签 ID
     const sql = `
         SELECT
             qc.id, qc.name, qc.command, qc.usage_count, qc.variables, qc.background_color, qc.created_at, qc.updated_at,
-            GROUP_CONCAT(qta.tag_id) as tag_ids_str
+            GROUP_CONCAT(qt.id) as tag_ids_str
          FROM quick_commands qc
          LEFT JOIN quick_command_tag_associations qta ON qc.id = qta.quick_command_id
+         LEFT JOIN quick_command_tags qt ON qta.tag_id = qt.id
          GROUP BY qc.id
          ${orderByClause}`;
     try {
@@ -165,13 +166,14 @@ export const incrementUsageCount = async (id: number): Promise<boolean> => {
  * @returns 返回找到的快捷指令条目及标签 ID，如果未找到则返回 undefined
  */
 export const findQuickCommandById = async (id: number): Promise<QuickCommandWithTags | undefined> => {
-    // 使用 LEFT JOIN 连接关联表，并使用 GROUP_CONCAT 获取标签 ID 字符串
+    // 使用 LEFT JOIN 连接关联表与标签表，确保只提取真实存在的有效标签 ID
     const sql = `
         SELECT
             qc.id, qc.name, qc.command, qc.usage_count, qc.variables, qc.background_color, qc.created_at, qc.updated_at,
-            GROUP_CONCAT(qta.tag_id) as tag_ids_str
+            GROUP_CONCAT(qt.id) as tag_ids_str
          FROM quick_commands qc
          LEFT JOIN quick_command_tag_associations qta ON qc.id = qta.quick_command_id
+         LEFT JOIN quick_command_tags qt ON qta.tag_id = qt.id
          WHERE qc.id = ?
          GROUP BY qc.id`;
     try {

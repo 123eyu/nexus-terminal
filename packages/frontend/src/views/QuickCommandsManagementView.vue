@@ -581,6 +581,16 @@
       :command-to-edit="commandToEdit"
       @close="closeAddEditModal"
     />
+
+    <!-- 删除分组确认模态框 -->
+    <DeleteQuickCommandFolderModal
+      :visible="showDeleteFolderModal"
+      :folder-name="folderToDelete?.name || ''"
+      :command-count="folderToDelete ? getFolderCommandsCount(folderToDelete.id) : 0"
+      :is-loading="isDeletingFolder"
+      @confirm="handleConfirmDeleteFolder"
+      @close="showDeleteFolderModal = false; folderToDelete = null"
+    />
   </div>
 </template>
 
@@ -596,6 +606,7 @@ import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { resolveEffectiveColor, getItemColoredCardStyle } from '../utils/colorUtils';
 import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
+import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
 
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
@@ -643,10 +654,24 @@ onMounted(async () => {
   ]);
 });
 
+// 文件夹删除模态框状态
+const showDeleteFolderModal = ref(false);
+const folderToDelete = ref<QuickCommandTag | null>(null);
+const isDeletingFolder = ref(false);
+
+// 计算属性：有效文件夹 ID 集合
+const validFolderIds = computed(() => new Set(quickCommandTagsStore.folders.map(f => f.id)));
+
+// 判断一条快捷指令是否属于未分类：无标签，或关联的全部标签均已不存在
+const isCommandUncategorized = (cmd: QuickCommandFE): boolean => {
+  if (!cmd.tagIds || cmd.tagIds.length === 0) return true;
+  return !cmd.tagIds.some(tid => validFolderIds.value.has(tid));
+};
+
 // 计算属性：全部指令与未分类指令计数
 const allCommandsCount = computed(() => quickCommandsStore.quickCommandsList.length);
 const uncategorizedCommandsCount = computed(() => {
-  return quickCommandsStore.quickCommandsList.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0).length;
+  return quickCommandsStore.quickCommandsList.filter(cmd => isCommandUncategorized(cmd)).length;
 });
 
 const getFolderCommandsCount = (tagId: number): number => {
@@ -673,7 +698,7 @@ const displayedCommands = computed(() => {
 
   // 1. 文件夹筛选
   if (activeFolder.value === 'uncategorized') {
-    list = list.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0);
+    list = list.filter(cmd => isCommandUncategorized(cmd));
   } else if (typeof activeFolder.value === 'number') {
     const fid = activeFolder.value;
     list = list.filter(cmd => cmd.tagIds && cmd.tagIds.includes(fid));
@@ -791,19 +816,33 @@ const handleFinishRenameFolder = async () => {
   }
 };
 
-// 文件夹删除
-const handleDeleteFolder = async (folder: QuickCommandTag) => {
-  const confirmed = await showConfirmDialog({
-    message: t('folders.deleteConfirm', { name: folder.name }, `确定要删除文件夹 "${folder.name}" 吗？里面的指令将变为未分类。`)
-  });
-  if (confirmed) {
-    const success = await quickCommandTagsStore.deleteFolder(folder.id);
+// 文件夹删除触发
+const handleDeleteFolder = (folder: QuickCommandTag) => {
+  folderToDelete.value = folder;
+  showDeleteFolderModal.value = true;
+};
+
+// 确认删除文件夹
+const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
+  if (!folderToDelete.value) return;
+  const fid = folderToDelete.value.id;
+  isDeletingFolder.value = true;
+  try {
+    const success = await quickCommandTagsStore.deleteFolder(fid, deleteCommands);
     if (success) {
-      uiNotificationsStore.showSuccess(t('folders.deletedSuccess', '文件夹已删除'));
-      if (activeFolder.value === folder.id) {
+      showDeleteFolderModal.value = false;
+      folderToDelete.value = null;
+      if (activeFolder.value === fid) {
         activeFolder.value = 'all';
       }
+      // 关键：同时重新加载快捷指令与分组列表，彻底同步未分类与其余数据
+      await Promise.all([
+        quickCommandTagsStore.fetchTags(),
+        quickCommandsStore.fetchQuickCommands()
+      ]);
     }
+  } finally {
+    isDeletingFolder.value = false;
   }
 };
 

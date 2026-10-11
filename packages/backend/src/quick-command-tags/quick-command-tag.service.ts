@@ -69,11 +69,12 @@ export const updateQuickCommandTag = async (id: number, name?: string, backgroun
 /**
  * 删除快捷指令标签
  * @param id 标签 ID
+ * @param deleteCommands 是否连带删除该标签下的快捷指令
  * @returns 返回是否成功删除
  */
-export const deleteQuickCommandTag = async (id: number): Promise<boolean> => {
+export const deleteQuickCommandTag = async (id: number, deleteCommands: boolean = false): Promise<boolean> => {
     try {
-        const success = await QuickCommandTagRepository.deleteQuickCommandTag(id);
+        const success = await QuickCommandTagRepository.deleteQuickCommandTag(id, deleteCommands);
          if (!success) {
              console.warn(`[Service] 尝试删除不存在的快捷指令标签 ID: ${id}`);
          }

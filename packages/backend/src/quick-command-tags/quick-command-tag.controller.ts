@@ -107,6 +107,8 @@ export const deleteQuickCommandTag = async (req: Request, res: Response): Promis
         return;
     }
 
+    const deleteCommands = req.query.deleteCommands === 'true' || req.body?.deleteCommands === true;
+
     try {
         // 先检查标签是否存在，以便返回 404
         const tagExists = await QuickCommandTagService.getQuickCommandTagById(id);
@@ -115,9 +117,9 @@ export const deleteQuickCommandTag = async (req: Request, res: Response): Promis
              return;
         }
 
-        const success = await QuickCommandTagService.deleteQuickCommandTag(id);
+        const success = await QuickCommandTagService.deleteQuickCommandTag(id, deleteCommands);
         if (success) {
-            res.status(200).json({ message: '快捷指令标签已删除' });
+            res.status(200).json({ message: deleteCommands ? '快捷指令分组及其中指令已删除' : '快捷指令标签已删除' });
         } else {
              // 如果上面检查存在但删除失败，说明有内部错误
              console.error(`[Controller] 删除快捷指令标签 ${id} 失败，但标签存在。`);
