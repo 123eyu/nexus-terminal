@@ -389,14 +389,18 @@ const handleToggleSelectAll = () => {
         <div
           v-for="({ item, index }) in virtualRange.visibleList"
           :key="item.filename"
-          class="group w-full flex items-center transition-all duration-150 cursor-pointer border"
+          class="group w-full flex items-center transition-all duration-300 cursor-pointer border"
           :class="[
             isCompact ? 'gap-2.5 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl',
             selectedItems.has(item.filename)
               ? 'bg-primary/15 border-primary/50 text-foreground shadow-2xs'
               : navigatingFolderName === item.filename
                 ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/40 text-foreground'
-                : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground',
+                : item._justAdded
+                  ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
+                  : item._justUpdated
+                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
+                    : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground',
             isEnteringNewDirectory ? 'mobile-card-enter' : ''
           ]"
           :style="isEnteringNewDirectory ? { animationDelay: `${Math.min(index, 8) * 35}ms` } : undefined"

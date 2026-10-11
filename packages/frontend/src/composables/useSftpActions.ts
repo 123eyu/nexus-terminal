@@ -24,12 +24,14 @@ export interface SftpManagerInstance {
    // State
    fileList: Readonly<ComputedRef<FileListItem[]>>;
    isLoading: Readonly<Ref<boolean>>;
+   isSilentRefreshing: Readonly<Ref<boolean>>; // 静默增量探测状态（不阻塞UI，不展示全屏遮罩）
    fileTree: Readonly<FileTreeNode>;
    initialLoadDone: Readonly<Ref<boolean>>;
    currentPath: Readonly<Ref<string>>;
 
    // Methods
-   loadDirectory: (path: string, forceRefresh?: boolean) => void;
+   loadDirectory: (path: string, forceRefresh?: boolean, silent?: boolean) => void;
+   silentRefreshCurrentDirectory: () => void; // 快捷静默刷新当前目录
    createDirectory: (newDirName: string) => void;
    createFile: (newFileName: string) => void;
    deleteItems: (items: FileListItem[]) => void;
@@ -73,6 +75,8 @@ export interface FileTreeNode {
     attrs: FileAttributes; // 使用正确的类型 FileAttributes
     children: FileTreeNode[] | null; // 子节点数组，null 表示未加载
     childrenLoaded: boolean; // 标记子节点是否已加载
+    _justAdded?: number; // 增量变动：新添加的时间戳
+    _justUpdated?: number; // 增量变动：修改的时间戳
     // 可以添加其他需要的状态，例如 isLoadingChildren
 }
 
@@ -94,9 +98,10 @@ export function createSftpActionsManager(
 ): SftpManagerInstance { // Add explicit return type
     const { sendMessage, onMessage, isConnected, isSftpReady } = wsDeps; // 使用注入的依赖
 
-    // const fileList = ref<FileListItem[]>([]); // 不再直接使用 fileList ref
     const isLoading = ref<boolean>(false);
-    const loadingRequestId = ref<string | null>(null); // 跟踪当前加载请求 ID
+    const isSilentRefreshing = ref<boolean>(false); // 静默增量更新标记
+    const loadingRequestId = ref<string | null>(null); // 跟踪当前常规加载请求 ID
+    const silentRequestIds = new Set<string>(); // 跟踪当前静默探测请求 ID
     // const error = ref<string | null>(null); // 不再使用本地 error ref
     const instanceSessionId = sessionId; // 保存会话 ID 用于日志
     const uiNotificationsStore = useUiNotificationsStore(); // 初始化 UI 通知 store
@@ -108,7 +113,7 @@ export function createSftpActionsManager(
     // 记录本实例发起的移动/复制请求，避免同会话多窗格并发监听导致重复提示与重复广播
     const pendingMoveRequestIds = new Set<string>();
     const pendingCopyRequestIds = new Set<string>();
-    const pendingDirectoryToLoad = ref<{ path: string; forceRefresh: boolean } | null>(null);
+    const pendingDirectoryToLoad = ref<{ path: string; forceRefresh: boolean; silent?: boolean } | null>(null);
 
     // *** 响应式文件树 ***
     const fileTree = reactive<FileTreeNode>({
@@ -231,11 +236,20 @@ export function createSftpActionsManager(
         return currentNode; // Return the final node found or created
     };
 
-    const loadDirectory = (path: string, forceRefresh: boolean = false) => { // 添加 forceRefresh 参数
-        // *** 修改：检查文件树 ***
+    const silentRefreshCurrentDirectory = () => {
+        if (!isSftpReady.value) return;
+        const current = currentPathRef.value;
+        if (!current) return;
+        // 如果当前有常规加载正在执行，跳过静默刷新
+        if (isLoading.value) return;
+        loadDirectory(current, true, true);
+    };
+
+    const loadDirectory = (path: string, forceRefresh: boolean = false, silent: boolean = false) => {
+        // *** 检查文件树 ***
         const targetNode = findNodeByPath(fileTree, path);
 
-        if (targetNode && targetNode.childrenLoaded && !forceRefresh) { // 检查 forceRefresh
+        if (!silent && targetNode && targetNode.childrenLoaded && !forceRefresh) {
             console.log(`[SFTP ${instanceSessionId}] 使用文件树缓存加载目录: ${path}`);
             // fileList 将通过 computed 属性更新，这里只需更新 currentPathRef
             isLoading.value = false;
@@ -243,26 +257,33 @@ export function createSftpActionsManager(
             return; // 子节点已加载且非强制刷新，无需请求
         }
 
-        // If node doesn't exist, children not loaded, or forceRefresh is true, proceed to fetch from backend.
-        // The onSftpReaddirSuccess handler will manage adding/updating the node in the tree.
-
-        // 如果是强制刷新且节点存在，重置其加载状态
-        if (forceRefresh && targetNode) {
-            console.log(`[SFTP ${instanceSessionId}] 强制刷新，重置节点 ${path} 的 childrenLoaded 状态`);
-            targetNode.childrenLoaded = false;
-            // 可选：如果需要立即清除旧数据，可以设置 targetNode.children = null;
-            // targetNode.children = null;
-        }
-
         if (!isSftpReady.value) {
-            // 使用通知 store 显示错误
-            uiNotificationsStore.showError(t('fileManager.errors.sftpNotReady'));
-            isLoading.value = false;
-            // 移除对只读 computed 属性的赋值
-            // fileList.value = [];
-            console.warn(`[SFTP ${instanceSessionId}] 尝试加载目录 ${path} 但 SFTP 未就绪。`); // 日志改为中文
+            if (!silent) {
+                uiNotificationsStore.showError(t('fileManager.errors.sftpNotReady'));
+                isLoading.value = false;
+                console.warn(`[SFTP ${instanceSessionId}] 尝试加载目录 ${path} 但 SFTP 未就绪。`);
+            }
             return;
         }
+
+        // 静默探测分支：不改变 isLoading 遮罩，不重置 childrenLoaded 状态，防止列表闪屏
+        if (silent) {
+            if (isLoading.value || silentRequestIds.size > 0) {
+                return; // 常规加载中或上一轮静默请求仍在执行，跳过本次
+            }
+            const requestId = generateRequestId();
+            silentRequestIds.add(requestId);
+            isSilentRefreshing.value = true;
+            sendMessage({ type: 'sftp:readdir', requestId: requestId, payload: { path } });
+            return;
+        }
+
+        // 非静默分支：
+        // 关键改进：刷新时不暴力将 targetNode.childrenLoaded 设为 false，保留现有数据以供就地增量对比，杜绝列表瞬间空白闪烁
+        if (forceRefresh && targetNode) {
+            console.log(`[SFTP ${instanceSessionId}] 刷新目录并执行就地增量比对: ${path}`);
+        }
+
         // *** 如果已经在加载，记录最新排队请求，待当前完成后自动无缝执行 ***
         if (isLoading.value) {
             if (path === currentPathRef.value && !forceRefresh) {
@@ -270,16 +291,14 @@ export function createSftpActionsManager(
                 return;
             }
             console.log(`[SFTP ${instanceSessionId}] 当前正在加载目录，已将最新目标目录加入排队: ${path} (forceRefresh=${forceRefresh})`);
-            pendingDirectoryToLoad.value = { path, forceRefresh };
+            pendingDirectoryToLoad.value = { path, forceRefresh, silent };
             return;
         }
 
-        console.log(`[SFTP ${instanceSessionId}] ${forceRefresh ? '强制' : ''}加载目录: ${path}`); // 日志改为中文，并标明是否强制
+        console.log(`[SFTP ${instanceSessionId}] ${forceRefresh ? '刷新' : '加载'}目录: ${path}`);
         isLoading.value = true;
-        // error.value = null; // 不再需要
-        // currentPathRef.value = path; // <-- 移除此行，延迟更新
         const requestId = generateRequestId();
-        loadingRequestId.value = requestId; // 记录当前加载请求 ID
+        loadingRequestId.value = requestId;
         sendMessage({ type: 'sftp:readdir', requestId: requestId, payload: { path } });
     };
 
@@ -697,100 +716,133 @@ export function createSftpActionsManager(
    // --- Message Handlers ---
 
     const onSftpReaddirSuccess = (payload: MessagePayload, message: WebSocketMessage) => {
-        const fileListPayload = payload as FileListItem[];
+        const fileListPayload = (payload as FileListItem[]) || [];
         const path = message.path; // e.g., /root
+
+        const isSilent = Boolean(message.requestId && silentRequestIds.has(message.requestId));
+        if (message.requestId && silentRequestIds.has(message.requestId)) {
+            silentRequestIds.delete(message.requestId);
+            if (silentRequestIds.size === 0) {
+                isSilentRefreshing.value = false;
+            }
+        }
 
         if (!path) {
             console.error(`[SFTP ${instanceSessionId}] Received readdir success without path!`);
-            // 如果收到的消息没有路径，但请求 ID 匹配，仍然需要重置加载状态
-            if (message.requestId === loadingRequestId.value) {
+            if (!isSilent && message.requestId === loadingRequestId.value) {
                 isLoading.value = false;
                 loadingRequestId.value = null;
             }
             return;
         }
 
-        // 检查请求 ID 是否匹配当前加载请求
-        if (message.requestId !== loadingRequestId.value) {
+        // 检查请求 ID 是否匹配当前常规加载请求
+        if (!isSilent && message.requestId !== loadingRequestId.value) {
             console.log(`[SFTP ${instanceSessionId}] Received stale readdir success for ${path} (ID: ${message.requestId}, expected: ${loadingRequestId.value}). Ignoring.`);
-            return; // 忽略过时的响应
+            return;
         }
 
-        console.log(`[SFTP ${instanceSessionId}] Received file list for directory ${path}`);
+        console.log(`[SFTP ${instanceSessionId}] ${isSilent ? '静默' : ''}收到目录 ${path} 的文件清单 (${fileListPayload.length} 项)`);
 
-        // Find or create the node for the directory itself (e.g., /root)
-        // Pass `true` to create placeholder nodes if the path doesn't fully exist yet.
         const targetNode = findNodeByPath(fileTree, path, true);
 
-        // If findNodeByPath failed even with createIfMissing=true, something is wrong.
         if (!targetNode) {
             console.error(`[SFTP ${instanceSessionId}] Failed to find or create node for path ${path}. Cannot update tree.`);
-            // Ensure loading state is reset if the current path failed
-            if (path === currentPathRef.value) {
-                 isLoading.value = false;
+            if (!isSilent && path === currentPathRef.value) {
+                isLoading.value = false;
             }
             return;
         }
 
-        // --- Merge Logic ---
-        const existingChildren = targetNode.children || [];
-        const newChildrenMap = new Map(fileListPayload.map(item => [item.filename, item]));
-        const mergedChildren: FileTreeNode[] = [];
-        const existingChildrenMap = new Map(existingChildren.map(node => [node.filename, node]));
+        // --- 就地差量更新引擎 (In-Place Diff Reconciler) ---
+        if (!targetNode.children) {
+            targetNode.children = fileListPayload.map(item => reactive({
+                filename: item.filename,
+                longname: item.longname,
+                attrs: { ...item.attrs },
+                children: item.attrs.isDirectory ? null : [],
+                childrenLoaded: !item.attrs.isDirectory,
+            }));
+            targetNode.children.sort((a, b) => sortFiles(a as any, b as any));
+        } else {
+            const existingChildren = targetNode.children;
+            const newItemsMap = new Map(fileListPayload.map(item => [item.filename, item]));
+            const existingMap = new Map(existingChildren.map(node => [node.filename, node]));
+            const now = Date.now();
 
-        // Process items from the server payload
-        for (const newItemData of fileListPayload) {
-            const existingNode = existingChildrenMap.get(newItemData.filename);
-
-            if (existingNode && existingNode.childrenLoaded && existingNode.attrs.isDirectory) {
-                // Keep the existing node if it's a directory and its children are already loaded
-                mergedChildren.push(existingNode);
-                console.log(`[SFTP ${instanceSessionId}] Merging: Kept existing loaded node ${path}/${existingNode.filename}`);
-            } else {
-                // Otherwise, create/update node based on new data
-                 const newNode: FileTreeNode = reactive({ // Ensure new nodes are reactive
-                    filename: newItemData.filename,
-                    longname: newItemData.longname,
-                    attrs: newItemData.attrs,
-                    // Preserve children if existingNode was a placeholder but somehow had children (edge case)
-                    children: (existingNode && !existingNode.childrenLoaded && existingNode.children)
-                              ? existingNode.children
-                              : (newItemData.attrs.isDirectory ? null : []),
-                    childrenLoaded: (existingNode && !existingNode.childrenLoaded && existingNode.children)
-                                   ? existingNode.childrenLoaded // Preserve loaded status if reusing placeholder children
-                                   : !newItemData.attrs.isDirectory,
-                });
-                mergedChildren.push(newNode);
-                 if(existingNode && !existingNode.childrenLoaded) {
-                     console.log(`[SFTP ${instanceSessionId}] Merging: Updated placeholder node ${path}/${newNode.filename}`);
-                 } else if (!existingNode) {
-                     console.log(`[SFTP ${instanceSessionId}] Merging: Added new node ${path}/${newNode.filename}`);
-                 }
+            // 1. 就地移除（Delete）：移除已在服务端删除的节点
+            for (let i = existingChildren.length - 1; i >= 0; i--) {
+                const child = existingChildren[i];
+                if (!newItemsMap.has(child.filename)) {
+                    console.log(`[SFTP ${instanceSessionId}] 就地增量移除项: ${path}/${child.filename}`);
+                    existingChildren.splice(i, 1);
+                }
             }
+
+            // 2. 就地更新与追加（Update & Insert）
+            for (const newItem of fileListPayload) {
+                const existingNode = existingMap.get(newItem.filename);
+                if (existingNode) {
+                    const isSizeChanged = existingNode.attrs.size !== newItem.attrs.size;
+                    const isMtimeChanged = existingNode.attrs.mtime !== newItem.attrs.mtime;
+                    const isModeChanged = existingNode.attrs.mode !== newItem.attrs.mode;
+                    const isTypeChanged = existingNode.attrs.isDirectory !== newItem.attrs.isDirectory ||
+                                          existingNode.attrs.isFile !== newItem.attrs.isFile ||
+                                          existingNode.attrs.isSymbolicLink !== newItem.attrs.isSymbolicLink;
+
+                    if (isSizeChanged || isMtimeChanged || isModeChanged || isTypeChanged) {
+                        existingNode.attrs.size = newItem.attrs.size;
+                        existingNode.attrs.mtime = newItem.attrs.mtime;
+                        existingNode.attrs.mode = newItem.attrs.mode;
+                        existingNode.attrs.atime = newItem.attrs.atime;
+                        existingNode.attrs.uid = newItem.attrs.uid;
+                        existingNode.attrs.gid = newItem.attrs.gid;
+                        existingNode.attrs.isDirectory = newItem.attrs.isDirectory;
+                        existingNode.attrs.isFile = newItem.attrs.isFile;
+                        existingNode.attrs.isSymbolicLink = newItem.attrs.isSymbolicLink;
+                        existingNode.longname = newItem.longname;
+
+                        existingNode._justUpdated = now;
+                        setTimeout(() => {
+                            if (existingNode._justUpdated === now) {
+                                delete existingNode._justUpdated;
+                            }
+                        }, 1800);
+                        console.log(`[SFTP ${instanceSessionId}] 就地增量更新属性: ${path}/${newItem.filename}`);
+                    }
+                } else {
+                    const newNode: FileTreeNode = reactive({
+                        filename: newItem.filename,
+                        longname: newItem.longname,
+                        attrs: { ...newItem.attrs },
+                        children: newItem.attrs.isDirectory ? null : [],
+                        childrenLoaded: !newItem.attrs.isDirectory,
+                        _justAdded: now,
+                    });
+
+                    setTimeout(() => {
+                        if (newNode._justAdded === now) {
+                            delete newNode._justAdded;
+                        }
+                    }, 1800);
+
+                    existingChildren.push(newNode);
+                    console.log(`[SFTP ${instanceSessionId}] 就地增量追加新项: ${path}/${newItem.filename}`);
+                }
+            }
+
+            // 3. 原地保持排序
+            existingChildren.sort((a, b) => sortFiles(a as any, b as any));
         }
 
-         // Add existing nodes that were not in the new payload ONLY if they were previously loaded placeholders
-         // (This handles cases where a placeholder was created but the parent load didn't list it - might indicate an issue)
-         // Typically, if an item is not in the new list, it means it was deleted on the server.
-         // We rely on the server list as the source of truth for existence.
-
-        // Sort the merged children
-        mergedChildren.sort((a, b) => sortFiles(a as any, b as any));
-
-        // Update the target node's children and mark as loaded
-        targetNode.children = mergedChildren;
         targetNode.childrenLoaded = true;
-        console.log(`[SFTP ${instanceSessionId}] File tree node ${path}'s children updated after merge.`);
 
-        // *** 在成功加载并更新树之后，才更新当前路径 ***
-        currentPathRef.value = path;
-        console.log(`[SFTP ${instanceSessionId}] currentPathRef updated to ${path} after successful readdir.`);
-
-        // 重置加载状态，因为这是匹配的响应
-        isLoading.value = false;
-        loadingRequestId.value = null;
-        console.log(`[SFTP ${instanceSessionId}] isLoading reset after successful readdir for ${path}.`);
-        checkAndExecutePendingDirectoryLoad();
+        if (!isSilent) {
+            currentPathRef.value = path;
+            isLoading.value = false;
+            loadingRequestId.value = null;
+            checkAndExecutePendingDirectoryLoad();
+        }
     };
 
     const checkAndExecutePendingDirectoryLoad = () => {
@@ -798,29 +850,34 @@ export function createSftpActionsManager(
             const next = pendingDirectoryToLoad.value;
             pendingDirectoryToLoad.value = null;
             console.log(`[SFTP ${instanceSessionId}] 正在执行排队的最新目录加载: ${next.path}`);
-            loadDirectory(next.path, next.forceRefresh);
+            loadDirectory(next.path, next.forceRefresh, next.silent);
         }
     };
 
     const onSftpReaddirError = (payload: MessagePayload, message: WebSocketMessage) => {
-        // 类型断言，因为我们知道 readdir:error 的 payload 是 string
         const errorPayload = payload as string;
         const errorPath = message.path;
 
-        // 检查请求 ID 是否匹配当前加载请求
-        if (message.requestId !== loadingRequestId.value) {
-             console.log(`[SFTP ${instanceSessionId}] Received stale readdir error for ${errorPath} (ID: ${message.requestId}, expected: ${loadingRequestId.value}). Ignoring.`);
-             return; // 忽略过时的错误响应
+        const isSilent = Boolean(message.requestId && silentRequestIds.has(message.requestId));
+        if (message.requestId && silentRequestIds.has(message.requestId)) {
+            silentRequestIds.delete(message.requestId);
+            if (silentRequestIds.size === 0) {
+                isSilentRefreshing.value = false;
+            }
+            console.warn(`[SFTP ${instanceSessionId}] 静默刷新目录 ${errorPath} 失败:`, errorPayload);
+            return;
         }
 
-        console.error(`[SFTP ${instanceSessionId}] 加载目录 ${errorPath} 出错:`, errorPayload); // 日志改为中文
-        // error.value = errorPayload; // 使用通知
+        if (message.requestId !== loadingRequestId.value) {
+             console.log(`[SFTP ${instanceSessionId}] Received stale readdir error for ${errorPath} (ID: ${message.requestId}, expected: ${loadingRequestId.value}). Ignoring.`);
+             return;
+        }
+
+        console.error(`[SFTP ${instanceSessionId}] 加载目录 ${errorPath} 出错:`, errorPayload);
         uiNotificationsStore.showError(`${t('fileManager.errors.loadDirectoryFailed')}: ${errorPayload}`);
 
-        // 重置加载状态，因为这是匹配的响应
         isLoading.value = false;
         loadingRequestId.value = null;
-        console.log(`[SFTP ${instanceSessionId}] isLoading reset after failed readdir for ${errorPath}.`);
         checkAndExecutePendingDirectoryLoad();
     };
 
@@ -868,7 +925,8 @@ export function createSftpActionsManager(
              }
 
              // --- 现有逻辑：添加或更新子节点 ---
-             const newNode: FileTreeNode = reactive({ // 确保新节点也是响应式的
+             const now = Date.now();
+            const newNode: FileTreeNode = reactive({ // 确保新节点也是响应式的
                 filename: item.filename,
                 longname: item.longname,
                 attrs: item.attrs,
@@ -1272,6 +1330,8 @@ export function createSftpActionsManager(
                 filename: child.filename,
                 longname: child.longname,
                 attrs: child.attrs,
+                _justAdded: child._justAdded,
+                _justUpdated: child._justUpdated,
             }));
         }
         return []; // 如果节点未找到或子节点未加载，返回空列表
@@ -1350,7 +1410,9 @@ export function createSftpActionsManager(
     return {
         // State
        fileList: fileList, // 暴露计算属性 (类型已在接口中定义为 Readonly<ComputedRef>)
-       isLoading: isLoading, // (类型已在接口中定义为 Readonly<Ref>)
+       isLoading: isLoading,
+       isSilentRefreshing: readonly(isSilentRefreshing),
+       silentRefreshCurrentDirectory: silentRefreshCurrentDirectory,
        // error: readonly(error), // 移除 error
        fileTree: fileTree, // (类型已在接口中定义为 Readonly<FileTreeNode>)
        initialLoadDone: initialLoadDone, // (类型已在接口中定义为 Readonly<Ref>)

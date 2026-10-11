@@ -1346,8 +1346,61 @@ let unregisterNavigateToPathEvent: (() => void) | null = null;
 let unregisterSetDirectoryTreeVisibleEvent: (() => void) | null = null;
 let unregisterSetDirectoryTreeWidthEvent: (() => void) | null = null;
 let unregisterSetViewModeEvent: (() => void) | null = null;
+let unregisterTerminalInputEvent: (() => void) | null = null;
+let directoryPollTimer: ReturnType<typeof setInterval> | null = null;
+let terminalDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+// --- 目录实时变更感知：自适应静默增量探查 ---
+const checkAndPollCurrentDirectory = () => {
+  // 1. 窗口处于后台休眠时跳过探查，节约带宽与性能
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return;
+  }
+  // 2. 检查 SFTP 实例是否存在且连接就绪
+  if (!currentSftpManager.value || !props.wsDeps.isConnected.value || !props.wsDeps.isSftpReady.value) {
+    return;
+  }
+  // 3. 用户正在交互操作（常规加载中、拖拽中、外部上传蒙版激活、调整列宽/树宽）时跳过该周期
+  if (
+    currentSftpManager.value.isLoading.value ||
+    isResizing.value ||
+    isResizingTree.value ||
+    isDraggingColumn.value ||
+    isContainerDropTarget.value ||
+    showExternalDropOverlay.value
+  ) {
+    return;
+  }
+  // 4. 发起静默增量比对刷新
+  currentSftpManager.value.silentRefreshCurrentDirectory();
+};
+
+const handleVisibilityChange = () => {
+  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+    // 用户从其他标签页切回 Nexus Terminal 时，立即执行一次增量探查
+    checkAndPollCurrentDirectory();
+  }
+};
 
 onMounted(() => {
+  // 启动自适应静默增量探查（每 2.8 秒一次）
+  directoryPollTimer = setInterval(checkAndPollCurrentDirectory, 2800);
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
+  // 监听当前会话的终端输入事件：若用户敲击回车命令，防抖 600ms 静默刷新目录
+  const handleTerminalInputNotification = (payload: { sessionId: string; data: string }) => {
+    if (payload.sessionId === props.sessionId && (payload.data.includes('\r') || payload.data.includes('\n'))) {
+      if (terminalDebounceTimer) clearTimeout(terminalDebounceTimer);
+      terminalDebounceTimer = setTimeout(() => {
+        checkAndPollCurrentDirectory();
+      }, 600);
+    }
+  };
+  subscribeToWorkspaceEvent('terminal:input', handleTerminalInputNotification);
+  unregisterTerminalInputEvent = () => unsubscribeFromWorkspaceEvent('terminal:input', handleTerminalInputNotification);
+
   // 同组件实例跨会话目录树显隐联动
   const handleSetDirectoryTreeVisibleNotification = (payload: { instanceId: string; show: boolean }) => {
     if (payload.instanceId === effectiveInstanceId.value && showDirectoryTree.value !== payload.show) {
@@ -1424,6 +1477,22 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (directoryPollTimer) {
+    clearInterval(directoryPollTimer);
+    directoryPollTimer = null;
+  }
+  if (terminalDebounceTimer) {
+    clearTimeout(terminalDebounceTimer);
+    terminalDebounceTimer = null;
+  }
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }
+  if (unregisterTerminalInputEvent) {
+    unregisterTerminalInputEvent();
+    unregisterTerminalInputEvent = null;
+  }
+
   if (unregisterSetDirectoryTreeVisibleEvent) {
     unregisterSetDirectoryTreeVisibleEvent();
     unregisterSetDirectoryTreeVisibleEvent = null;
@@ -1970,14 +2039,18 @@ defineExpose({ focusSearchInput, startPathEdit });
                   :draggable="item.filename !== '..'" @dragstart="handleDragStart(item, $event)" @dragend="handleDragEnd"
                   @click="handleItemClick($event, item, props.isMobile && isMultiSelectMode)"
                   @dblclick="handleItemDoubleClick($event, item)"
-                  class="transition-colors duration-150 select-none"
+                  class="transition-colors duration-300 select-none"
                   :class="[
                       { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
                       navigatingTargetName === item.filename
                         ? 'bg-primary/10 text-foreground'
                         : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                           ? 'bg-primary text-white'
-                          : 'hover:bg-header/50',
+                          : item._justAdded
+                            ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-medium ring-1 ring-emerald-500/30'
+                            : item._justUpdated
+                              ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ring-1 ring-amber-500/30'
+                              : 'hover:bg-header/50',
                       { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                   ]"
                  :data-filename="item.filename"
@@ -2112,14 +2185,18 @@ defineExpose({ focusSearchInput, startPathEdit });
                 @dragover.prevent="handleDragOverRow(item, $event)"
                 @dragleave="handleDragLeaveRow(item)"
                 @drop.prevent="handleDropOnRow(item, $event)"
-                class="group flex items-center gap-2.5 px-2.5 py-1.5 h-[52px] rounded-lg border transition-all duration-150 select-none"
+                class="group flex items-center gap-2.5 px-2.5 py-1.5 h-[52px] rounded-lg border transition-all duration-300 select-none"
                 :class="[
                   { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
                   navigatingTargetName === item.filename
                     ? 'bg-primary/10 border-primary/50 text-foreground'
                     : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                       ? 'bg-primary text-white border-primary shadow-sm ring-1 ring-primary/40'
-                      : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
+                      : item._justAdded
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
+                        : item._justUpdated
+                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
+                          : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
                   { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                 ]"
                 :data-filename="item.filename"

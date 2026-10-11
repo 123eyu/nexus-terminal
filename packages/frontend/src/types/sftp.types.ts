@@ -16,6 +16,8 @@ export interface FileListItem {
     filename: string; // 文件或目录名
     longname: string; // ls -l 风格的长名称字符串
     attrs: FileAttributes; // 文件属性
+    _justAdded?: number; // 增量变动：新添加文件的时间戳标记（用于平滑过渡动画）
+    _justUpdated?: number; // 增量变动：属性/内容更新的时间戳标记（用于平滑过渡动画）
 }
 
 // 类型定义：用于编辑器文件内容和编码 (从 useFileEditor 迁移)
