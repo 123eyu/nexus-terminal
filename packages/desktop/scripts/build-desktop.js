@@ -10,20 +10,28 @@ async function main() {
   const rootDir = path.resolve(desktopDir, '../..');
   const portableDir = path.join(rootDir, 'dist-desktop', 'portable');
 
-  // 1. 确保 Cargo/Rust 环境
+  // 1. 确保 Cargo/Rust 与 Node 环境在 PATH 中
   const userProfile = process.env.USERPROFILE || process.env.HOME || '';
   const cargoHome = process.env.CARGO_HOME || (userProfile ? path.join(userProfile, '.cargo') : '');
   const cargoBin = cargoHome ? path.join(cargoHome, 'bin') : '';
+  const nodeBin = path.dirname(process.execPath);
+
+  const pathKey = Object.keys(process.env).find(k => k.toLowerCase() === 'path') || 'PATH';
+  const currentPath = process.env[pathKey] || '';
+  const extraPaths = [cargoBin, nodeBin].filter(p => p && fs.existsSync(p));
+  const newPath = extraPaths.length > 0 ? `${extraPaths.join(path.delimiter)}${path.delimiter}${currentPath}` : currentPath;
+
   const env = { ...process.env };
-  if (cargoBin && fs.existsSync(cargoBin)) {
-    env.PATH = `${cargoBin};${env.PATH || ''}`;
-  }
+  env[pathKey] = newPath;
+  env.PATH = newPath;
+  env.Path = newPath;
 
   // 2. 准备自包含 Sidecar 和最新 Web 静态资源
   console.log('\n📦 第一步：准备 Node.js Sidecar 与前后端全量生产资源...');
-  execSync('node scripts/build-sidecar.js', {
+  execSync(`"${process.execPath}" scripts/build-sidecar.js`, {
     cwd: desktopDir,
     env,
+    shell: true,
     stdio: 'inherit'
   });
 
@@ -34,6 +42,7 @@ async function main() {
   execSync(tauriBuildCmd, {
     cwd: desktopDir,
     env,
+    shell: true,
     stdio: 'inherit'
   });
 

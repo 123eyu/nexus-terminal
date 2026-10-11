@@ -2,12 +2,14 @@ name: Build & Release Desktop App
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       release_title:
-        description: 'Release 标题 (选填，留空则自动根据 Tag 或版本号命名)'
+        description: 'Release 标题 (选填，留空则自动根据版本号命名)'
         required: false
         default: ''
       draft:
@@ -34,46 +36,91 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 解析版本号并按需自动创建 Git Tag
+        id: tag_step
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref_name }}"
+          $event = "${{ github.event_name }}"
+          $pkg = Get-Content package.json | ConvertFrom-Json
+          $pkgVersion = $pkg.version
+
+          if ($ref -like "v*") {
+            $tag = $ref
+          } else {
+            $tag = "v$pkgVersion"
+          }
+
+          Write-Host "当前目标版本 Tag: $tag (package.json: $pkgVersion)"
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$pkgVersion" >> $env:GITHUB_OUTPUT
+
+          # 检查远程与本地是否已存在该 tag
+          $existingTags = git tag -l
+          $tagExists = $existingTags -contains $tag
+
+          if (-not $tagExists) {
+            Write-Host "🏷️ 标签 $tag 尚未创建，正在自动创建并推送到 GitHub..."
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a $tag -m "Release $tag"
+            git push origin $tag
+            Write-Host "✅ 标签 $tag 创建并推送成功！"
+            "should_build=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "ℹ️ 标签 $tag 已存在。"
+            if ($event -eq "workflow_dispatch" -or $ref -like "v*") {
+              Write-Host "👉 手动或指定 Tag 触发，执行全量构建打包流程。"
+              "should_build=true" >> $env:GITHUB_OUTPUT
+            } else {
+              Write-Host "ℹ️ main 分支常规提交且当前版本 $tag 已经发布过，跳过重复构建以节约资源。"
+              "should_build=false" >> $env:GITHUB_OUTPUT
+            }
+          }
 
       - name: 配置 Node.js 运行时环境
+        if: steps.tag_step.outputs.should_build == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
 
       - name: 配置 Rust 稳定版编译工具链
+        if: steps.tag_step.outputs.should_build == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
       - name: 启用 Rust 编译缓存
+        if: steps.tag_step.outputs.should_build == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: 'packages/desktop/src-tauri -> target'
 
       - name: 安装项目依赖
+        if: steps.tag_step.outputs.should_build == 'true'
         run: npm ci || npm install
 
       - name: 构建前端生产包 (Frontend)
+        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run build --prefix packages/frontend
 
       - name: 构建后端生产代码 (Backend)
+        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run build --prefix packages/backend
 
       - name: 全量打包桌面端 (Tauri v2 + Node Sidecar)
+        if: steps.tag_step.outputs.should_build == 'true'
         run: npm run desktop:build
 
       - name: 归整与压缩 Release 交付产物
+        if: steps.tag_step.outputs.should_build == 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-artifacts -Force | Out-Null
-          
-          # 获取版本号或标签名
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag -or $tag -eq "main") {
-            $pkg = Get-Content package.json | ConvertFrom-Json
-            $tag = "v$($pkg.version)"
-          }
+          $tag = "${{ steps.tag_step.outputs.tag }}"
           Write-Host "当前发布版本: $tag"
 
           # 1. 提取 NSIS 安装程序
@@ -105,9 +152,11 @@ jobs:
           Get-Content "release-artifacts/checksums-sha256.txt"
 
       - name: 发布至 GitHub Release
+        if: steps.tag_step.outputs.should_build == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ inputs.release_title || github.ref_name }}
+          tag_name: ${{ steps.tag_step.outputs.tag }}
+          name: ${{ inputs.release_title || steps.tag_step.outputs.tag }}
           files: release-artifacts/*
           draft: ${{ inputs.draft || false }}
           prerelease: ${{ inputs.prerelease || false }}
