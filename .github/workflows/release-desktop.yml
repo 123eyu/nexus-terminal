@@ -1,0 +1,116 @@
+name: Build & Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'Release 标题 (选填，留空则自动根据 Tag 或版本号命名)'
+        required: false
+        default: ''
+      draft:
+        description: '是否发布为草稿 (Draft)'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: '是否标记为预发布 (Prerelease)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows Desktop & Release
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出仓库源码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Node.js 运行时环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 配置 Rust 稳定版编译工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 启用 Rust 编译缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'packages/desktop/src-tauri -> target'
+
+      - name: 安装项目根目录依赖
+        run: npm ci
+
+      - name: 构建前端生产包 (Frontend)
+        run: npm run build --prefix packages/frontend
+
+      - name: 构建后端生产代码 (Backend)
+        run: npm run build --prefix packages/backend
+
+      - name: 全量打包桌面端 (Tauri v2 + Node Sidecar)
+        run: npm run desktop:build
+
+      - name: 归整与压缩 Release 交付产物
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-artifacts -Force | Out-Null
+          
+          # 获取版本号或标签名
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag -or $tag -eq "main") {
+            $pkg = Get-Content package.json | ConvertFrom-Json
+            $tag = "v$($pkg.version)"
+          }
+          Write-Host "当前发布版本: $tag"
+
+          # 1. 提取 NSIS 安装程序
+          $installer = Get-ChildItem -Path "packages/desktop/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if ($installer) {
+            $installerTarget = "release-artifacts/Nexus-Terminal-Setup-$tag-windows-x64.exe"
+            Copy-Item -Path $installer.FullName -Destination $installerTarget -Force
+            Write-Host "已归整安装包: $installerTarget"
+          } else {
+            Write-Error "未找到生成的 NSIS 安装包！"
+            exit 1
+          }
+
+          # 2. 压缩免安装便携版目录
+          if (Test-Path "dist-desktop/portable") {
+            $portableZip = "release-artifacts/Nexus-Terminal-Portable-$tag-windows-x64.zip"
+            Compress-Archive -Path "dist-desktop/portable/*" -DestinationPath $portableZip -CompressionLevel Optimal -Force
+            Write-Host "已生成便携包: $portableZip"
+          } else {
+            Write-Warning "未找到便携版目录 dist-desktop/portable"
+          }
+
+          # 3. 计算 SHA256 校验和清单
+          Get-ChildItem -Path "release-artifacts/*" -File | ForEach-Object {
+            $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)"
+          } | Out-File -FilePath "release-artifacts/checksums-sha256.txt" -Encoding utf8
+          Write-Host "已生成 SHA256 校验清单:"
+          Get-Content "release-artifacts/checksums-sha256.txt"
+
+      - name: 发布至 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ inputs.release_title || github.ref_name }}
+          files: release-artifacts/*
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ inputs.prerelease || false }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
