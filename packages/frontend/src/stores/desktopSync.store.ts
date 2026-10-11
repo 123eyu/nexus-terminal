@@ -4,6 +4,37 @@ import axios from 'axios';
 import { isDesktopApp } from '../utils/platform';
 import { useConnectionsStore } from './connections.store';
 
+export type SyncModuleKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
+
+export interface SyncModuleOption {
+  key: SyncModuleKey;
+  label: string;
+  description: string;
+}
+
+export const SYNC_MODULE_OPTIONS: SyncModuleOption[] = [
+  { key: 'appearance', label: '外观样式', description: '终端背景、配色主题与界面外观设置' },
+  { key: 'layout', label: '工作区布局', description: '面板布局树、侧栏与界面布局设置' },
+  { key: 'commandHistory', label: '命令历史', description: '终端历史执行命令记录' },
+  { key: 'quickCommands', label: '快捷指令', description: '常用快捷指令及其分类标签' },
+  { key: 'connections', label: '连接', description: 'SSH 连接、代理、密钥、分组与常用路径' },
+];
+
+const DEFAULT_MODULES: SyncModuleKey[] = ['appearance', 'layout', 'commandHistory', 'quickCommands', 'connections'];
+
+function loadPersistedModules(): SyncModuleKey[] {
+  try {
+    const raw = localStorage.getItem('nexus_sync_selected_modules');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return [...DEFAULT_MODULES];
+}
+
 export interface DesktopSyncStats {
   pushed: number;
   pulled: number;
@@ -18,6 +49,14 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   const conflictStrategy = ref<string>('lww');
   const lastSyncTime = ref<number>(0);
   const autoSyncOnOpen = ref<boolean>(false);
+  const selectedModules = ref<SyncModuleKey[]>(loadPersistedModules());
+
+  const setSelectedModules = (modules: SyncModuleKey[]) => {
+    selectedModules.value = [...modules];
+    try {
+      localStorage.setItem('nexus_sync_selected_modules', JSON.stringify(modules));
+    } catch {}
+  };
 
   const isTesting = ref<boolean>(false);
   const testLatency = ref<number | null>(null);
@@ -117,11 +156,20 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   const isFirstSync = computed(() => !lastSyncTime.value || lastSyncTime.value === 0);
 
   /**
-   * 触发一次同步 (支持模式: bidirectional, cloud_to_local, local_to_cloud)
+   * 触发一次同步 (支持模式: bidirectional, cloud_to_local, local_to_cloud，并支持按模块筛选)
    */
-  const triggerSync = async (mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional'): Promise<boolean> => {
+  const triggerSync = async (
+    mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional',
+    modulesOverride?: SyncModuleKey[]
+  ): Promise<boolean> => {
     if (!isConfigured.value) {
       syncError.value = '未配置 VPS 域名或 API Key，无法执行同步';
+      return false;
+    }
+
+    const activeModules = modulesOverride || selectedModules.value;
+    if (activeModules.length === 0) {
+      syncError.value = '请至少选择一个需要同步的数据模块';
       return false;
     }
 
@@ -134,19 +182,35 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       const res = await axios.post('/api/v1/desktop/sync/trigger', {
         vpsUrl: vpsUrl.value,
         apiKey: apiKey.value,
-        mode
+        mode,
+        modules: activeModules
       });
 
       if (res.data?.success) {
         lastSyncTime.value = res.data.lastSyncTime;
         syncStats.value = res.data.stats;
-        syncSuccessMessage.value = `同步成功 (推送到云端: ${res.data.stats.pushed}，拉取到本地: ${res.data.stats.pulled})`;
+        const pushedCount = res.data.stats?.pushed || 0;
+        const pulledCount = res.data.stats?.pulled || 0;
+        if (pushedCount === 0 && pulledCount === 0) {
+          syncSuccessMessage.value = '同步完成：数据已是最新，无待同步变更';
+        } else {
+          syncSuccessMessage.value = `同步成功 (推送到云端: ${pushedCount}，拉取到本地: ${pulledCount})`;
+        }
 
-        // 刷新本地连接列表
+        // 按需刷新本地数据
         try {
-          const connectionsStore = useConnectionsStore();
-          await connectionsStore.fetchConnections();
-        } catch {}
+          if (activeModules.includes('connections')) {
+            const connectionsStore = useConnectionsStore();
+            await connectionsStore.fetchConnections();
+          }
+          if (activeModules.includes('appearance')) {
+            const { useAppearanceStore } = await import('./appearance.store');
+            const appearanceStore = useAppearanceStore();
+            await appearanceStore.loadInitialAppearanceData();
+          }
+        } catch (e: any) {
+          console.warn('[DesktopSyncStore] 刷新本地数据发生警告:', e);
+        }
 
         return true;
       } else {
@@ -166,8 +230,12 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    * 请求同步：初次同步时弹出方向选择确认，否则直接执行双向合并
    */
   const requestSync = async (forcePrompt: boolean = false): Promise<boolean> => {
+    if (forcePrompt) {
+      showFirstSyncModal.value = true;
+      return false;
+    }
     if (!isConfigured.value) return false;
-    if (isFirstSync.value || forcePrompt) {
+    if (isFirstSync.value) {
       showFirstSyncModal.value = true;
       return false;
     }
@@ -181,6 +249,8 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     conflictStrategy,
     lastSyncTime,
     autoSyncOnOpen,
+    selectedModules,
+    setSelectedModules,
     isTesting,
     testLatency,
     testError,

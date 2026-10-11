@@ -180,3 +180,6 @@ packages/desktop/src-tauri/target/
 packages/desktop/src-tauri/binaries/
 packages/desktop/src-tauri/resources/
 packages/desktop/src-tauri/gen/
+packages/backend/public/
+packages/backend/.env
+packages/backend/src/sync/__test_e2e_sync.ts

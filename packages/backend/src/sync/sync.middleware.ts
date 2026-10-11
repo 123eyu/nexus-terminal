@@ -14,31 +14,37 @@ function safeCompare(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+export const DEFAULT_SYNC_API_KEY = 'nexus-sync-key-2026';
+
 /**
  * 获取服务端配置的有效 API Key
- * 优先级：环境变量 SYNC_API_KEY > 数据库 settings.syncApiKey
+ * 完全基于数据库 settings 表持久化，不再依赖 .env 环境变量
  */
-export async function getServerSyncApiKey(): Promise<string | null> {
-  const envKey = process.env.SYNC_API_KEY?.trim();
-  if (envKey) return envKey;
-
+export async function getServerSyncApiKey(): Promise<string> {
   try {
     const settingValue = await settingsRepository.getSetting('syncApiKey');
     if (settingValue && settingValue.trim() !== '') {
       return settingValue.trim();
     }
-  } catch (err) {
-    console.warn('[SyncMiddleware] 读取 syncApiKey 设置失败:', err);
+    // 数据库中若尚未配置，自动初始化存入数据库
+    await settingsRepository.setSetting('syncApiKey', DEFAULT_SYNC_API_KEY);
+    return DEFAULT_SYNC_API_KEY;
+  } catch (err: any) {
+    console.warn('[SyncMiddleware] 读取或初始化 syncApiKey 失败:', err.message);
+    return DEFAULT_SYNC_API_KEY;
   }
-
-  return null;
 }
 
 /**
  * 验证云端同步请求的 API Key 中间件
  */
 export async function requireSyncApiKey(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const clientKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
+  const clientKey = (
+    req.headers['x-api-key'] ||
+    req.headers['x-device-token'] ||
+    req.headers['x-sync-api-key'] ||
+    req.headers['authorization']?.replace(/^Bearer\s+/i, '')
+  ) as string | undefined;
 
   if (!clientKey || typeof clientKey !== 'string' || clientKey.trim() === '') {
     res.status(401).json({

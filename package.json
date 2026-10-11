@@ -12,7 +12,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "postinstall": "patch-package",
-    "pilot": "npm --prefix packages/frontend exec -- pilot"
+    "pilot": "npm --prefix packages/frontend exec -- pilot",
+    "desktop:build": "npm run --prefix packages/desktop desktop:build",
+    "desktop:build:quick": "npm run --prefix packages/desktop desktop:build:quick",
+    "desktop:sync": "npm run --prefix packages/desktop desktop:sync"
   },
   "repository": {
     "type": "git",

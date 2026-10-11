@@ -1120,7 +1120,21 @@
       "appearance": "外观",
       "about": "关于"
     },
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "serverSync": {
+      "title": "数据同步服务密钥 (API Key)",
+      "description": "用于桌面端与本云端服务器进行双向数据同步鉴权与加密通信。密钥直接持久化保存在数据库中，修改后即刻生效，无需配置环境变量或重启服务。",
+      "keyLabel": "同步 API Key"
+    },
+    "rememberLastRoute": {
+      "title": "记住上次停留页面",
+      "description": "重新打开或刷新 Nexus Terminal 时，直接恢复并进入上次访问的页面（如终端工作区）。",
+      "label": "自动恢复上次停留页面",
+      "enabledTip": "当前已开启记忆，下次打开将直达上次页面",
+      "disabledTip": "当前已关闭记忆，下次打开将默认进入仪表盘首页",
+      "enabledSuccess": "已开启页面记忆，下次打开将直达上次页面",
+      "disabledSuccess": "已关闭页面记忆，下次打开将默认进入仪表盘首页"
+    }
   },
   "notificationController": {
     "errorFetchSettings": "获取通知设置失败",
@@ -1565,7 +1579,9 @@
       "unmarkForSuspend": "取消挂起"
     },
     "closeTabTooltip": "关闭标签页",
-    "newTabTooltip": "新建连接标签页"
+    "newTabTooltip": "新建连接标签页",
+    "selectConnection": "选择连接",
+    "selectconnection": "选择连接"
   },
   "sshKeys": {
     "selector": {

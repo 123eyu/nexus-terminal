@@ -3,6 +3,14 @@ import apiClient from '../utils/apiClient';
 import router from '../router'; 
 import { setLocale } from '../i18n'; 
 
+function getLoginRedirectTarget(): string {
+    const lastRoute = localStorage.getItem('nexus_last_route');
+    if (lastRoute && lastRoute !== '/' && !lastRoute.includes('/login') && !lastRoute.includes('/setup')) {
+        return lastRoute;
+    }
+    return '/';
+} 
+
 // 扩展的用户信息接口，包含 2FA 状态和语言偏好
 interface UserInfo {
     id: number;
@@ -122,7 +130,7 @@ export const useAuthStore = defineStore('auth', {
                         setLocale(this.user.language);
                     }
                     // await router.push({ name: 'Workspace' }); // 改为页面刷新
-                    window.location.href = '/'; // 跳转到根路径并刷新
+                    window.location.href = getLoginRedirectTarget(); // 跳转到上次停留页面或根路径并刷新
                     return { success: true };
                 } else {
                     // 不应该发生，但作为防御性编程
@@ -159,7 +167,7 @@ export const useAuthStore = defineStore('auth', {
                     setLocale(this.user.language);
                 }
                 // await router.push({ name: 'Workspace' }); // 改为页面刷新
-                window.location.href = '/'; // 跳转到根路径并刷新
+                window.location.href = getLoginRedirectTarget(); // 跳转到上次停留页面或根路径并刷新
                 return { success: true };
             } catch (err: any) {
                 console.error('2FA 验证失败:', err);
@@ -196,37 +204,50 @@ export const useAuthStore = defineStore('auth', {
             }
         },
 
-        // 检查并更新认证状态 Action
+        // 检查并更新认证状态 Action (增加网络就绪屏障与重试机制)
         async checkAuthStatus() {
             this.isLoading = true;
-            try {
-                const response = await apiClient.get<{ isAuthenticated: boolean; user: UserInfo }>('/auth/status'); // 使用 apiClient
-                if (response.data.isAuthenticated && response.data.user) {
-                    this.isAuthenticated = true;
-                    this.user = response.data.user; // 更新用户信息，包含 isTwoFactorEnabled 和 language
-                    this.loginRequires2FA = false; // 确保重置
-                    console.log('认证状态已更新:', this.user);
-                    // 设置语言
-                    if (this.user?.language) {
-                        setLocale(this.user.language);
+            let maxAttempts = 3;
+            while (maxAttempts > 0) {
+                try {
+                    const response = await apiClient.get<{ isAuthenticated: boolean; user: UserInfo }>('/auth/status');
+                    if (response.data.isAuthenticated && response.data.user) {
+                        this.isAuthenticated = true;
+                        this.user = response.data.user; // 更新用户信息，包含 isTwoFactorEnabled 和 language
+                        this.loginRequires2FA = false; // 确保重置
+                        console.log('认证状态已更新:', this.user);
+                        // 设置语言
+                        if (this.user?.language) {
+                            setLocale(this.user.language);
+                        }
+                    } else {
+                        this.isAuthenticated = false;
+                        this.user = null;
+                        this.loginRequires2FA = false;
                     }
-                } else {
+                    break;
+                } catch (error: any) {
+                    // 若收到 HTTP 响应 (如 401 / 403)，说明后端服务明确判定未认证，直接采信并不再重试
+                    if (error.response) {
+                        this.isAuthenticated = false;
+                        this.user = null;
+                        this.loginRequires2FA = false;
+                        break;
+                    }
+                    // 若无响应 (连接被拒绝 / 端口正处于拉起过渡期)，等待 150ms 优雅重试
+                    maxAttempts--;
+                    if (maxAttempts > 0) {
+                        console.log(`[AuthStore] 后端服务连接中，正在进行认证就绪重试 (剩余 ${maxAttempts} 次)...`);
+                        await new Promise((resolve) => setTimeout(resolve, 150));
+                        continue;
+                    }
+                    console.warn('检查认证状态网络不可达:', error.message);
                     this.isAuthenticated = false;
                     this.user = null;
                     this.loginRequires2FA = false;
-                    // Removed passkeys clear on unauthenticated
                 }
-            } catch (error: any) {
-                // 如果获取状态失败 (例如 session 过期)，则认为未认证
-                console.warn('检查认证状态失败:', error.response?.data?.message || error.message);
-                this.isAuthenticated = false;
-                this.user = null;
-                this.loginRequires2FA = false;
-                // Removed passkeys clear on error
-                // 可选：如果不是 401 错误，可以记录更详细的日志
-            } finally {
-                this.isLoading = false;
             }
+            this.isLoading = false;
         },
 
         // 修改密码 Action
@@ -306,20 +327,31 @@ export const useAuthStore = defineStore('auth', {
             }
         },
 
-        // 检查是否需要初始设置
+        // 检查是否需要初始设置 (增加网络过渡期重试)
         async checkSetupStatus() {
-            // 不需要设置 isLoading，这个检查应该在后台快速完成
-            try {
-                const response = await apiClient.get<{ needsSetup: boolean }>('/auth/needs-setup'); // 使用 apiClient
-                this.needsSetup = response.data.needsSetup;
-                console.log(`[AuthStore] Needs setup status: ${this.needsSetup}`);
-                return this.needsSetup; // 返回状态给调用者
-            } catch (error: any) {
-                console.error('检查设置状态失败:', error.response?.data?.message || error.message);
-                // 如果检查失败，保守起见假设不需要设置，以避免卡在设置页面
-                this.needsSetup = false;
-                return false;
+            let maxAttempts = 3;
+            while (maxAttempts > 0) {
+                try {
+                    const response = await apiClient.get<{ needsSetup: boolean }>('/auth/needs-setup'); // 使用 apiClient
+                    this.needsSetup = response.data.needsSetup;
+                    console.log(`[AuthStore] Needs setup status: ${this.needsSetup}`);
+                    return this.needsSetup; // 返回状态给调用者
+                } catch (error: any) {
+                    if (error.response) {
+                        this.needsSetup = false;
+                        return false;
+                    }
+                    maxAttempts--;
+                    if (maxAttempts > 0) {
+                        await new Promise((resolve) => setTimeout(resolve, 150));
+                        continue;
+                    }
+                    console.error('检查设置状态失败:', error.response?.data?.message || error.message);
+                    this.needsSetup = false;
+                    return false;
+                }
             }
+            return false;
         },
 
         //  获取公共 CAPTCHA 配置 (修改为从 /settings/captcha 获取)
@@ -369,7 +401,7 @@ export const useAuthStore = defineStore('auth', {
                 if (this.user?.language) {
                     setLocale(this.user.language);
                 }
-                window.location.href = '/'; // 跳转到根路径并刷新
+                window.location.href = getLoginRedirectTarget(); // 跳转到上次停留页面或根路径并刷新
                 return { success: true };
 
             } catch (err: any) {

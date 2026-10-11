@@ -91,4 +91,8 @@ router.post('/component-instance-states/cleanup', settingsController.cleanupComp
 // +++ CAPTCHA 配置路由 (需要认证更新) +++
 router.put('/captcha', settingsController.setCaptchaConfig);
 
+// +++ 云端数据同步 API Key (完全存库管理) +++
+router.get('/sync-api-key', settingsController.getSyncApiKey);
+router.put('/sync-api-key', settingsController.setSyncApiKey);
+
 export default router;

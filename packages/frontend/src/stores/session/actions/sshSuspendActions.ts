@@ -235,14 +235,29 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
   const newFrontendSessionId = uuidv4(); // 为恢复的会话生成新的前端 ID
 
   try {
-    // +++ 先从 connectionsStore 获取完整的 ConnectionInfo +++
-    const connectionInfo = connectionsStore.connections.find(c => c.id === originalConnectionId);
+    // +++ 先从 connectionsStore 获取完整的 ConnectionInfo (支持多维匹配：ID -> UUID -> 名称) +++
+    if (!connectionsStore.connections || connectionsStore.connections.length === 0) {
+      try {
+        await connectionsStore.fetchConnections();
+      } catch (fetchErr) {
+        console.warn(`[${t('term.sshSuspend')}] 预加载连接列表失败:`, fetchErr);
+      }
+    }
+    let connectionInfo = connectionsStore.connections.find(c => c.id === originalConnectionId);
+    if (!connectionInfo && (sessionToResumeInfo as any).connectionUuid) {
+      connectionInfo = connectionsStore.connections.find(c => c.uuid === (sessionToResumeInfo as any).connectionUuid);
+    }
+    if (!connectionInfo && sessionToResumeInfo.connectionName) {
+      connectionInfo = connectionsStore.connections.find(
+        c => c.name && c.name.trim().toLowerCase() === sessionToResumeInfo.connectionName.trim().toLowerCase()
+      );
+    }
     if (!connectionInfo) {
-      console.error(`[${t('term.sshSuspend')}] 恢复操作失败：在 Connection Store 中未找到原始连接配置 (ID: ${originalConnectionId})。`);
+      console.error(`[${t('term.sshSuspend')}] 恢复操作失败：在 Connection Store 中未找到原始连接配置 (ID: ${originalConnectionId}, 名称: ${sessionToResumeInfo.connectionName})。`);
       uiNotificationsStore.addNotification({ type: 'error', message: t('sshSuspend.notifications.resumeErrorConnectionConfigNotFound', { id: String(originalConnectionId) }) });
       return null;
     }
-    console.log(`[${t('term.sshSuspend')}] 已找到原始连接配置 (ID: ${originalConnectionId})，准备使用它恢复会话 ${suspendSessionId}。将创建新前端会话 ${newFrontendSessionId} 并连接 WebSocket (shouldActivate: ${shouldActivate})。`);
+    console.log(`[${t('term.sshSuspend')}] 已成功匹配原始连接配置 (本地ID: ${connectionInfo.id}, 原始ID: ${originalConnectionId}, 名称: ${connectionInfo.name})，准备使用它恢复会话 ${suspendSessionId}。`);
     
     // 1. 调用 openNewSession 创建前端会话状态、WebSocket 连接等，传入完整的 connectionInfo
     openNewSession(

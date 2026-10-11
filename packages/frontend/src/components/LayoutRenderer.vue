@@ -125,6 +125,11 @@ const hasSshSessions = computed(() => {
  return false;
 });
 
+// 判断侧栏面板是否必须依赖活动会话（仅 editor 和 fileManager 依赖具体会话，其余如连接列表、快捷指令等均为全局独立面板）
+const isSessionDependentSidebarPane = (paneName: PaneName | null): boolean => {
+  return paneName === 'editor' || paneName === 'fileManager';
+};
+
 // 面板标签 (Similar to LayoutConfigurator)
 const paneLabels = computed(() => ({
   connections: t('layout.pane.connections', '连接列表'),
@@ -725,12 +730,19 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
                 <component
-                  v-else-if="currentLeftSidebarComponent && activeLeftSidebarPane && (activeLeftSidebarPane === 'statusMonitor' || activeSession)"
+                  v-else-if="currentLeftSidebarComponent && activeLeftSidebarPane && (!isSessionDependentSidebarPane(activeLeftSidebarPane) || activeSession)"
                   :is="currentLeftSidebarComponent"
                   :key="`left-comp-${activeLeftSidebarPane}`"
                   v-bind="sidebarProps(activeLeftSidebarPane, 'left')"
                   class="flex flex-col flex-grow"
                 />
+                <div v-else-if="activeLeftSidebarPane" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                  <div class="flex flex-col items-center justify-center p-8">
+                    <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
+                    <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
+                    <div class="text-xs mt-2">{{ t('layout.noActiveSession.fileManagerSidebar') }}</div>
+                  </div>
+                </div>
                 <div v-else class="flex flex-col flex-grow">
                 </div>
             </div>
@@ -775,12 +787,19 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
                 <component
-                  v-else-if="currentRightSidebarComponent && activeRightSidebarPane && (activeRightSidebarPane === 'statusMonitor' || activeSession)"
+                  v-else-if="currentRightSidebarComponent && activeRightSidebarPane && (!isSessionDependentSidebarPane(activeRightSidebarPane) || activeSession)"
                   :is="currentRightSidebarComponent"
                   :key="`right-comp-${activeRightSidebarPane}`"
                   v-bind="sidebarProps(activeRightSidebarPane, 'right')"
                   class="flex flex-col flex-grow"
                 />
+                <div v-else-if="activeRightSidebarPane" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                  <div class="flex flex-col items-center justify-center p-8">
+                    <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
+                    <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
+                    <div class="text-xs mt-2">{{ t('layout.noActiveSession.fileManagerSidebar') }}</div>
+                  </div>
+                </div>
                 <div v-else class="flex flex-col flex-grow">
                 </div>
             </div>

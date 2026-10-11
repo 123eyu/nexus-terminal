@@ -588,14 +588,6 @@ const handleManageTagModalSaved = () => {
   tagsStore.fetchTags(); // 刷新标签列表，以防标签名称等有变动（虽然此模态框不直接改名）
 };
 
- // 稍微延迟一下重置，以防是点击列表项导致的失焦
- // 如果用户点击了列表项，handleConnect 会先触发
- setTimeout(() => {
-     // 检查此时是否仍然没有焦点在输入框上（避免误清除）
-     if (document.activeElement !== searchInputRef.value) {
-         highlightedIndex.value = -1;
-     }
- }, 150); // 150ms 延迟可能更稳妥
 // 处理失焦事件，清除高亮
 const handleBlur = () => {
   // 稍微延迟一下重置，以防是点击列表项导致的失焦

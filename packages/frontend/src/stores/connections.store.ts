@@ -4,6 +4,7 @@ import apiClient from '../utils/apiClient'; // 使用统一的 apiClient
 // 定义连接信息接口 (与后端对应，不含敏感信息)
 export interface ConnectionInfo {
     id: number;
+    uuid?: string;
     name: string;
     type: 'SSH' | 'RDP' | 'VNC'; // Use uppercase to match backend data
     host: string;

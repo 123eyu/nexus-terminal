@@ -265,26 +265,32 @@ export const ensureDefaultSettingsExist = async (db: sqlite3.Database): Promise<
     ];
  
     try {
-        for (const entry of defaultEntries) {
-            // 将值转换为字符串以存储到数据库，处理 null/undefined
-            let dbValue: string;
-            if (entry.value === null || entry.value === undefined) {
-                dbValue = entry.key === 'activeTerminalThemeId' ? 'null' : ''; // 主题 ID 特殊存储为 'null'，其他情况为空字符串
-            } else if (typeof entry.value === 'object') {
-                dbValue = JSON.stringify(entry.value);
-            } else {
-                dbValue = String(entry.value);
+        const countRow = await getDb<{ count: number }>(db, `SELECT COUNT(*) as count FROM ${TABLE_NAME}`);
+        if (!countRow || countRow.count < defaultEntries.length) {
+            await runDb(db, 'BEGIN TRANSACTION');
+            try {
+                for (const entry of defaultEntries) {
+                    let dbValue: string;
+                    if (entry.value === null || entry.value === undefined) {
+                        dbValue = entry.key === 'activeTerminalThemeId' ? 'null' : '';
+                    } else if (typeof entry.value === 'object') {
+                        dbValue = JSON.stringify(entry.value);
+                    } else {
+                        dbValue = String(entry.value);
+                    }
+
+                    if (entry.key === 'activeTerminalThemeId') {
+                        dbValue = entry.value === null ? 'null' : String(entry.value);
+                    }
+
+                    await runDb(db, sqlInsertOrIgnore, [entry.key, dbValue, nowSeconds, nowSeconds]);
+                }
+                await runDb(db, 'COMMIT');
+            } catch (innerErr) {
+                await runDb(db, 'ROLLBACK');
+                throw innerErr;
             }
-
-            // 对 activeTerminalThemeId 的特殊处理：将 null 存储为 'null' 字符串，或将数字存储为字符串
-             if (entry.key === 'activeTerminalThemeId') {
-                 dbValue = entry.value === null ? 'null' : String(entry.value);
-             }
-
-
-            await runDb(db, sqlInsertOrIgnore, [entry.key, dbValue, nowSeconds, nowSeconds]);
         }
-        // console.log('[AppearanceRepo] 默认外观设置键值对检查完成。'); // 移除：信息不太关键
 
         // 确保键存在后，如果当前为 null，则尝试设置默认主题 ID
         await findAndSetDefaultThemeIdIfNull(db);

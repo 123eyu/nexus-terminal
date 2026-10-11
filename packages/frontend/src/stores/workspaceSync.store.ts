@@ -2,11 +2,13 @@ import { defineStore, storeToRefs } from 'pinia';
 import { ref, computed, nextTick, shallowRef, watch } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../utils/apiClient';
+import { isDesktopApp } from '../utils/platform';
 import { useSessionStore } from './session.store';
 import { useFileEditorStore, type FileTab } from './fileEditor.store';
 import { useConnectionsStore } from './connections.store';
 import { useUiNotificationsStore } from './uiNotifications.store';
 import { useTerminalHighlightStore } from './terminal-highlight.store';
+import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
 
 const SYNC_ENABLED_STORAGE_KEY = 'nexus_workspace_sync_enabled';
@@ -46,6 +48,7 @@ export interface SyncedSessionInfo {
   sessionId: string;
   connectionId: number | string;
   connectionName: string;
+  connectionUuid?: string;
   commandInputContent?: string;
   suspendSessionId?: string;
   terminalBuffer?: string;
@@ -90,11 +93,17 @@ export interface SyncedMultiLineCommandInfo {
   sessionDrafts: Record<string, string>;
 }
 
+export interface SyncedLayoutInfo {
+  layoutTree: LayoutNode | null;
+  sidebarPanes?: { left: PaneName[]; right: PaneName[] };
+}
+
 export interface WorkspaceSnapshot {
   syncEnabled: boolean;
   activeSessionId: string | null;
   sessions: SyncedSessionInfo[];
   sessionOrder?: string[]; // 会话标签栏排布顺序
+  layout?: SyncedLayoutInfo; // 分屏布局与侧边栏配置
   fileEditor: {
     isOpen?: boolean; // 弹窗编辑器是否处于打开状态
     activeTabId: string | null;
@@ -109,11 +118,13 @@ export interface WorkspaceSnapshot {
 export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const sessionStore = useSessionStore();
 
-  // 1. 同步开关：默认开启 (true)
+  // 1. 同步开关：桌面端强制禁用 (false)，Web端默认开启 (true)
   const syncEnabled = ref<boolean>(
-    typeof localStorage !== 'undefined'
-      ? localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false'
-      : true
+    isDesktopApp()
+      ? false
+      : (typeof localStorage !== 'undefined'
+          ? localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false'
+          : true)
   );
 
   // 2. 客户端唯一标识 (基于 sessionStorage，保证单标签页刷新保持、多标签/跨设备互斥)
@@ -135,7 +146,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const isTakenOver = ref<boolean>(false);
   const takeoverByClientId = ref<string | null>(null);
 
-  // 4. 正在同步或恢复标记 (防止死循环与覆盖)
+  // 4. 正在同步、恢复与初始化标记 (防止死循环与空快照冲刷)
+  const isInitialized = ref<boolean>(false);
   const isSyncing = ref<boolean>(false);
   const isRestoring = ref<boolean>(false);
   const lastSyncTime = ref<number | null>(null);
@@ -272,6 +284,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
   // 切换同步开关
   const toggleSyncEnabled = async () => {
+    if (isDesktopApp()) return;
     syncEnabled.value = !syncEnabled.value;
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(SYNC_ENABLED_STORAGE_KEY, String(syncEnabled.value));
@@ -290,6 +303,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const collectCurrentWorkspaceState = (): WorkspaceSnapshot => {
     const sessionStore = useSessionStore();
     const fileEditorStore = useFileEditorStore();
+    const layoutStore = useLayoutStore();
+    const connectionsStore = useConnectionsStore();
 
     // 1. 收集会话信息（严格按照当前标签栏真实的排布顺序收集！）
     const orderedTabs = sessionStore.sessionTabsWithStatus || [];
@@ -345,6 +360,10 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         }
       }
 
+      if (!terminalBuffer && (s as any).lastTerminalBuffer) {
+        terminalBuffer = (s as any).lastTerminalBuffer;
+      }
+
       // 提取会话自身独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
       let sessionSpecificTabs: SyncedFileTabInfo[] | undefined = undefined;
       if (s.editorTabs?.value && Array.isArray(s.editorTabs.value) && s.editorTabs.value.length > 0) {
@@ -363,10 +382,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         }));
       }
 
+      const matchedConn = connectionsStore.connections.find(c => String(c.id) === String(s.connectionId));
       sessionsList.push({
         sessionId: sId,
         connectionId: s.connectionId,
         connectionName: s.connectionName,
+        connectionUuid: matchedConn?.uuid,
         commandInputContent: s.commandInputContent.value || '',
         suspendSessionId: (s as any).suspendSessionId,
         terminalBuffer: terminalBuffer !== undefined ? terminalBuffer : '',
@@ -431,6 +452,10 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       activeSessionId: sessionStore.activeSessionId,
       sessions: sessionsList,
       sessionOrder: sortedSessionIds,
+      layout: {
+        layoutTree: layoutStore.layoutTree ? JSON.parse(JSON.stringify(layoutStore.layoutTree)) : null,
+        sidebarPanes: layoutStore.sidebarPanes ? JSON.parse(JSON.stringify(layoutStore.sidebarPanes)) : undefined,
+      },
       fileEditor: {
         isOpen: fileEditorStore.isPopupOpen,
         activeTabId: fileEditorStore.activeTabId,
@@ -450,7 +475,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   const triggerDebouncedSave = (delayMs: number = 800) => {
-    if (!syncEnabled.value || isRestoring.value || isTakenOver.value) return;
+    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value) return;
 
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -461,12 +486,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }, delayMs);
   };
 
-  // 保存工作区到云端
+  // 保存工作区到云端 (仅 Web 端有效)
   const saveWorkspaceToCloud = async (): Promise<boolean> => {
-    if (!syncEnabled.value || isRestoring.value || isTakenOver.value) return false;
+    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value) return false;
     try {
-      isSyncing.value = true;
       const snapshot = collectCurrentWorkspaceState();
+      // 核心安全屏障：若当前会话数为 0，绝对杜绝将空快照冲刷覆盖云端已有会话！
+      if (snapshot.sessions.length === 0) {
+        logSyncWarn('当前本地会话数为 0，为保护云端资产，跳过反向覆盖！');
+        return false;
+      }
+      isSyncing.value = true;
       logSync('正在将工作区快照保存至云端...', {
         sessionsCount: snapshot.sessions.length,
         tabsCount: snapshot.fileEditor.tabs.length,
@@ -474,10 +504,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         fileManagerPath: snapshot.fileManager.currentPath,
       });
 
+      // 保存到后端数据库
       const res = await apiClient.post('/workspace-sync/save', {
         clientId: clientId.value,
         state: snapshot,
       });
+
       if (res.data?.success) {
         lastSyncTime.value = Date.now();
         logSync('工作区快照已成功持久化至云端数据库！时间:', new Date().toLocaleTimeString());
@@ -492,13 +524,16 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   };
 
-  // 声明接管 (Claim Lease)
+  // 声明接管 (Claim Lease) (仅 Web 端有效)
   const claimTakeover = async (): Promise<boolean> => {
+    if (isDesktopApp()) return false;
     try {
       logSync(`当前客户端 (${clientId.value}) 正在声明工作区接管权...`);
+
       const res = await apiClient.post('/workspace-sync/claim', {
         clientId: clientId.value,
       });
+
       if (res.data?.success) {
         isTakenOver.value = false;
         takeoverByClientId.value = null;
@@ -512,8 +547,9 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   };
 
-  // 处理被其它客户端接管的踢出通知
+  // 处理被其它客户端接管的踢出通知 (仅 Web 端有效)
   const handleTakeoverKickout = (targetActiveClientId: string) => {
+    if (isDesktopApp()) return;
     if (targetActiveClientId && targetActiveClientId !== clientId.value) {
       logSyncWarn(`工作区已被新客户端 (${targetActiveClientId}) 接管，当前客户端进入全局遮罩模式`);
       isTakenOver.value = true;
@@ -582,6 +618,23 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     });
 
     try {
+      // 0. 优先从云端快照恢复分屏布局与侧边栏配置
+      if (snapshot.layout) {
+        try {
+          const layoutStore = useLayoutStore();
+          if (snapshot.layout.layoutTree) {
+            logSync('从云端快照恢复工作区分屏布局配置...');
+            await layoutStore.updateLayoutTree(snapshot.layout.layoutTree);
+          }
+          if (snapshot.layout.sidebarPanes) {
+            logSync('从云端快照恢复侧边栏配置...');
+            await layoutStore.updateSidebarPanes(snapshot.layout.sidebarPanes);
+          }
+        } catch (layoutErr: any) {
+          logSyncWarn('恢复布局配置发生异常:', layoutErr.message);
+        }
+      }
+
       // 1. 确保连接配置已加载
       if (!connectionsStore.connections || connectionsStore.connections.length === 0) {
         try {
@@ -611,8 +664,20 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
         // 先同步匹配消费池，为并发恢复做预先规划
         const restorePlans = snapshot.sessions.map((s) => {
-          const connIdNum = Number(s.connectionId);
-          const connInfo = connectionsStore.connections.find(c => c.id === connIdNum);
+          // 多维三级匹配：1. UUID 跨库唯一标识 -> 2. 主机名称 (跨端对齐) -> 3. 整数主键 ID (同库兜底)
+          let connInfo = undefined;
+          if (s.connectionUuid) {
+            connInfo = connectionsStore.connections.find(c => c.uuid && c.uuid === s.connectionUuid);
+          }
+          if (!connInfo && s.connectionName) {
+            connInfo = connectionsStore.connections.find(
+              c => c.name && c.name.trim().toLowerCase() === s.connectionName.trim().toLowerCase()
+            );
+          }
+          if (!connInfo && s.connectionId !== undefined && s.connectionId !== null) {
+            const connIdNum = Number(s.connectionId);
+            connInfo = connectionsStore.connections.find(c => c.id === connIdNum);
+          }
 
           let matchedIdx = availableSuspended.findIndex(
             item => item.originalSessionId && item.originalSessionId === s.sessionId
@@ -669,16 +734,21 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
               }
             }
 
-            // 若无挂起或恢复失败，则并发新建会话
+            // 若无挂起或恢复失败，则并发新建会话 (使用本地查到的有效主键 ID)
             if (!targetSessionId && plan.connInfo) {
-              logSync(`重新开启连接会话 (并发): ${plan.connInfo.name || plan.connInfo.host} (旧会话 ID: ${s.sessionId}, isTargetActive=${shouldActivateThis})`);
+              logSync(`重新开启连接会话 (并发): ${plan.connInfo.name || plan.connInfo.host} (本地连接 ID: ${plan.connInfo.id}, 快照原 ID: ${s.connectionId}, isTargetActive=${shouldActivateThis})`);
               targetSessionId = sessionStore.openNewSession(plan.connInfo.id, undefined, shouldActivateThis) || null;
             }
 
             // 若仍无 targetSessionId，检查本地是否已有属于该连接且未被映射的会话兜底
             if (!targetSessionId) {
               const matchedExisting = Array.from(sessionStore.sessions.values()).find(
-                existingSession => String(existingSession.connectionId) === String(s.connectionId) && !Array.from(sessionIdMap.values()).includes(existingSession.sessionId)
+                existingSession => {
+                  if (Array.from(sessionIdMap.values()).includes(existingSession.sessionId)) return false;
+                  if (plan.connInfo && String(existingSession.connectionId) === String(plan.connInfo.id)) return true;
+                  if (s.connectionName && existingSession.connectionName === s.connectionName) return true;
+                  return String(existingSession.connectionId) === String(s.connectionId);
+                }
               );
               if (matchedExisting) {
                 targetSessionId = matchedExisting.sessionId;
@@ -698,21 +768,26 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
               }
 
               // 终端屏幕历史回放：如果是 resumeSshSession 唤醒的，后端会通过 logData 自动回放，此处无需重复写入
-              if (!isResumed && s.terminalBuffer) {
+              if (s.terminalBuffer) {
                 const sessionState = sessionStore.sessions.get(targetSessionId);
                 if (sessionState) {
-                  logSync(`为新连接会话 ${targetSessionId} 回放快照保存的终端屏幕历史 (字符数: ${s.terminalBuffer.length})`);
-                  // 对于重新建立的新连接，智能去除末尾悬空的旧提示符，避免与新 Shell 登录提示符重叠多出一行
-                  const cleanedBuffer = cleanTrailingPromptForReconnect(s.terminalBuffer);
-                  const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
+                  (sessionState as any).lastTerminalBuffer = s.terminalBuffer;
+                  if (!isResumed) {
+                    logSync(`为新连接会话 ${targetSessionId} 回放快照保存的终端屏幕历史 (字符数: ${s.terminalBuffer.length})`);
+                    const cleanedBuffer = cleanTrailingPromptForReconnect(s.terminalBuffer);
+                    const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
 
-                  if (sessionState.terminalManager?.terminalInstance?.value) {
-                    sessionState.terminalManager.terminalInstance.value.write(highlightedData);
-                  } else {
-                    if (!sessionState.pendingOutput) {
-                      sessionState.pendingOutput = [];
+                    if (sessionState.terminalManager?.terminalInstance?.value) {
+                      sessionState.terminalManager.terminalInstance.value.write(highlightedData);
+                      try {
+                        sessionState.terminalManager.terminalInstance.value.refresh(0, sessionState.terminalManager.terminalInstance.value.rows - 1);
+                      } catch {}
+                    } else {
+                      if (!sessionState.pendingOutput) {
+                        sessionState.pendingOutput = [];
+                      }
+                      sessionState.pendingOutput.push(highlightedData);
                     }
-                    sessionState.pendingOutput.push(highlightedData);
                   }
                 }
               } else if (s.terminalBuffer === '') {
@@ -773,6 +848,15 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
             item => String(item.connectionId) === String(targetConnId)
           );
           if (matched) return matched.sessionId;
+        }
+        if (oldId && snapshot.sessions) {
+          const sItem = snapshot.sessions.find(s => s.sessionId === oldId);
+          if (sItem && sItem.connectionName) {
+            const matchedByName = Array.from(sessionStore.sessions.values()).find(
+              item => item.connectionName && item.connectionName.trim().toLowerCase() === sItem.connectionName.trim().toLowerCase()
+            );
+            if (matchedByName) return matchedByName.sessionId;
+          }
         }
         if (sessionStore.sessions.size === 1) {
           return sessionStore.sessions.keys().next().value || null;
@@ -1026,9 +1110,22 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   );
 
-  // 初始化同步服务 (页面加载时调用)
+  // 监听布局与侧栏结构变化，自动触发工作区防抖保存
+  const layoutStore = useLayoutStore();
+  watch(
+    () => [layoutStore.layoutTree, layoutStore.sidebarPanes],
+    () => {
+      if (syncEnabled.value && !isRestoring.value && !isTakenOver.value) {
+        logSync('检测到工作区布局或侧栏配置调整，安排云端状态防抖同步');
+        triggerDebouncedSave(1500);
+      }
+    },
+    { deep: true }
+  );
+
+  // 初始化同步服务 (页面加载时调用，仅 Web 端有效)
   const initSync = async () => {
-    if (!syncEnabled.value) return;
+    if (isDesktopApp() || !syncEnabled.value) return;
 
     try {
       logSync('正在拉取云端工作区快照进行初始化...');
@@ -1048,11 +1145,15 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       }
     } catch (err: any) {
       logSyncWarn('初始化工作区同步失败:', err.message);
+    } finally {
+      isInitialized.value = true;
+      logSync('工作区同步初始化完毕，isInitialized 状态锁已放行。');
     }
   };
 
-  // 从云端获取最新快照并无缝恢复
+  // 从云端获取最新快照并无缝恢复 (仅 Web 端有效)
   const restoreWorkspaceFromCloud = async (): Promise<boolean> => {
+    if (isDesktopApp()) return false;
     try {
       logSync('正在从云端拉取最新工作区快照进行恢复...');
       const res = await apiClient.get('/workspace-sync');

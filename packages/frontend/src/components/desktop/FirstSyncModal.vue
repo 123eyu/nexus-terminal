@@ -32,6 +32,20 @@
           </button>
         </div>
 
+        <!-- 当前同步范围提示 -->
+        <div class="px-6 py-2.5 bg-header/20 border-b border-border/40 flex items-center justify-between text-xs">
+          <span class="text-text-secondary font-medium">同步范围:</span>
+          <div class="flex items-center gap-1.5 flex-wrap justify-end">
+            <span
+              v-for="item in activeModuleLabels"
+              :key="item"
+              class="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium text-[11px]"
+            >
+              {{ item }}
+            </span>
+          </div>
+        </div>
+
         <!-- 弹窗内容：3个策略卡片 -->
         <div class="p-6 space-y-3.5">
           <!-- 选项 1: 智能双向合并 (推荐) -->
@@ -144,11 +158,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useDesktopSyncStore } from '../../stores/desktopSync.store';
+import { ref, computed } from 'vue';
+import { useDesktopSyncStore, SYNC_MODULE_OPTIONS } from '../../stores/desktopSync.store';
 
 const desktopSyncStore = useDesktopSyncStore();
 const selectedMode = ref<'bidirectional' | 'cloud_to_local' | 'local_to_cloud'>('bidirectional');
+
+const activeModuleLabels = computed(() => {
+  return SYNC_MODULE_OPTIONS
+    .filter(opt => desktopSyncStore.selectedModules.includes(opt.key))
+    .map(opt => opt.label);
+});
 
 const handleClose = () => {
   desktopSyncStore.showFirstSyncModal = false;

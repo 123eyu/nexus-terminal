@@ -5,6 +5,14 @@ import { recordTombstone, getTombstonesSince } from './tombstone.service';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
+import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+
+export type SyncModuleKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
+
+export function shouldSyncModule(modules: SyncModuleKey[] | undefined, target: SyncModuleKey): boolean {
+  if (!modules || !Array.isArray(modules) || modules.length === 0) return true;
+  return modules.includes(target);
+}
 
 export interface SyncEntityItem {
   uuid: string;
@@ -16,27 +24,28 @@ export interface SyncExchangePayload {
   clientTime: number;
   lastSyncTime?: number;
   mode?: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
+  modules?: SyncModuleKey[];
   entities: {
     tags?: SyncEntityItem[];
+    quick_command_tags?: SyncEntityItem[];
     ssh_keys?: SyncEntityItem[];
     proxies?: SyncEntityItem[];
     connections?: SyncEntityItem[];
     quick_commands?: SyncEntityItem[];
+    settings?: SyncEntityItem[];
+    appearance_settings?: SyncEntityItem[];
+    users?: SyncEntityItem[];
+    terminal_themes?: SyncEntityItem[];
+    favorite_paths?: SyncEntityItem[];
     workspace_sync?: SyncEntityItem[];
+    command_history?: SyncEntityItem[];
   };
   tombstones: Array<{ entity_type: string; uuid: string; deleted_at: number }>;
 }
 
 export interface SyncExchangeResult {
   serverTime: number;
-  syncedEntities: {
-    tags?: SyncEntityItem[];
-    ssh_keys?: SyncEntityItem[];
-    proxies?: SyncEntityItem[];
-    connections?: SyncEntityItem[];
-    quick_commands?: SyncEntityItem[];
-    workspace_sync?: SyncEntityItem[];
-  };
+  syncedEntities: SyncExchangePayload['entities'];
   tombstones: Array<{ entity_type: string; uuid: string; deleted_at: number }>;
   stats: {
     pulled: number;
@@ -47,97 +56,77 @@ export interface SyncExchangeResult {
 
 export const syncService = {
   /**
-   * 导出本端自 sinceTimestamp 之后更新的数据与删除墓碑
+   * 导出本端自 sinceTimestamp 之后更新的数据与删除墓碑 (支持按模块过滤)
    */
-  async exportIncrementalData(sinceTimestamp: number, apiKey: string): Promise<{
+  async exportIncrementalData(sinceTimestamp: number, apiKey: string, modules?: SyncModuleKey[]): Promise<{
     entities: SyncExchangePayload['entities'];
     tombstones: Array<{ entity_type: string; uuid: string; deleted_at: number }>;
   }> {
     const db = await getDbInstance();
+    const syncConn = shouldSyncModule(modules, 'connections');
+    const syncCmds = shouldSyncModule(modules, 'quickCommands');
+    const syncApp = shouldSyncModule(modules, 'appearance');
+    const syncLayout = shouldSyncModule(modules, 'layout');
+    const syncHist = shouldSyncModule(modules, 'commandHistory');
 
-    // 1. 获取 Tombstones
-    const tombstones = await getTombstonesSince(sinceTimestamp);
+    // 1. 获取 Tombstones (按模块过滤)
+    let tombstones = await getTombstonesSince(sinceTimestamp);
+    if (modules && modules.length > 0) {
+      tombstones = tombstones.filter(t => {
+        if (['connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths'].includes(t.entity_type)) return syncConn;
+        if (['quick_commands', 'quick_command_tags'].includes(t.entity_type)) return syncCmds;
+        if (['appearance_settings', 'terminal_themes'].includes(t.entity_type)) return syncApp;
+        if (['settings'].includes(t.entity_type)) return syncLayout;
+        if (['command_history'].includes(t.entity_type)) return syncHist;
+        return true;
+      });
+    }
 
     // 2. 导出 Tags
-    const tagsRows = await allDb<any>(
-      db,
-      `SELECT uuid, name, created_at, updated_at FROM tags WHERE updated_at > ?`,
-      [sinceTimestamp]
-    );
-    const tags: SyncEntityItem[] = tagsRows.map(r => ({
-      uuid: r.uuid,
-      updated_at: r.updated_at,
-      data: { name: r.name, created_at: r.created_at, updated_at: r.updated_at }
-    }));
+    let tags: SyncEntityItem[] = [];
+    if (syncConn) {
+      const tagsRows = await allDb<any>(
+        db,
+        `SELECT uuid, name, created_at, updated_at FROM tags WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      tags = tagsRows.map(r => ({
+        uuid: r.uuid,
+        updated_at: r.updated_at,
+        data: { name: r.name, created_at: r.created_at, updated_at: r.updated_at }
+      }));
+    }
 
     // 3. 导出 SshKeys (敏感字段打上信封密文)
-    const sshKeysRows = await allDb<any>(
-      db,
-      `SELECT uuid, name, encrypted_private_key, encrypted_passphrase, created_at, updated_at FROM ssh_keys WHERE updated_at > ?`,
-      [sinceTimestamp]
-    );
-    const ssh_keys: SyncEntityItem[] = sshKeysRows.map(r => ({
-      uuid: r.uuid,
-      updated_at: r.updated_at,
-      data: {
-        name: r.name,
-        encrypted_private_key: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_private_key, apiKey),
-        encrypted_passphrase: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_passphrase, apiKey),
-        created_at: r.created_at,
-        updated_at: r.updated_at
-      }
-    }));
+    let ssh_keys: SyncEntityItem[] = [];
+    if (syncConn) {
+      const sshKeysRows = await allDb<any>(
+        db,
+        `SELECT uuid, name, encrypted_private_key, encrypted_passphrase, created_at, updated_at FROM ssh_keys WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      ssh_keys = sshKeysRows.map(r => ({
+        uuid: r.uuid,
+        updated_at: r.updated_at,
+        data: {
+          name: r.name,
+          encrypted_private_key: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_private_key, apiKey),
+          encrypted_passphrase: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_passphrase, apiKey),
+          created_at: r.created_at,
+          updated_at: r.updated_at
+        }
+      }));
+    }
 
     // 4. 导出 Proxies
-    const proxiesRows = await allDb<any>(
-      db,
-      `SELECT uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, created_at, updated_at FROM proxies WHERE updated_at > ?`,
-      [sinceTimestamp]
-    );
-    const proxies: SyncEntityItem[] = proxiesRows.map(r => ({
-      uuid: r.uuid,
-      updated_at: r.updated_at,
-      data: {
-        name: r.name,
-        type: r.type,
-        host: r.host,
-        port: r.port,
-        username: r.username,
-        auth_method: r.auth_method,
-        encrypted_password: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_password, apiKey),
-        encrypted_private_key: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_private_key, apiKey),
-        encrypted_passphrase: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_passphrase, apiKey),
-        created_at: r.created_at,
-        updated_at: r.updated_at
-      }
-    }));
-
-    // 5. 导出 Connections (解析 proxy_uuid, ssh_key_uuid 以及关联的 tag_uuids)
-    const connectionsRows = await allDb<any>(
-      db,
-      `SELECT c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method,
-              c.encrypted_password, c.encrypted_private_key, c.encrypted_passphrase,
-              c.proxy_type, c.notes, c.jump_chain, c.background_color,
-              c.created_at, c.updated_at,
-              p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
-       FROM connections c
-       LEFT JOIN proxies p ON c.proxy_id = p.id
-       LEFT JOIN ssh_keys sk ON c.ssh_key_id = sk.id
-       WHERE c.updated_at > ?`,
-      [sinceTimestamp]
-    );
-
-    const connections: SyncEntityItem[] = [];
-    for (const r of connectionsRows) {
-      // 查关联标签 UUID
-      const tagRows = await allDb<{ uuid: string }>(
+    let proxies: SyncEntityItem[] = [];
+    if (syncConn) {
+      const proxiesRows = await allDb<any>(
         db,
-        `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
-        [r.id]
+        `SELECT uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, created_at, updated_at FROM proxies WHERE updated_at > ?`,
+        [sinceTimestamp]
       );
-      const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
-
-      connections.push({
+      proxies = proxiesRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at,
         data: {
@@ -150,86 +139,253 @@ export const syncService = {
           encrypted_password: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_password, apiKey),
           encrypted_private_key: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_private_key, apiKey),
           encrypted_passphrase: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_passphrase, apiKey),
-          proxy_uuid: r.proxy_uuid || null,
-          proxy_type: r.proxy_type || null,
-          ssh_key_uuid: r.ssh_key_uuid || null,
-          notes: r.notes || null,
-          jump_chain: r.jump_chain || null,
-          background_color: r.background_color || null,
-          tag_uuids: tagUuids,
           created_at: r.created_at,
           updated_at: r.updated_at
         }
-      });
+      }));
+    }
+
+    // 5. 导出 Connections (解析 proxy_uuid, ssh_key_uuid 以及关联的 tag_uuids)
+    let connections: SyncEntityItem[] = [];
+    if (syncConn) {
+      const connectionsRows = await allDb<any>(
+        db,
+        `SELECT c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method,
+                c.encrypted_password, c.encrypted_private_key, c.encrypted_passphrase,
+                c.proxy_type, c.notes, c.jump_chain, c.background_color,
+                c.created_at, c.updated_at,
+                p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
+         FROM connections c
+         LEFT JOIN proxies p ON c.proxy_id = p.id
+         LEFT JOIN ssh_keys sk ON c.ssh_key_id = sk.id
+         WHERE c.updated_at > ?`,
+        [sinceTimestamp]
+      );
+
+      for (const r of connectionsRows) {
+        const tagRows = await allDb<{ uuid: string }>(
+          db,
+          `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
+          [r.id]
+        );
+        const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
+
+        connections.push({
+          uuid: r.uuid,
+          updated_at: r.updated_at,
+          data: {
+            name: r.name,
+            type: r.type,
+            host: r.host,
+            port: r.port,
+            username: r.username,
+            auth_method: r.auth_method,
+            encrypted_password: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_password, apiKey),
+            encrypted_private_key: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_private_key, apiKey),
+            encrypted_passphrase: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_passphrase, apiKey),
+            proxy_uuid: r.proxy_uuid || null,
+            proxy_type: r.proxy_type || null,
+            ssh_key_uuid: r.ssh_key_uuid || null,
+            notes: r.notes || null,
+            jump_chain: r.jump_chain || null,
+            background_color: r.background_color || null,
+            tag_uuids: tagUuids,
+            created_at: r.created_at,
+            updated_at: r.updated_at
+          }
+        });
+      }
     }
 
     // 6. 导出 QuickCommands
-    const quickCmdRows = await allDb<any>(
-      db,
-      `SELECT uuid, name, command, usage_count, variables, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
-      [sinceTimestamp]
-    );
-    const quick_commands: SyncEntityItem[] = quickCmdRows.map(r => ({
-      uuid: r.uuid,
-      updated_at: r.updated_at,
-      data: {
-        name: r.name,
-        command: r.command,
-        usage_count: r.usage_count,
-        variables: r.variables,
-        created_at: r.created_at,
-        updated_at: r.updated_at
-      }
-    }));
+    let quick_commands: SyncEntityItem[] = [];
+    if (syncCmds) {
+      const quickCmdRows = await allDb<any>(
+        db,
+        `SELECT uuid, name, command, usage_count, variables, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      quick_commands = quickCmdRows.map(r => ({
+        uuid: r.uuid,
+        updated_at: r.updated_at,
+        data: {
+          name: r.name,
+          command: r.command,
+          usage_count: r.usage_count,
+          variables: r.variables,
+          created_at: r.created_at,
+          updated_at: r.updated_at
+        }
+      }));
+    }
 
-    // 7. 导出 WorkspaceSync (快照)
-    const wsRows = await allDb<any>(
-      db,
-      `SELECT user_id, state, active_client_id, updated_at FROM workspace_sync WHERE updated_at > ?`,
-      [sinceTimestamp]
-    );
-    const workspace_sync: SyncEntityItem[] = wsRows.map(r => ({
-      uuid: `ws_user_${r.user_id}`,
-      updated_at: r.updated_at,
-      data: {
-        user_id: r.user_id,
-        state: r.state,
-        active_client_id: r.active_client_id,
-        updated_at: r.updated_at
-      }
-    }));
+    // 7. WorkspaceSync (快照)：桌面端数据库同步不推拉动态工作区会话，保持纯净数据同步
+    let workspace_sync: SyncEntityItem[] = [];
+
+    // 8. 导出 quick_command_tags
+    let quick_command_tags: SyncEntityItem[] = [];
+    if (syncCmds) {
+      const qcTagsRows = await allDb<any>(
+        db,
+        `SELECT uuid, name, updated_hlc, created_at, updated_at FROM quick_command_tags WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      quick_command_tags = qcTagsRows.map(r => ({
+        uuid: r.uuid,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: { name: r.name }
+      }));
+    }
+
+    // 9. 导出 settings (整库全量或增量设置项，严格排除本地私有配置)
+    let settings: SyncEntityItem[] = [];
+    if (syncLayout) {
+      const settingsRows = await allDb<any>(
+        db,
+        `SELECT uuid, key, value, updated_hlc, updated_at FROM settings 
+         WHERE updated_at > ? 
+           AND key NOT IN ('desktop_sync_config', 'syncApiKey') 
+           AND key NOT LIKE 'desktop_%'`,
+        [sinceTimestamp]
+      );
+      settings = settingsRows.map(r => ({
+        uuid: r.uuid,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: { key: r.key, value: r.value }
+      }));
+    }
+
+    // 10. 导出 appearance_settings (外观样式)
+    let appearance_settings: SyncEntityItem[] = [];
+    if (syncApp) {
+      const appRows = await allDb<any>(
+        db,
+        `SELECT key, value, updated_at FROM appearance_settings WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      appearance_settings = appRows.map(r => ({
+        uuid: `app_${r.key}`,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: { key: r.key, value: r.value }
+      }));
+    }
+
+    // 11. 导出 users (用户账号密码，默认全量时同步)
+    let users: SyncEntityItem[] = [];
+    if (!modules || modules.length === 0) {
+      const usersRows = await allDb<any>(
+        db,
+        `SELECT id, username, hashed_password, two_factor_secret, updated_at FROM users WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      users = usersRows.map(r => ({
+        uuid: `usr_${r.username}`,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: {
+          id: r.id,
+          username: r.username,
+          hashed_password: r.hashed_password,
+          two_factor_secret: r.two_factor_secret
+        }
+      }));
+    }
+
+    // 12. 导出 terminal_themes (终端主题)
+    let terminal_themes: SyncEntityItem[] = [];
+    if (syncApp) {
+      const themeRows = await allDb<any>(
+        db,
+        `SELECT * FROM terminal_themes WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      terminal_themes = themeRows.map(r => ({
+        uuid: `theme_${r.id}_${r.name}`,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: r
+      }));
+    }
+
+    // 13. 导出 favorite_paths (常用路径)
+    let favorite_paths: SyncEntityItem[] = [];
+    if (syncConn) {
+      const favRows = await allDb<any>(
+        db,
+        `SELECT * FROM favorite_paths WHERE updated_at > ?`,
+        [sinceTimestamp]
+      );
+      favorite_paths = favRows.map(r => ({
+        uuid: `fav_${r.id}`,
+        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+        data: r
+      }));
+    }
+
+    // 14. 导出 command_history (命令历史)
+    let command_history: SyncEntityItem[] = [];
+    if (syncHist) {
+      const histRows = await allDb<any>(
+        db,
+        `SELECT id, command, timestamp FROM command_history WHERE timestamp > ? ORDER BY timestamp DESC LIMIT 500`,
+        [sinceTimestamp]
+      );
+      command_history = histRows.map(r => ({
+        uuid: `cmd_${r.timestamp}_${Buffer.from(r.command || '').toString('base64').slice(0, 16)}`,
+        updated_at: r.timestamp || Math.floor(Date.now() / 1000),
+        data: { command: r.command, timestamp: r.timestamp }
+      }));
+    }
 
     return {
       entities: {
         tags,
+        quick_command_tags,
         ssh_keys,
         proxies,
         connections,
         quick_commands,
-        workspace_sync
+        settings,
+        appearance_settings,
+        users,
+        terminal_themes,
+        favorite_paths,
+        workspace_sync,
+        command_history
       },
       tombstones
     };
   },
 
   /**
-   * 应用传入的数据并按 LWW (Last-Write-Wins) 规则执行冲突合并
+   * 应用传入的数据并按 LWW (Last-Write-Wins) 规则执行冲突合并 (支持按模块过滤)
    */
   async applyIncomingData(
     payload: {
       entities?: SyncExchangePayload['entities'];
       tombstones?: Array<{ entity_type: string; uuid: string; deleted_at: number }>;
     },
-    apiKey: string
+    apiKey: string,
+    modules?: SyncModuleKey[]
   ): Promise<{ pushed: number; conflictsResolved: number }> {
     const db = await getDbInstance();
     let pushed = 0;
     let conflictsResolved = 0;
 
+    const syncConn = shouldSyncModule(modules, 'connections');
+    const syncCmds = shouldSyncModule(modules, 'quickCommands');
+    const syncApp = shouldSyncModule(modules, 'appearance');
+    const syncLayout = shouldSyncModule(modules, 'layout');
+    const syncHist = shouldSyncModule(modules, 'commandHistory');
+
     const { entities = {}, tombstones = [] } = payload;
 
     // --- 步骤 1: 处理删除墓碑 ---
     for (const t of tombstones) {
+      if (['connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths'].includes(t.entity_type) && !syncConn) continue;
+      if (['quick_commands', 'quick_command_tags'].includes(t.entity_type) && !syncCmds) continue;
+      if (['appearance_settings', 'terminal_themes'].includes(t.entity_type) && !syncApp) continue;
+      if (['settings'].includes(t.entity_type) && !syncLayout) continue;
+      if (['command_history'].includes(t.entity_type) && !syncHist) continue;
+
       if (t.entity_type === 'connections') {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
@@ -309,7 +465,7 @@ export const syncService = {
     }
 
     // --- 步骤 2: 合并 Tags ---
-    if (entities.tags) {
+    if (syncConn && entities.tags) {
       for (const item of entities.tags) {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
@@ -350,7 +506,7 @@ export const syncService = {
     }
 
     // --- 步骤 3: 合并 SshKeys ---
-    if (entities.ssh_keys) {
+    if (syncConn && entities.ssh_keys) {
       for (const item of entities.ssh_keys) {
         const localEncKey = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_private_key, apiKey);
         const localEncPass = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_passphrase, apiKey);
@@ -394,7 +550,7 @@ export const syncService = {
     }
 
     // --- 步骤 4: 合并 Proxies ---
-    if (entities.proxies) {
+    if (syncConn && entities.proxies) {
       for (const item of entities.proxies) {
         const localEncPwd = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_password, apiKey);
         const localEncKey = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_private_key, apiKey);
@@ -453,7 +609,7 @@ export const syncService = {
     }
 
     // --- 步骤 5: 合并 Connections ---
-    if (entities.connections) {
+    if (syncConn && entities.connections) {
       for (const item of entities.connections) {
         const localEncPwd = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_password, apiKey);
         const localEncKey = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_private_key, apiKey);
@@ -563,15 +719,16 @@ export const syncService = {
     }
 
     // --- 步骤 6: 合并 QuickCommands ---
-    if (entities.quick_commands) {
+    if (syncCmds && entities.quick_commands) {
       for (const item of entities.quick_commands) {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
           `SELECT id, updated_at FROM quick_commands WHERE uuid = ?`,
           [item.uuid]
         );
+        let qcPhysId: number | null = null;
         if (!local) {
-          await runDb(
+          const insRes = await runDb(
             db,
             `INSERT INTO quick_commands (uuid, name, command, usage_count, variables, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -585,6 +742,7 @@ export const syncService = {
               item.updated_at
             ]
           );
+          qcPhysId = insRes.lastID;
           pushed++;
         } else if (item.updated_at > local.updated_at) {
           await runDb(
@@ -599,14 +757,143 @@ export const syncService = {
               item.uuid
             ]
           );
+          qcPhysId = local.id;
           pushed++;
           conflictsResolved++;
+        } else {
+          qcPhysId = local.id;
+        }
+
+        // 对齐快捷命令标签关联 quick_command_tag_associations
+        if (qcPhysId && Array.isArray(item.data.tag_uuids)) {
+          await runDb(db, `DELETE FROM quick_command_tag_associations WHERE quick_command_id = ?`, [qcPhysId]);
+          for (const tUuid of item.data.tag_uuids) {
+            const t = await getDb<{ id: number }>(db, `SELECT id FROM quick_command_tags WHERE uuid = ?`, [tUuid]);
+            if (t) {
+              await runDb(db, `INSERT OR IGNORE INTO quick_command_tag_associations (quick_command_id, tag_id) VALUES (?, ?)`, [
+                qcPhysId,
+                t.id
+              ]);
+            }
+          }
         }
       }
     }
 
-    // --- 步骤 7: 合并 WorkspaceSync (工作区快照) ---
-    if (entities.workspace_sync && entities.workspace_sync.length > 0) {
+    // --- 步骤 6.5: 合并 Settings (系统设置项整库覆盖与增量同步) ---
+    if (syncLayout && entities.settings && entities.settings.length > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const item of entities.settings) {
+        const settingKey = item.data.key;
+        if (settingKey === 'desktop_sync_config' || settingKey === 'syncApiKey' || (typeof settingKey === 'string' && settingKey.startsWith('desktop_'))) {
+          continue; // 保护本地私有配置
+        }
+        const settingVal = typeof item.data.value === 'string' ? item.data.value : String(item.data.value || '');
+        const local = await getDb<{ updated_at: number }>(
+          db,
+          `SELECT updated_at FROM settings WHERE key = ?`,
+          [settingKey]
+        );
+        if (!local) {
+          await runDb(
+            db,
+            `INSERT INTO settings (key, value, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?)`,
+            [settingKey, settingVal, nowSec, item.updated_at || nowSec, item.uuid]
+          );
+          pushed++;
+        } else {
+          await runDb(
+            db,
+            `UPDATE settings SET value = ?, uuid = COALESCE(settings.uuid, ?), updated_at = ? WHERE key = ?`,
+            [settingVal, item.uuid, item.updated_at || nowSec, settingKey]
+          );
+          pushed++;
+        }
+      }
+    }
+
+    // --- 步骤 8: 合并 appearance_settings (外观样式) ---
+    if (syncApp && entities.appearance_settings && entities.appearance_settings.length > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const item of entities.appearance_settings) {
+        await runDb(
+          db,
+          `INSERT OR REPLACE INTO appearance_settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+          [item.data.key, item.data.value, nowSec, item.updated_at || nowSec]
+        );
+        pushed++;
+      }
+    }
+
+    // --- 步骤 9: 合并 users (用户账号密码，仅在全量同步未指定具体模块时同步，避免覆盖本地账号) ---
+    const isFullSync = !modules || modules.length === 0;
+    if (isFullSync && entities.users && entities.users.length > 0) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      for (const item of entities.users) {
+        await runDb(
+          db,
+          `INSERT OR REPLACE INTO users (id, username, hashed_password, two_factor_secret, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [item.data.id || null, item.data.username, item.data.hashed_password, item.data.two_factor_secret || null, nowSec, item.updated_at || nowSec]
+        );
+        pushed++;
+      }
+    }
+
+    // --- 步骤 10: 合并 terminal_themes (终端主题) ---
+    if (syncApp && entities.terminal_themes && entities.terminal_themes.length > 0) {
+      for (const item of entities.terminal_themes) {
+        const d = item.data;
+        await runDb(
+          db,
+          `INSERT OR REPLACE INTO terminal_themes (
+             id, name, theme_type, foreground, background, cursor, cursor_accent, selection_background,
+             black, red, green, yellow, blue, magenta, cyan, white,
+             bright_black, bright_red, bright_green, bright_yellow, bright_blue, bright_magenta, bright_cyan, bright_white,
+             created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            d.id, d.name, d.theme_type || 'custom', d.foreground, d.background, d.cursor, d.cursor_accent, d.selection_background,
+            d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
+            d.bright_black, d.bright_red, d.bright_green, d.bright_yellow, d.bright_blue, d.bright_magenta, d.bright_cyan, d.bright_white,
+            d.created_at || item.updated_at, d.updated_at
+          ]
+        );
+        pushed++;
+      }
+    }
+
+    // --- 步骤 11: 合并 favorite_paths (常用路径) ---
+    if (syncConn && entities.favorite_paths && entities.favorite_paths.length > 0) {
+      for (const item of entities.favorite_paths) {
+        const d = item.data;
+        await runDb(
+          db,
+          `INSERT OR REPLACE INTO favorite_paths (id, name, path, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [d.id, d.name, d.path, d.last_used_at, d.created_at || item.updated_at, d.updated_at]
+        );
+        pushed++;
+      }
+    }
+
+    // --- 步骤 12: 合并 command_history (命令历史) ---
+    if (syncHist && entities.command_history && entities.command_history.length > 0) {
+      for (const item of entities.command_history) {
+        const cmd = item.data.command;
+        const ts = item.data.timestamp || item.updated_at;
+        const existing = await getDb<{ id: number }>(
+          db,
+          `SELECT id FROM command_history WHERE command = ? AND timestamp = ?`,
+          [cmd, ts]
+        );
+        if (!existing) {
+          await runDb(db, `INSERT INTO command_history (command, timestamp) VALUES (?, ?)`, [cmd, ts]);
+          pushed++;
+        }
+      }
+    }
+
+    // --- 步骤 7: 合并 WorkspaceSync (工作区快照，仅在未指定特定模块的全量同步时执行) ---
+    if (isFullSync && entities.workspace_sync && entities.workspace_sync.length > 0) {
       for (const item of entities.workspace_sync) {
         const targetUserId = item.data.user_id || 1;
         const local = await getDb<{ updated_at: number }>(
@@ -621,6 +908,14 @@ export const syncService = {
             [targetUserId, item.data.state || '{}', item.data.active_client_id || null, item.updated_at]
           );
           pushed++;
+          if (item.data.active_client_id) {
+            try {
+              await workspaceSyncService.suspendOtherClientsSessions(targetUserId, item.data.active_client_id);
+              workspaceSyncService.notifyOtherClientsTakeover(targetUserId, item.data.active_client_id);
+            } catch (err: any) {
+              console.warn('[SyncService] 广播工作区接管踢出通知失败:', err.message);
+            }
+          }
         } else if (item.updated_at > local.updated_at) {
           await runDb(
             db,
@@ -629,6 +924,14 @@ export const syncService = {
           );
           pushed++;
           conflictsResolved++;
+          if (item.data.active_client_id) {
+            try {
+              await workspaceSyncService.suspendOtherClientsSessions(targetUserId, item.data.active_client_id);
+              workspaceSyncService.notifyOtherClientsTakeover(targetUserId, item.data.active_client_id);
+            } catch (err: any) {
+              console.warn('[SyncService] 广播工作区接管踢出通知失败:', err.message);
+            }
+          }
         }
       }
     }
@@ -637,41 +940,90 @@ export const syncService = {
   },
 
   /**
-   * 清空所有可同步的实体表与墓碑 (用于强制覆盖场景)
+   * 清空所有可同步的实体表与墓碑 (用于强制覆盖场景，支持按模块细粒度清空)
    */
-  async clearSyncTables(): Promise<void> {
+  async clearSyncTables(modules?: SyncModuleKey[]): Promise<void> {
     const db = await getDbInstance();
-    await runDb(db, 'DELETE FROM connection_tags');
-    await runDb(db, 'DELETE FROM connections');
-    await runDb(db, 'DELETE FROM proxies');
-    await runDb(db, 'DELETE FROM ssh_keys');
-    await runDb(db, 'DELETE FROM tags');
-    await runDb(db, 'DELETE FROM quick_commands');
-    await runDb(db, 'DELETE FROM sync_tombstones');
+    const syncConn = shouldSyncModule(modules, 'connections');
+    const syncCmds = shouldSyncModule(modules, 'quickCommands');
+    const syncApp = shouldSyncModule(modules, 'appearance');
+    const syncLayout = shouldSyncModule(modules, 'layout');
+    const syncHist = shouldSyncModule(modules, 'commandHistory');
+    const isFullSync = !modules || modules.length === 0;
+
+    await runDb(db, 'PRAGMA foreign_keys = OFF');
+
+    if (syncConn) {
+      await runDb(db, 'DELETE FROM connection_tags');
+      await runDb(db, 'DELETE FROM connections');
+      await runDb(db, 'DELETE FROM proxies');
+      await runDb(db, 'DELETE FROM ssh_keys');
+      await runDb(db, 'DELETE FROM tags');
+      await runDb(db, 'DELETE FROM favorite_paths');
+      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
+    }
+
+    if (syncCmds) {
+      await runDb(db, 'DELETE FROM quick_command_tag_associations');
+      await runDb(db, 'DELETE FROM quick_commands');
+      await runDb(db, 'DELETE FROM quick_command_tags');
+      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('quick_commands', 'quick_command_tags')`);
+    }
+
+    if (syncLayout) {
+      // 覆盖本地时，清空常规设置，但保护本地专有的桌面同步配置与服务器密钥
+      await runDb(db, `DELETE FROM settings WHERE key NOT IN ('desktop_sync_config', 'syncApiKey') AND key NOT LIKE 'desktop_%'`);
+      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'settings'`);
+    }
+
+    if (syncApp) {
+      await runDb(db, 'DELETE FROM appearance_settings');
+      await runDb(db, 'DELETE FROM terminal_themes');
+      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
+    }
+
+    if (syncHist) {
+      await runDb(db, 'DELETE FROM command_history');
+      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history'`);
+    }
+
+    if (isFullSync) {
+      await runDb(db, 'DELETE FROM users');
+      await runDb(db, 'DELETE FROM workspace_sync');
+      await runDb(db, 'DELETE FROM sync_tombstones');
+      await runDb(db, 'DELETE FROM sync_changes');
+      await runDb(db, 'DELETE FROM sync_pending_references');
+    }
+
+    await runDb(db, 'PRAGMA foreign_keys = ON');
+    console.log(`[SyncService] 受管业务数据表已根据模块 [${modules && modules.length > 0 ? modules.join(', ') : 'ALL'}] 原子清空完毕`);
   },
 
   /**
-   * 服务端处理双向数据交换
+   * 服务端处理双向数据交换 (支持按模块过滤与清空)
    */
   async processExchange(payload: SyncExchangePayload, apiKey?: string): Promise<SyncExchangeResult> {
     const key = apiKey || process.env.SYNC_API_KEY || 'default-fallback-key';
     const serverTime = Math.floor(Date.now() / 1000);
     const clientLastSyncTime = payload.lastSyncTime || 0;
     const mode = payload.mode || 'bidirectional';
+    const modules = payload.modules;
 
-    // 若客户端指定“以本地为准覆盖云端”：服务端先清空已有实体库
+    // 若客户端指定“以本地为准覆盖云端”：服务端先清空已有实体库（按 modules）
     if (mode === 'local_to_cloud') {
-      console.log('[SyncService] 收到强制以本地覆盖云端请求，正在清空服务端存量数据...');
-      await this.clearSyncTables();
+      console.log(`[SyncService] 收到强制以本地覆盖云端请求，正在清空服务端存量数据 (模块: ${modules && modules.length > 0 ? modules.join(', ') : 'ALL'})...`);
+      await this.clearSyncTables(modules);
+      const db = await getDbInstance();
+      await runDb(db, 'UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1');
     }
 
     // 1. 应用客户端推送过来的数据 (若为 cloud_to_local 则客户端不推数据，直接跳过)
-    const { pushed, conflictsResolved } = await this.applyIncomingData(payload, key);
+    const { pushed, conflictsResolved } = await this.applyIncomingData(payload, key, modules);
 
     // 2. 导出服务端自 clientLastSyncTime 之后更新的数据并返回
     // 若为 cloud_to_local，客户端需要获取服务端全量数据 (sinceTimestamp = 0)
     const exportSince = (mode === 'cloud_to_local') ? 0 : clientLastSyncTime;
-    const exportResult = await this.exportIncrementalData(exportSince, key);
+    const exportResult = await this.exportIncrementalData(exportSince, key, modules);
 
     let pulledCount = 0;
     Object.values(exportResult.entities).forEach(list => {
@@ -779,13 +1131,14 @@ export const syncService = {
   },
 
   /**
-   * 客户端主动向 VPS 触发全量同步 (支持 bidirectional, cloud_to_local, local_to_cloud)
+   * 客户端主动向 VPS 触发全量或按需同步 (支持 bidirectional, cloud_to_local, local_to_cloud 以及按模块过滤)
    */
   async triggerClientSync(
     vpsUrl: string,
     apiKey: string,
     lastSyncTime: number = 0,
-    mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional'
+    mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional',
+    modules?: SyncModuleKey[]
   ): Promise<{
     success: boolean;
     serverTime: number;
@@ -804,7 +1157,7 @@ export const syncService = {
     // 若不是“以云端为准”，客户端搜集并推送数据
     if (mode !== 'cloud_to_local') {
       const exportSince = (mode === 'local_to_cloud') ? 0 : lastSyncTime;
-      const clientIncremental = await this.exportIncrementalData(exportSince, apiKey);
+      const clientIncremental = await this.exportIncrementalData(exportSince, apiKey, modules);
       clientEntities = clientIncremental.entities;
       clientTombstones = clientIncremental.tombstones;
     }
@@ -813,6 +1166,7 @@ export const syncService = {
       clientTime: Math.floor(Date.now() / 1000),
       lastSyncTime: (mode === 'bidirectional') ? lastSyncTime : 0,
       mode,
+      modules,
       entities: clientEntities,
       tombstones: clientTombstones
     };
@@ -836,8 +1190,8 @@ export const syncService = {
     // 3. 客户端本地应用变更：
     // 若用户选择“以云端为准覆盖本地”，本地先清空再全量写入云端数据
     if (mode === 'cloud_to_local') {
-      console.log('[SyncService:Client] 正在以云端为准清空本地并写入全量数据...');
-      await this.clearSyncTables();
+      console.log(`[SyncService:Client] 正在以云端为准清空本地并写入数据 (模块: ${modules && modules.length > 0 ? modules.join(', ') : 'ALL'})...`);
+      await this.clearSyncTables(modules);
     }
 
     const applyStats = await this.applyIncomingData(
@@ -845,8 +1199,16 @@ export const syncService = {
         entities: exchangeData.syncedEntities,
         tombstones: exchangeData.tombstones
       },
-      apiKey
+      apiKey,
+      modules
     );
+
+    // 若为覆盖模式，重置对齐本地游标
+    if (mode === 'cloud_to_local') {
+      const db = await getDbInstance();
+      await runDb(db, 'UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1');
+      console.log('[SyncService:Client] 覆盖对齐完成，本地同步游标已归零重置。');
+    }
 
     return {
       success: true,

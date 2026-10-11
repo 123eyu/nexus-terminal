@@ -99,6 +99,8 @@ import favoritePathsRouter from './favorite-paths/favorite-paths.routes';
 import workspaceSyncRouter from './workspace-sync/workspace-sync.routes';
 import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
+import syncV2Router from './sync/sync.v2.routes';
+import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
 
@@ -305,8 +307,10 @@ const startServer = () => {
     app.use('/api/v1/workspace-sync', workspaceSyncRouter);
     app.use('/api/v1/desktop', desktopRouter);
     app.use('/api/v1/sync', syncRouter);
+    app.use('/api/sync/v2', syncV2Router);
     
     // 状态检查接口
+
     app.get('/api/v1/status', (req: Request, res: Response) => {
       res.json({ status: '后端服务运行中！' });
     });
@@ -315,9 +319,11 @@ const startServer = () => {
     // --- 前端静态资源托管与 SPA 回退 ---
     const candidateFrontendDirs = [
       process.env.NEXUS_FRONTEND_DIR,
+      path.resolve(__dirname, '../public'),
+      path.resolve(__dirname, 'frontend/dist'),
       path.resolve(__dirname, '../../../frontend/dist'),
       path.resolve(__dirname, '../../frontend/dist'),
-      path.resolve(__dirname, '../public'),
+      path.resolve(process.cwd(), 'resources/server/public'),
       path.resolve(process.cwd(), 'public'),
       path.resolve(process.cwd(), 'frontend/dist')
     ].filter((dir): dir is string => Boolean(dir && fs.existsSync(path.join(dir, 'index.html'))));
@@ -325,7 +331,17 @@ const startServer = () => {
     if (candidateFrontendDirs.length > 0) {
       const frontendStaticDir = candidateFrontendDirs[0];
       console.log(`[Frontend Static] 已检测到前端静态资源，正在托管: ${frontendStaticDir}`);
-      app.use(express.static(frontendStaticDir));
+      
+      // 托管静态资产，对 index.html 禁用强缓存，确保每次热重载和版本更新即时生效
+      app.use(express.static(frontendStaticDir, {
+        setHeaders: (res: Response, filePath: string) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+          }
+        }
+      }));
 
       // SPA 路由回退 (所有未匹配的 GET 请求返回 index.html)
       app.use((req: Request, res: Response, next: NextFunction): void => {
@@ -336,6 +352,9 @@ const startServer = () => {
           res.status(404).json({ error: 'Not Found' });
           return;
         }
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.sendFile(path.join(frontendStaticDir, 'index.html'));
       });
     } else {
@@ -353,9 +372,18 @@ const main = async () => {
     await initializeEnvironment(); // 首先初始化环境和密钥
     await initializeDatabase();   // 然后初始化数据库
     startServer();                // 最后启动服务器
+
+    // 激活双端增量同步调度器与存量数据对齐 (Reconciliation Catch-up)
+    try {
+        await syncThrottleScheduler.activateAndCatchup();
+    } catch (syncErr: any) {
+        console.warn('[Sync] 调度器初始化激活告警:', syncErr.message);
+    }
+
 };
 
 main().catch(error => {
     console.error("启动过程中发生未处理的错误:", error);
     process.exit(1);
 });
+

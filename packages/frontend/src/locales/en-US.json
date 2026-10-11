@@ -1118,7 +1118,21 @@
       "appearance": "Appearance",
       "about": "About"
     },
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "serverSync": {
+      "title": "Data Sync Service Key (API Key)",
+      "description": "Used for mutual authentication and encrypted sync between desktop clients and this cloud server. Persisted directly in the database without environment variables or restarts.",
+      "keyLabel": "Sync API Key"
+    },
+    "rememberLastRoute": {
+      "title": "Remember Last Visited Page",
+      "description": "Automatically restore and navigate to the last visited page upon reopening or refreshing Nexus Terminal.",
+      "label": "Auto-restore Last Visited Page",
+      "enabledTip": "Currently enabled: reopening will directly navigate to your last visited page",
+      "disabledTip": "Currently disabled: reopening will navigate to the dashboard by default",
+      "enabledSuccess": "Page memory enabled: next session will navigate to last visited page",
+      "disabledSuccess": "Page memory disabled: next session will open dashboard by default"
+    }
   },
   "notificationController": {
     "errorFetchSettings": "Failed to fetch notification settings",
@@ -1560,7 +1574,9 @@
       "unmarkForSuspend": "Unmark Suspend"
     },
     "closeTabTooltip": "Close Tab",
-    "newTabTooltip": "New Connection Tab"
+    "newTabTooltip": "New Connection Tab",
+    "selectConnection": "Select Connection",
+    "selectconnection": "Select Connection"
   },
   "sshKeys": {
     "selector": {

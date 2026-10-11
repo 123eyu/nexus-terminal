@@ -7,6 +7,8 @@ import { exportConnectionsAsEncryptedZip } from '../services/import-export.servi
 import { UpdateSidebarConfigDto, UpdateCaptchaSettingsDto, CaptchaSettings } from '../types/settings.types'; 
 import { AppearanceSettings, UpdateAppearanceDto } from '../types/appearance.types';
 import { getAppearanceSettings, updateAppearanceSettings as updateAppearanceSettingsInRepo } from '../appearance/appearance.repository';
+import { getServerSyncApiKey } from '../sync/sync.middleware';
+import { settingsRepository } from './settings.repository';
 import i18next from '../i18n'; 
 
 const auditLogService = new AuditLogService();
@@ -103,7 +105,8 @@ export const settingsController = {
           'terminalNoWrap', // 终端不换行设置键
           'markdownDefaultViewMode',
           'markdownDefaultViewModeMobile',
-          'componentInstanceStates' // 组件实例状态设置键
+          'componentInstanceStates', // 组件实例状态设置键
+          'rememberLastRoute' // 记住上次停留页面设置键
       ];
       const filteredSettings: Record<string, string> = {};
       for (const key in settingsToUpdate) {
@@ -642,6 +645,37 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
     } catch (error: any) {
       console.error('[控制器] 清理组件实例状态失败:', error);
       res.status(500).json({ message: '清理组件状态失败', error: error.message });
+    }
+  },
+
+  /**
+   * 获取当前云端服务端的同步 API Key (完全存库)
+   */
+  async getSyncApiKey(req: Request, res: Response): Promise<void> {
+    try {
+      const apiKey = await getServerSyncApiKey();
+      res.json({ success: true, apiKey });
+    } catch (error: any) {
+      console.error('获取同步 API Key 时出错:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  },
+
+  /**
+   * 更新云端服务端的同步 API Key 到数据库 settings 表
+   */
+  async setSyncApiKey(req: Request, res: Response): Promise<void> {
+    try {
+      const { apiKey } = req.body;
+      if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+        res.status(400).json({ success: false, error: 'API Key 不能为空' });
+        return;
+      }
+      await settingsRepository.setSetting('syncApiKey', apiKey.trim());
+      res.json({ success: true, message: '同步 API Key 已成功保存至数据库' });
+    } catch (error: any) {
+      console.error('更新同步 API Key 时出错:', error);
+      res.status(500).json({ success: false, error: error.message });
     }
   }
 };

@@ -1,0 +1,223 @@
+// packages/backend/src/sync/sync.scheduler.ts
+import { getDbInstance, runDb, getDb, allDb, registerSyncChangeNotifier, isDbInTransaction } from '../database/connection';
+import { syncV2Service } from './sync.v2.service';
+import { settingsRepository } from '../settings/settings.repository';
+import fs from 'fs';
+import path from 'path';
+import { getDataDir } from '../services/storage-path.service';
+import { getServerSyncApiKey } from './sync.middleware';
+
+export class SyncThrottleScheduler {
+  private debounceTimer: NodeJS.Timeout | null = null;
+  private maxWaitTimer: NodeJS.Timeout | null = null;
+  private firstNotifyTime: number = 0;
+  private isFlushing: boolean = false;
+  private dirtyWhileRunning: boolean = false;
+  private isPaused: boolean = false;
+
+  private retryCount: number = 0;
+  private retryTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // 挂接数据库写入网关唤醒器
+    registerSyncChangeNotifier(() => {
+      this.notifyChange();
+    });
+  }
+
+  /**
+   * 唤醒调度器 (每次写入成功后调用，不解析 SQL)
+   */
+  public notifyChange(): void {
+    if (this.isPaused) return;
+
+    const now = Date.now();
+    if (!this.firstNotifyTime) {
+      this.firstNotifyTime = now;
+    }
+
+    // 重置 1 秒防抖计时器
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    this.debounceTimer = setTimeout(() => {
+      this.flush('debounce');
+    }, 1000);
+
+    // 设置 3 秒封顶等待，防止持续密集写入无限期推迟同步
+    if (!this.maxWaitTimer) {
+      this.maxWaitTimer = setTimeout(() => {
+        this.flush('max_wait_cap');
+      }, 3000);
+    }
+  }
+
+  /**
+   * 暂停/恢复调度器 (用于大批量导入)
+   */
+  public pause(): void {
+    this.isPaused = true;
+  }
+
+  public resume(): void {
+    this.isPaused = false;
+    this.notifyChange();
+  }
+
+  /**
+   * 执行 Flush 周期
+   */
+  public async flush(reason: string = 'manual'): Promise<void> {
+    // 清理计时器
+    if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.maxWaitTimer) clearTimeout(this.maxWaitTimer);
+    this.debounceTimer = null;
+    this.maxWaitTimer = null;
+    this.firstNotifyTime = 0;
+
+    // 单飞锁：若本轮正在执行，置 dirtyWhileRunning 标志并在结束后自动重跑
+    if (this.isFlushing) {
+      this.dirtyWhileRunning = true;
+      return;
+    }
+
+    // 事务未提交延后防护：绝不在未提交的事务中执行 flush
+    if (isDbInTransaction()) {
+      setTimeout(() => this.flush('retry_after_transaction'), 100);
+      return;
+    }
+
+    this.isFlushing = true;
+
+    try {
+      const db = await getDbInstance();
+
+      // 检查当前是否配置了同步目标
+      const syncConfigSetting = await settingsRepository.getSetting('desktop_sync_config');
+      let vpsUrl = '';
+      let apiKey = '';
+      if (syncConfigSetting) {
+        try {
+          const cfg = JSON.parse(syncConfigSetting);
+          vpsUrl = cfg.vpsUrl || '';
+          apiKey = cfg.apiKey || '';
+        } catch {}
+      }
+
+      // 若未从 settings 表读取到，尝试从 desktop-settings.json 文件读取
+      if (!vpsUrl) {
+        try {
+          const jsonPath = path.join(getDataDir(), 'desktop-settings.json');
+          if (fs.existsSync(jsonPath)) {
+            const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+            if (parsed.syncVpsUrl && parsed.syncApiKey) {
+              vpsUrl = parsed.syncVpsUrl;
+              apiKey = parsed.syncApiKey;
+            }
+          }
+        } catch {}
+      }
+
+      // 若仍未读取到，尝试环境变量
+      if (!vpsUrl) vpsUrl = process.env.SYNC_VPS_URL || '';
+      if (!apiKey) apiKey = (await getServerSyncApiKey()) || '';
+
+      if (!vpsUrl || !apiKey) {
+        // 未配置远程 VPS 地址或密钥，无需发起网络同步
+        this.isFlushing = false;
+        return;
+      }
+
+      // 检查是否有本地新增变更 (seq > push_cursor)
+      const stateRow = await getDb<{ push_cursor: number; enabled: number }>(db, `SELECT push_cursor, enabled FROM sync_state WHERE id = 1`);
+      if (!stateRow || stateRow.enabled === 0) {
+        // 同步熔断中，不执行自动网络同步
+        this.isFlushing = false;
+        return;
+      }
+
+      const pushCursor = stateRow.push_cursor || 0;
+      const maxLocalSeqRow = await getDb<{ maxSeq: number }>(
+        db,
+        `SELECT MAX(seq) as maxSeq FROM sync_changes WHERE seq > ? AND origin IS NULL`,
+        [pushCursor]
+      );
+
+      const hasLocalChanges = maxLocalSeqRow?.maxSeq && maxLocalSeqRow.maxSeq > pushCursor;
+
+      // 如果有本地变更，或者是由兜底定时器/手动调用的，发起一轮双向同步
+      if (hasLocalChanges || reason === 'manual' || reason === 'scheduled') {
+        const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
+        if (stats.pushed > 0 || stats.pulled > 0) {
+          console.log(`[SyncScheduler] 自动同步完成 (触发源: ${reason})，推送: ${stats.pushed}，拉取: ${stats.pulled}`);
+        }
+      }
+
+      // 同步成功，重置退避计数
+      this.retryCount = 0;
+    } catch (err: any) {
+      console.warn(`[SyncScheduler] 自动同步执行遇到告警: ${err.message}`);
+      // 触发指数退避重试 (2s, 4s, 8s, 16s, 上限 60s)
+      this.retryCount = Math.min(this.retryCount + 1, 5);
+      const backoffDelay = Math.min(Math.pow(2, this.retryCount) * 1000, 60000);
+      if (this.retryTimer) clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => {
+        this.flush('retry_backoff');
+      }, backoffDelay);
+    } finally {
+      this.isFlushing = false;
+      if (this.dirtyWhileRunning) {
+        this.dirtyWhileRunning = false;
+        setTimeout(() => this.flush('dirty_rerun'), 100);
+      }
+    }
+  }
+
+  /**
+   * 熔断激活与存量数据对齐补录 (Reconciliation Catch-up)
+   */
+  public async activateAndCatchup(): Promise<void> {
+    const db = await getDbInstance();
+    console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
+
+    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags'];
+    let totalCatchup = 0;
+
+    for (const tbl of tables) {
+      // 查出尚未记录在 sync_changes 中的本地记录
+      const unrecordedRows = await allDb<{ uuid: string }>(
+        db,
+        `SELECT uuid FROM ${tbl}
+         WHERE uuid NOT IN (SELECT row_id FROM sync_changes WHERE tbl = '${tbl}')`
+      );
+
+      for (const r of unrecordedRows) {
+        if (r.uuid) {
+          await runDb(db, `INSERT INTO sync_changes (tbl, row_id, op, origin) VALUES (?, ?, 'U', NULL)`, [tbl, r.uuid]);
+          totalCatchup++;
+        }
+      }
+    }
+
+    // 激活触发器熔断开关
+    await runDb(db, `UPDATE sync_state SET enabled = 1 WHERE id = 1`);
+    console.log(`[SyncScheduler] 触发器已正式激活 (enabled = 1)！共补录 ${totalCatchup} 条存量记录至变更日志。`);
+
+    // 启动后 500ms 自动触发首次同步刷新
+    setTimeout(() => {
+      this.flush('catchup_initial');
+    }, 500);
+
+    // 启动每 24 小时一次的墓碑 GC 与变更日志压缩定时器
+    setInterval(async () => {
+      try {
+        await syncV2Service.cleanOldTombstonesAndCompressChanges(30);
+      } catch (err: any) {
+        console.warn('[SyncScheduler] 定期 GC 执行异常:', err.message);
+      }
+    }, 24 * 60 * 60 * 1000);
+  }
+}
+
+// 全局单例调度器
+export const syncThrottleScheduler = new SyncThrottleScheduler();

@@ -1,6 +1,7 @@
-import { getDbInstance, runDb, getDb as getDbRow, allDb } from '../database/connection';
+import { getDbInstance, runDb, getDb, getDb as getDbRow, allDb } from '../database/connection';
 import { SidebarConfig, LayoutNode, PaneName } from '../types/settings.types';
 import { CaptchaSettings } from '../types/settings.types';
+import { generateDeterministicSettingUuid } from '../database/migrations';
 import * as sqlite3 from 'sqlite3';
 
 const SIDEBAR_CONFIG_KEY = 'sidebarConfig';
@@ -41,12 +42,14 @@ export const settingsRepository = {
 
   async setSetting(key: string, value: string): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
-    const sql = `INSERT INTO settings (key, value, created_at, updated_at)
-         VALUES (?, ?, ?, ?)
+    const uuid = generateDeterministicSettingUuid(key);
+    const sql = `INSERT INTO settings (key, value, created_at, updated_at, uuid)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(key) DO UPDATE SET
            value = excluded.value,
-           updated_at = excluded.updated_at`;
-    const params = [key, value, now, now];
+           updated_at = excluded.updated_at,
+           uuid = COALESCE(settings.uuid, excluded.uuid)`;
+    const params = [key, value, now, now, uuid];
 
     try {
       const db = await getDbInstance();
@@ -266,13 +269,37 @@ export const ensureDefaultSettingsExist = async (db: sqlite3.Database): Promise<
         terminalEnableRightClickPaste: 'true', // 终端右键粘贴默认值
         markdownDefaultViewMode: 'split',
         markdownDefaultViewModeMobile: 'preview',
+        rememberLastRoute: 'true', // 记住上次停留页面默认开启
     };
     const nowSeconds = Math.floor(Date.now() / 1000);
-    const sqlInsertOrIgnore = `INSERT OR IGNORE INTO settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`;
 
     try {
-        for (const [key, value] of Object.entries(defaultSettings)) {
-            await runDb(db, sqlInsertOrIgnore, [key, value, nowSeconds, nowSeconds]);
+        const countRow = await getDb<{ count: number }>(db, `SELECT COUNT(*) as count FROM settings`);
+        const totalKeys = Object.keys(defaultSettings).length;
+        if (countRow && countRow.count >= totalKeys) {
+            return;
+        }
+
+        const colInfo = await allDb<{ name: string }>(db, `PRAGMA table_info(settings)`);
+        const hasUuid = colInfo.some(c => c.name === 'uuid');
+        const sqlInsertOrIgnore = hasUuid
+            ? `INSERT OR IGNORE INTO settings (key, value, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?)`
+            : `INSERT OR IGNORE INTO settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`;
+
+        await runDb(db, 'BEGIN TRANSACTION');
+        try {
+            for (const [key, value] of Object.entries(defaultSettings)) {
+                if (hasUuid) {
+                    const settingUuid = generateDeterministicSettingUuid(key);
+                    await runDb(db, sqlInsertOrIgnore, [key, value, nowSeconds, nowSeconds, settingUuid]);
+                } else {
+                    await runDb(db, sqlInsertOrIgnore, [key, value, nowSeconds, nowSeconds]);
+                }
+            }
+            await runDb(db, 'COMMIT');
+        } catch (innerErr) {
+            await runDb(db, 'ROLLBACK');
+            throw innerErr;
         }
     } catch (err: any) {
         console.error(`[设置仓库] 确保默认设置时出错:`, err.message);

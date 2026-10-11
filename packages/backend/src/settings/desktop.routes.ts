@@ -1,10 +1,16 @@
-// packages/backend/src/settings/desktop.routes.ts
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { getDataDir } from '../services/storage-path.service';
+import { syncService } from '../sync/sync.service';
+import { syncV2Service } from '../sync/sync.v2.service';
+import { syncThrottleScheduler } from '../sync/sync.scheduler';
+
+import { settingsRepository } from './settings.repository';
 
 const router = Router();
+
+
 
 export interface WindowState {
   width?: number;
@@ -18,6 +24,7 @@ export interface DesktopSettings {
   closeBehavior?: 'minimize_to_tray' | 'quit';
   rememberCloseChoice?: boolean;
   windowState?: WindowState;
+  lastRoute?: string;
   [key: string]: any;
 }
 
@@ -101,6 +108,39 @@ router.put('/settings', (req: Request, res: Response): void => {
 });
 
 /**
+ * 记录用户当前停留的路由页面 (用于桌面端下次启动直达，传入空字符串或clear可清除)
+ */
+router.post('/route', (req: Request, res: Response): void => {
+  const { route, clear, enabled } = req.body;
+  const current = readDesktopSettings();
+  if (typeof enabled === 'boolean') {
+    current.rememberLastRoute = enabled;
+  }
+  if (clear || route === '' || route === null || enabled === false) {
+    delete current.lastRoute;
+    current.rememberLastRoute = false;
+    try {
+      writeDesktopSettings(current);
+      console.log('🧹 [DesktopSettings] 已清空桌面端上次停留路由并标记关闭记忆');
+    } catch (err) {
+      console.warn('[DesktopSettings] 清空上次停留路由失败:', err);
+    }
+  } else if (typeof route === 'string' && route.trim().length > 0) {
+    const trimmed = route.trim();
+    if (!trimmed.includes('/login') && !trimmed.includes('/setup')) {
+      current.lastRoute = trimmed;
+      current.rememberLastRoute = true;
+      try {
+        writeDesktopSettings(current);
+      } catch (err) {
+        console.warn('[DesktopSettings] 记录上次停留路由失败:', err);
+      }
+    }
+  }
+  res.json({ success: true });
+});
+
+/**
  * 退出应用程序接口 (由前端触发彻底关闭)
  */
 router.post('/exit', (req: Request, res: Response): void => {
@@ -114,9 +154,9 @@ router.post('/exit', (req: Request, res: Response): void => {
 // ==========================================
 // 桌面端专属：VPS 云端数据同步本地接口
 // ==========================================
-import { syncService } from '../sync/sync.service';
 
 /**
+
  * 获取桌面端云端同步配置
  */
 router.get('/sync/config', (req: Request, res: Response): void => {
@@ -149,8 +189,16 @@ router.post('/sync/config', (req: Request, res: Response): void => {
 
   try {
     writeDesktopSettings(updated);
+    if (updated.syncVpsUrl && updated.syncApiKey) {
+      void settingsRepository.setSetting(
+        'desktop_sync_config',
+        JSON.stringify({ vpsUrl: updated.syncVpsUrl, apiKey: updated.syncApiKey })
+      );
+      syncThrottleScheduler.notifyChange();
+    }
     res.json({ success: true, message: '云端同步配置已保存', config: updated });
   } catch (err: any) {
+
     res.status(500).json({ success: false, error: '保存配置失败', details: err.message });
   }
 });
@@ -190,7 +238,7 @@ router.post('/sync/test', async (req: Request, res: Response): Promise<void> => 
 });
 
 /**
- * 触发一次全量双向增量同步
+ * 触发一次全量双向增量同步或按需模块同步
  */
 router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -208,18 +256,31 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
 
     const lastSyncTime = settings.syncLastTime || 0;
     const mode = req.body.mode || 'bidirectional';
-    const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime, mode);
+    const modules = Array.isArray(req.body.modules) ? req.body.modules : undefined;
+    const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime, mode, modules);
 
     // 同步成功，更新本地最后同步时间戳
     settings.syncLastTime = result.serverTime;
     writeDesktopSettings(settings);
 
+    // 仅在全量同步（未指定模块）时协同执行 v2 增量游标同步；若指定了模块，v1 已按模块精准同步完成
+    if (!modules || modules.length === 0) {
+      try {
+        const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
+        result.stats.pushed += v2Stats.pushed;
+        result.stats.pulled += v2Stats.pulled;
+      } catch (v2Err: any) {
+        console.warn('[DesktopSync] 协同 v2 增量同步告警:', v2Err.message);
+      }
+    }
+
     res.json({
       success: true,
-      message: '双向数据同步成功',
+      message: '数据同步成功',
       lastSyncTime: result.serverTime,
       stats: result.stats
     });
+
   } catch (err: any) {
     console.error('[DesktopSync] 执行同步失败:', err);
     res.status(500).json({

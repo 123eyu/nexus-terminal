@@ -4,6 +4,7 @@ import { ref, computed } from 'vue';
 import i18n, { setLocale, defaultLng, availableLocales } from '../i18n'; 
 import type { PaneName } from './layout.store';
 import { useAuthStore } from './auth.store';
+import { isDesktopApp } from '../utils/platform';
 import type { ConnectionInfo } from './connections.store';
 
 export type SortField = keyof Pick<ConnectionInfo, 'created_at' | 'last_connected_at' | 'updated_at' | 'name' | 'type'>;
@@ -73,6 +74,7 @@ interface SettingsState {
   fileEditorModalHeight?: string; // 文本编辑器弹窗高度 (px)
   markdownDefaultViewMode?: string; // 'preview' | 'split' | 'edit'
   markdownDefaultViewModeMobile?: string; // 'preview' | 'split' | 'edit'
+  rememberLastRoute?: string; // 'true' or 'false' - 记住上次停留页面
   [key: string]: string | undefined;
 }
 
@@ -361,6 +363,12 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.quickCommandsCompactMode = 'false';
         console.log(`[SettingsStore] quickCommandsCompactMode not found, set to default: ${settings.value.quickCommandsCompactMode}`);
       }
+      // +++ 记住上次停留页面默认值 (默认开启) +++
+      if (settings.value.rememberLastRoute === undefined) {
+        const localRemember = localStorage.getItem('nexus_remember_last_route');
+        settings.value.rememberLastRoute = localRemember !== null ? localRemember : 'true';
+        console.log(`[SettingsStore] rememberLastRoute not found, set to default: ${settings.value.rememberLastRoute}`);
+      }
         
       // --- 从 localStorage 加载 QuickCommands 特有设置 ---
       const localQcRowSizeMultiplier = localStorage.getItem('nexus_quickCommandRowSizeMultiplier');
@@ -483,7 +491,8 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileEditorModalWidth',
         'fileEditorModalHeight',
         'markdownDefaultViewMode',
-        'markdownDefaultViewModeMobile'
+        'markdownDefaultViewModeMobile',
+        'rememberLastRoute'
       ];
       if (!allowedKeys.includes(key)) {
           console.error(`[SettingsStore] 尝试更新不允许的设置键: ${key}`);
@@ -600,7 +609,8 @@ export const useSettingsStore = defineStore('settings', () => {
         'fileEditorModalWidth',
         'fileEditorModalHeight',
         'markdownDefaultViewMode',
-        'markdownDefaultViewModeMobile'
+        'markdownDefaultViewModeMobile',
+        'rememberLastRoute'
       ];
       const filteredUpdates: Partial<SettingsState> = {};
       let languageUpdate: string | undefined = undefined;
@@ -973,6 +983,36 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.terminalEnableRightClickPaste !== 'false'; // Default to true
   });
 
+    // Getter for remember last route setting, returning boolean
+  const rememberLastRouteBoolean = computed(() => {
+    return settings.value.rememberLastRoute !== 'false';
+  });
+
+  async function setRememberLastRoute(enabled: boolean) {
+    const strVal = enabled ? 'true' : 'false';
+    try {
+      localStorage.setItem('nexus_remember_last_route', strVal);
+      if (!enabled) {
+        localStorage.removeItem('nexus_last_route');
+        if (isDesktopApp()) {
+          apiClient.post('/desktop/route', { clear: true }).catch(() => {});
+        }
+      } else {
+        const currentPath = window.location.pathname;
+        if (currentPath && currentPath !== '/login' && currentPath !== '/setup') {
+          localStorage.setItem('nexus_last_route', currentPath);
+          if (isDesktopApp()) {
+            apiClient.post('/desktop/route', { route: currentPath }).catch(() => {});
+          }
+        }
+      }
+      await updateSetting('rememberLastRoute', strVal);
+    } catch (err) {
+      console.error('[SettingsStore] 保存 rememberLastRoute 失败:', err);
+      throw err;
+    }
+  }
+
   const statusMonitorShowIpBoolean = computed(() => {
     return settings.value.showStatusMonitorIpAddress === 'true';
   });
@@ -1086,5 +1126,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateTerminalContextMenuItems,
     terminalNoWrapBoolean, // Expose terminal no wrap getter
     statusMonitorShowIpBoolean, // 暴露状态监视器显示IP getter
+    rememberLastRouteBoolean, // 暴露记住上次停留页面 getter
+    setRememberLastRoute, // 暴露设置记住上次停留页面 action
   };
   });

@@ -51,6 +51,113 @@
          </form>
       </div>
 
+      <hr class="border-border/50"> <!-- Separator -->
+      <!-- Remember Last Route Setting (极简单行纯净开关) -->
+      <div class="settings-section-content">
+        <div class="flex items-center justify-between">
+          <h3 class="text-base font-semibold text-foreground">
+            {{ $t('settings.rememberLastRoute.title') }}
+          </h3>
+          <!-- 纯 Switch 滑块开关 -->
+          <button
+            type="button"
+            @click="handleToggleRememberLastRoute"
+            :disabled="isUpdatingRememberRoute"
+            :class="[
+              'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
+              rememberLastRouteBoolean ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
+            ]"
+            role="switch"
+            :aria-checked="rememberLastRouteBoolean"
+          >
+            <span
+              aria-hidden="true"
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
+                rememberLastRouteBoolean ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            ></span>
+          </button>
+        </div>
+        <p v-if="rememberRouteMessage" :class="['text-xs mt-2', rememberRouteSuccess ? 'text-success' : 'text-error']">
+          {{ rememberRouteMessage }}
+        </p>
+      </div>
+
+      <!-- Cloud Server Sync API Key Setting (仅在 Web / 云端部署环境下展示) -->
+      <div v-if="!isDesktop" class="settings-section-content">
+        <hr class="border-border/50 mb-6">
+        <h3 class="text-base font-semibold text-foreground mb-3 flex items-center justify-between">
+          <span class="flex items-center gap-2">
+            <i class="fas fa-key text-primary"></i>
+            {{ $t('settings.serverSync.title', '数据同步服务密钥 (API Key)') }}
+          </span>
+        </h3>
+        <p class="text-xs text-text-secondary mb-3">
+          {{ $t('settings.serverSync.description', '用于桌面端与本云端服务器进行双向数据同步鉴权与加密通信。密钥直接持久化保存在数据库中，修改后即刻生效，无需配置环境变量或重启服务。') }}
+        </p>
+
+        <form @submit.prevent="handleSaveServerApiKey" class="space-y-3.5">
+          <div>
+            <label class="block text-xs font-medium text-text-secondary mb-1">
+              {{ $t('settings.serverSync.keyLabel', '同步 API Key') }}
+            </label>
+            <div class="relative">
+              <input
+                :type="showServerApiKey ? 'text' : 'password'"
+                v-model="serverApiKey"
+                placeholder="请输入用于客户端同步鉴权的 API Key"
+                class="w-full px-3 py-1.5 pr-24 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm font-mono"
+              />
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  @click="showServerApiKey = !showServerApiKey"
+                  :title="showServerApiKey ? '隐藏密钥' : '显示密钥'"
+                  class="p-1 text-text-secondary hover:text-foreground text-xs cursor-pointer"
+                >
+                  <i :class="showServerApiKey ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                </button>
+                <button
+                  type="button"
+                  @click="handleCopyServerApiKey"
+                  title="复制密钥"
+                  class="p-1 text-text-secondary hover:text-foreground text-xs cursor-pointer"
+                >
+                  <i class="fas fa-copy"></i>
+                </button>
+                <button
+                  type="button"
+                  @click="handleGenerateServerApiKey"
+                  title="随机生成新密钥"
+                  class="p-1 text-text-secondary hover:text-foreground text-xs cursor-pointer"
+                >
+                  <i class="fas fa-dice"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 提示信息 -->
+          <div v-if="serverApiKeyMessage" :class="['text-xs flex items-center gap-1.5', serverApiKeySuccess ? 'text-success' : 'text-error']">
+            <i :class="serverApiKeySuccess ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle'"></i>
+            {{ serverApiKeyMessage }}
+          </div>
+
+          <div class="flex items-center gap-2.5 pt-1">
+            <button
+              type="submit"
+              :disabled="isSavingServerApiKey || !serverApiKey.trim()"
+              class="px-3 py-1.5 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover disabled:opacity-50 transition text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+            >
+              <i v-if="isSavingServerApiKey" class="fas fa-spinner fa-spin"></i>
+              <i v-else class="fas fa-save"></i>
+              {{ $t('common.save', '保存密钥') }}
+            </button>
+          </div>
+        </form>
+      </div>
+
       <!-- Desktop Specific Setting: Window Close Behavior (仅在桌面客户端下展示) -->
       <div v-if="isDesktop" class="settings-section-content">
         <hr class="border-border/50 mb-6">
@@ -111,85 +218,116 @@
             {{ desktopMessage }}
           </p>
         </div>
+      </div>
 
-        <!-- Desktop Specific Setting: VPS Cloud Data Sync (云端数据双向同步) -->
+      <!-- Desktop Specific Setting: Cloud Sync (仅在桌面独立客户端下展示) -->
+      <div v-if="isDesktop" class="settings-section-content">
         <hr class="border-border/50 my-6">
-        <h3 class="text-base font-semibold text-foreground mb-2 flex items-center justify-between">
+        <h3 class="text-base font-semibold text-foreground mb-3 flex items-center justify-between">
           <span class="flex items-center gap-2">
             <i class="fas fa-cloud text-primary"></i>
-            {{ $t('settings.desktop.cloudSyncTitle', '云端数据同步 (VPS 同步)') }}
+            {{ $t('settings.desktop.cloudSyncTitle', '云端数据同步') }}
           </span>
           <span v-if="desktopSyncStore.lastSyncTime > 0" class="text-xs font-normal text-text-secondary">
             {{ $t('settings.desktop.lastSynced', '上次同步') }}: {{ formatSyncTime(desktopSyncStore.lastSyncTime) }}
           </span>
         </h3>
-        <p class="text-xs text-text-secondary mb-4">
-          {{ $t('settings.desktop.cloudSyncDesc', '将桌面端的主机资产、跳板机、密钥库、快捷指令以及当前工作区与远程 VPS 服务端进行双向同步。') }}
-        </p>
 
-        <form @submit.prevent="handleSaveSyncConfig" class="space-y-4">
-          <!-- VPS 地址输入 -->
+        <form @submit.prevent="handleSaveSyncConfig" class="space-y-3.5">
+          <!-- 服务器地址输入 -->
           <div>
-            <label class="block text-sm font-medium text-text-secondary mb-1">
-              {{ $t('settings.desktop.vpsUrlLabel', 'VPS 服务器地址 (域名或 IP+端口)') }}
-              <span class="text-error">*</span>
+            <label class="block text-xs font-medium text-text-secondary mb-1">
+              {{ $t('settings.desktop.vpsUrlLabel', '服务器地址') }}
             </label>
             <input
               type="text"
               v-model="syncVpsUrl"
-              placeholder="例如 https://nexus.example.com 或 http://192.168.1.100:3000"
-              class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm"
+              placeholder="https://vps.example.com"
+              class="w-full px-3 py-1.5 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm"
             />
           </div>
 
           <!-- API Key 输入 -->
           <div>
-            <label class="block text-sm font-medium text-text-secondary mb-1">
-              {{ $t('settings.desktop.syncApiKeyLabel', '同步 API Key (双方必须一致)') }}
-              <span class="text-error">*</span>
+            <label class="block text-xs font-medium text-text-secondary mb-1">
+              {{ $t('settings.desktop.syncApiKeyLabel', 'API Key') }}
             </label>
             <div class="relative">
               <input
                 :type="showApiKey ? 'text' : 'password'"
                 v-model="syncApiKey"
-                placeholder="输入在 VPS 服务端环境变量 SYNC_API_KEY 中设置的密钥"
-                class="w-full px-3 py-2 pr-10 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm font-mono"
+                placeholder="输入 API Key"
+                class="w-full px-3 py-1.5 pr-10 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm font-mono"
               />
               <button
                 type="button"
                 @click="showApiKey = !showApiKey"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-sm"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground text-xs"
               >
                 <i :class="showApiKey ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
               </button>
             </div>
-            <small class="block mt-1 text-xs text-text-secondary">
-              {{ $t('settings.desktop.syncCryptoTip', '数据传输采用基于 API Key 派生密钥的 AES-256-GCM 独立信封加解密，两端数据安全无损转换。') }}
-            </small>
           </div>
 
-          <!-- 冲突解决机制说明 -->
-          <div class="p-3 bg-header/40 border border-border/60 rounded-md text-xs text-text-secondary flex items-start justify-between gap-3">
-            <div class="flex items-start gap-2 flex-1">
-              <i class="fas fa-info-circle text-primary mt-0.5"></i>
-              <div>
-                <span class="font-medium text-foreground">{{ $t('settings.desktop.conflictPolicyTitle', '冲突解决策略: 最新修改时间优先 (LWW)') }}</span>
-                <p class="mt-0.5">{{ $t('settings.desktop.conflictPolicyDesc', '双端基于实体 UUID 增量对齐，时间戳最新者自动生效；被删除的主机将通过墓碑记录同步清理，防止逆向复活。') }}</p>
+          <!-- 同步内容范围选择 (外观样式、工作区布局、命令历史、快捷指令、连接) -->
+          <div class="pt-2 border-t border-border/40">
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-xs font-medium text-text-secondary">
+                {{ $t('settings.desktop.syncModulesTitle', '同步内容范围') }}
+              </label>
+              <div class="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  @click="handleSelectAllModules"
+                  class="text-primary hover:underline cursor-pointer"
+                >
+                  {{ $t('common.selectAll', '全选') }}
+                </button>
+                <span class="text-border">|</span>
+                <button
+                  type="button"
+                  @click="handleInvertModules"
+                  class="text-text-secondary hover:text-foreground cursor-pointer"
+                >
+                  {{ $t('common.invertSelection', '反选') }}
+                </button>
               </div>
             </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <label
+                v-for="item in SYNC_MODULE_OPTIONS"
+                :key="item.key"
+                class="flex items-center gap-2 p-2 rounded-lg border border-border/60 bg-background/50 hover:bg-header/40 cursor-pointer select-none transition-colors"
+                :class="{ 'border-primary/60 bg-primary/5': desktopSyncStore.selectedModules.includes(item.key) }"
+              >
+                <input
+                  type="checkbox"
+                  :value="item.key"
+                  :checked="desktopSyncStore.selectedModules.includes(item.key)"
+                  @change="handleToggleModule(item.key)"
+                  class="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
+                />
+                <span class="text-xs font-medium text-foreground">{{ item.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 对齐策略 (极简单行) -->
+          <div class="flex items-center justify-between text-xs text-text-secondary pt-0.5">
+            <span>{{ $t('settings.desktop.conflictPolicyTitle', '策略: 最新修改时间优先 (LWW)') }}</span>
             <button
               type="button"
-              @click="desktopSyncStore.requestSync(true)"
-              class="px-2.5 py-1 text-xs text-primary hover:text-primary/80 border border-primary/30 rounded hover:bg-primary/5 transition whitespace-nowrap self-center"
+              @click="desktopSyncStore.showFirstSyncModal = true"
+              class="text-primary hover:underline font-medium cursor-pointer"
             >
-              {{ $t('settings.desktop.chooseAlignment', '数据对齐向导') }}
+              {{ $t('settings.desktop.chooseAlignment', '对齐向导') }}
             </button>
           </div>
 
           <!-- 状态提示 -->
           <div v-if="desktopSyncStore.testLatency !== null" class="text-xs text-success flex items-center gap-1.5">
             <i class="fas fa-check-circle"></i>
-            {{ $t('settings.desktop.testSuccess', '连通正常，网络往返延迟') }}: {{ desktopSyncStore.testLatency }}ms
+            {{ $t('settings.desktop.testSuccess', '连通正常') }} ({{ desktopSyncStore.testLatency }}ms)
           </div>
           <div v-if="desktopSyncStore.testError" class="text-xs text-error flex items-center gap-1.5">
             <i class="fas fa-exclamation-triangle"></i>
@@ -205,7 +343,7 @@
           </div>
 
           <!-- 操作按钮组 -->
-          <div class="flex items-center gap-3 pt-1">
+          <div class="flex items-center gap-2.5 pt-1">
             <!-- 测试连接 -->
             <button
               type="button"
@@ -233,13 +371,13 @@
             <button
               type="button"
               @click="handleTriggerSyncNow"
-              :disabled="!isSyncButtonEnabled || desktopSyncStore.isSyncing"
-              :title="isSyncButtonEnabled ? $t('settings.desktop.syncNowTooltip', '立即与 VPS 进行双向增量同步') : $t('settings.desktop.syncDisabledTooltip', '请先配置 VPS 域名和 API Key 并保存')"
+              :disabled="!isSyncButtonEnabled"
+              :title="isSyncButtonEnabled ? $t('settings.desktop.syncNowTooltip', '立即与云端双向同步') : $t('settings.desktop.syncDisabledTooltip', '请先配置服务器地址和 API Key')"
               class="px-3 py-1.5 rounded-md shadow-sm transition text-xs font-medium flex items-center gap-1.5 ml-auto"
-              :class="isSyncButtonEnabled ? 'bg-primary text-white hover:bg-primary/90 cursor-pointer' : 'bg-border/60 text-text-secondary cursor-not-allowed opacity-60'"
+              :class="isSyncButtonEnabled ? 'bg-primary text-white hover:bg-primary/90 cursor-pointer' : 'bg-border/60 text-text-secondary cursor-not-allowed opacity-50'"
             >
-              <i :class="desktopSyncStore.isSyncing ? 'fas fa-sync fa-spin' : 'fas fa-sync-alt'"></i>
-              {{ desktopSyncStore.isSyncing ? $t('settings.desktop.syncing', '正在同步...') : $t('settings.desktop.syncNow', '立即同步') }}
+              <i class="fas fa-sync-alt"></i>
+              {{ $t('settings.desktop.syncNow', '立即同步') }}
             </button>
           </div>
         </form>
@@ -251,7 +389,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useSettingsStore } from '../../stores/settings.store';
-import { useDesktopSyncStore } from '../../stores/desktopSync.store';
+import { useDesktopSyncStore, SYNC_MODULE_OPTIONS, type SyncModuleKey } from '../../stores/desktopSync.store';
+import { useWorkspaceSyncStore } from '../../stores/workspaceSync.store';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
@@ -260,7 +399,35 @@ import axios from 'axios';
 
 const settingsStore = useSettingsStore();
 const desktopSyncStore = useDesktopSyncStore();
-const { settings } = storeToRefs(settingsStore); 
+const { settings, rememberLastRouteBoolean } = storeToRefs(settingsStore);
+const { setRememberLastRoute } = settingsStore;
+
+// --- 路由记忆设置状态 ---
+const isUpdatingRememberRoute = ref(false);
+const rememberRouteMessage = ref('');
+const rememberRouteSuccess = ref(true);
+
+const handleToggleRememberLastRoute = async () => {
+  if (isUpdatingRememberRoute.value) return;
+  const newValue = !rememberLastRouteBoolean.value;
+  isUpdatingRememberRoute.value = true;
+  rememberRouteMessage.value = '';
+  try {
+    await setRememberLastRoute(newValue);
+    rememberRouteSuccess.value = true;
+    rememberRouteMessage.value = newValue
+      ? t('settings.rememberLastRoute.enabledSuccess')
+      : t('settings.rememberLastRoute.disabledSuccess');
+    setTimeout(() => {
+      rememberRouteMessage.value = '';
+    }, 3000);
+  } catch (err: any) {
+    rememberRouteSuccess.value = false;
+    rememberRouteMessage.value = err.message || t('common.saveFailed', '保存设置失败');
+  } finally {
+    isUpdatingRememberRoute.value = false;
+  }
+}; 
 const { t } = useI18n();
 
 const {
@@ -279,6 +446,78 @@ const {
 
 // --- 桌面客户端专属设置逻辑 ---
 const isDesktop = ref(isDesktopApp());
+
+// --- 云端服务端 API Key 设置状态 (Web 云端环境独有) ---
+const serverApiKey = ref('');
+const showServerApiKey = ref(false);
+const isSavingServerApiKey = ref(false);
+const serverApiKeyMessage = ref('');
+const serverApiKeySuccess = ref(true);
+
+const fetchServerApiKey = async () => {
+  try {
+    const res = await axios.get('/api/v1/settings/sync-api-key');
+    if (res.data && res.data.success && res.data.apiKey) {
+      serverApiKey.value = res.data.apiKey;
+    }
+  } catch (err: any) {
+    console.warn('[SystemSettings] 获取同步 API Key 失败:', err);
+  }
+};
+
+const handleSaveServerApiKey = async () => {
+  if (!serverApiKey.value.trim()) return;
+  isSavingServerApiKey.value = true;
+  serverApiKeyMessage.value = '';
+  try {
+    const res = await axios.put('/api/v1/settings/sync-api-key', {
+      apiKey: serverApiKey.value.trim()
+    });
+    if (res.data && res.data.success) {
+      serverApiKeySuccess.value = true;
+      serverApiKeyMessage.value = t('common.saved', '同步 API Key 已成功保存至数据库');
+      setTimeout(() => {
+        if (serverApiKeyMessage.value === t('common.saved', '同步 API Key 已成功保存至数据库')) {
+          serverApiKeyMessage.value = '';
+        }
+      }, 3000);
+    } else {
+      serverApiKeySuccess.value = false;
+      serverApiKeyMessage.value = res.data?.error || t('common.saveFailed', '保存失败');
+    }
+  } catch (err: any) {
+    serverApiKeySuccess.value = false;
+    serverApiKeyMessage.value = err.response?.data?.error || err.message || t('common.saveFailed', '保存失败');
+  } finally {
+    isSavingServerApiKey.value = false;
+  }
+};
+
+const handleCopyServerApiKey = async () => {
+  if (!serverApiKey.value) return;
+  try {
+    await navigator.clipboard.writeText(serverApiKey.value);
+    serverApiKeySuccess.value = true;
+    serverApiKeyMessage.value = 'API Key 已复制到剪贴板';
+    setTimeout(() => {
+      if (serverApiKeyMessage.value === 'API Key 已复制到剪贴板') {
+        serverApiKeyMessage.value = '';
+      }
+    }, 2500);
+  } catch (e) {
+    serverApiKeySuccess.value = false;
+    serverApiKeyMessage.value = '复制失败，请手动选中复制';
+  }
+};
+
+const handleGenerateServerApiKey = () => {
+  const array = new Uint8Array(16);
+  window.crypto.getRandomValues(array);
+  const randomHex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  serverApiKey.value = `nexus-sync-${randomHex}`;
+  serverApiKeySuccess.value = true;
+  serverApiKeyMessage.value = '已生成新密钥，请点击保存以持久化到数据库';
+};
 const closeBehavior = ref<'minimize_to_tray' | 'quit'>('minimize_to_tray');
 const rememberCloseChoice = ref(false);
 const desktopMessage = ref('');
@@ -290,11 +529,39 @@ const syncApiKey = ref('');
 const showApiKey = ref(false);
 const isSavingSync = ref(false);
 
+const handleToggleModule = (key: SyncModuleKey) => {
+  const current = [...desktopSyncStore.selectedModules];
+  const idx = current.indexOf(key);
+  if (idx > -1) {
+    if (current.length === 1) {
+      return; // 至少保留一项，防呆
+    }
+    current.splice(idx, 1);
+  } else {
+    current.push(key);
+  }
+  desktopSyncStore.setSelectedModules(current);
+};
+
+const handleSelectAllModules = () => {
+  desktopSyncStore.setSelectedModules(SYNC_MODULE_OPTIONS.map(o => o.key));
+};
+
+const handleInvertModules = () => {
+  const allKeys = SYNC_MODULE_OPTIONS.map(o => o.key);
+  const inverted = allKeys.filter(k => !desktopSyncStore.selectedModules.includes(k));
+  if (inverted.length === 0) {
+    desktopSyncStore.setSelectedModules(allKeys);
+  } else {
+    desktopSyncStore.setSelectedModules(inverted);
+  }
+};
+
 /**
  * 云端同步按钮是否允许点击 (只有配置了域名和 apikey 才可以点击，否则禁用置灰)
  */
 const isSyncButtonEnabled = computed(() => {
-  return syncVpsUrl.value.trim().length > 0 && syncApiKey.value.trim().length > 0;
+  return syncVpsUrl.value.trim().length > 0 && syncApiKey.value.trim().length > 0 && desktopSyncStore.selectedModules.length > 0;
 });
 
 const formatSyncTime = (timestamp: number) => {
@@ -341,6 +608,8 @@ onMounted(async () => {
     } catch (err) {
       console.warn('[DesktopSettings] 获取云端同步配置失败:', err);
     }
+  } else {
+    fetchServerApiKey();
   }
 });
 
@@ -376,6 +645,10 @@ const handleTriggerSyncNow = async () => {
   if (!isSyncButtonEnabled.value) return;
   // 先自动保存一次最新配置
   await handleSaveSyncConfig();
+  try {
+    const wsStore = useWorkspaceSyncStore();
+    // 桌面端不触发工作区动态快照保存
+  } catch {}
   await desktopSyncStore.requestSync();
 };
 

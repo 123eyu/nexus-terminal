@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
 import { useSessionStore } from '../stores/session.store';
+import { useLayoutStore } from '../stores/layout.store';
+import { storeToRefs } from 'pinia';
 import type { LayoutNode } from '../stores/layout.store';
 import type { FileTab } from '../stores/fileEditor.store';
 import type { SessionTabInfoWithStatus } from '../stores/session/types';
@@ -25,6 +27,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
+const layoutStore = useLayoutStore();
+const { isHeaderVisible } = storeToRefs(layoutStore);
 
 const handleCloseOtherSessions = (targetSessionId: string) => {
   const sessionsToClose = props.sessions
@@ -57,7 +61,7 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
 </script>
 
 <template>
-  <div class="desktop-workspace-view flex flex-col flex-grow overflow-hidden">
+  <div class="desktop-workspace-view flex flex-col flex-grow overflow-hidden" :class="{ 'header-hidden': !isHeaderVisible }">
     <TerminalTabBar
       :sessions="props.sessions"
       :active-session-id="props.activeSessionId"
@@ -71,7 +75,7 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
       @close-sessions-to-right="handleCloseSessionsToRight"
       @close-sessions-to-left="handleCloseSessionsToLeft"
     />
-    <div class="main-content-area">
+    <div class="main-content-area" :class="{ 'full-bleed': !isHeaderVisible }">
       <LayoutRenderer
         v-if="props.layoutTree"
         :is-root-renderer="true"
@@ -104,6 +108,13 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
   border-radius: 0 0 5px 5px;
   margin: var(--base-margin, 0.5rem);
   margin-top: 0;
+  transition: margin 0.15s ease, border-radius 0.15s ease;
+}
+
+.main-content-area.full-bleed {
+  margin: 0;
+  border: none;
+  border-radius: 0;
 }
 
 .layout-renderer-wrapper {

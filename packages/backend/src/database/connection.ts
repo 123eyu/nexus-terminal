@@ -2,8 +2,10 @@
 import sqlite3, { OPEN_READWRITE, OPEN_CREATE } from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { AsyncLocalStorage } from 'async_hooks';
 import { tableDefinitions } from './schema.registry';
 import { runMigrations } from './migrations'; // +++ Import runMigrations +++
+import { installSyncTriggers } from '../sync/triggers.manager';
 import { getDbPath, getDataDir } from '../services/storage-path.service';
 
 const dbPath = getDbPath();
@@ -12,23 +14,103 @@ console.log(`[数据库连接] 当前数据存储根目录: ${getDataDir()}, 数
 const verboseSqlite3 = sqlite3.verbose();
 let dbInstancePromise: Promise<sqlite3.Database> | null = null;
 
-interface RunResult {
+export interface RunResult {
     lastID: number;
     changes: number;
 }
 
+// --- 同步应用排他锁与写屏障状态机 ---
+export const applyContext = new AsyncLocalStorage<{ isApplying: boolean }>();
 
-export const runDb = (db: sqlite3.Database, sql: string, params: any[] = []): Promise<RunResult> => {
-    return new Promise((resolve, reject) => {
-        db.run(sql, params, function (err: Error | null) {
-            if (err) {
-                console.error(`[数据库错误] SQL: ${sql.substring(0, 100)}... 参数: ${JSON.stringify(params)} 错误: ${err.message}`);
-                reject(err);
-            } else {
-                resolve({ lastID: this.lastID, changes: this.changes });
-            }
+export const syncRuntimeState = {
+    isApplying: false
+};
+
+const applyWaiters: Array<() => void> = [];
+let transactionDepth = 0;
+
+type ChangeNotifier = () => void;
+let changeNotifier: ChangeNotifier | null = null;
+
+export function registerSyncChangeNotifier(notifier: ChangeNotifier): void {
+    changeNotifier = notifier;
+}
+
+export function triggerSyncNotify(): void {
+    if (changeNotifier) {
+        try {
+            changeNotifier();
+        } catch (e) {
+            console.warn('[DB] 触发同步变更通知出错:', e);
+        }
+    }
+}
+
+export function isDbInTransaction(): boolean {
+    return transactionDepth > 0;
+}
+
+export function getTransactionDepth(): number {
+    return transactionDepth;
+}
+
+/**
+ * 获取应用远端数据的独占写锁 (进入 applying 事务前调用)
+ */
+export async function acquireApplyLock(): Promise<() => void> {
+    while (syncRuntimeState.isApplying) {
+        await new Promise<void>(resolve => applyWaiters.push(resolve));
+    }
+    syncRuntimeState.isApplying = true;
+    return () => {
+        syncRuntimeState.isApplying = false;
+        const next = applyWaiters.shift();
+        if (next) next();
+    };
+}
+
+export const runDb = async (db: sqlite3.Database, sql: string, params: any[] = []): Promise<RunResult> => {
+    const isFromApply = applyContext.getStore()?.isApplying === true;
+
+    // 核心安全屏障：若当前正在应用远端数据，且当前调用来自普通业务（非应用链路）：
+    // 异步排队挂起，等待应用事务完成并提交后再放行执行，绝对杜绝被 applying 事务吞噬或回滚！
+    if (syncRuntimeState.isApplying && !isFromApply) {
+        await new Promise<void>(resolve => applyWaiters.push(resolve));
+    }
+
+    const trimmed = sql.trim().toUpperCase();
+    if (trimmed.startsWith('BEGIN')) {
+        transactionDepth++;
+    }
+
+    try {
+        const result = await new Promise<RunResult>((resolve, reject) => {
+            db.run(sql, params, function (err: Error | null) {
+                if (err) {
+                    console.error(`[数据库错误] SQL: ${sql.substring(0, 100)}... 错误: ${err.message}`);
+                    reject(err);
+                } else {
+                    resolve({ lastID: this.lastID, changes: this.changes });
+                }
+            });
         });
-    });
+
+        if (trimmed.startsWith('COMMIT') || trimmed.startsWith('ROLLBACK')) {
+            transactionDepth = Math.max(0, transactionDepth - 1);
+            if (transactionDepth === 0 && !syncRuntimeState.isApplying) {
+                triggerSyncNotify();
+            }
+        } else if (transactionDepth === 0 && !syncRuntimeState.isApplying) {
+            triggerSyncNotify();
+        }
+
+        return result;
+    } catch (err) {
+        if (trimmed.startsWith('ROLLBACK')) {
+            transactionDepth = Math.max(0, transactionDepth - 1);
+        }
+        throw err;
+    }
 };
 
 
@@ -97,8 +179,12 @@ export const getDbInstance = (): Promise<sqlite3.Database> => {
                     await runDatabaseInitializations(db);
                     // +++ 运行数据库迁移 +++
                     await runMigrations(db);
-                    console.log('[数据库] 初始化和迁移完成。'); 
+                    // 挂载同步触发器 (熔断安全，受控于 sync_state.enabled)
+                    await installSyncTriggers(db);
+                    console.log('[数据库] 初始化、迁移与同步触发器就绪。'); 
                     resolve(db);
+
+
                 } catch (initError) {
                     console.error('[数据库] 连接后初始化失败，正在关闭连接...');
                     dbInstancePromise = null;

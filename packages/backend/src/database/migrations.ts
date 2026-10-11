@@ -1,4 +1,35 @@
 import { Database } from 'sqlite3';
+import crypto from 'crypto';
+
+/**
+ * 根据标签名称生成全局确定性的 UUID v5 (基于 SHA-1 与固定命名空间)
+ * 保证相同名称的标签在任何设备、任何时点生成的 UUID 完全一致，天然自动合并
+ */
+export function generateDeterministicTagUuid(name: string): string {
+    const normalized = (name || '').trim().toLowerCase();
+    const hash = crypto.createHash('sha1').update('nexus-tag-ns:' + normalized, 'utf8').digest('hex');
+    const p1 = hash.substring(0, 8);
+    const p2 = hash.substring(8, 12);
+    const p3 = '5' + hash.substring(13, 16); // Version 5
+    const p4 = ((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0') + hash.substring(18, 20); // RFC4122 variant
+    const p5 = hash.substring(20, 32);
+    return `${p1}-${p2}-${p3}-${p4}-${p5}`;
+}
+
+/**
+ * 根据设置项 key 生成全局确定性 UUID v5
+ * 确保两端相同的设置项具有绝对一致的 UUID
+ */
+export function generateDeterministicSettingUuid(key: string): string {
+    const normalized = (key || '').trim();
+    const hash = crypto.createHash('sha1').update('nexus-setting-ns:' + normalized, 'utf8').digest('hex');
+    const p1 = hash.substring(0, 8);
+    const p2 = hash.substring(8, 12);
+    const p3 = '5' + hash.substring(13, 16);
+    const p4 = ((parseInt(hash.substring(16, 18), 16) & 0x3f) | 0x80).toString(16).padStart(2, '0') + hash.substring(18, 20);
+    const p5 = hash.substring(20, 32);
+    return `${p1}-${p2}-${p3}-${p4}-${p5}`;
+}
 
 // 1. 定义 migrations 表 SQL
 const createMigrationsTableSQL = `
@@ -10,14 +41,12 @@ CREATE TABLE IF NOT EXISTS migrations (
 `;
 
 // 2. 定义迁移列表
-// 注意：这里的迁移应该代表数据库模式从某个已知状态到下一个状态的变化。
-// 初始模式通常在 database.ts 中通过 schema.registry.ts 创建。
-// 这里的迁移应该从版本 1 开始，代表初始模式创建后的第一个变更。
 interface Migration {
     id: number;
     name: string;
     sql: string; // 可以是多条 SQL 语句，用 ; 分隔。db.exec 会处理。
     check?: (db: Database) => Promise<boolean>; // 可选的前置检查函数
+    execute?: (db: Database) => Promise<void>;  // 可选的附加执行函数
 }
 
 // 辅助函数：检查表是否存在
@@ -374,8 +403,187 @@ const definedMigrations: Migration[] = [
             UPDATE tags SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
             UPDATE quick_commands SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
         `
+    },
+    {
+        id: 14,
+        name: 'Implement Sync v2 schema with sync_state, sync_changes, pending_references, updated_hlc and deterministic tags',
+        check: async (db: Database): Promise<boolean> => {
+            const syncStateExists = await tableExists(db, 'sync_state');
+            const connHlcExists = await columnExists(db, 'connections', 'updated_hlc');
+            return !syncStateExists || !connHlcExists;
+        },
+        sql: `
+            -- 1. 创建同步状态控制表
+            CREATE TABLE IF NOT EXISTS sync_state (
+                id               INTEGER PRIMARY KEY CHECK (id = 1),
+                device_id        TEXT    NOT NULL,
+                hlc_ms           INTEGER NOT NULL DEFAULT 0,
+                hlc_ctr          INTEGER NOT NULL DEFAULT 0,
+                applying         INTEGER NOT NULL DEFAULT 0,
+                enabled          INTEGER NOT NULL DEFAULT 0,
+                push_cursor      INTEGER NOT NULL DEFAULT 0,
+                pull_cursor      INTEGER NOT NULL DEFAULT 0,
+                min_valid_cursor INTEGER NOT NULL DEFAULT 0
+            );
+
+            -- 2. 创建增量变更日志表
+            CREATE TABLE IF NOT EXISTS sync_changes (
+                seq    INTEGER PRIMARY KEY AUTOINCREMENT,
+                tbl    TEXT NOT NULL,
+                row_id TEXT NOT NULL,
+                op     TEXT NOT NULL CHECK (op IN ('U','D')),
+                origin TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_sync_changes_seq ON sync_changes(seq);
+            CREATE INDEX IF NOT EXISTS idx_sync_changes_row ON sync_changes(tbl, row_id);
+
+            -- 3. 升级墓碑表为规范结构 (支持复合主键与 HLC)
+            CREATE TABLE IF NOT EXISTS sync_tombstones_v2 (
+                tbl         TEXT NOT NULL,
+                row_id      TEXT NOT NULL,
+                deleted_hlc TEXT NOT NULL DEFAULT '',
+                deleted_at  INTEGER NOT NULL,
+                PRIMARY KEY (tbl, row_id)
+            );
+            INSERT OR IGNORE INTO sync_tombstones_v2 (tbl, row_id, deleted_hlc, deleted_at)
+                SELECT entity_type, uuid, printf('%013d-00000-migrated', deleted_at * 1000), deleted_at * 1000 
+                FROM sync_tombstones;
+            DROP TABLE IF EXISTS sync_tombstones;
+            ALTER TABLE sync_tombstones_v2 RENAME TO sync_tombstones;
+
+            -- 4. 创建待解析引用挂起表 (拓扑缝合)
+            CREATE TABLE IF NOT EXISTS sync_pending_references (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                child_tbl   TEXT NOT NULL,
+                child_uuid  TEXT NOT NULL,
+                fk_field    TEXT NOT NULL,
+                target_tbl  TEXT NOT NULL,
+                target_uuid TEXT NOT NULL,
+                created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_pending_target ON sync_pending_references(target_tbl, target_uuid);
+
+            -- 5. 为同步核心资产表补齐 updated_hlc 列
+            ALTER TABLE connections ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE proxies ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE ssh_keys ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tags ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE quick_commands ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE quick_command_tags ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+
+            -- 6. 为 quick_command_tags 补齐 uuid 列与索引
+            ALTER TABLE quick_command_tags ADD COLUMN uuid TEXT NULL;
+            CREATE INDEX IF NOT EXISTS idx_quick_command_tags_uuid ON quick_command_tags(uuid);
+        `,
+        execute: async (db: Database): Promise<void> => {
+            // 7.1 初始化单行 sync_state
+            const randomDeviceId = crypto.randomBytes(4).toString('hex');
+            await new Promise<void>((resolve, reject) => {
+                db.run(
+                    `INSERT OR IGNORE INTO sync_state (id, device_id, hlc_ms, hlc_ctr, applying, enabled, push_cursor, pull_cursor, min_valid_cursor)
+                     VALUES (1, ?, 0, 0, 0, 0, 0, 0, 0)`,
+                    [randomDeviceId],
+                    (err) => err ? reject(err) : resolve()
+                );
+            });
+
+            // 获取有效 device_id
+            let currentDeviceId = randomDeviceId;
+            await new Promise<void>((resolve, reject) => {
+                db.get(`SELECT device_id FROM sync_state WHERE id = 1`, (err, row: any) => {
+                    if (err) return reject(err);
+                    if (row?.device_id) currentDeviceId = row.device_id;
+                    resolve();
+                });
+            });
+
+            // 7.2 回填存量数据的 updated_hlc
+            const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags'];
+            for (const tbl of tables) {
+                await new Promise<void>((resolve, reject) => {
+                    db.all(`SELECT id, updated_at FROM ${tbl} WHERE updated_hlc = ''`, async (err, rows: any[]) => {
+                        if (err) return reject(err);
+                        if (!rows || rows.length === 0) return resolve();
+                        for (const r of rows) {
+                            const ms = (r.updated_at && r.updated_at > 0) ? r.updated_at * 1000 : Date.now();
+                            const hlc = `${String(ms).padStart(13, '0')}-00000-${currentDeviceId}`;
+                            await new Promise<void>((resUpdate, rejUpdate) => {
+                                db.run(`UPDATE ${tbl} SET updated_hlc = ? WHERE id = ?`, [hlc, r.id], (upErr) => upErr ? rejUpdate(upErr) : resUpdate());
+                            });
+                        }
+                        resolve();
+                    });
+                });
+            }
+
+            // 7.3 存量 tags 确定性 UUID 刷新
+            await new Promise<void>((resolve, reject) => {
+                db.all(`SELECT id, name FROM tags`, async (err, rows: any[]) => {
+                    if (err) return reject(err);
+                    if (!rows || rows.length === 0) return resolve();
+                    for (const r of rows) {
+                        const detUuid = generateDeterministicTagUuid(r.name);
+                        await new Promise<void>((resTag, rejTag) => {
+                            db.run(`UPDATE tags SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejTag(upErr) : resTag());
+                        });
+                    }
+                    resolve();
+                });
+            });
+
+            // 7.4 存量 quick_command_tags 确定性 UUID 刷新
+            await new Promise<void>((resolve, reject) => {
+                db.all(`SELECT id, name FROM quick_command_tags`, async (err, rows: any[]) => {
+                    if (err) return reject(err);
+                    if (!rows || rows.length === 0) return resolve();
+                    for (const r of rows) {
+                        const detUuid = generateDeterministicTagUuid(r.name);
+                        await new Promise<void>((resQTag, rejQTag) => {
+                            db.run(`UPDATE quick_command_tags SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejQTag(upErr) : resQTag());
+                        });
+                    }
+                    resolve();
+                });
+            });
+
+            console.log('[Migrations] Migration 14: 确定性 UUID 与 updated_hlc 回填完成。');
+        }
+    },
+    {
+        id: 15,
+        name: 'Add uuid and updated_hlc to settings table for sync engine',
+        check: async (db: Database): Promise<boolean> => {
+            const hasUuid = await columnExists(db, 'settings', 'uuid');
+            const hasHlc = await columnExists(db, 'settings', 'updated_hlc');
+            return !hasUuid || !hasHlc;
+        },
+        sql: `
+            ALTER TABLE settings ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE settings ADD COLUMN updated_hlc TEXT NULL;
+        `,
+        execute: async (db: Database): Promise<void> => {
+            await new Promise<void>((resolve, reject) => {
+                db.all(`SELECT key FROM settings`, async (err, rows: any[]) => {
+                    if (err) return reject(err);
+                    if (!rows || rows.length === 0) return resolve();
+                    for (const r of rows) {
+                        const detUuid = generateDeterministicSettingUuid(r.key);
+                        await new Promise<void>((res, rej) => {
+                            db.run(
+                                `UPDATE settings SET uuid = ?, updated_hlc = (SELECT printf('%013d-%05d-%s', hlc_ms, hlc_ctr, device_id) FROM sync_state WHERE id = 1) WHERE key = ?`,
+                                [detUuid, r.key],
+                                (upErr) => upErr ? rej(upErr) : res()
+                            );
+                        });
+                    }
+                    resolve();
+                });
+            });
+            console.log('[Migrations] Migration 15: settings 表 uuid 与 updated_hlc 迁移完成。');
+        }
     }
 ];
+
 
 /**
  * 运行数据库迁移。
@@ -462,6 +670,11 @@ export const runMigrations = (db: Database): Promise<void> => {
                                             }
                                         });
                                     });
+
+                                    if (migration.execute) {
+                                        console.log(`[Migrations] 执行迁移 #${migration.id} 的附加逻辑...`);
+                                        await migration.execute(db);
+                                    }
                                 }
 
                                 // 步骤 4.3: 记录迁移到 migrations 表

@@ -224,7 +224,6 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
  */
 // Update input type to reflect FullConnectionData now has 'type' and 'jump_chain'
 export const updateConnection = async (id: number, data: Partial<Omit<FullConnectionData, 'id' | 'created_at' | 'last_connected_at' | 'tag_ids'>>): Promise<boolean> => {
-    console.log(`[Repository:updateConnection] Received data for ID ${id}:`, JSON.stringify(data, null, 2));
     const fieldsToUpdate: { [key: string]: any } = { ...data };
     const params: any[] = [];
 
@@ -243,7 +242,6 @@ export const updateConnection = async (id: number, data: Partial<Omit<FullConnec
         if (K === 'jump_chain') {
             const jumpChainValue = value as number[] | null;
             const jumpChainStringified = (jumpChainValue && jumpChainValue.length > 0) ? JSON.stringify(jumpChainValue) : null;
-            console.log(`[Repository:updateConnection] jump_chain input for ID ${id}: ${JSON.stringify(jumpChainValue)}, stringified to: ${jumpChainStringified}`);
             params.push(jumpChainStringified);
         } else {
             params.push(value ?? null);
@@ -257,8 +255,7 @@ export const updateConnection = async (id: number, data: Partial<Omit<FullConnec
 
     params.push(id);
     const sql = `UPDATE connections SET ${setClauses} WHERE id = ?`;
-    console.log(`[Repository:updateConnection] SQL for ID ${id}:`, sql);
-    console.log(`[Repository:updateConnection] Params for ID ${id}:`, JSON.stringify(params, null, 2));
+
 
     try {
         const db = await getDbInstance();

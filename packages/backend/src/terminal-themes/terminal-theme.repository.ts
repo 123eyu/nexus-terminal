@@ -247,26 +247,42 @@ export const deleteTheme = async (id: number): Promise<boolean> => {
  * @param presets 预设主题定义数组
  */
 export const initializePresetThemes = async (db: Database, presets: Array<Omit<TerminalTheme, '_id' | 'createdAt' | 'updatedAt' | 'isSystemDefault'> & { name: string }>) => {
-    console.log('[DB Init] 开始检查并初始化预设主题...');
-    // 在这里添加日志，显示总共要处理多少个预设主题
-    console.log(`[DB Init] 发现 ${presets.length} 个预设主题定义。`);
-    const nowSeconds = Math.floor(Date.now() / 1000); 
+    try {
+        // 1. 快速计数检查：若数据库中预设主题数量已达到定义总数，直接 0ms 返回跳过
+        const countResult = await getDb<{ count: number }>(db, "SELECT COUNT(*) as count FROM terminal_themes WHERE theme_type = 'preset'");
+        if (countResult && countResult.count >= presets.length) {
+            console.log(`[DB Init] 预设主题已全部就绪 (${countResult.count}/${presets.length})，跳过重复初始化。`);
+            return;
+        }
 
-    for (const preset of presets) {
-        // 在循环开始时添加日志，显示正在处理哪个主题
-        // console.log(`[DB Init] 正在处理预设主题: "${preset.name}"`);
+        console.log('[DB Init] 开始检查并补充缺失的预设主题...');
+        // 2. 批量查出已存在的预设主题名称集合，避免 400+ 次串行单条查询
+        const existingRows = await allDb<{ name: string }>(db, "SELECT name FROM terminal_themes WHERE theme_type = 'preset'");
+        const existingNames = new Set((existingRows || []).map(r => r.name));
+
+        const missingPresets = presets.filter(p => !existingNames.has(p.name));
+        if (missingPresets.length === 0) {
+            console.log('[DB Init] 无缺失预设主题，初始化完成。');
+            return;
+        }
+
+        console.log(`[DB Init] 发现 ${missingPresets.length} 个缺失预设主题，开始事务批量写入...`);
+        const nowSeconds = Math.floor(Date.now() / 1000);
+
+        const columns = [
+            'name', 'theme_type', 'foreground', 'background', 'cursor', 'cursor_accent',
+            'selection_background', 'black', 'red', 'green', 'yellow', 'blue',
+            'magenta', 'cyan', 'white', 'bright_black', 'bright_red', 'bright_green',
+            'bright_yellow', 'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white',
+            'created_at', 'updated_at'
+        ];
+        const placeholders = columns.map(() => '?').join(', ');
+        const insertSql = `INSERT INTO terminal_themes (${columns.join(', ')}) VALUES (${placeholders})`;
+
+        await runDb(db, 'BEGIN TRANSACTION');
         try {
-            const existing = await getDb<{ id: number }>(db, `SELECT id FROM terminal_themes WHERE name = ? AND theme_type = 'preset'`, [preset.name]);
-
-            if (!existing) {
+            for (const preset of missingPresets) {
                 const theme = preset.themeData;
-                const columns = [
-                    'name', 'theme_type', 'foreground', 'background', 'cursor', 'cursor_accent',
-                    'selection_background', 'black', 'red', 'green', 'yellow', 'blue',
-                    'magenta', 'cyan', 'white', 'bright_black', 'bright_red', 'bright_green',
-                    'bright_yellow', 'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white',
-                    'created_at', 'updated_at'
-                ];
                 const values = [
                     preset.name, 'preset', theme?.foreground, theme?.background, theme?.cursor, theme?.cursorAccent,
                     theme?.selectionBackground, theme?.black, theme?.red, theme?.green, theme?.yellow, theme?.blue,
@@ -274,20 +290,15 @@ export const initializePresetThemes = async (db: Database, presets: Array<Omit<T
                     theme?.brightYellow, theme?.brightBlue, theme?.brightMagenta, theme?.brightCyan, theme?.brightWhite,
                     nowSeconds, nowSeconds
                 ];
-                const placeholders = columns.map(() => '?').join(', ');
-
-                const insertSql = `
-                    INSERT INTO terminal_themes (${columns.join(', ')})
-                    VALUES (${placeholders})
-                `;
                 await runDb(db, insertSql, values);
-                // console.log(`[DB Init] 预设主题 "${preset.name}" 已初始化到数据库。`);
-            } else {
-                //  console.log(`[DB Init] 预设主题 "${preset.name}" 已存在，跳过初始化。`);
             }
-        } catch (err: any) {
-             console.error(`[DB Init] 处理预设主题 "${preset.name}" 时出错:`, err.message);
+            await runDb(db, 'COMMIT');
+            console.log(`[DB Init] ${missingPresets.length} 个预设主题批量写入成功。`);
+        } catch (txErr) {
+            await runDb(db, 'ROLLBACK');
+            throw txErr;
         }
+    } catch (err: any) {
+        console.error('[DB Init] 初始化预设主题失败:', err.message);
     }
-    console.log('[DB Init] 预设主题检查和初始化完成。');
 };

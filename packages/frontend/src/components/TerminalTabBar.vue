@@ -11,14 +11,12 @@ import { useSessionStore } from '../stores/session.store';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
 import { useLayoutStore } from '../stores/layout.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
-import { useDesktopSyncStore } from '../stores/desktopSync.store';
 import { isDesktopApp } from '../utils/platform';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import type { SessionTabInfoWithStatus } from '../stores/session/types';
 
 const { t } = useI18n();
 const isDesktop = ref(isDesktopApp());
-const desktopSyncStore = useDesktopSyncStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 const onWorkspaceEvent = useWorkspaceEventSubscriber();
 const offWorkspaceEvent = useWorkspaceEventOff();
@@ -242,39 +240,11 @@ const toggleButtonTitle = computed(() =>
   isHeaderVisible.value ? t('header.hide', '隐藏顶部导航') : t('header.show', '显示顶部导航')
 );
 
-// --- 云端同步按钮状态判定 (桌面端与 Web 部署端双模) ---
-const isSyncButtonDisabled = computed(() => {
-  if (isDesktop.value) {
-    return !desktopSyncStore.isConfigured;
-  }
-  return false;
-});
-
-const isSyncActive = computed(() => {
-  if (isDesktop.value) {
-    return desktopSyncStore.isConfigured;
-  }
-  return syncEnabled.value;
-});
-
-const isSyncInProgress = computed(() => {
-  if (isDesktop.value) {
-    return desktopSyncStore.isSyncing;
-  }
-  return isSyncing.value;
-});
+// --- 云端同步按钮状态判定 (Web 部署端专属原生工作区同步) ---
+const isSyncActive = computed(() => syncEnabled.value);
+const isSyncInProgress = computed(() => isSyncing.value);
 
 const syncButtonTitle = computed(() => {
-  if (isDesktop.value) {
-    if (!desktopSyncStore.isConfigured) {
-      return t('workspaceSync.desktopNotConfiguredTooltip', '云端数据同步已禁用 (请先在桌面设置中配置 VPS 域名与 API Key)');
-    }
-    if (desktopSyncStore.isSyncing) {
-      return t('workspaceSync.syncing', '正在与远程 VPS 双向同步...');
-    }
-    return t('workspaceSync.desktopConfiguredTooltip', '云端数据同步 (已配置，点击立即与 VPS 双向同步)');
-  }
-
   if (!syncEnabled.value) {
     return t('workspaceSync.disabledTooltip', '工作区实时云端同步 (已关闭，点击开启)');
   }
@@ -284,18 +254,8 @@ const syncButtonTitle = computed(() => {
   return t('workspaceSync.enabledTooltip', '工作区实时云端同步 (已开启，点击可关闭)');
 });
 
-const handleSyncButtonClick = async () => {
-  if (isDesktop.value) {
-    if (!desktopSyncStore.isConfigured) return;
-    try {
-      // 桌面端先保存当前工作区到本地库，随后请求与 VPS 进行同步 (初次同步自动弹窗对齐方向)
-      await workspaceSyncStore.saveWorkspaceToCloud();
-      await desktopSyncStore.requestSync();
-    } catch (err) {
-      console.error('[TerminalTabBar] 触发云端同步异常:', err);
-    }
-    return;
-  }
+const handleSyncButtonClick = () => {
+  if (isDesktop.value) return;
   toggleSyncEnabled();
 };
 
@@ -317,9 +277,6 @@ const handleWheel: EventListener = (event: Event) => {
 };
 
 onMounted(() => {
-  if (isDesktop.value) {
-    desktopSyncStore.fetchConfig();
-  }
 
   if (!props.isMobile) {
     const tabContainer = document.querySelector('.overflow-x-auto');
@@ -356,7 +313,12 @@ onBeforeUnmount(() => {
   <!-- 桌面端视图：带拖拽、右键菜单和标题栏控制的桌面标签栏 -->
   <div
     v-else
-    class="flex items-center bg-header border border-border overflow-hidden rounded-t-md mx-2 mt-2 h-10 select-none relative"
+    :class="[
+      'flex items-center bg-header overflow-hidden h-10 select-none relative transition-all duration-150',
+      isHeaderVisible
+        ? 'border border-border rounded-t-md mx-2 mt-2'
+        : 'border-b border-border rounded-none m-0'
+    ]"
   >
     <div class="flex items-center overflow-x-auto flex-shrink min-w-0 h-full">
       <draggable
@@ -414,37 +376,28 @@ onBeforeUnmount(() => {
 
     <!-- 桌面端右侧控制按钮区 -->
     <div class="ml-auto flex items-center h-full flex-shrink-0">
-      <!-- 实时同步工作区/云端数据同步按钮 -->
+      <!-- 实时同步工作区按钮 (仅在 Web 部署端显示，桌面端彻底隐藏) -->
       <button
+        v-if="!isDesktop"
         class="group flex items-center justify-center px-3 h-full border-l border-border transition-colors duration-150"
         :class="[
-          isSyncButtonDisabled
-            ? 'opacity-40 cursor-not-allowed text-text-secondary'
-            : isSyncActive
-              ? 'text-emerald-500 hover:text-emerald-400 hover:bg-border cursor-pointer'
-              : 'text-text-secondary hover:text-foreground hover:bg-border cursor-pointer'
+          isSyncActive
+            ? 'text-emerald-500 hover:text-emerald-400 hover:bg-border cursor-pointer'
+            : 'text-text-secondary hover:text-foreground hover:bg-border cursor-pointer'
         ]"
-        :disabled="isSyncButtonDisabled"
         @click="handleSyncButtonClick"
         :title="syncButtonTitle"
       >
         <span class="relative inline-flex items-center justify-center">
-          <i
-            class="text-sm"
-            :class="[
-              isSyncInProgress
-                ? 'fas fa-sync fa-spin text-emerald-500'
-                : 'fas fa-cloud'
-            ]"
-          ></i>
-          <!-- 开启且已配置且未同步中状态：右下角绿色实心圆点 -->
+          <i class="text-sm fas fa-cloud"></i>
+          <!-- 开启状态：右下角绿色实心圆点 -->
           <span
-            v-if="isSyncActive && !isSyncInProgress && !isSyncButtonDisabled"
+            v-if="isSyncActive"
             class="absolute -bottom-0.5 -right-1 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-header shadow-sm"
           ></span>
-          <!-- 关闭/未配置禁用状态：一条带背景镂空间距的斜杠横穿云朵图标 -->
+          <!-- 关闭状态：一条带背景镂空间距的斜杠横穿云朵图标 -->
           <span
-            v-else-if="!isSyncActive || isSyncButtonDisabled"
+            v-else
             class="absolute inset-0 flex items-center justify-center pointer-events-none"
           >
             <!-- 视觉切割底层：使用与按钮背景严格同步的遮罩色 (常态 bg-header，悬停 group-hover:bg-border) -->

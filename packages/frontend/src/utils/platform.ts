@@ -10,21 +10,32 @@
 export function isDesktopApp(): boolean {
   if (typeof window === 'undefined') return false;
 
+  // 1. 原生 Tauri 运行时探测 (桌面独立客户端最严格、绝对可靠的判定基准)
   const isTauri = Boolean((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
-  const hasQuery = window.location.search.includes('platform=desktop');
-  const hasDataset = document.documentElement.dataset.platform === 'desktop';
-  const hasStorage =
-    localStorage.getItem('is_desktop_client') === 'true' ||
-    sessionStorage.getItem('is_desktop_client') === 'true';
-
-  if (isTauri || hasQuery || hasDataset || hasStorage) {
-    try {
-      localStorage.setItem('is_desktop_client', 'true');
-      sessionStorage.setItem('is_desktop_client', 'true');
-      document.documentElement.dataset.platform = 'desktop';
-    } catch {}
+  if (isTauri) {
     return true;
   }
+
+  // 2. 显式 URL 调试参数 (仅供本地开发调试时单次模拟桌面视图，不污染全局持久状态)
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('platform') === 'desktop') {
+      return true;
+    }
+  } catch {}
+
+  // 3. 普通浏览器 / Web 部署环境下，主动清理历史测试可能残留的 localStorage 污染
+  try {
+    if (localStorage.getItem('is_desktop_client')) {
+      localStorage.removeItem('is_desktop_client');
+    }
+    if (sessionStorage.getItem('is_desktop_client')) {
+      sessionStorage.removeItem('is_desktop_client');
+    }
+    if (document.documentElement.dataset.platform === 'desktop') {
+      delete document.documentElement.dataset.platform;
+    }
+  } catch {}
 
   return false;
 }
