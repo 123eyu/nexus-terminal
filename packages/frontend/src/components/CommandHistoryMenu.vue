@@ -1,12 +1,12 @@
 <template>
-  <div class="flex flex-col bg-background border border-border rounded shadow-lg overflow-hidden">
-    <div class="flex items-center p-2 border-b border-border bg-header">
+  <div class="flex flex-col bg-background border border-border rounded-xl shadow-xl overflow-hidden">
+    <div class="flex items-center p-2 border-b border-border bg-muted/20">
       <input
         type="text"
         :placeholder="$t('commandHistory.searchPlaceholder', '搜索历史记录...')"
         :value="localSearchTerm"
         @input="updateSearchTerm($event)"
-        class="flex-grow px-2 py-1 border border-border rounded-sm bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+        class="flex-grow px-2 py-1 border border-border/60 rounded-lg bg-input text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
       />
       <button @click="confirmClearAll" class="ml-2 p-1 text-text-secondary hover:text-error transition-colors duration-150" :title="$t('commandHistory.clear', '清空')">
         <i class="fas fa-trash-alt text-base"></i>
@@ -17,7 +17,7 @@
         <li
           v-for="entry in displayedHistory"
           :key="entry.id"
-          class="group flex justify-between items-center px-3 py-2 cursor-pointer border-b border-border last:border-b-0 hover:bg-header/50 transition-colors duration-150"
+          class="group flex justify-between items-center px-3 py-2 cursor-pointer border-b border-border/50 last:border-b-0 hover:bg-muted/50 transition-colors duration-150"
           @mouseover="hoveredItemId = entry.id"
           @mouseleave="hoveredItemId = null"
           @click="selectCommand(entry.command)"

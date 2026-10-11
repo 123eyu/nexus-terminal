@@ -75,12 +75,12 @@ onUnmounted(() => {
     @click.self="emit('close')"
   >
     <div
-      class="bg-header text-foreground border border-border/80 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] md:max-h-[86vh] flex flex-col overflow-hidden"
-      style="background-color: var(--header-bg-color);"
+      class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] md:max-h-[86vh] flex flex-col overflow-hidden"
+      style="background-color: var(--app-bg-color);"
       @click.stop
     >
-      <!-- 顶部 Header 栏 -->
-      <header class="flex justify-between items-center px-5 py-3.5 border-b border-border/70 bg-header/60 flex-shrink-0 select-none">
+      <!-- 顶部 Header 栏：与卡片浑然一体 -->
+      <header class="flex justify-between items-center px-5 py-3.5 border-b border-border/50 flex-shrink-0 select-none">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
             <i :class="isEditMode ? 'fas fa-edit' : 'fas fa-plug'" class="text-sm"></i>
@@ -107,7 +107,7 @@ onUnmounted(() => {
             class="px-2.5 py-1 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
             :class="isScriptModeActive
               ? 'bg-primary text-white border-primary shadow-xs font-semibold'
-              : 'bg-background/50 hover:bg-background/80 text-text-secondary hover:text-foreground border-border/60'"
+              : 'bg-muted/40 hover:bg-muted/80 text-text-secondary hover:text-foreground border-border/60'"
           >
             <i class="fas fa-file-code text-[11px]"></i>
             <span>{{ t('connections.form.sectionScriptMode', '脚本模式') }}</span>
@@ -116,7 +116,7 @@ onUnmounted(() => {
           <button
             type="button"
             @click="emit('close')"
-            class="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-background/60 transition-colors cursor-pointer"
+            class="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
             title="Esc"
           >
             <i class="fas fa-times text-xs"></i>
@@ -124,11 +124,10 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <!-- 中间表单滚动区：深邃坚实下沉底板，与外壳拉开鲜明层次 -->
+      <!-- 中间表单滚动区：与外壳浑然一体 -->
       <form
         @submit.prevent="handleSubmit"
         class="flex-grow overflow-y-auto p-4 md:p-5 space-y-4 min-h-0"
-        style="background-color: var(--app-bg-color);"
       >
         <!-- 正常表单卡片模式 -->
         <template v-if="!isScriptModeActive">
@@ -155,8 +154,7 @@ onUnmounted(() => {
         <!-- 脚本批量导入卡片 -->
         <div
           v-else
-          class="rounded-2xl border border-border/80 p-4 md:p-5 space-y-3 shadow-md"
-          style="background-color: var(--card-bg-color, var(--header-bg-color));"
+          class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-3 shadow-sm"
         >
           <div class="flex items-center justify-between pb-2 border-b border-border/50">
             <div class="flex items-center gap-2">
@@ -171,8 +169,7 @@ onUnmounted(() => {
             v-model="scriptInputText"
             rows="10"
             wrap="off"
-            class="w-full px-3 py-2.5 border border-border/60 rounded-xl font-mono text-xs shadow-2xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
-            style="background-color: var(--app-bg-color);"
+            class="w-full px-3 py-2.5 border border-border/60 rounded-xl font-mono text-xs shadow-2xs text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             :placeholder="t('connections.form.scriptModePlaceholder')"
           ></textarea>
           <p class="text-xs text-text-secondary whitespace-pre-line leading-relaxed font-mono">
@@ -181,8 +178,8 @@ onUnmounted(() => {
         </div>
       </form>
 
-      <!-- 底部 Footer 动作栏 -->
-      <footer class="flex items-center justify-between px-5 py-3.5 border-t border-border/70 bg-header/60 flex-shrink-0 select-none">
+      <!-- 底部 Footer 动作栏：与外壳浑然一体 -->
+      <footer class="flex items-center justify-between px-5 py-3.5 border-t border-border/50 flex-shrink-0 select-none">
         <!-- 左侧：测试连通性状态 -->
         <div class="flex items-center gap-2 min-w-0">
           <template v-if="formData.type === 'SSH' && !isScriptModeActive">
@@ -190,7 +187,7 @@ onUnmounted(() => {
               type="button"
               @click="handleTestConnection"
               :disabled="isLoading || testStatus === 'testing'"
-              class="px-3 py-1.5 border border-border/60 rounded-xl text-xs font-medium text-text-secondary hover:text-foreground bg-background/50 hover:bg-background/80 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+              class="px-3 py-1.5 border border-border/60 rounded-xl text-xs font-medium text-text-secondary hover:text-foreground bg-muted/40 hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
             >
               <i v-if="testStatus === 'testing'" class="fas fa-spinner fa-spin text-primary text-xs"></i>
               <i v-else class="fas fa-satellite-dish text-primary text-xs"></i>

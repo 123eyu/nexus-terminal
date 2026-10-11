@@ -41,6 +41,7 @@ export const defaultUiTheme: Record<string, string> = {
   '--footer-bg-color': '#f0f0f0',
   '--card-bg-color': '#ffffff',
   '--surface-bg-color': '#ffffff',
+  '--popover-bg-color': '#ffffff',
   '--button-bg-color': '#A06CD5', // 现代紫色 - 激活 (基础)
   '--button-text-color': '#ffffff',
   '--button-hover-bg-color': '#8E44AD', // 现代紫色 - 悬停 (稍暗)

@@ -11,9 +11,9 @@
       <!-- 调色板浮层本体 -->
       <div
         ref="popoverRef"
-        class="color-picker-popover w-[268px] bg-header border border-border/80 shadow-2xl rounded-2xl p-3.5 text-xs space-y-3 select-none z-[99999]"
+        class="color-picker-popover w-[268px] bg-popover text-foreground border border-border/80 shadow-2xl rounded-2xl p-3.5 text-xs space-y-3 select-none z-[99999]"
         :style="popoverStyle"
-        style="background-color: var(--header-bg-color);"
+        style="background-color: var(--popover-bg-color, var(--app-bg-color));"
         @click.stop
       >
         <!-- 头部栏 -->
@@ -204,7 +204,7 @@ const updatePosition = () => {
     position: 'fixed',
     top: `${Math.round(top)}px`,
     left: `${Math.round(left)}px`,
-    backgroundColor: 'var(--header-bg-color)',
+    backgroundColor: 'var(--popover-bg-color, var(--card-bg-color, var(--app-bg-color)))',
   };
 };
 

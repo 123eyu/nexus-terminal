@@ -60,8 +60,8 @@ onBeforeUnmount(() => {
       @mousedown.self="handleOk" 
     >
       <div
-        class="bg-header text-foreground p-5 rounded-lg shadow-xl border border-border w-full max-w-md flex flex-col"
-        style="background-color: var(--header-bg-color);"
+        class="bg-background text-foreground p-5 rounded-2xl shadow-2xl border border-border/80 w-full max-w-md flex flex-col"
+        style="background-color: var(--app-bg-color);"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="props.title"

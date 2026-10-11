@@ -155,7 +155,7 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
               v-model="scriptInputText"
               rows="6"
               wrap="off"
-              class="w-full p-3 border border-border/60 rounded-xl bg-header/20 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              class="w-full p-3 border border-border/60 rounded-xl bg-muted/20 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
               :placeholder="t('connections.form.scriptModePlaceholder')"
             ></textarea>
             <p class="text-[11px] text-text-secondary/80 whitespace-pre-line leading-relaxed">
@@ -169,7 +169,7 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
           <!-- 测试连接状态行 (SSH模式且非脚本模式) -->
           <div
             v-if="formData.type === 'SSH' && !isScriptModeActive"
-            class="flex items-center justify-between p-3 rounded-xl bg-header/30 border border-border/60 gap-2"
+            class="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-border/60 gap-2"
           >
             <button
               type="button"

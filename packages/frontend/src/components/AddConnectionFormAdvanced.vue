@@ -79,10 +79,9 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
 </script>
 
 <template>
-  <!-- 高级配置卡片：立体浮凸卡片 -->
+  <!-- 高级配置卡片：立体卡片 -->
   <div
-    class="rounded-2xl border border-border/80 p-4 md:p-5 space-y-4 shadow-md"
-    style="background-color: var(--card-bg-color, var(--header-bg-color));"
+    class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-4 shadow-sm"
   >
     <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
       <div class="flex items-center gap-2">
@@ -114,14 +113,13 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
     <div v-if="props.formData.type === 'SSH'">
       <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionMode', '网络穿透方式') }}</label>
       <div
-        class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70"
-        style="background-color: var(--app-bg-color);"
+        class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70 bg-input"
       >
         <button
           type="button"
           @click="setConnectionMode('proxy')"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          :class="props.advancedConnectionMode === 'proxy' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          :class="props.advancedConnectionMode === 'proxy' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
         >
           <i class="fas fa-shield-alt text-[10px]"></i>
           <span>{{ t('connections.form.connectionModeProxy', '网络代理') }}</span>
@@ -130,7 +128,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           type="button"
           @click="setConnectionMode('jump')"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          :class="props.advancedConnectionMode === 'jump' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          :class="props.advancedConnectionMode === 'jump' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
         >
           <i class="fas fa-random text-[10px]"></i>
           <span>{{ t('connections.form.connectionModeJumpHost', '跳板机链') }}</span>
@@ -144,8 +142,8 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       <select
         id="conn-proxy"
         v-model="props.formData.proxy_id"
-        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary appearance-none bg-no-repeat bg-right pr-8 transition-all shadow-2xs"
-        style="background-color: var(--app-bg-color); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary appearance-none bg-no-repeat bg-right pr-8 transition-all shadow-2xs"
+        style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
       >
         <option :value="null">{{ t('connections.form.noProxy', '不使用代理 (直连)') }}</option>
         <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
@@ -163,14 +161,13 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         <div
           v-for="(jumpHostId, index) in props.formData.jump_chain"
           :key="index"
-          class="flex items-center space-x-2 p-2 border border-border/70 rounded-xl"
-          style="background-color: var(--app-bg-color);"
+          class="flex items-center space-x-2 p-2 border border-border/70 rounded-xl bg-input"
         >
           <span class="text-xs font-medium text-text-secondary whitespace-nowrap pl-1">{{ t('connections.form.jumpHostLabel', '跳板机') }} {{ index + 1 }}:</span>
           <select
             v-model="props.formData.jump_chain[index]"
-            class="flex-grow px-3 py-1.5 text-xs border border-border/60 rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
-            style="background-color: var(--card-bg-color, var(--header-bg-color)); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
+            class="flex-grow px-3 py-1.5 text-xs border border-border/60 rounded-lg text-foreground bg-background focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
+            style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
           >
             <option :value="null">{{ t('connections.form.selectJumpHost', '请选择跳板机') }}</option>
             <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">
@@ -197,8 +194,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       </button>
       <div
         v-if="props.connections.filter(c => c.type === 'SSH' && (!props.isEditMode || c.id !== props.formData.id)).length === 0"
-        class="text-xs text-text-secondary p-2.5 border border-border/70 rounded-xl"
-        style="background-color: var(--app-bg-color);"
+        class="text-xs text-text-secondary p-2.5 border border-border/70 rounded-xl bg-input"
       >
         {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 连接作为跳板机') }}
       </div>
@@ -211,8 +207,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         id="conn-notes"
         v-model="props.formData.notes"
         rows="2"
-        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
-        style="background-color: var(--app-bg-color);"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
         :placeholder="t('connections.form.notesPlaceholder', '可选，输入连接补充说明...')"
       ></textarea>
     </div>

@@ -58,7 +58,7 @@ const showVncPassword = ref(false);
           autocorrect="off"
           spellcheck="false"
           placeholder="例如：root / ubuntu / administrator"
-          class="w-full h-10 pl-9 pr-3 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+          class="w-full h-10 pl-9 pr-3 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
         />
       </div>
     </div>
@@ -70,7 +70,7 @@ const showVncPassword = ref(false);
         <label class="block text-xs font-medium text-text-secondary">
           {{ t('connections.form.authMethod', '认证方式') }}
         </label>
-        <div class="grid grid-cols-2 gap-1.5 p-1 bg-header/40 border border-border/60 rounded-xl">
+        <div class="grid grid-cols-2 gap-1.5 p-1 bg-muted/40 border border-border/60 rounded-xl">
           <button
             type="button"
             @click="props.formData.auth_method = 'password'"
@@ -117,7 +117,7 @@ const showVncPassword = ref(false);
             :required="props.formData.auth_method === 'password' && !props.isEditMode"
             autocomplete="new-password"
             placeholder="输入主机登录密码"
-            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
           />
           <button
             type="button"
@@ -162,7 +162,7 @@ const showVncPassword = ref(false);
             :required="!props.isEditMode"
             autocomplete="new-password"
             placeholder="输入远程桌面登录密码"
-            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
           />
           <button
             type="button"
@@ -197,7 +197,7 @@ const showVncPassword = ref(false);
             :required="!props.isEditMode"
             autocomplete="new-password"
             placeholder="输入 VNC 访问密码"
-            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+            class="w-full h-10 pl-9 pr-10 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
           />
           <button
             type="button"

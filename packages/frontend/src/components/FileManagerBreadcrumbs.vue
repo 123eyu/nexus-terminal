@@ -504,7 +504,7 @@ defineExpose({
     <div
       v-if="activeDropdownDir"
       ref="dropdownPopoverRef"
-      class="absolute z-50 min-w-[200px] max-w-[280px] bg-header border border-border/80 rounded-lg shadow-2xl p-1 text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+      class="absolute z-50 min-w-[200px] max-w-[280px] bg-popover text-foreground border border-border/80 rounded-xl shadow-2xl p-1 text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
       :style="{
         top: `${dropdownPosition.top}px`,
         left: `${dropdownPosition.left}px`,

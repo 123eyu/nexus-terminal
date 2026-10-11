@@ -74,7 +74,7 @@ const closeManagementModal = () => {
       type="button"
       @click="openManagementModal"
       :disabled="isLoading"
-      class="w-10 h-10 rounded-xl bg-header/40 border border-border/60 text-text-secondary hover:text-foreground active:scale-95 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-2xs"
+      class="w-10 h-10 rounded-xl bg-muted/40 border border-border/60 text-text-secondary hover:text-foreground active:scale-95 flex items-center justify-center shrink-0 transition-all cursor-pointer shadow-2xs"
       :title="t('sshKeys.selector.manageKeysTitle', '管理 SSH 密钥库')"
     >
       <i class="fas fa-cog text-xs"></i>

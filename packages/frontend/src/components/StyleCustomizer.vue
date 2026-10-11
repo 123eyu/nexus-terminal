@@ -141,16 +141,16 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="modalRootRef" class="fixed inset-0 z-[1000] bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 select-none" @click.self="closeCustomizer">
+  <div ref="modalRootRef" class="fixed inset-0 z-[1000] bg-black/40 flex items-center justify-center p-3 md:p-6 select-none" @click.self="closeCustomizer">
     <div
       ref="dialogContentRef"
-      class="bg-header text-foreground border border-border/80 rounded-2xl shadow-2xl w-full md:w-[94%] md:max-w-[920px] h-[92vh] md:h-[84vh] md:max-h-[720px] flex flex-col overflow-hidden"
-      style="background-color: var(--header-bg-color);"
+      class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl w-full md:w-[94%] md:max-w-[920px] h-[92vh] md:h-[84vh] md:max-h-[720px] flex flex-col overflow-hidden"
+      style="background-color: var(--app-bg-color);"
     >
       <!-- 顶部 Header 拖拽栏 -->
       <header
         ref="headerRef"
-        class="flex justify-between items-center px-5 py-3.5 border-b border-border/70 bg-header/40 backdrop-blur-xs flex-shrink-0 select-none cursor-move"
+        class="flex justify-between items-center px-5 py-3.5 border-b border-border/70 flex-shrink-0 select-none cursor-move"
       >
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center text-primary">
@@ -267,7 +267,7 @@ onMounted(() => {
       </div>
 
       <!-- 底部清爽操作栏 -->
-      <footer class="flex items-center justify-between px-5 py-3 border-t border-border/70 bg-header/30 backdrop-blur-xs flex-shrink-0">
+      <footer class="flex items-center justify-between px-5 py-3 border-t border-border/70 bg-header/30 flex-shrink-0">
         <div class="flex items-center gap-2">
           <button
             v-if="currentTab === 'ui'"

@@ -324,7 +324,7 @@ const handleConnectionModified = async () => {
       <!-- ==================== Left: Connection List Card ==================== -->
       <div
         class="text-card-foreground rounded-2xl overflow-hidden border border-border/80 shadow-md flex flex-col min-h-[440px]"
-        style="background-color: var(--card-bg-color, var(--header-bg-color));"
+        style="background-color: var(--card-bg-color, var(--app-bg-color));"
       >
         <!-- 顶部工具栏 Toolbar -->
         <div class="px-4 py-3.5 border-b border-border/70 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-header/40 backdrop-blur-xs flex-shrink-0">
@@ -421,7 +421,7 @@ const handleConnectionModified = async () => {
               :key="conn.id"
               class="flex items-center justify-between p-3.5 rounded-xl transition-all duration-150 border shadow-xs"
               :class="conn.background_color ? 'connection-colored-card' : 'border-border/70 hover:border-primary/40'"
-              :style="conn.background_color ? getConnectionCardStyle(conn.background_color) : { backgroundColor: 'var(--card-bg-color, var(--header-bg-color))' }"
+              :style="conn.background_color ? getConnectionCardStyle(conn.background_color) : { backgroundColor: 'var(--card-bg-color, var(--app-bg-color))' }"
             >
               <div class="flex-grow mr-4 overflow-hidden">
                 <span class="font-semibold text-xs md:text-sm block truncate flex items-center" :title="conn.name || ''">
@@ -488,7 +488,7 @@ const handleConnectionModified = async () => {
       <!-- ==================== Right: Recent Activity Card ==================== -->
       <div
         class="text-card-foreground rounded-2xl overflow-hidden border border-border/80 shadow-md flex flex-col min-h-[440px]"
-        style="background-color: var(--card-bg-color, var(--header-bg-color));"
+        style="background-color: var(--card-bg-color, var(--app-bg-color));"
       >
         <!-- 顶部工具栏 Toolbar -->
         <div class="px-4 py-3.5 border-b border-border/70 flex items-center justify-between bg-header/40 backdrop-blur-xs flex-shrink-0">
@@ -515,7 +515,7 @@ const handleConnectionModified = async () => {
               v-for="log in recentAuditLogs"
               :key="log.id"
               class="p-3.5 rounded-xl border border-border/70 hover:border-border transition-all duration-150 shadow-xs"
-              style="background-color: var(--card-bg-color, var(--header-bg-color));"
+              style="background-color: var(--card-bg-color, var(--app-bg-color));"
             >
               <div class="flex justify-between items-start mb-1.5">
                 <span class="font-semibold text-xs md:text-sm" :class="isFailedAction(log.action_type) ? 'text-error' : 'text-foreground'">

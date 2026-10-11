@@ -55,9 +55,12 @@ export const useAppearanceStore = defineStore('appearance', () => {
     const isPreviewingTerminalTheme = ref(false);
     const previewTerminalThemeData = ref<ITheme | null>(null);
 
-    // --- Computed Properties (Getters) ---
     const currentUiTheme = computed<Record<string, string>>(() => {
-        return safeJsonParse(appearanceSettings.value.customUiTheme, defaultUiTheme);
+        const theme = { ...safeJsonParse(appearanceSettings.value.customUiTheme, defaultUiTheme) };
+        if (!theme['--popover-bg-color']) {
+            theme['--popover-bg-color'] = theme['--card-bg-color'] || theme['--surface-bg-color'] || theme['--app-bg-color'] || '#ffffff';
+        }
+        return theme;
     });
 
     const activeTerminalThemeId = computed(() => appearanceSettings.value.activeTerminalThemeId);
@@ -687,6 +690,11 @@ export const useAppearanceStore = defineStore('appearance', () => {
         const root = document.documentElement;
         for (const [key, value] of Object.entries(theme)) {
             root.style.setProperty(key, value);
+        }
+        // 兜底补丁：确保 --popover-bg-color 始终与当前主题卡片/面板/应用底色一致，杜绝存量配置回退到默认主题的白色
+        const popoverBg = theme['--popover-bg-color'] || theme['--card-bg-color'] || theme['--surface-bg-color'] || theme['--app-bg-color'];
+        if (popoverBg) {
+            root.style.setProperty('--popover-bg-color', popoverBg);
         }
     }
 

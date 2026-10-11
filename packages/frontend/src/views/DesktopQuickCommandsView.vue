@@ -400,8 +400,8 @@
     <!-- Context Menu for Quick Commands -->
     <div
       v-if="quickCommandContextMenuVisible"
-      class="fixed bg-header border border-border/60 shadow-xl rounded-lg py-1.5 z-50 min-w-[190px] quick-command-context-menu"
-      style="background-color: var(--header-bg-color);"
+      class="fixed bg-popover text-foreground border border-border/70 shadow-xl rounded-xl py-1.5 z-50 min-w-[190px] quick-command-context-menu"
+      style="background-color: var(--popover-bg-color, var(--app-bg-color));"
       :style="{ top: `${quickCommandContextMenuPosition.y}px`, left: `${quickCommandContextMenuPosition.x}px` }"
       @click.stop
     >
@@ -460,8 +460,8 @@
           <!-- 子菜单：所有文件夹列表 -->
           <div
             v-if="showMoveSubMenu"
-            class="absolute left-full top-0 ml-1 bg-header border border-border shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
-            style="background-color: var(--header-bg-color);"
+            class="absolute left-full top-0 ml-1 bg-popover text-foreground border border-border/70 shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
+            style="background-color: var(--popover-bg-color, var(--app-bg-color));"
             @click.stop
           >
             <div
@@ -504,7 +504,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs"
       @click.self="isCreatingFolderModal = false"
     >
-      <div class="bg-header border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn" style="background-color: var(--header-bg-color);" @click.stop>
+      <div class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn" style="background-color: var(--app-bg-color);" @click.stop>
         <div class="flex items-center gap-2 mb-3">
           <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
             <i class="fas fa-folder-plus text-sm"></i>

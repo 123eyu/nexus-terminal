@@ -90,10 +90,9 @@ const handleHostIconMouseLeave = () => {
     </div>
   </Teleport>
 
-  <!-- 基础配置卡片：立体浮凸卡片 -->
+  <!-- 基础配置卡片：立体卡片 -->
   <div
-    class="rounded-2xl border border-border/80 p-4 md:p-5 space-y-4 shadow-md"
-    style="background-color: var(--card-bg-color, var(--header-bg-color));"
+    class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-4 shadow-sm"
   >
     <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
       <div class="flex items-center gap-2">
@@ -112,8 +111,7 @@ const handleHostIconMouseLeave = () => {
         id="conn-name"
         v-model="props.formData.name"
         :placeholder="t('connections.form.namePlaceholder', '如: 生产服务器 / 个人 VPS')"
-        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
-        style="background-color: var(--app-bg-color);"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
       />
     </div>
 
@@ -121,14 +119,13 @@ const handleHostIconMouseLeave = () => {
     <div>
       <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionType', '连接类型') }}</label>
       <div
-        class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70"
-        style="background-color: var(--app-bg-color);"
+        class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70 bg-input"
       >
         <button
           type="button"
           @click="props.formData.type = 'SSH'"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          :class="props.formData.type === 'SSH' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          :class="props.formData.type === 'SSH' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
         >
           <i class="fas fa-terminal text-[10px]"></i>
           <span>SSH</span>
@@ -138,7 +135,7 @@ const handleHostIconMouseLeave = () => {
           type="button"
           @click="props.formData.type = 'RDP'"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          :class="props.formData.type === 'RDP' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          :class="props.formData.type === 'RDP' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
         >
           <i class="fas fa-desktop text-[10px]"></i>
           <span>RDP</span>
@@ -148,7 +145,7 @@ const handleHostIconMouseLeave = () => {
           type="button"
           @click="props.formData.type = 'VNC'"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-          :class="props.formData.type === 'VNC' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-header/50'"
+          :class="props.formData.type === 'VNC' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
         >
           <i class="fas fa-plug text-[10px]"></i>
           <span>VNC</span>
@@ -171,8 +168,7 @@ const handleHostIconMouseLeave = () => {
           v-model="props.formData.host"
           required
           placeholder="192.168.1.100 或 example.com"
-          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
-          style="background-color: var(--app-bg-color);"
+          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
         />
       </div>
       <div>
@@ -184,8 +180,7 @@ const handleHostIconMouseLeave = () => {
           required
           min="1"
           max="65535"
-          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
-          style="background-color: var(--app-bg-color);"
+          class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
         />
       </div>
     </div>
@@ -215,15 +210,14 @@ const handleHostIconMouseLeave = () => {
       <!-- 展开的颜色选择 -->
       <div
         v-if="props.formData.custom_background_color"
-        class="mt-3 space-y-2.5 p-3 border border-border/70 rounded-xl"
-        style="background-color: var(--app-bg-color);"
+        class="mt-3 space-y-2.5 p-3 border border-border/70 rounded-xl bg-input"
       >
         <div class="flex items-center justify-between">
           <span class="text-[11px] font-semibold text-text-secondary">{{ t('connections.form.selectColor', '选择颜色') }}</span>
           <button
             type="button"
             @click="handleRandomColor"
-            class="px-2 py-0.5 text-[11px] font-medium rounded-lg bg-header hover:bg-border/60 text-foreground border border-border/70 flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
+            class="px-2 py-0.5 text-[11px] font-medium rounded-lg bg-muted/60 hover:bg-muted/90 text-foreground border border-border/70 flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
           >
             <i class="fas fa-dice text-primary text-[10px]"></i>
             <span>{{ t('connections.form.randomColor', '随机') }}</span>
@@ -261,8 +255,7 @@ const handleHostIconMouseLeave = () => {
             type="text"
             v-model="props.formData.background_color"
             placeholder="#3b82f6"
-            class="flex-1 px-2.5 py-1 text-xs font-mono border border-border/60 rounded-xl text-foreground uppercase focus:outline-none focus:ring-1 focus:ring-primary"
-            style="background-color: var(--card-bg-color, var(--header-bg-color));"
+            class="flex-1 px-2.5 py-1 text-xs font-mono border border-border/60 rounded-xl text-foreground bg-background uppercase focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
       </div>

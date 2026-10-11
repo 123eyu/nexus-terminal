@@ -116,7 +116,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
     <button
       type="button"
       @click="isExpanded = !isExpanded"
-      class="w-full p-3.5 flex items-center justify-between text-left cursor-pointer active:bg-header/40 transition-colors select-none gap-2"
+      class="w-full p-3.5 flex items-center justify-between text-left cursor-pointer active:bg-muted/40 transition-colors select-none gap-2"
     >
       <div class="flex items-center gap-2.5 min-w-0">
         <div class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center text-xs shrink-0">
@@ -146,7 +146,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
           <label class="block text-xs font-medium text-text-secondary">
             {{ t('connections.form.connectionMode', '网络连接路由方式') }}
           </label>
-          <div class="grid grid-cols-2 gap-1.5 p-1 bg-header/40 border border-border/60 rounded-xl">
+          <div class="grid grid-cols-2 gap-1.5 p-1 bg-muted/40 border border-border/60 rounded-xl">
             <button
               type="button"
               @click="setConnectionMode('proxy')"
@@ -205,7 +205,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             <div
               v-for="(jumpHostId, index) in props.formData.jump_chain"
               :key="index"
-              class="flex items-center gap-2 p-2.5 bg-header/30 border border-border/60 rounded-xl"
+              class="flex items-center gap-2 p-2.5 bg-muted/30 border border-border/60 rounded-xl"
             >
               <span class="w-6 h-6 rounded-full bg-primary/20 text-primary text-[11px] font-bold flex items-center justify-center shrink-0">
                 {{ index + 1 }}
@@ -281,7 +281,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
           v-model="props.formData.notes"
           rows="3"
           placeholder="记录关于该服务器的用途、维护提醒等..."
-          class="w-full p-3 text-xs bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors leading-relaxed"
+          class="w-full p-3 text-xs bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors leading-relaxed"
         ></textarea>
       </div>
     </div>

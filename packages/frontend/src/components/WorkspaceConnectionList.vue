@@ -872,7 +872,7 @@ const cancelEditingTag = () => {
             <div v-for="groupData in filteredAndGroupedConnections" :key="groupData.groupName" class="mb-1 last:mb-0">
               <!-- Group Header -->
               <div
-              class="group px-2.5 py-1.5 font-medium flex items-center text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150"
+              class="group px-2.5 py-1.5 font-medium flex items-center text-foreground rounded-lg hover:bg-muted/50 transition-colors duration-150"
               :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
               @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
               @contextmenu.prevent="showTagContextMenu($event, groupData)"

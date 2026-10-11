@@ -83,7 +83,7 @@ const handleClear = () => {
       type="button"
       @click="openDrawer"
       :disabled="props.disabled"
-      class="w-full h-10 px-3 bg-header/20 border border-border/60 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer select-none active:bg-header/40 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
+      class="w-full h-10 px-3 bg-muted/20 border border-border/60 rounded-xl text-left flex items-center justify-between gap-2 transition-all cursor-pointer select-none active:bg-muted/40 disabled:opacity-50 disabled:cursor-not-allowed min-w-0"
       :class="isOpen ? 'ring-1 ring-primary border-primary' : ''"
     >
       <div class="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
@@ -131,14 +131,14 @@ const handleClear = () => {
 
       <!-- 搜索框 (选项 > 5 时启用) -->
       <template #sub-header>
-        <div v-if="props.options.length > 5" class="p-3 border-b border-border/30 bg-header/10 shrink-0">
+        <div v-if="props.options.length > 5" class="p-3 border-b border-border/30 bg-muted/10 shrink-0">
           <div class="relative">
             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-secondary/60"></i>
             <input
               type="text"
               v-model="searchQuery"
               placeholder="搜索选项..."
-              class="w-full h-8.5 pl-8 pr-3 text-xs bg-header/30 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary"
+              class="w-full h-8.5 pl-8 pr-3 text-xs bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
@@ -158,7 +158,7 @@ const handleClear = () => {
           class="w-full p-3 rounded-xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-99"
           :class="opt.value === props.modelValue
             ? 'bg-primary/10 border-primary/50 text-foreground shadow-2xs'
-            : 'bg-background/80 border-border/50 text-foreground hover:bg-header/40'"
+            : 'bg-background/80 border-border/50 text-foreground hover:bg-muted/40'"
         >
           <div class="min-w-0">
             <div class="flex items-center gap-2">
@@ -166,7 +166,7 @@ const handleClear = () => {
               <span class="text-xs font-semibold truncate">{{ opt.label }}</span>
               <span
                 v-if="opt.badge"
-                class="px-1.5 py-0.2 rounded text-[10px] uppercase font-mono font-bold bg-header border border-border/60 text-text-secondary"
+                class="px-1.5 py-0.2 rounded text-[10px] uppercase font-mono font-bold bg-muted/60 border border-border/60 text-text-secondary"
               >
                 {{ opt.badge }}
               </span>

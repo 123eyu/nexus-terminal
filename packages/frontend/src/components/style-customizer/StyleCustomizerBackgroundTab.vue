@@ -344,7 +344,7 @@ const filteredRemoteHtmlPresets = computed(() => {
         <!-- 预览视窗 -->
         <div
           class="w-full h-36 rounded-xl border border-border/70 relative overflow-hidden bg-cover bg-center flex items-center justify-center transition-all group"
-          :style="{ backgroundImage: terminalBackgroundImage ? `url(${terminalBackgroundImage})` : 'none', backgroundColor: 'var(--header-bg-color)' }"
+          :style="{ backgroundImage: terminalBackgroundImage ? `url(${terminalBackgroundImage})` : 'none', backgroundColor: 'var(--app-bg-color)' }"
         >
           <!-- 蒙版 -->
           <div

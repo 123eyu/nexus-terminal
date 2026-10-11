@@ -78,7 +78,7 @@ const selectPresetColor = (color: string) => {
       <label class="block text-xs font-medium text-text-secondary">
         {{ t('connections.form.connectionType', '协议类型') }}
       </label>
-      <div class="grid gap-1.5 p-1 bg-header/40 border border-border/60 rounded-xl"
+      <div class="grid gap-1.5 p-1 bg-muted/40 border border-border/60 rounded-xl"
            :class="isRemoteDesktopSupported() ? 'grid-cols-3' : 'grid-cols-1'">
         <button
           type="button"
@@ -133,7 +133,7 @@ const selectPresetColor = (color: string) => {
         id="m-conn-name"
         v-model="props.formData.name"
         placeholder="例如：生产服务器 / 我的测试节点"
-        class="w-full h-10 px-3 text-xs bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+        class="w-full h-10 px-3 text-xs bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
       />
     </div>
 
@@ -160,7 +160,7 @@ const selectPresetColor = (color: string) => {
           v-model="props.formData.host"
           required
           placeholder="192.168.1.100 或 域名"
-          class="w-full h-10 px-3 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
+          class="w-full h-10 px-3 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
         />
       </div>
 
@@ -177,7 +177,7 @@ const selectPresetColor = (color: string) => {
           min="1"
           max="65535"
           inputmode="numeric"
-          class="w-full h-10 px-3 text-xs font-mono bg-header/20 border border-border/60 rounded-xl text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors text-center"
+          class="w-full h-10 px-3 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors text-center"
         />
       </div>
     </div>
@@ -192,7 +192,7 @@ const selectPresetColor = (color: string) => {
         <span>批量生成技巧：</span>
       </div>
       <div>支持在主机填入 IP 范围批量添加，例如：</div>
-      <div class="font-mono text-foreground font-medium bg-header/60 px-2 py-1 rounded-md">
+      <div class="font-mono text-foreground font-medium bg-muted/60 px-2 py-1 rounded-md">
         192.168.1.10~192.168.1.20
       </div>
     </div>
@@ -231,14 +231,14 @@ const selectPresetColor = (color: string) => {
       <!-- 展开的颜色选择面板 -->
       <div
         v-if="props.formData.custom_background_color"
-        class="space-y-3 p-3 bg-header/30 border border-border/60 rounded-xl"
+        class="space-y-3 p-3 bg-muted/30 border border-border/60 rounded-xl"
       >
         <div class="flex items-center justify-between gap-2">
           <span class="text-xs font-medium text-text-secondary truncate">选择调色板</span>
           <button
             type="button"
             @click="handleRandomColor"
-            class="h-7 px-2.5 rounded-lg text-xs font-medium bg-header border border-border/70 text-foreground flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
+            class="h-7 px-2.5 rounded-lg text-xs font-medium bg-muted/60 hover:bg-muted/90 border border-border/70 text-foreground flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
           >
             <i class="fas fa-dice text-primary text-xs shrink-0"></i>
             <span>随机色彩</span>

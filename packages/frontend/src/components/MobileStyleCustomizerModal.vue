@@ -60,6 +60,7 @@ const handleResetUiTheme = async () => {
     height="h-[90vh]"
     max-height="max-h-[92vh]"
     :z-index="1000"
+    :backdrop-blur="false"
     @close="handleClose"
   >
     <!-- 2. 横向滚动分类药丸标签导航 -->

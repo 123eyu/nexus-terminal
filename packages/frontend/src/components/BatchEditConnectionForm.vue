@@ -8,6 +8,7 @@ import { useProxiesStore } from '../stores/proxies.store';
 import { useTagsStore, type TagInfo } from '../stores/tags.store';
 import { useSshKeysStore, type SshKeyBasicInfo } from '../stores/sshKeys.store';
 import TagInput from './TagInput.vue';
+import SshKeySelector from './SshKeySelector.vue';
 
 interface BatchUpdateData {
   port?: number | string | null;
@@ -212,8 +213,7 @@ onMounted(() => {
       @click.self="handleCancel"
     >
       <div
-        class="bg-header text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-xl max-h-[90vh] flex flex-col"
-        style="background-color: var(--header-bg-color);"
+        class="bg-background text-foreground p-6 rounded-2xl shadow-2xl border border-border/80 w-full max-w-xl max-h-[90vh] flex flex-col"
       >
         <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">
           {{ t('connections.batchEdit.title', '批量编辑连接') }} ({{ props.connectionIds.length }} {{ t('connections.batchEdit.selectedItems', '项') }})
@@ -221,7 +221,7 @@ onMounted(() => {
 
         <form @submit.prevent="handleSave" class="flex-grow overflow-y-auto pr-2 space-y-4">
           <!-- Port Section -->
-          <div class="p-4 border border-border rounded-md bg-card">
+          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.table.port', '端口') }}</h4>
               <input type="checkbox" v-model="enablePortEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -237,7 +237,7 @@ onMounted(() => {
           </div>
 
           <!-- Auth Section -->
-          <div class="p-4 border border-border rounded-md bg-card">
+          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.form.sectionAuth', '认证信息') }}</h4>
               <input type="checkbox" v-model="enableAuthEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -252,26 +252,18 @@ onMounted(() => {
                 <input type="password" id="batch-password" v-model="formData.password" class="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm" />
               </div>
               <div>
-                <label for="batch-ssh-key" class="block text-sm font-medium text-text-secondary">{{ t('connections.form.authMethodKey', 'SSH 密钥') }}</label>
-                <select
-                  id="batch-ssh-key"
+                <label for="batch-ssh-key" class="block text-sm font-medium text-text-secondary mb-1.5">{{ t('connections.form.authMethodKey', 'SSH 密钥') }}</label>
+                <SshKeySelector
                   v-model="formData.ssh_key_id"
-                  class="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm"
+                  :allow-undefined="true"
                   :disabled="sshKeysStore.isLoading"
-                >
-                  <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
-                  <option :value="null">{{ t('connections.form.noSshKey', '无密钥') }}</option>
-                  <option v-if="sshKeysStore.isLoading" disabled>{{ t('common.loading', '加载中...') }}</option>
-                  <option v-for="key in availableSshKeys" :key="key.id" :value="key.id">
-                    {{ key.name }}
-                  </option>
-                </select>
+                />
               </div>
             </div>
           </div>
 
           <!-- Advanced Section (Now includes Notes) -->
-          <div class="p-4 border border-border rounded-md bg-card">
+          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.form.sectionAdvanced', '高级选项') }}</h4>
               <input type="checkbox" v-model="enableAdvancedEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -279,7 +271,7 @@ onMounted(() => {
             <div v-if="enableAdvancedEdit" class="space-y-3">
               <div>
                 <label for="batch-proxy" class="block text-sm font-medium text-text-secondary">{{ t('connections.form.proxy', '代理') }}</label>
-                <select id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm">
+                <select id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm">
                   <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
                   <option :value="null">{{ t('connections.form.noProxy', '无代理') }}</option>
                   <option v-for="proxy in availableProxies" :key="proxy.id" :value="proxy.id">

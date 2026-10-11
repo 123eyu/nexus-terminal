@@ -7,11 +7,11 @@
       @keydown.esc="handleClose"
     >
       <div
-        class="bg-header border border-border/80 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all animate-scale-up"
-        style="background-color: var(--header-bg-color);"
+        class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all animate-scale-up"
+        style="background-color: var(--app-bg-color);"
       >
-        <!-- 弹窗头部 -->
-        <div class="px-6 py-4 border-b border-border/60 flex items-center justify-between bg-header/40">
+        <!-- 弹窗头部：一体化无色差 -->
+        <div class="px-6 py-4 border-b border-border/50 flex items-center justify-between">
           <div class="flex items-center gap-2.5">
             <div class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center text-sm">
               <i class="fas fa-sync-alt"></i>
@@ -27,14 +27,14 @@
           </div>
           <button
             @click="handleClose"
-            class="text-text-secondary hover:text-foreground text-sm p-1.5 rounded-md hover:bg-border/50 transition-colors"
+            class="text-text-secondary hover:text-foreground text-sm p-1.5 rounded-md hover:bg-muted/50 transition-colors"
           >
             <i class="fas fa-times"></i>
           </button>
         </div>
 
         <!-- 当前同步范围提示 -->
-        <div class="px-6 py-2.5 bg-header/20 border-b border-border/40 flex items-center justify-between text-xs">
+        <div class="px-6 py-2.5 bg-muted/15 border-b border-border/40 flex items-center justify-between text-xs">
           <span class="text-text-secondary font-medium">同步范围:</span>
           <div class="flex items-center gap-1.5 flex-wrap justify-end">
             <span
@@ -54,7 +54,7 @@
             class="block p-3.5 rounded-xl border transition-all cursor-pointer select-none"
             :class="selectedMode === 'bidirectional'
               ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
-              : 'border-border/70 hover:border-border hover:bg-header/30'"
+              : 'border-border/70 hover:border-border hover:bg-muted/30'"
           >
             <div class="flex items-start gap-3">
               <input
@@ -85,7 +85,7 @@
             class="block p-3.5 rounded-xl border transition-all cursor-pointer select-none"
             :class="selectedMode === 'cloud_to_local'
               ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
-              : 'border-border/70 hover:border-border hover:bg-header/30'"
+              : 'border-border/70 hover:border-border hover:bg-muted/30'"
           >
             <div class="flex items-start gap-3">
               <input
@@ -111,7 +111,7 @@
             class="block p-3.5 rounded-xl border transition-all cursor-pointer select-none"
             :class="selectedMode === 'local_to_cloud'
               ? 'border-primary bg-primary/5 ring-1 ring-primary/40'
-              : 'border-border/70 hover:border-border hover:bg-header/30'"
+              : 'border-border/70 hover:border-border hover:bg-muted/30'"
           >
             <div class="flex items-start gap-3">
               <input
@@ -133,8 +133,8 @@
           </label>
         </div>
 
-        <!-- 弹窗底部操作按钮 -->
-        <div class="px-6 py-4 bg-header/20 border-t border-border/60 flex items-center justify-end gap-3">
+        <!-- 弹窗底部操作按钮：一体化无色差 -->
+        <div class="px-6 py-4 border-t border-border/50 flex items-center justify-end gap-3">
           <button
             type="button"
             @click="handleClose"

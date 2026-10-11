@@ -526,8 +526,7 @@
       @click.self="isCreatingFolderModal = false"
     >
       <div
-        class="bg-header border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn"
-        style="background-color: var(--header-bg-color);"
+        class="bg-background border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn"
         @click.stop
       >
         <div class="flex items-center gap-2 mb-3">
