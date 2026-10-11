@@ -376,7 +376,7 @@ const getLanguageExtension = async (lang: string) => {
   if (lang === 'shell' || lang === 'bash') {
     const { StreamLanguage } = await import('@codemirror/language');
     const { shell } = await import('@codemirror/legacy-modes/mode/shell');
-    return StreamLanguage.define(shell);
+    return StreamLanguage.define(shell as any);
   }
   if (lang === 'markdown') {
     const { markdown, commonmarkLanguage } = await import('@codemirror/lang-markdown');

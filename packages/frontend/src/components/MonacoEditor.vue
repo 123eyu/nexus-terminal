@@ -121,7 +121,7 @@ onMounted(() => {
     }
 
     // 监听滚动事件
-    editorInstance.onDidScrollChange((e) => {
+    editorInstance.onDidScrollChange((e: any) => {
       if (editorInstance) {
         // 只有当滚动是由用户操作或实际视口变化引起时才发出
         const layoutInfo = editorInstance.getLayoutInfo();

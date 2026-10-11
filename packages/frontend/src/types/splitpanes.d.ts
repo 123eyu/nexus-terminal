@@ -5,3 +5,5 @@ declare module 'splitpanes' {
   const Pane: DefineComponent<any, any, any>;
   export { Splitpanes, Pane };
 }
+
+declare module 'vue3-recaptcha2';
