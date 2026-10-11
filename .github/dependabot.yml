@@ -36,7 +36,12 @@ updates:
           - "minor"
           - "patch"
 
+    # 忽略列表：严格禁止 Dependabot 触碰/更新特定依赖（防止与构建插件发生规范冲突）
+    ignore:
+      - dependency-name: "monaco-editor"
+
     # 提交信息格式 (遵循 Conventional Commits)
     commit-message:
       prefix: "build(deps)"
       include: "scope"
+
