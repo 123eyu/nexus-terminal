@@ -877,7 +877,7 @@ const {
   showExternalDropOverlay, // 控制蒙版显示
   dragOverTarget, // 行拖拽悬停目标 (内部)
   isContainerDropTarget, // 跨窗格拖拽到列表空白区域的高亮指示
-  // draggedItem, // 内部状态，不需要在 FileManager 中直接使用
+  draggedItem, // 内部拖拽项状态，用于给被拖拽卡片提供半透明反馈
   // --- 事件处理器 ---
   handleDragEnter,
   handleDragOver, // 容器的 dragover (主要处理内部滚动)
@@ -1998,7 +1998,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                 @dblclick="handleItemDoubleClick($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @contextmenu.prevent.stop="showContextMenu($event, { filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
                 @dragover.prevent="handleDragOverRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
-                @dragleave="handleDragLeaveRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } })"
+                @dragleave="handleDragLeaveRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
                 @drop.prevent="handleDropOnRow({ filename: '..', longname: '..', attrs: { isDirectory: true, isFile: false, isSymbolicLink: false, size: 0, uid: 0, gid: 0, mode: 0, atime: 0, mtime: 0 } }, $event)"
                 :data-filename="'..'"
                 >
@@ -2056,7 +2056,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                  :data-filename="item.filename"
                  @contextmenu.prevent.stop="showContextMenu($event, item)"
                  @dragover.prevent="handleDragOverRow(item, $event)"
-                 @dragleave="handleDragLeaveRow(item)"
+                 @dragleave="handleDragLeaveRow(item, $event)"
                  @drop.prevent="handleDropOnRow(item, $event)">
                 <template v-for="colKey in columnOrder" :key="colKey">
                   <td v-if="colKey === 'type'" class="text-center border-b border-border/30 align-middle" :style="{ paddingLeft: `calc(1rem * var(--row-size-multiplier))`, paddingRight: `calc(0.5rem * var(--row-size-multiplier))` }">
@@ -2135,17 +2135,19 @@ defineExpose({ focusSearchInput, startPathEdit });
                 navigatingTargetName === '..' || selectedIndex === 0
                   ? 'bg-primary/10 border-primary/50 text-foreground'
                   : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
-                { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': dragOverTarget === '..' }
+                dragOverTarget === '..'
+                  ? 'ring-2 ring-primary border-primary bg-primary/20 shadow-md scale-[1.02] outline-dashed outline-2 outline-offset-[-1px] outline-primary'
+                  : ''
               ]"
               @click="handleItemClick($event, parentDirectoryItem)"
               @dblclick="handleItemDoubleClick($event, parentDirectoryItem)"
               @contextmenu.prevent.stop="showContextMenu($event, parentDirectoryItem)"
               @dragover.prevent="handleDragOverRow(parentDirectoryItem, $event)"
-              @dragleave="handleDragLeaveRow(parentDirectoryItem)"
+              @dragleave="handleDragLeaveRow(parentDirectoryItem, $event)"
               @drop.prevent="handleDropOnRow(parentDirectoryItem, $event)"
               :data-filename="'..'"
             >
-              <div class="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary">
+              <div class="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary pointer-events-none">
                 <i
                   v-if="navigatingTargetName === '..'"
                   class="fas fa-circle-notch fa-spin text-base"
@@ -2155,7 +2157,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                   class="fas fa-level-up-alt text-base"
                 ></i>
               </div>
-              <div class="flex-1 min-w-0 flex flex-col justify-center">
+              <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
                 <div class="text-xs font-medium leading-snug truncate">..</div>
                 <div class="text-[11px] text-text-secondary/75 leading-tight truncate">
                   {{ t('fileManager.actions.parentDirectory', '上一级') }}
@@ -2183,28 +2185,30 @@ defineExpose({ focusSearchInput, startPathEdit });
                 @dblclick="handleItemDoubleClick($event, item)"
                 @contextmenu.prevent.stop="showContextMenu($event, item)"
                 @dragover.prevent="handleDragOverRow(item, $event)"
-                @dragleave="handleDragLeaveRow(item)"
+                @dragleave="handleDragLeaveRow(item, $event)"
                 @drop.prevent="handleDropOnRow(item, $event)"
                 class="group flex items-center gap-2.5 px-2.5 py-1.5 h-[52px] rounded-lg border transition-all duration-300 select-none"
                 :class="[
                   { 'cursor-pointer': item.attrs.isDirectory || item.attrs.isFile },
-                  navigatingTargetName === item.filename
-                    ? 'bg-primary/10 border-primary/50 text-foreground'
-                    : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
-                      ? 'bg-primary text-white border-primary shadow-sm ring-1 ring-primary/40'
-                      : item._justAdded
-                        ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
-                        : item._justUpdated
-                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
-                          : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground',
-                  { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
+                  (draggedItem?.filename === item.filename || (selectedItems.has(item.filename) && Boolean(draggedItem))) ? 'opacity-40' : '',
+                  item.attrs.isDirectory && dragOverTarget === item.filename
+                    ? 'ring-2 ring-primary border-primary bg-primary/20 shadow-md scale-[1.02] outline-dashed outline-2 outline-offset-[-1px] outline-primary'
+                    : navigatingTargetName === item.filename
+                      ? 'bg-primary/10 border-primary/50 text-foreground'
+                      : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                        ? 'bg-primary text-white border-primary shadow-sm ring-1 ring-primary/40'
+                        : item._justAdded
+                          ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
+                          : item._justUpdated
+                            ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
+                            : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground'
                 ]"
                 :data-filename="item.filename"
                 :title="item.filename"
               >
                 <!-- 左侧大图标容器 -->
                 <div
-                  class="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors duration-150"
+                  class="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors duration-150 pointer-events-none"
                   :class="[
                     (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
                       ? 'bg-white/20 text-white'
@@ -2236,7 +2240,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                 </div>
 
                 <!-- 右侧双行信息 -->
-                <div class="flex-1 min-w-0 flex flex-col justify-center">
+                <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
                   <!-- 文件名 -->
                   <div
                     class="text-xs leading-snug truncate"

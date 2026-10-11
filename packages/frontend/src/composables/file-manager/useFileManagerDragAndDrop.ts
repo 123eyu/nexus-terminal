@@ -140,7 +140,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     if (payload) {
       // 属于 SFTP 项目拖拽（跨窗格或本窗格）
       const targetElement = event.target as HTMLElement;
-      const targetRow = targetElement.closest('tr');
+      const targetRow = targetElement.closest('tr, [data-filename]');
       if (!targetRow && payload.sourceDirectory !== currentPath.value) {
         isContainerDropTarget.value = true;
       }
@@ -165,7 +165,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     if (payload && isConnected.value) {
       event.preventDefault();
       const targetElement = event.target as HTMLElement;
-      const targetRow = targetElement.closest('tr');
+      const targetRow = targetElement.closest('tr, [data-filename]');
 
       if (!targetRow) {
         // 鼠标在行之外的列表空白区域
@@ -209,7 +209,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     } else {
       const payload = extractDragPayload(event);
       if (payload) {
-        const relatedRow = (target instanceof HTMLElement) ? target.closest('tr') : null;
+        const relatedRow = (target instanceof HTMLElement) ? target.closest('tr, [data-filename]') : null;
         if (!relatedRow) {
           dragOverTarget.value = null;
         }
@@ -399,8 +399,14 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     isContainerDropTarget.value = false;
   };
 
-  // --- 离开行 ---
-  const handleDragLeaveRow = (targetItem: FileListItem) => {
+  // --- 离开行/卡片 ---
+  const handleDragLeaveRow = (targetItem: FileListItem, event?: DragEvent) => {
+    if (event && event.relatedTarget instanceof Node) {
+      const currentTarget = event.currentTarget as HTMLElement | null;
+      if (currentTarget && currentTarget.contains(event.relatedTarget)) {
+        return; // 依然在当前行/当前卡片内部子元素之间移动，不清除高亮
+      }
+    }
     if (dragOverTarget.value === targetItem.filename) {
       dragOverTarget.value = null;
     }
