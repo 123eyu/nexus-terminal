@@ -13,10 +13,10 @@ on:
         required: false
         default: ''
       draft:
-        description: '是否发布为草稿 (Draft)'
+        description: '是否发布为草稿 (Draft，推荐开启，方便你在网页上编辑更新文案后再正式发布)'
         required: false
         type: boolean
-        default: false
+        default: true
       prerelease:
         description: '是否标记为预发布 (Prerelease)'
         required: false
@@ -151,14 +151,14 @@ jobs:
           Write-Host "已生成 SHA256 校验清单:"
           Get-Content "release-artifacts/checksums-sha256.txt"
 
-      - name: 发布至 GitHub Release
+      - name: 发布至 GitHub Release (默认发布为草稿 Draft，方便撰写文案)
         if: steps.tag_step.outputs.should_build == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag_step.outputs.tag }}
           name: ${{ inputs.release_title || steps.tag_step.outputs.tag }}
           files: release-artifacts/*
-          draft: ${{ inputs.draft || false }}
+          draft: ${{ inputs.draft != false }}
           prerelease: ${{ inputs.prerelease || false }}
           generate_release_notes: true
         env:
