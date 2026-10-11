@@ -1,0 +1,122 @@
+// packages/desktop/scripts/build-sidecar.js
+/**
+ * Tauri v2 自包含桌面环境与 Node.js Sidecar 准备脚本
+ * 功能：
+ * 1. 同步后端编译产物 (backend/dist) 到 resources/server/dist
+ * 2. 同步前端编译页面 (frontend/dist) 到 resources/server/public (由后端 Express 托管)
+ * 3. 准备纯净的后端生产依赖 (resources/server/node_modules)
+ * 4. 拷贝官方 Node.js 运行时作为 Tauri Sidecar 二进制 (nexus-server-<triple>.exe)
+ */
+
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+function getHostTargetTriple() {
+  const platform = process.platform;
+  const arch = process.arch;
+
+  if (platform === 'win32') {
+    if (arch === 'x64') return 'x86_64-pc-windows-msvc';
+    if (arch === 'arm64') return 'aarch64-pc-windows-msvc';
+    if (arch === 'ia32') return 'i686-pc-windows-msvc';
+  } else if (platform === 'darwin') {
+    if (arch === 'arm64') return 'aarch64-apple-darwin';
+    if (arch === 'x64') return 'x86_64-apple-darwin';
+  } else if (platform === 'linux') {
+    if (arch === 'x64') return 'x86_64-unknown-linux-gnu';
+    if (arch === 'arm64') return 'aarch64-unknown-linux-gnu';
+  }
+
+  throw new Error(`暂不支持的宿主系统架构: ${platform}-${arch}`);
+}
+
+async function main() {
+  console.log('🚀 [Tauri Packager] 开始准备 Nexus Terminal 自包含桌面环境与 Sidecar...');
+
+  const triple = getHostTargetTriple();
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const sidecarBinaryName = `nexus-server-${triple}${ext}`;
+
+  const desktopDir = path.resolve(__dirname, '..');
+  const srcTauriDir = path.join(desktopDir, 'src-tauri');
+  const binariesDir = path.join(srcTauriDir, 'binaries');
+  const resourcesDir = path.join(srcTauriDir, 'resources');
+  const serverDir = path.join(resourcesDir, 'server');
+
+  fs.mkdirSync(binariesDir, { recursive: true });
+  fs.mkdirSync(resourcesDir, { recursive: true });
+  fs.mkdirSync(serverDir, { recursive: true });
+
+  const rootDir = path.resolve(desktopDir, '../..');
+  const backendDir = path.join(rootDir, 'packages', 'backend');
+  const frontendDir = path.join(rootDir, 'packages', 'frontend');
+
+  // 1. 确保后端已构建
+  const backendDist = path.join(backendDir, 'dist');
+  if (!fs.existsSync(path.join(backendDist, 'index.js'))) {
+    console.log('⚡ 正在编译后端 TypeScript 源码...');
+    execSync('npm run build', { cwd: backendDir, stdio: 'inherit' });
+  }
+
+  // 2. 确保前端已构建
+  const frontendDist = path.join(frontendDir, 'dist');
+  if (!fs.existsSync(path.join(frontendDist, 'index.html'))) {
+    console.log('⚡ 正在编译前端 Vue 源码...');
+    execSync('npm run build', { cwd: frontendDir, stdio: 'inherit' });
+  }
+
+  // 3. 同步 dist 到 resources/server/dist
+  console.log('📦 正在同步后端代码到 resources/server/dist...');
+  fs.cpSync(backendDist, path.join(serverDir, 'dist'), { recursive: true, force: true });
+
+  // 4. 同步 frontend/dist 到 resources/server/public
+  console.log('🎨 正在同步前端页面到 resources/server/public...');
+  fs.cpSync(frontendDist, path.join(serverDir, 'public'), { recursive: true, force: true });
+
+  // 5. 同步 HTML 预设背景主题 (html-presets)
+  const htmlPresetsSrc = path.join(backendDir, 'html-presets');
+  if (fs.existsSync(htmlPresetsSrc)) {
+    console.log('🖼️ 正在同步 HTML 预设背景主题到 resources/server/html-presets...');
+    fs.cpSync(htmlPresetsSrc, path.join(serverDir, 'html-presets'), { recursive: true, force: true });
+    fs.cpSync(htmlPresetsSrc, path.join(serverDir, 'dist', 'html-presets'), { recursive: true, force: true });
+  } else {
+    console.warn('⚠️ 未找到 html-presets 目录: ' + htmlPresetsSrc);
+  }
+
+  // 5. 准备 package.json
+  const backendPkg = JSON.parse(fs.readFileSync(path.join(backendDir, 'package.json'), 'utf8'));
+  const cleanPkg = {
+    name: 'nexus-terminal-server',
+    version: backendPkg.version,
+    private: true,
+    main: 'dist/index.js',
+    dependencies: backendPkg.dependencies
+  };
+  fs.writeFileSync(path.join(serverDir, 'package.json'), JSON.stringify(cleanPkg, null, 2));
+
+  // 6. 检查生产依赖 node_modules
+  const serverNodeModules = path.join(serverDir, 'node_modules');
+  if (!fs.existsSync(serverNodeModules) || !fs.existsSync(path.join(serverNodeModules, 'sqlite3'))) {
+    console.log('📥 正在安装自包含后端纯生产依赖 (npm install --omit=dev)...');
+    execSync('npm install --omit=dev --no-audit --no-fund', { cwd: serverDir, stdio: 'inherit' });
+  } else {
+    console.log('✅ 自包含后端依赖已就绪');
+  }
+
+  // 7. 将当前运行的 node.exe 拷贝为 Sidecar 二进制
+  const targetBinaryPath = path.join(binariesDir, sidecarBinaryName);
+  console.log(`🎯 准备 Node 运行时 Sidecar 二进制: ${sidecarBinaryName}`);
+  const nodeExePath = process.execPath;
+  console.log(`📌 宿主 Node.js 路径: ${nodeExePath}`);
+
+  fs.copyFileSync(nodeExePath, targetBinaryPath);
+  console.log(`✅ Sidecar 二进制部署完毕: ${targetBinaryPath}`);
+
+  console.log('✨ [Tauri Packager] 所有自包含资源与 Sidecar 准备完成！');
+}
+
+main().catch(err => {
+  console.error('❌ [Tauri Packager] 准备失败:', err);
+  process.exit(1);
+});
