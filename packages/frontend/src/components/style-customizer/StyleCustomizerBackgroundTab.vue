@@ -384,15 +384,20 @@ const filteredRemoteHtmlPresets = computed(() => {
               {{ Math.round(editableTerminalBackgroundOverlayOpacity * 100) }}%
             </span>
           </div>
-          <input
-            type="range"
-            v-model.number="editableTerminalBackgroundOverlayOpacity"
-            @change="handleSaveTerminalBackgroundOverlayOpacity"
-            min="0"
-            max="1"
-            step="0.01"
-            class="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-          />
+          <div class="relative flex items-center py-1">
+            <input
+              type="range"
+              v-model.number="editableTerminalBackgroundOverlayOpacity"
+              @change="handleSaveTerminalBackgroundOverlayOpacity"
+              min="0"
+              max="1"
+              step="0.01"
+              class="range-slider w-full"
+              :style="{
+                background: `linear-gradient(to right, var(--color-primary, #BB86FC) 0%, var(--color-primary, #BB86FC) ${Math.round(editableTerminalBackgroundOverlayOpacity * 100)}%, rgba(255, 255, 255, 0.14) ${Math.round(editableTerminalBackgroundOverlayOpacity * 100)}%, rgba(255, 255, 255, 0.14) 100%)`
+              }"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -193,15 +193,20 @@ const resetHtmlPreset = async () => {
           <span class="font-medium text-foreground">背景蒙版遮罩浓度</span>
           <span class="font-mono text-text-secondary">{{ Math.round(localOpacity * 100) }}%</span>
         </div>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          v-model.number="localOpacity"
-          @change="updateOpacity"
-          class="w-full accent-primary h-1.5 cursor-pointer"
-        />
+        <div class="relative flex items-center py-1">
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            v-model.number="localOpacity"
+            @change="updateOpacity"
+            class="range-slider w-full"
+            :style="{
+              background: `linear-gradient(to right, var(--color-primary, #BB86FC) 0%, var(--color-primary, #BB86FC) ${Math.round(localOpacity * 100)}%, rgba(255, 255, 255, 0.14) ${Math.round(localOpacity * 100)}%, rgba(255, 255, 255, 0.14) 100%)`
+            }"
+          />
+        </div>
         <div class="flex justify-between text-[10px] text-text-secondary/50">
           <span>通透 (0%)</span>
           <span>高对比 (100%)</span>
