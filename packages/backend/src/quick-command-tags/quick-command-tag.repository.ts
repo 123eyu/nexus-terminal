@@ -5,6 +5,7 @@ import { getDbInstance, runDb, getDb as getDbRow, allDb } from '../database/conn
 export interface QuickCommandTag {
     id: number;
     name: string;
+    background_color?: string | null;
     created_at: number;
     updated_at: number;
 }
@@ -40,12 +41,12 @@ export const findQuickCommandTagById = async (id: number): Promise<QuickCommandT
 /**
  * 创建新快捷指令标签
  */
-export const createQuickCommandTag = async (name: string): Promise<number> => {
+export const createQuickCommandTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
     const now = Math.floor(Date.now() / 1000);
-    const sql = `INSERT INTO quick_command_tags (name, created_at, updated_at) VALUES (?, ?, ?)`;
+    const sql = `INSERT INTO quick_command_tags (name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?)`;
     try {
         const db = await getDbInstance();
-        const result = await runDb(db, sql, [name, now, now]);
+        const result = await runDb(db, sql, [name, backgroundColor || null, now, now]);
         if (typeof result.lastID !== 'number' || result.lastID <= 0) {
              throw new Error('创建快捷指令标签后未能获取有效的 lastID');
         }
@@ -60,14 +61,27 @@ export const createQuickCommandTag = async (name: string): Promise<number> => {
 };
 
 /**
- * 更新快捷指令标签名称
+ * 更新快捷指令标签名称与背景颜色
  */
-export const updateQuickCommandTag = async (id: number, name: string): Promise<boolean> => {
+export const updateQuickCommandTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
     const now = Math.floor(Date.now() / 1000);
-    const sql = `UPDATE quick_command_tags SET name = ?, updated_at = ? WHERE id = ?`;
+    const updates: string[] = ['updated_at = ?'];
+    const params: any[] = [now];
+
+    if (typeof name === 'string') {
+        updates.push('name = ?');
+        params.push(name);
+    }
+    if (typeof backgroundColor !== 'undefined') {
+        updates.push('background_color = ?');
+        params.push(backgroundColor || null);
+    }
+    params.push(id);
+
+    const sql = `UPDATE quick_command_tags SET ${updates.join(', ')} WHERE id = ?`;
     try {
         const db = await getDbInstance();
-        const result = await runDb(db, sql, [name, now, id]);
+        const result = await runDb(db, sql, params);
         return result.changes > 0;
     } catch (err: any) {
          console.error(`[仓库] 更新快捷指令标签 ${id} 时出错:`, err.message);

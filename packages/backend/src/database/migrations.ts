@@ -581,6 +581,40 @@ const definedMigrations: Migration[] = [
             });
             console.log('[Migrations] Migration 15: settings 表 uuid 与 updated_hlc 迁移完成。');
         }
+    },
+    {
+        id: 16,
+        name: 'Add background_color column to tags, quick_command_tags, and quick_commands tables',
+        check: async (db: Database): Promise<boolean> => {
+            const hasTagBg = await columnExists(db, 'tags', 'background_color');
+            const hasQTagBg = await columnExists(db, 'quick_command_tags', 'background_color');
+            const hasQCmdBg = await columnExists(db, 'quick_commands', 'background_color');
+            return !hasTagBg || !hasQTagBg || !hasQCmdBg;
+        },
+        sql: `
+            -- 安全添加 background_color 字段
+        `,
+        execute: async (db: Database): Promise<void> => {
+            const hasTagBg = await columnExists(db, 'tags', 'background_color');
+            if (!hasTagBg) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('ALTER TABLE tags ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
+                });
+            }
+            const hasQTagBg = await columnExists(db, 'quick_command_tags', 'background_color');
+            if (!hasQTagBg) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('ALTER TABLE quick_command_tags ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
+                });
+            }
+            const hasQCmdBg = await columnExists(db, 'quick_commands', 'background_color');
+            if (!hasQCmdBg) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('ALTER TABLE quick_commands ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
+                });
+            }
+            console.log('[Migrations] Migration 16: tags, quick_command_tags, quick_commands background_color 字段迁移完成。');
+        }
     }
 ];
 

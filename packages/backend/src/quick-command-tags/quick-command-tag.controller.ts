@@ -18,7 +18,7 @@ export const getAllQuickCommandTags = async (req: Request, res: Response): Promi
  * 处理添加新快捷指令标签的请求
  */
 export const addQuickCommandTag = async (req: Request, res: Response): Promise<void> => {
-    const { name } = req.body;
+    const { name, background_color } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
         res.status(400).json({ message: '标签名称不能为空且必须是字符串' });
@@ -26,7 +26,7 @@ export const addQuickCommandTag = async (req: Request, res: Response): Promise<v
     }
 
     try {
-        const newId = await QuickCommandTagService.addQuickCommandTag(name);
+        const newId = await QuickCommandTagService.addQuickCommandTag(name, background_color);
         // 成功添加后，获取新创建的标签信息返回给前端
         const newTag = await QuickCommandTagService.getQuickCommandTagById(newId);
         if (newTag) {
@@ -52,19 +52,19 @@ export const addQuickCommandTag = async (req: Request, res: Response): Promise<v
  */
 export const updateQuickCommandTag = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
-    const { name } = req.body;
+    const { name, background_color } = req.body;
 
     if (isNaN(id)) {
         res.status(400).json({ message: '无效的标签 ID' });
         return;
     }
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    if (typeof name !== 'undefined' && (typeof name !== 'string' || name.trim().length === 0)) {
         res.status(400).json({ message: '标签名称不能为空且必须是字符串' });
         return;
     }
 
     try {
-        const success = await QuickCommandTagService.updateQuickCommandTag(id, name);
+        const success = await QuickCommandTagService.updateQuickCommandTag(id, name, background_color);
         if (success) {
             // 成功更新后，获取更新后的标签信息返回给前端
             const updatedTag = await QuickCommandTagService.getQuickCommandTagById(id);

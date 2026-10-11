@@ -2,7 +2,8 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import AddConnectionForm from '../components/AddConnectionForm.vue';
 import BatchEditConnectionForm from '../components/BatchEditConnectionForm.vue';
-import { hexToRgba } from '../utils/colorUtils';
+import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
+import { hexToRgba, resolveEffectiveColor } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useSessionStore } from '../stores/session.store';
 import { useTagsStore, type TagInfo } from '../stores/tags.store';
@@ -56,6 +57,28 @@ const editingFolderId = ref<number | null>(null);
 const editingFolderName = ref('');
 const editFolderInputRef = ref<HTMLInputElement | null>(null);
 
+// 文件夹背景色拾色器浮层状态
+const activeColorPickerFolderId = ref<number | null>(null);
+const activeColorPickerTriggerEl = ref<HTMLElement | null>(null);
+
+const toggleFolderColorPicker = (folderId: number, e: Event) => {
+  e.stopPropagation();
+  if (activeColorPickerFolderId.value === folderId) {
+    activeColorPickerFolderId.value = null;
+    activeColorPickerTriggerEl.value = null;
+  } else {
+    activeColorPickerFolderId.value = folderId;
+    activeColorPickerTriggerEl.value = (e.currentTarget as HTMLElement) || (e.target as HTMLElement);
+  }
+};
+
+const handleSaveFolderColor = async (folderId: number, color: string | null) => {
+  await tagsStore.updateFolderColor(folderId, color);
+  uiNotificationsStore.showSuccess(t('folders.colorUpdated', '文件夹背景颜色已更新'));
+  activeColorPickerFolderId.value = null;
+  activeColorPickerTriggerEl.value = null;
+};
+
 // 拖拽状态
 const draggedConnectionId = ref<number | null>(null);
 const dragOverFolderId = ref<ActiveFolderType | null>(null);
@@ -74,12 +97,26 @@ const selectedConnectionIdsForBatch = ref<Set<number>>(new Set());
 const showBatchEditForm = ref(false);
 const isDeletingSelectedConnections = ref(false);
 
-const getConnectionCardStyle = (backgroundColor?: string | null) => {
-  if (!backgroundColor) return {};
+// 解析连接项的最终有效背景颜色 (Item 自身 > 所属文件夹 > null)
+const getEffectiveConnectionColor = (conn: ConnectionInfo): string | null => {
+  let folderColor: string | null = null;
+  if (conn.tag_ids && conn.tag_ids.length > 0) {
+    const folder = tagsStore.folders.find(f => f.id === conn.tag_ids![0]);
+    folderColor = folder?.background_color || null;
+  } else if (conn.tags && conn.tags.length > 0) {
+    const folder = tagsStore.folders.find(f => conn.tags?.includes(f.name));
+    folderColor = folder?.background_color || null;
+  }
+  return resolveEffectiveColor(conn.background_color, folderColor);
+};
+
+const getConnectionCardStyle = (conn: ConnectionInfo) => {
+  const effectiveColor = getEffectiveConnectionColor(conn);
+  if (!effectiveColor) return {};
   return {
-    '--conn-card-bg': hexToRgba(backgroundColor, 0.14),
-    '--conn-card-hover-bg': hexToRgba(backgroundColor, 0.22),
-    '--conn-card-border': hexToRgba(backgroundColor, 0.32),
+    '--conn-card-bg': hexToRgba(effectiveColor, 0.14),
+    '--conn-card-hover-bg': hexToRgba(effectiveColor, 0.22),
+    '--conn-card-border': hexToRgba(effectiveColor, 0.32),
     backgroundColor: 'var(--conn-card-bg)',
     borderColor: 'var(--conn-card-border)',
   };
@@ -658,10 +695,10 @@ const handleConnectAllFilteredConnections = async () => {
             @dragover="handleDragOver('all', $event)"
             @dragleave="handleDragLeave"
             @drop="handleDropOnFolder('all', $event)"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150"
+            class="w-full flex items-center justify-between px-3 h-9 rounded-xl text-xs md:text-sm transition-all duration-150 border border-transparent"
             :class="[
               activeFolder === 'all'
-                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
                 : 'text-text-secondary hover:text-foreground hover:bg-muted/60',
               { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === 'all' }
             ]"
@@ -671,7 +708,7 @@ const handleConnectAllFilteredConnections = async () => {
               <span class="truncate">{{ t('folders.all', '全部连接') }}</span>
             </div>
             <span
-              class="px-2 py-0.5 text-xs rounded-full font-medium"
+              class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
               :class="activeFolder === 'all' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
             >
               {{ totalConnectionsCount }}
@@ -684,10 +721,10 @@ const handleConnectAllFilteredConnections = async () => {
             @dragover="handleDragOver('uncategorized', $event)"
             @dragleave="handleDragLeave"
             @drop="handleDropOnFolder('uncategorized', $event)"
-            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150"
+            class="w-full flex items-center justify-between px-3 h-9 rounded-xl text-xs md:text-sm transition-all duration-150 border border-transparent"
             :class="[
               activeFolder === 'uncategorized'
-                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
                 : 'text-text-secondary hover:text-foreground hover:bg-muted/60',
               { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === 'uncategorized' }
             ]"
@@ -697,7 +734,7 @@ const handleConnectAllFilteredConnections = async () => {
               <span class="truncate">{{ t('folders.uncategorized', '未分类') }}</span>
             </div>
             <span
-              class="px-2 py-0.5 text-xs rounded-full font-medium"
+              class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
               :class="activeFolder === 'uncategorized' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
             >
               {{ uncategorizedCount }}
@@ -754,16 +791,16 @@ const handleConnectAllFilteredConnections = async () => {
             @dragover="handleDragOver(folder.id, $event)"
             @dragleave="handleDragLeave"
             @drop="handleDropOnFolder(folder.id, $event)"
-            class="group w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150 cursor-pointer"
+            class="group w-full flex items-center justify-between px-3 h-9 rounded-xl text-xs md:text-sm transition-all duration-150 cursor-pointer border border-transparent"
             :class="[
               activeFolder === folder.id
-                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs border-primary/30 ring-1 ring-primary/30'
                 : 'text-foreground hover:bg-muted/60',
               { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === folder.id }
             ]"
           >
             <!-- Editing State -->
-            <div v-if="editingFolderId === folder.id" class="flex-1 flex items-center gap-1.5 mr-1" @click.stop>
+            <div v-if="editingFolderId === folder.id" class="flex-1 flex items-center gap-1.5 mr-1 h-full" @click.stop>
               <i class="fas fa-folder text-amber-400 text-xs"></i>
               <input
                 ref="editFolderInputRef"
@@ -775,13 +812,13 @@ const handleConnectAllFilteredConnections = async () => {
               />
               <button
                 @click="handleConfirmRenameFolder(folder.id)"
-                class="p-1 text-primary hover:text-primary-hover"
+                class="w-6 h-6 p-0 flex items-center justify-center text-primary hover:text-primary-hover rounded"
               >
                 <i class="fas fa-check text-xs"></i>
               </button>
               <button
                 @click="cancelRenameFolder"
-                class="p-1 text-text-secondary hover:text-foreground"
+                class="w-6 h-6 p-0 flex items-center justify-center text-text-secondary hover:text-foreground rounded"
               >
                 <i class="fas fa-times text-xs"></i>
               </button>
@@ -789,7 +826,7 @@ const handleConnectAllFilteredConnections = async () => {
 
             <!-- Normal Display State -->
             <template v-else>
-              <div class="flex items-center gap-2.5 truncate min-w-0 mr-2">
+              <div class="flex items-center gap-2 truncate min-w-0 mr-2 flex-1">
                 <i
                   :class="[
                     'fas',
@@ -797,22 +834,49 @@ const handleConnectAllFilteredConnections = async () => {
                     'text-amber-400 w-4 text-center flex-shrink-0'
                   ]"
                 ></i>
+                <!-- 文件夹颜色指示圆点 -->
+                <span
+                  v-if="folder.background_color"
+                  class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-border/50"
+                  :style="{ backgroundColor: folder.background_color }"
+                  :title="t('folders.currentColor', '文件夹背景色: ') + folder.background_color"
+                ></span>
                 <span class="truncate">{{ folder.name }}</span>
               </div>
 
-              <div class="flex items-center gap-1 flex-shrink-0">
+              <div class="flex items-center gap-1 flex-shrink-0 h-6">
                 <!-- Action Buttons on Hover -->
-                <div class="hidden group-hover:flex items-center gap-0.5 mr-1" @click.stop>
+                <div class="hidden group-hover:flex items-center gap-0.5 mr-0.5" @click.stop>
+                  <!-- 文件夹背景颜色选择按钮与浮层 -->
+                  <div class="relative inline-flex items-center" @click.stop>
+                    <button
+                      @click="toggleFolderColorPicker(folder.id, $event)"
+                      class="w-6 h-6 p-0 flex items-center justify-center rounded hover:bg-muted transition-colors cursor-pointer"
+                      :class="folder.background_color ? 'text-primary' : 'text-text-secondary hover:text-foreground'"
+                      :title="t('folders.setBackgroundColor', '设置文件夹背景色')"
+                    >
+                      <i class="fas fa-palette text-xs"></i>
+                    </button>
+                    <ColorPickerPopover
+                      :visible="activeColorPickerFolderId === folder.id"
+                      :trigger-el="activeColorPickerTriggerEl"
+                      :model-value="folder.background_color"
+                      :title="t('folders.folderBackgroundColor', '文件夹背景色')"
+                      @update:model-value="handleSaveFolderColor(folder.id, $event)"
+                      @close="activeColorPickerFolderId = null; activeColorPickerTriggerEl = null"
+                    />
+                  </div>
+
                   <button
                     @click="startRenameFolder(folder, $event)"
-                    class="p-1 text-text-secondary hover:text-foreground rounded hover:bg-muted"
+                    class="w-6 h-6 p-0 flex items-center justify-center text-text-secondary hover:text-foreground rounded hover:bg-muted cursor-pointer"
                     :title="t('folders.renameFolder', '重命名')"
                   >
                     <i class="fas fa-pencil-alt text-xs"></i>
                   </button>
                   <button
                     @click="handleDeleteFolder(folder, $event)"
-                    class="p-1 text-text-secondary hover:text-error rounded hover:bg-muted"
+                    class="w-6 h-6 p-0 flex items-center justify-center text-text-secondary hover:text-error rounded hover:bg-muted cursor-pointer"
                     :title="t('folders.deleteFolder', '删除')"
                   >
                     <i class="fas fa-trash-alt text-xs"></i>
@@ -820,7 +884,7 @@ const handleConnectAllFilteredConnections = async () => {
                 </div>
 
                 <span
-                  class="px-2 py-0.5 text-xs rounded-full font-medium"
+                  class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
                   :class="activeFolder === folder.id ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
                 >
                   {{ folderCountMap.get(folder.id) || 0 }}
@@ -1016,11 +1080,11 @@ const handleConnectAllFilteredConnections = async () => {
               @click="handleConnectionClick(conn.id)"
               class="group relative flex flex-col justify-between p-3.5 rounded-xl border transition-all duration-200"
               :class="[
-                conn.background_color ? 'connection-colored-card' : 'bg-card/70 hover:bg-muted/40 border-border/70 shadow-xs hover:shadow-md hover:border-primary/40',
+                getEffectiveConnectionColor(conn) ? 'connection-colored-card' : 'bg-card/70 hover:bg-muted/40 border-border/70 shadow-xs hover:shadow-md hover:border-primary/40',
                 { 'ring-2 ring-primary ring-offset-1 ring-offset-background': isBatchEditMode && isConnectionSelectedForBatch(conn.id) },
                 { 'cursor-pointer': isBatchEditMode, 'cursor-grab active:cursor-grabbing': !isBatchEditMode }
               ]"
-              :style="getConnectionCardStyle(conn.background_color)"
+              :style="getConnectionCardStyle(conn)"
             >
               <!-- Card Top: Protocol Badge, Name & Folder Badge -->
               <div>

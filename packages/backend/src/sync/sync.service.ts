@@ -87,13 +87,13 @@ export const syncService = {
     if (syncConn) {
       const tagsRows = await allDb<any>(
         db,
-        `SELECT uuid, name, created_at, updated_at FROM tags WHERE updated_at > ?`,
+        `SELECT uuid, name, background_color, created_at, updated_at FROM tags WHERE updated_at > ?`,
         [sinceTimestamp]
       );
       tags = tagsRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at,
-        data: { name: r.name, created_at: r.created_at, updated_at: r.updated_at }
+        data: { name: r.name, background_color: r.background_color || null, created_at: r.created_at, updated_at: r.updated_at }
       }));
     }
 
@@ -202,7 +202,7 @@ export const syncService = {
     if (syncCmds) {
       const quickCmdRows = await allDb<any>(
         db,
-        `SELECT uuid, name, command, usage_count, variables, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
+        `SELECT uuid, name, command, usage_count, variables, background_color, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
         [sinceTimestamp]
       );
       quick_commands = quickCmdRows.map(r => ({
@@ -213,6 +213,7 @@ export const syncService = {
           command: r.command,
           usage_count: r.usage_count,
           variables: r.variables,
+          background_color: r.background_color || null,
           created_at: r.created_at,
           updated_at: r.updated_at
         }
@@ -227,13 +228,16 @@ export const syncService = {
     if (syncCmds) {
       const qcTagsRows = await allDb<any>(
         db,
-        `SELECT uuid, name, updated_hlc, created_at, updated_at FROM quick_command_tags WHERE updated_at > ?`,
+        `SELECT uuid, name, background_color, updated_hlc, created_at, updated_at FROM quick_command_tags WHERE updated_at > ?`,
         [sinceTimestamp]
       );
       quick_command_tags = qcTagsRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at || Math.floor(Date.now() / 1000),
-        data: { name: r.name }
+        data: {
+          name: r.name,
+          background_color: r.background_color || null
+        }
       }));
     }
 
@@ -480,22 +484,66 @@ export const syncService = {
             [item.data.name]
           );
           if (existingName) {
-            await runDb(db, `UPDATE tags SET uuid = ?, updated_at = ? WHERE id = ?`, [
+            await runDb(db, `UPDATE tags SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
               item.uuid,
+              item.data.background_color || null,
               item.updated_at,
               existingName.id
             ]);
           } else {
             await runDb(
               db,
-              `INSERT INTO tags (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-              [item.uuid, item.data.name, item.data.created_at || item.updated_at, item.updated_at]
+              `INSERT INTO tags (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+              [item.uuid, item.data.name, item.data.background_color || null, item.data.created_at || item.updated_at, item.updated_at]
             );
           }
           pushed++;
         } else if (item.updated_at > local.updated_at) {
-          await runDb(db, `UPDATE tags SET name = ?, updated_at = ? WHERE uuid = ?`, [
+          await runDb(db, `UPDATE tags SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
             item.data.name,
+            item.data.background_color || null,
+            item.updated_at,
+            item.uuid
+          ]);
+          pushed++;
+          conflictsResolved++;
+        }
+      }
+    }
+
+    // --- 步骤 2.5: 合并 quick_command_tags ---
+    if (syncCmds && entities.quick_command_tags) {
+      for (const item of entities.quick_command_tags) {
+        const local = await getDb<{ id: number; updated_at: number }>(
+          db,
+          `SELECT id, updated_at FROM quick_command_tags WHERE uuid = ?`,
+          [item.uuid]
+        );
+        if (!local) {
+          const existingName = await getDb<{ id: number }>(
+            db,
+            `SELECT id FROM quick_command_tags WHERE name = ?`,
+            [item.data.name]
+          );
+          if (existingName) {
+            await runDb(db, `UPDATE quick_command_tags SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
+              item.uuid,
+              item.data.background_color || null,
+              item.updated_at,
+              existingName.id
+            ]);
+          } else {
+            await runDb(
+              db,
+              `INSERT INTO quick_command_tags (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+              [item.uuid, item.data.name, item.data.background_color || null, item.data.created_at || item.updated_at, item.updated_at]
+            );
+          }
+          pushed++;
+        } else if (item.updated_at > local.updated_at) {
+          await runDb(db, `UPDATE quick_command_tags SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
+            item.data.name,
+            item.data.background_color || null,
             item.updated_at,
             item.uuid
           ]);
@@ -730,14 +778,15 @@ export const syncService = {
         if (!local) {
           const insRes = await runDb(
             db,
-            `INSERT INTO quick_commands (uuid, name, command, usage_count, variables, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO quick_commands (uuid, name, command, usage_count, variables, background_color, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               item.uuid,
               item.data.name || null,
               item.data.command,
               item.data.usage_count || 0,
               item.data.variables || null,
+              item.data.background_color || null,
               item.data.created_at || item.updated_at,
               item.updated_at
             ]
@@ -747,12 +796,13 @@ export const syncService = {
         } else if (item.updated_at > local.updated_at) {
           await runDb(
             db,
-            `UPDATE quick_commands SET name = ?, command = ?, usage_count = ?, variables = ?, updated_at = ? WHERE uuid = ?`,
+            `UPDATE quick_commands SET name = ?, command = ?, usage_count = ?, variables = ?, background_color = ?, updated_at = ? WHERE uuid = ?`,
             [
               item.data.name || null,
               item.data.command,
               item.data.usage_count || 0,
               item.data.variables || null,
+              item.data.background_color || null,
               item.updated_at,
               item.uuid
             ]

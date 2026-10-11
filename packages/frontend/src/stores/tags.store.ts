@@ -6,6 +6,7 @@ import apiClient from '../utils/apiClient'; // 使用统一的 apiClient
 export interface TagInfo {
     id: number;
     name: string;
+    background_color?: string | null;
     created_at: number;
     updated_at: number;
 }
@@ -63,11 +64,14 @@ export const useTagsStore = defineStore('tags', () => {
     }
 
     // 添加新标签 (添加后清除缓存)
-    async function addTag(name: string): Promise<TagInfo | null> { // 修改返回类型
+    async function addTag(name: string, backgroundColor?: string | null): Promise<TagInfo | null> {
         isLoading.value = true;
         error.value = null;
         try {
-            const response = await apiClient.post<{ message: string, tag: TagInfo }>('/tags', { name }); // 假设后端返回新标签信息
+            const response = await apiClient.post<{ message: string, tag: TagInfo }>('/tags', {
+                name,
+                background_color: backgroundColor || null
+            });
             const newTag = response.data.tag;
             // 添加成功后，清除缓存并重新获取 (fetchTags 会更新本地列表)
             localStorage.removeItem('tagsCache');
@@ -83,11 +87,15 @@ export const useTagsStore = defineStore('tags', () => {
     }
 
     // 更新标签
-    async function updateTag(id: number, name: string): Promise<boolean> {
+    async function updateTag(id: number, name?: string, backgroundColor?: string | null): Promise<boolean> {
         isLoading.value = true;
         error.value = null;
         try {
-            await apiClient.put(`/tags/${id}`, { name }); // 使用 apiClient 并移除 base URL
+            const payload: Record<string, any> = {};
+            if (typeof name !== 'undefined') payload.name = name;
+            if (typeof backgroundColor !== 'undefined') payload.background_color = backgroundColor;
+
+            await apiClient.put(`/tags/${id}`, payload);
             // 更新成功后，清除缓存并重新获取
             localStorage.removeItem('tagsCache');
             await fetchTags();
@@ -161,6 +169,8 @@ export const useTagsStore = defineStore('tags', () => {
         createFolder: addTag,
         updateTag,
         renameFolder: updateTag,
+        updateFolder: updateTag,
+        updateFolderColor: (id: number, color: string | null) => updateTag(id, undefined, color),
         deleteTag,
         deleteFolder: deleteTag,
         updateTagConnections, // 暴露新的 action

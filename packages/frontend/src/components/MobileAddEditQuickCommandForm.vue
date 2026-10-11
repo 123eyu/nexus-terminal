@@ -9,6 +9,7 @@ import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useAlertDialog } from '../composables/useAlertDialog';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
+import { PRESET_COLORS, generateRandomColor } from '../utils/colorUtils';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 interface LocalVariable {
@@ -51,7 +52,20 @@ const formData = reactive({
   name: '',
   command: '',
   tagIds: [] as number[],
+  custom_background_color: false,
+  background_color: '#3b82f6',
 });
+
+const toggleCustomColor = () => {
+  formData.custom_background_color = !formData.custom_background_color;
+  if (formData.custom_background_color && !formData.background_color) {
+    formData.background_color = '#3b82f6';
+  }
+};
+
+const handleRandomColor = () => {
+  formData.background_color = generateRandomColor();
+};
 
 const selectedFolderId = computed({
   get: () => {
@@ -81,6 +95,13 @@ onMounted(() => {
     formData.name = props.commandToEdit.name ?? '';
     formData.command = props.commandToEdit.command;
     formData.tagIds = props.commandToEdit.tagIds ? [...props.commandToEdit.tagIds] : [];
+    if (props.commandToEdit.background_color) {
+      formData.custom_background_color = true;
+      formData.background_color = props.commandToEdit.background_color;
+    } else {
+      formData.custom_background_color = false;
+      formData.background_color = '#3b82f6';
+    }
     if (props.commandToEdit.variables) {
       localVariables.value = Object.entries(props.commandToEdit.variables).map(([name, value]) => ({
         name,
@@ -154,10 +175,27 @@ const handleSubmit = async () => {
     return acc;
   }, {} as Record<string, string>);
 
+  const backgroundColorToSave = formData.custom_background_color && formData.background_color
+    ? formData.background_color.trim()
+    : null;
+
   if (isEditing.value && props.commandToEdit) {
-    success = await quickCommandsStore.updateQuickCommand(props.commandToEdit.id, finalName, formData.command.trim(), formData.tagIds, variablesToSave);
+    success = await quickCommandsStore.updateQuickCommand(
+      props.commandToEdit.id,
+      finalName,
+      formData.command.trim(),
+      formData.tagIds,
+      variablesToSave,
+      backgroundColorToSave
+    );
   } else {
-    success = await quickCommandsStore.addQuickCommand(finalName, formData.command.trim(), formData.tagIds, variablesToSave);
+    success = await quickCommandsStore.addQuickCommand(
+      finalName,
+      formData.command.trim(),
+      formData.tagIds,
+      variablesToSave,
+      backgroundColorToSave
+    );
   }
 
   isSubmitting.value = false;
@@ -288,7 +326,82 @@ const handleExecute = () => {
               />
             </div>
 
-            <!-- 4. 变量管理 -->
+            <!-- 4. 独立背景颜色配置 -->
+            <div class="p-3 bg-card/60 border border-border/70 rounded-xl space-y-2.5">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="w-4 h-4 rounded-full border border-white/20 shadow-xs inline-block transition-colors"
+                    :style="{ backgroundColor: formData.custom_background_color ? formData.background_color : 'transparent' }"
+                    :class="!formData.custom_background_color ? 'border-dashed border-border' : ''"
+                  ></span>
+                  <label class="text-xs font-semibold text-foreground">
+                    {{ t('folders.customColor', '独立背景颜色') }}
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  @click="toggleCustomColor"
+                  class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                  :class="formData.custom_background_color ? 'bg-primary' : 'bg-input/80'"
+                >
+                  <span
+                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out"
+                    :class="formData.custom_background_color ? 'translate-x-4' : 'translate-x-0'"
+                  />
+                </button>
+              </div>
+
+              <!-- 展开的调色板区域 -->
+              <div v-if="formData.custom_background_color" class="pt-2 border-t border-border/50 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-medium text-text-secondary">{{ t('common.selectColor', '选择颜色') }}</span>
+                  <button
+                    type="button"
+                    @click="handleRandomColor"
+                    class="px-2 py-0.5 text-[11px] font-medium rounded-md bg-header hover:bg-border/60 text-foreground border border-border/70 flex items-center gap-1 active:scale-95 shadow-xs"
+                  >
+                    <i class="fas fa-dice text-primary text-xs"></i>
+                    <span>{{ t('common.randomColor', '随机') }}</span>
+                  </button>
+                </div>
+
+                <!-- 预设色块 -->
+                <div class="flex items-center flex-wrap gap-1.5">
+                  <button
+                    v-for="color in PRESET_COLORS"
+                    :key="color"
+                    type="button"
+                    @click="formData.background_color = color"
+                    class="w-6 h-6 rounded-full flex items-center justify-center transition-transform hover:scale-110 active:scale-95 focus:outline-none relative shadow-xs"
+                    :style="{ backgroundColor: color }"
+                    :class="formData.background_color?.toLowerCase() === color.toLowerCase() ? 'ring-2 ring-primary ring-offset-2 ring-offset-background scale-105' : ''"
+                  >
+                    <i
+                      v-if="formData.background_color?.toLowerCase() === color.toLowerCase()"
+                      class="fas fa-check text-[10px] text-white drop-shadow-md"
+                    ></i>
+                  </button>
+                </div>
+
+                <!-- 原生拾色器与 HEX 输入框 -->
+                <div class="flex items-center gap-2 pt-1">
+                  <input
+                    type="color"
+                    v-model="formData.background_color"
+                    class="w-7 h-7 rounded cursor-pointer border border-border/70 bg-transparent p-0.5"
+                  />
+                  <input
+                    type="text"
+                    v-model="formData.background_color"
+                    placeholder="#3b82f6"
+                    class="flex-1 px-2 py-1 text-xs font-mono border border-border/70 rounded-md bg-input text-foreground uppercase focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. 变量管理 -->
             <div class="pt-2 border-t border-border/40">
               <div class="flex items-center justify-between mb-2">
                 <span class="text-xs font-semibold text-text-secondary">

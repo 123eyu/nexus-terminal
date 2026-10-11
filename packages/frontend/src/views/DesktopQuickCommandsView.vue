@@ -111,6 +111,11 @@
                             <!-- Display State -->
                             <div v-else class="flex items-center gap-2 truncate min-w-0">
                                 <span
+                                    v-if="getFolderColorById(groupData.tagId)"
+                                    class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
+                                    :style="{ backgroundColor: getFolderColorById(groupData.tagId)! }"
+                                ></span>
+                                <span
                                     class="inline-block overflow-hidden text-ellipsis whitespace-nowrap text-xs md:text-sm"
                                     :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
                                 >
@@ -121,11 +126,28 @@
                         </div>
 
                         <!-- Hover Actions for Folder -->
-                        <div v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="hidden group-hover:flex items-center gap-1 flex-shrink-0" @click.stop>
+                        <div v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="hidden group-hover:flex items-center gap-0.5 flex-shrink-0 h-6" @click.stop>
+                            <!-- Folder Color Picker -->
+                            <div v-if="groupData.tagId !== null" class="relative inline-flex items-center" @click.stop>
+                                <button
+                                    @click.stop="toggleFolderColorPicker(groupData.tagId, $event)"
+                                    class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
+                                    :title="t('folders.folderColor', '文件夹背景颜色')"
+                                >
+                                    <i class="fas fa-palette text-[10px]"></i>
+                                </button>
+                                <ColorPickerPopover
+                                    :visible="activeFolderColorPickerId === groupData.tagId"
+                                    :trigger-el="activeFolderColorPickerTriggerEl"
+                                    :model-value="getFolderColorById(groupData.tagId)"
+                                    @update:model-value="handleUpdateFolderColor(groupData.tagId, $event)"
+                                    @close="activeFolderColorPickerId = null; activeFolderColorPickerTriggerEl = null"
+                                />
+                            </div>
                             <button
                                 v-if="groupData.tagId !== null"
                                 @click="startEditingTag(groupData.tagId, groupData.groupName)"
-                                class="p-1 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors"
+                                class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
                                 :title="t('folders.renameFolder', '重命名文件夹')"
                             >
                                 <i class="fas fa-pencil-alt text-[10px]"></i>
@@ -133,7 +155,7 @@
                             <button
                                 v-if="groupData.tagId !== null"
                                 @click="handleDeleteFolder(groupData.tagId, groupData.groupName, $event)"
-                                class="p-1 rounded text-text-secondary hover:text-error hover:bg-muted text-xs transition-colors"
+                                class="w-6 h-6 p-0 rounded text-text-secondary hover:text-error hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
                                 :title="t('folders.deleteFolder', '删除文件夹')"
                             >
                                 <i class="fas fa-trash-alt text-[10px]"></i>
@@ -151,7 +173,10 @@
                                 :data-command-id="cmd.id"
                                 class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
                                 :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
-                                 :style="{ padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` }"
+                                :style="[
+                                    { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
+                                    getCommandCardStyle(cmd, groupData.tagId)
+                                ]"
                                 @click="handleCommandItemClick(cmd)"
                                 @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
                                 :title="getCommandTooltip(cmd)"
@@ -193,10 +218,13 @@
                                 :data-command-id="cmd.id"
                                 class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
                                 :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
-                                :style="{
-                                    padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
-                                    fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
-                                }"
+                                :style="[
+                                    {
+                                        padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
+                                        fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
+                                    },
+                                    getCommandCardStyle(cmd, groupData.tagId)
+                                ]"
                                 @click="handleCommandItemClick(cmd)"
                                 @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
                                 :title="getCommandTooltip(cmd)"
@@ -213,7 +241,10 @@
                                 :key="cmd.id"
                                 :data-command-id="cmd.id"
                                 class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
-                                :style="{ padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
+                                :style="[
+                                    { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
+                                    getCommandCardStyle(cmd, groupData.tagId)
+                                ]"
                                 :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
                                 @click="handleCommandItemClick(cmd)"
                                 @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
@@ -253,7 +284,10 @@
                         :data-command-id="cmd.id"
                         class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
                         :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
-                        :style="{ padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` }"
+                        :style="[
+                            { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
+                            getCommandCardStyle(cmd, null)
+                        ]"
                         @click="handleCommandItemClick(cmd)"
                         @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
                         :title="getCommandTooltip(cmd)"
@@ -295,10 +329,13 @@
                         :data-command-id="cmd.id"
                         class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
                         :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
-                        :style="{
-                            padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
-                            fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
-                        }"
+                        :style="[
+                            {
+                                padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
+                                fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
+                            },
+                            getCommandCardStyle(cmd, null)
+                        ]"
                         @click="handleCommandItemClick(cmd)"
                         @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
                         :title="getCommandTooltip(cmd)"
@@ -315,7 +352,10 @@
                         :key="cmd.id"
                         :data-command-id="cmd.id"
                         class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
-                        :style="{ padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
+                        :style="[
+                            { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
+                            getCommandCardStyle(cmd, null)
+                        ]"
                         :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
                         @click="handleCommandItemClick(cmd)"
                         @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
@@ -514,6 +554,8 @@ import { useConnectionsStore } from '../stores/connections.store';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useComponentStateStore } from '../stores/componentState.store';
 import { useLayoutStore } from '../stores/layout.store';
+import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
+import { resolveEffectiveColor, getItemColoredCardStyle } from '../utils/colorUtils';
 
 const quickCommandsStore = useQuickCommandsStore();
 const quickCommandTagsStore = useQuickCommandTagsStore(); 
@@ -525,6 +567,52 @@ const settingsStore = useSettingsStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 const sessionStore = useSessionStore(); 
 const connectionsStore = useConnectionsStore();
+
+// 文件夹背景调色板状态
+const activeFolderColorPickerId = ref<number | null>(null);
+const activeFolderColorPickerTriggerEl = ref<HTMLElement | null>(null);
+
+const toggleFolderColorPicker = (tagId: number, e: Event) => {
+  e.stopPropagation();
+  if (activeFolderColorPickerId.value === tagId) {
+    activeFolderColorPickerId.value = null;
+    activeFolderColorPickerTriggerEl.value = null;
+  } else {
+    activeFolderColorPickerId.value = tagId;
+    activeFolderColorPickerTriggerEl.value = (e.currentTarget as HTMLElement) || (e.target as HTMLElement);
+  }
+};
+
+const handleUpdateFolderColor = async (tagId: number, color: string | null) => {
+  await quickCommandTagsStore.updateFolderColor(tagId, color);
+  activeFolderColorPickerId.value = null;
+  activeFolderColorPickerTriggerEl.value = null;
+};
+
+const getFolderColorById = (tagId?: number | null): string | null => {
+  if (!tagId) return null;
+  const folder = quickCommandTagsStore.folders.find(f => f.id === tagId);
+  return folder?.background_color || null;
+};
+
+const getCommandFolderColor = (cmd: QuickCommandFE, groupTagId?: number | null): string | null => {
+  if (typeof groupTagId === 'number') {
+    const folder = quickCommandTagsStore.folders.find(f => f.id === groupTagId);
+    return folder?.background_color || null;
+  }
+  if (cmd.tagIds && cmd.tagIds.length > 0) {
+    const folder = quickCommandTagsStore.folders.find(f => f.id === cmd.tagIds[0]);
+    return folder?.background_color || null;
+  }
+  return null;
+};
+
+const getCommandCardStyle = (cmd: QuickCommandFE, groupTagId?: number | null) => {
+  const folderColor = getCommandFolderColor(cmd, groupTagId);
+  const effectiveColor = resolveEffectiveColor(cmd.background_color, folderColor);
+  if (!effectiveColor) return {};
+  return getItemColoredCardStyle(effectiveColor, { alpha: 0.14, borderAlpha: 0.35 });
+};
 
 const props = withDefaults(
   defineProps<{

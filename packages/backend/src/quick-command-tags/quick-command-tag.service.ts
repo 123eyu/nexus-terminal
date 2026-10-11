@@ -18,16 +18,17 @@ export const getQuickCommandTagById = async (id: number): Promise<QuickCommandTa
 /**
  * 添加新的快捷指令标签
  * @param name 标签名称
+ * @param backgroundColor 背景颜色 (可选)
  * @returns 返回新标签的 ID
  */
-export const addQuickCommandTag = async (name: string): Promise<number> => {
+export const addQuickCommandTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
     if (!name || name.trim().length === 0) {
         throw new Error('标签名称不能为空');
     }
     const trimmedName = name.trim();
     // 可以在这里添加更多验证逻辑，例如检查名称格式等
     try {
-        const newId = await QuickCommandTagRepository.createQuickCommandTag(trimmedName);
+        const newId = await QuickCommandTagRepository.createQuickCommandTag(trimmedName, backgroundColor);
         return newId;
     } catch (error: any) {
         // Service 层可以重新抛出或处理 Repository 抛出的错误
@@ -39,17 +40,21 @@ export const addQuickCommandTag = async (name: string): Promise<number> => {
 /**
  * 更新快捷指令标签
  * @param id 标签 ID
- * @param name 新的标签名称
+ * @param name 新的标签名称 (可选)
+ * @param backgroundColor 新的背景颜色 (可选)
  * @returns 返回是否成功更新
  */
-export const updateQuickCommandTag = async (id: number, name: string): Promise<boolean> => {
-    if (!name || name.trim().length === 0) {
-        throw new Error('标签名称不能为空');
+export const updateQuickCommandTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
+    let trimmedName: string | undefined = undefined;
+    if (typeof name !== 'undefined') {
+        if (!name || name.trim().length === 0) {
+            throw new Error('标签名称不能为空');
+        }
+        trimmedName = name.trim();
     }
-    const trimmedName = name.trim();
     // 可以在这里添加更多验证逻辑
     try {
-        const success = await QuickCommandTagRepository.updateQuickCommandTag(id, trimmedName);
+        const success = await QuickCommandTagRepository.updateQuickCommandTag(id, trimmedName, backgroundColor);
         if (!success) {
              // 可能需要检查标签是否存在，或者让 Repository 处理
              console.warn(`[Service] 尝试更新不存在的快捷指令标签 ID: ${id}`);

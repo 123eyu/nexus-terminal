@@ -13,14 +13,35 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
 import ManageTagConnectionsModal from './ManageTagConnectionsModal.vue'; 
 import { useConfirmDialog } from '../composables/useConfirmDialog';
-import { hexToRgba } from '../utils/colorUtils';
+import { hexToRgba, resolveEffectiveColor } from '../utils/colorUtils';
+
+// 获取文件夹背景颜色
+const getFolderColor = (folderId: number | null): string | null => {
+  if (folderId === null) return null;
+  const folder = tagsStore.folders.find(f => f.id === folderId);
+  return folder?.background_color || null;
+};
+
+// 解析连接项的最终有效背景颜色 (Item 自身 > 所属文件夹 > null)
+const getEffectiveConnectionColor = (conn: ConnectionInfo): string | null => {
+  let folderColor: string | null = null;
+  if (conn.tag_ids && conn.tag_ids.length > 0) {
+    const folder = tagsStore.folders.find(f => f.id === conn.tag_ids![0]);
+    folderColor = folder?.background_color || null;
+  } else if (conn.tags && conn.tags.length > 0) {
+    const folder = tagsStore.folders.find(f => conn.tags?.includes(f.name));
+    folderColor = folder?.background_color || null;
+  }
+  return resolveEffectiveColor(conn.background_color, folderColor);
+};
 
 // 计算带背景颜色的连接项样式
 const getConnectionItemStyle = (conn: ConnectionInfo, isHighlighted: boolean) => {
-  if (!conn.background_color) return {};
-  const bg = hexToRgba(conn.background_color, isHighlighted ? 0.28 : 0.12);
-  const hoverBg = hexToRgba(conn.background_color, 0.22);
-  const border = hexToRgba(conn.background_color, 0.25);
+  const effectiveColor = getEffectiveConnectionColor(conn);
+  if (!effectiveColor) return {};
+  const bg = hexToRgba(effectiveColor, isHighlighted ? 0.28 : 0.12);
+  const hoverBg = hexToRgba(effectiveColor, 0.22);
+  const border = hexToRgba(effectiveColor, 0.25);
   return {
     '--conn-item-bg': bg,
     '--conn-item-hover-bg': hoverBg,
@@ -883,6 +904,12 @@ const cancelEditingTag = () => {
               />
               <!-- 显示状态 -->
               <div v-else class="flex items-center gap-1.5 truncate flex-grow min-w-0">
+                <!-- 文件夹颜色指示圆点 -->
+                <span
+                  v-if="getFolderColor(groupData.tagId)"
+                  class="w-2 h-2 rounded-full flex-shrink-0 shadow-xs ring-1 ring-border/50"
+                  :style="{ backgroundColor: getFolderColor(groupData.tagId)! }"
+                ></span>
                 <span
                   class="text-xs font-semibold inline-block overflow-hidden text-ellipsis whitespace-nowrap"
                   :class="{ 'cursor-pointer hover:underline': true }"
@@ -911,8 +938,8 @@ const cancelEditingTag = () => {
                  :key="conn.id"
                  class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground transition-all duration-150"
                  :class="[
-                   conn.background_color ? 'connection-item-colored' : 'hover:bg-primary/10',
-                   { 'bg-primary/20 font-medium': !conn.background_color && conn.id === highlightedConnectionId }
+                   getEffectiveConnectionColor(conn) ? 'connection-item-colored' : 'hover:bg-primary/10',
+                   { 'bg-primary/20 font-medium': !getEffectiveConnectionColor(conn) && conn.id === highlightedConnectionId }
                  ]"
                  :style="getConnectionItemStyle(conn, conn.id === highlightedConnectionId)"
                  :data-conn-id="conn.id"
@@ -921,8 +948,8 @@ const cancelEditingTag = () => {
                  @contextmenu.prevent="showContextMenu($event, conn)"
                >
                  <i
-                   :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-plug' : 'fa-server'), 'mr-2.5 w-4 text-center', conn.background_color ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !conn.background_color && conn.id === highlightedConnectionId }]"
-                   :style="conn.background_color ? { color: conn.background_color } : {}"
+                   :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-plug' : 'fa-server'), 'mr-2.5 w-4 text-center', getEffectiveConnectionColor(conn) ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !getEffectiveConnectionColor(conn) && conn.id === highlightedConnectionId }]"
+                   :style="getEffectiveConnectionColor(conn) ? { color: getEffectiveConnectionColor(conn)! } : {}"
                  ></i>
                  <span class="overflow-hidden text-ellipsis whitespace-nowrap flex-grow text-sm" :title="conn.name || conn.host">
                    {{ conn.name || conn.host }}
@@ -938,8 +965,8 @@ const cancelEditingTag = () => {
                 :key="conn.id"
                 class="group my-0.5 py-2 pr-3 pl-4 cursor-pointer flex items-center rounded-md whitespace-nowrap overflow-hidden text-ellipsis text-foreground transition-all duration-150"
                 :class="[
-                  conn.background_color ? 'connection-item-colored' : 'hover:bg-primary/10',
-                  { 'bg-primary/20 font-medium': !conn.background_color && conn.id === highlightedConnectionId }
+                  getEffectiveConnectionColor(conn) ? 'connection-item-colored' : 'hover:bg-primary/10',
+                  { 'bg-primary/20 font-medium': !getEffectiveConnectionColor(conn) && conn.id === highlightedConnectionId }
                 ]"
                 :style="getConnectionItemStyle(conn, conn.id === highlightedConnectionId)"
                 :data-conn-id="conn.id"
@@ -948,8 +975,8 @@ const cancelEditingTag = () => {
                 @contextmenu.prevent="showContextMenu($event, conn)"
               >
                 <i
-                  :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-chalkboard' : 'fa-server'), 'mr-2.5 w-4 text-center', conn.background_color ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !conn.background_color && conn.id === highlightedConnectionId }]"
-                  :style="conn.background_color ? { color: conn.background_color } : {}"
+                  :class="['fas', conn.type === 'RDP' ? 'fa-desktop' : (conn.type === 'VNC' ? 'fa-chalkboard' : 'fa-server'), 'mr-2.5 w-4 text-center', getEffectiveConnectionColor(conn) ? '' : 'text-text-secondary group-hover:text-primary', { 'text-white': !getEffectiveConnectionColor(conn) && conn.id === highlightedConnectionId }]"
+                  :style="getEffectiveConnectionColor(conn) ? { color: getEffectiveConnectionColor(conn)! } : {}"
                 ></i>
                 <span class="overflow-hidden text-ellipsis whitespace-nowrap flex-grow text-sm" :title="conn.name || conn.host">
                   {{ conn.name || conn.host }}

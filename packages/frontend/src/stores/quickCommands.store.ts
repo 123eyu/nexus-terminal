@@ -17,6 +17,7 @@ export interface QuickCommandFE { // Renamed from QuickCommand if necessary
     updated_at: number;
     tagIds: number[]; // +++ Add tagIds +++
     variables?: Record<string, string>; // New: Add variables
+    background_color?: string | null; // 快捷指令自定义背景色
 }
 
 // 定义排序类型
@@ -280,7 +281,8 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
             const freshData = response.data.map(cmd => ({
                 ...cmd,
                 tagIds: Array.isArray(cmd.tagIds) ? cmd.tagIds : [],
-                variables: typeof cmd.variables === 'object' ? cmd.variables : undefined
+                variables: typeof cmd.variables === 'object' ? cmd.variables : undefined,
+                background_color: cmd.background_color || null
             }));
 
             // 3. 轻量指纹快速比对，避免大数组深度 JSON.stringify
@@ -314,14 +316,27 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     };
 
     // 添加快捷指令 (原地追加，避免全量重新请求)
-    const addQuickCommand = async (name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>): Promise<boolean> => {
+    const addQuickCommand = async (
+        name: string | null,
+        command: string,
+        tagIds?: number[],
+        variables?: Record<string, string>,
+        backgroundColor?: string | null
+    ): Promise<boolean> => {
         try {
-            const response = await apiClient.post<{ message: string, command: QuickCommandFE }>('/quick-commands', { name, command, tagIds, variables });
+            const response = await apiClient.post<{ message: string, command: QuickCommandFE }>('/quick-commands', {
+                name,
+                command,
+                tagIds,
+                variables,
+                background_color: backgroundColor || null
+            });
             if (response.data?.command) {
                 const newCmd: QuickCommandFE = {
                     ...response.data.command,
                     tagIds: Array.isArray(response.data.command.tagIds) ? response.data.command.tagIds : (tagIds || []),
-                    variables: response.data.command.variables || variables
+                    variables: response.data.command.variables || variables,
+                    background_color: response.data.command.background_color || backgroundColor || null
                 };
                 quickCommandsList.value.push(newCmd);
                 try {
@@ -339,16 +354,31 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     };
 
     // 更新快捷指令 (原地替换，避免全量重新请求)
-    const updateQuickCommand = async (id: number, name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>): Promise<boolean> => {
+    const updateQuickCommand = async (
+        id: number,
+        name: string | null,
+        command: string,
+        tagIds?: number[],
+        variables?: Record<string, string>,
+        backgroundColor?: string | null
+    ): Promise<boolean> => {
          try {
-            const response = await apiClient.put<{ message: string, command: QuickCommandFE }>(`/quick-commands/${id}`, { name, command, tagIds, variables });
+            const payload: Record<string, any> = { name, command, tagIds, variables };
+            if (typeof backgroundColor !== 'undefined') {
+                payload.background_color = backgroundColor;
+            }
+
+            const response = await apiClient.put<{ message: string, command: QuickCommandFE }>(`/quick-commands/${id}`, payload);
             const index = quickCommandsList.value.findIndex(cmd => cmd.id === id);
             if (index !== -1 && response.data?.command) {
                 quickCommandsList.value[index] = {
                     ...quickCommandsList.value[index],
                     ...response.data.command,
                     tagIds: Array.isArray(response.data.command.tagIds) ? response.data.command.tagIds : (tagIds || []),
-                    variables: response.data.command.variables || variables
+                    variables: response.data.command.variables || variables,
+                    background_color: typeof response.data.command.background_color !== 'undefined'
+                        ? response.data.command.background_color
+                        : (typeof backgroundColor !== 'undefined' ? backgroundColor : quickCommandsList.value[index].background_color)
                 };
                 try {
                     localStorage.setItem('quickCommandsListCache', JSON.stringify(quickCommandsList.value));
@@ -427,7 +457,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         const cmd = quickCommandsList.value.find(c => c.id === id);
         if (!cmd) return false;
         const targetTagIds = folderId !== null ? [folderId] : [];
-        return updateQuickCommand(cmd.id, cmd.name, cmd.command, targetTagIds, cmd.variables);
+        return updateQuickCommand(cmd.id, cmd.name, cmd.command, targetTagIds, cmd.variables, cmd.background_color);
     };
 
     return {

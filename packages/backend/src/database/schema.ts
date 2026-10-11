@@ -123,6 +123,7 @@ export const createTagsTableSQL = `
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
+    background_color TEXT NULL,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
@@ -170,6 +171,7 @@ CREATE TABLE IF NOT EXISTS quick_commands (
     command TEXT NOT NULL, -- 指令必选
     usage_count INTEGER NOT NULL DEFAULT 0, -- 使用频率
     variables TEXT NULL,
+    background_color TEXT NULL,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
@@ -181,6 +183,7 @@ export const createQuickCommandTagsTableSQL = `
 CREATE TABLE IF NOT EXISTS quick_command_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
+    background_color TEXT NULL,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );

@@ -6,8 +6,8 @@ import { QuickCommandSortBy } from './quick-commands.service';
  * 处理添加新快捷指令的请求
  */
 export const addQuickCommand = async (req: Request, res: Response): Promise<void> => {
-    // 从请求体中解构出 name, command, 以及可选的 tagIds 和 variables
-    const { name, command, tagIds, variables } = req.body;
+    // 从请求体中解构出 name, command, 以及可选的 tagIds, variables 和 background_color
+    const { name, command, tagIds, variables, background_color } = req.body;
 
     // --- 基本验证 ---
     if (!command || typeof command !== 'string' || command.trim().length === 0) {
@@ -32,8 +32,8 @@ export const addQuickCommand = async (req: Request, res: Response): Promise<void
  
 
     try {
-        // 将 tagIds 和 variables 传递给 Service 层
-        const newId = await QuickCommandsService.addQuickCommand(name, command, tagIds, variables);
+        // 将 tagIds, variables 和 background_color 传递给 Service 层
+        const newId = await QuickCommandsService.addQuickCommand(name, command, tagIds, variables, background_color);
         // 尝试获取新创建的带标签的指令信息返回
         const newCommand = await QuickCommandsService.getQuickCommandById(newId);
         if (newCommand) {
@@ -70,8 +70,8 @@ export const getAllQuickCommands = async (req: Request, res: Response): Promise<
  */
 export const updateQuickCommand = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
-    // 从请求体中解构出 name, command, 以及可选的 tagIds 和 variables
-    const { name, command, tagIds, variables } = req.body;
+    // 从请求体中解构出 name, command, 以及可选的 tagIds, variables 和 background_color
+    const { name, command, tagIds, variables, background_color } = req.body;
 
     // --- 基本验证 ---
     if (isNaN(id)) {
@@ -100,8 +100,8 @@ export const updateQuickCommand = async (req: Request, res: Response): Promise<v
     }
 
     try {
-        // 将 tagIds 和 variables 传递给 Service 层
-        const success = await QuickCommandsService.updateQuickCommand(id, name, command, tagIds, variables);
+        // 将 tagIds, variables 和 background_color 传递给 Service 层
+        const success = await QuickCommandsService.updateQuickCommand(id, name, command, tagIds, variables, background_color);
         if (success) {
              // 尝试获取更新后的带标签的指令信息返回
             const updatedCommand = await QuickCommandsService.getQuickCommandById(id);

@@ -6,6 +6,7 @@
     "dashboard": "Dashboard",
     "terminal": "Terminal",
     "connections": "Connections",
+    "quickCommands": "Quick Commands",
     "proxies": "Proxies",
     "login": "Login",
     "logout": "Logout",
@@ -17,6 +18,7 @@
   "folders": {
     "title": "Folders",
     "all": "All Connections",
+    "allCommands": "All Commands",
     "uncategorized": "Uncategorized",
     "customFolders": "Folders",
     "newFolder": "New Folder",

@@ -114,3 +114,44 @@ export function getConnectionItemStyle(backgroundColor?: string | null, isHighli
     borderColor: `var(--conn-custom-border)`,
   };
 }
+
+/**
+ * 解析条目的有效背景颜色 (Item 自身 > 所属文件夹 > null)
+ * 优先级规则：条目自身的背景色优先级高于所属文件夹
+ * @param itemColor 条目自身设置的背景颜色
+ * @param folderColor 所属文件夹设置的背景颜色
+ */
+export function resolveEffectiveColor(itemColor?: string | null, folderColor?: string | null): string | null {
+  if (itemColor && typeof itemColor === 'string' && itemColor.trim()) {
+    return itemColor.trim();
+  }
+  if (folderColor && typeof folderColor === 'string' && folderColor.trim()) {
+    return folderColor.trim();
+  }
+  return null;
+}
+
+/**
+ * 根据有效背景颜色生成统一的高质感微透明卡片样式
+ * @param color 十六进制背景色
+ * @param options 样式参数
+ */
+export function getItemColoredCardStyle(
+  color?: string | null,
+  options: { alpha?: number; borderAlpha?: number; isSelected?: boolean } = {}
+): Record<string, string> {
+  if (!color) return {};
+  const baseAlpha = options.isSelected ? 0.28 : (options.alpha ?? 0.12);
+  const borderAlpha = options.borderAlpha ?? 0.28;
+  const hoverAlpha = Math.min(baseAlpha + 0.1, 0.42);
+
+  return {
+    '--item-custom-bg': hexToRgba(color, baseAlpha),
+    '--item-custom-hover-bg': hexToRgba(color, hoverAlpha),
+    '--item-custom-border': hexToRgba(color, borderAlpha),
+    '--item-color-accent': color,
+    backgroundColor: 'var(--item-custom-bg)',
+    borderColor: 'var(--item-custom-border)',
+  };
+}
+

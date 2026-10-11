@@ -8,7 +8,7 @@ const auditLogService = new AuditLogService();
  * 创建新标签 (POST /api/v1/tags)
  */
 export const createTag = async (req: Request, res: Response): Promise<void> => {
-    const { name } = req.body;
+    const { name, background_color } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
         res.status(400).json({ message: '标签名称不能为空。' });
@@ -16,9 +16,9 @@ export const createTag = async (req: Request, res: Response): Promise<void> => {
     }
 
     try {
-        const newTag = await TagService.createTag(name);
+        const newTag = await TagService.createTag(name, background_color);
         // 记录审计日志
-        auditLogService.logAction('TAG_CREATED', { tagId: newTag.id, name: newTag.name });
+        auditLogService.logAction('TAG_CREATED', { tagId: newTag.id, name: newTag.name, background_color: newTag.background_color });
         res.status(201).json({ message: '标签创建成功。', tag: newTag });
     } catch (error: any) {
         console.error('Controller: 创建标签时发生错误:', error);
@@ -72,24 +72,24 @@ export const getTagById = async (req: Request, res: Response): Promise<void> => 
  */
 export const updateTag = async (req: Request, res: Response): Promise<void> => {
     const tagId = parseInt(req.params.id, 10);
-    const { name } = req.body;
+    const { name, background_color } = req.body;
 
     if (isNaN(tagId)) {
         res.status(400).json({ message: '无效的标签 ID。' });
         return;
     }
-    if (!name || typeof name !== 'string' || name.trim() === '') {
+    if (typeof name !== 'undefined' && (typeof name !== 'string' || name.trim() === '')) {
         res.status(400).json({ message: '标签名称不能为空。' });
         return;
     }
 
     try {
-        const updatedTag = await TagService.updateTag(tagId, name);
+        const updatedTag = await TagService.updateTag(tagId, name, background_color);
         if (!updatedTag) {
             res.status(404).json({ message: '标签未找到。' });
         } else {
             // 记录审计日志
-            auditLogService.logAction('TAG_UPDATED', { tagId, newName: name });
+            auditLogService.logAction('TAG_UPDATED', { tagId, newName: name, background_color: updatedTag.background_color });
             res.status(200).json({ message: '标签更新成功。', tag: updatedTag });
         }
     } catch (error: any) {

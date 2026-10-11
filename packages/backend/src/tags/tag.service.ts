@@ -20,7 +20,7 @@ export const getTagById = async (id: number): Promise<TagData | null> => {
 /**
  * 创建新标签
  */
-export const createTag = async (name: string): Promise<TagData> => {
+export const createTag = async (name: string, backgroundColor?: string | null): Promise<TagData> => {
 
     if (!name || name.trim().length === 0) {
         throw new Error('标签名称不能为空。');
@@ -29,7 +29,7 @@ export const createTag = async (name: string): Promise<TagData> => {
 
 
     try {
-        const newTagId = await TagRepository.createTag(trimmedName);
+        const newTagId = await TagRepository.createTag(trimmedName, backgroundColor);
         const newTag = await getTagById(newTagId);
         if (!newTag) {
             throw new Error('创建标签后无法检索到该标签。');
@@ -44,18 +44,19 @@ export const createTag = async (name: string): Promise<TagData> => {
 };
 
 /**
- * 更新标签名称
+ * 更新标签名称或背景色
  */
-export const updateTag = async (id: number, name: string): Promise<TagData | null> => {
-
-    if (!name || name.trim().length === 0) {
-        throw new Error('标签名称不能为空。');
+export const updateTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<TagData | null> => {
+    let trimmedName: string | undefined = undefined;
+    if (typeof name !== 'undefined') {
+        if (!name || name.trim().length === 0) {
+            throw new Error('标签名称不能为空。');
+        }
+        trimmedName = name.trim();
     }
-     const trimmedName = name.trim();
-
 
     try {
-        const updated = await TagRepository.updateTag(id, trimmedName);
+        const updated = await TagRepository.updateTag(id, trimmedName, backgroundColor);
         if (!updated) {
             return null; 
         }

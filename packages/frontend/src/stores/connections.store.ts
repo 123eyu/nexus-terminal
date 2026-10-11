@@ -14,6 +14,7 @@ export interface ConnectionInfo {
     proxy_id?: number | null; // 关联的代理 ID (可选)
     proxy_type?: 'proxy' | 'jump' | null; 
     tag_ids?: number[]; // 关联的标签 ID 数组 (可选)
+    tags?: string[]; // 关联的标签名称数组 (可选，兼容)
     ssh_key_id?: number | null; // +++ 关联的 SSH 密钥 ID (可选) +++
     created_at: number;
     updated_at: number;

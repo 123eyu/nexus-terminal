@@ -30,6 +30,12 @@ const routes: Array<RouteRecordRaw> = [
      name: 'Connections',
      component: () => import('../views/ConnectionsView.vue')
    },
+    // 快捷指令管理页面
+    {
+      path: '/quick-commands',
+      name: 'QuickCommands',
+      component: () => import('../views/QuickCommandsManagementView.vue')
+    },
    // 移除：标签管理页面路由
    // {
    //   path: '/tags',

@@ -11,15 +11,16 @@ export type QuickCommandSortBy = 'name' | 'usage_count';
  * @param command - 指令内容
  * @param tagIds - 关联的快捷指令标签 ID 数组 (可选)
  * @param variables - 变量对象 (可选)
+ * @param backgroundColor - 背景颜色 (可选)
  * @returns 返回添加记录的 ID
  */
-export const addQuickCommand = async (name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>): Promise<number> => {
+export const addQuickCommand = async (name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>, backgroundColor?: string | null): Promise<number> => {
     if (!command || command.trim().length === 0) {
         throw new Error('指令内容不能为空');
     }
     // 如果 name 是空字符串，则视为 null
     const finalName = name && name.trim().length > 0 ? name.trim() : null;
-    const commandId = await QuickCommandsRepository.addQuickCommand(finalName, command.trim(), variables);
+    const commandId = await QuickCommandsRepository.addQuickCommand(finalName, command.trim(), variables, backgroundColor);
 
     // 添加成功后，设置标签关联
     if (commandId > 0 && tagIds && Array.isArray(tagIds)) {
@@ -41,14 +42,15 @@ export const addQuickCommand = async (name: string | null, command: string, tagI
  * @param command - 新的指令内容
  * @param tagIds - 新的关联标签 ID 数组 (可选, undefined 表示不更新标签)
  * @param variables - 新的变量对象 (可选)
+ * @param backgroundColor - 新的背景颜色 (可选)
  * @returns 返回是否成功更新 (更新行数 > 0)
  */
-export const updateQuickCommand = async (id: number, name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>): Promise<boolean> => {
+export const updateQuickCommand = async (id: number, name: string | null, command: string, tagIds?: number[], variables?: Record<string, string>, backgroundColor?: string | null): Promise<boolean> => {
     if (!command || command.trim().length === 0) {
         throw new Error('指令内容不能为空');
     }
     const finalName = name && name.trim().length > 0 ? name.trim() : null;
-    const commandUpdated = await QuickCommandsRepository.updateQuickCommand(id, finalName, command.trim(), variables);
+    const commandUpdated = await QuickCommandsRepository.updateQuickCommand(id, finalName, command.trim(), variables, backgroundColor);
 
     // 如果指令更新成功，并且提供了 tagIds (即使是空数组也表示要更新)，则更新标签关联
     if (commandUpdated && typeof tagIds !== 'undefined') {
