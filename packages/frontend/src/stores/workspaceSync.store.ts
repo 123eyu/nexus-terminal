@@ -489,13 +489,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   // 保存工作区到云端 (仅 Web 端有效)
   const saveWorkspaceToCloud = async (): Promise<boolean> => {
     if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value) return false;
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
     try {
       const snapshot = collectCurrentWorkspaceState();
-      // 核心安全屏障：若当前会话数为 0，绝对杜绝将空快照冲刷覆盖云端已有会话！
-      if (snapshot.sessions.length === 0) {
-        logSyncWarn('当前本地会话数为 0，为保护云端资产，跳过反向覆盖！');
-        return false;
-      }
       isSyncing.value = true;
       logSync('正在将工作区快照保存至云端...', {
         sessionsCount: snapshot.sessions.length,

@@ -272,6 +272,107 @@ export class WorkspaceSyncService {
             }
         }
     }
+
+    /**
+     * 强制彻底销毁指定的会话：
+     * 1. 强制杀死该会话的底层 SSH 客户端与通道流，绝不转入挂起；
+     * 2. 强制清理挂起服务池中属于该会话或该连接的残留记录；
+     * 3. 强制从数据库 workspace_sync 快照中剔除该会话并立即落盘。
+     */
+    public async destroySessionCompletely(
+        userId: number,
+        targetSessionId: string,
+        targetConnectionId?: string | number
+    ): Promise<{ success: boolean; remainingSessionsCount: number }> {
+        console.log(`[WorkspaceSyncService] 开始强制彻底销毁会话: ${targetSessionId} (用户: ${userId}, 连接ID: ${targetConnectionId || 'none'})`);
+
+        // 1. 强制切断底层 SSH 客户端与通道流
+        for (const [sId, state] of clientStates.entries()) {
+            const isMatch = sId === targetSessionId ||
+                (targetConnectionId !== undefined && targetConnectionId !== null && String(state.dbConnectionId) === String(targetConnectionId) && state.ws?.userId === userId);
+            if (isMatch) {
+                console.log(`[WorkspaceSyncService] 强制切断并关闭活动 SSH 连接: ${sId}`);
+                state.isExplicitlyClosed = true;
+                state.isMarkedForSuspend = false;
+                state.closeReason = 'client_explicit_destroy';
+                try {
+                    state.sshShellStream?.destroy?.();
+                    state.sshShellStream?.end?.();
+                    state.sshClient?.destroy?.();
+                    state.sshClient?.end?.();
+                } catch (e) {
+                    console.warn(`[WorkspaceSyncService] 切断 SSH 连接发生非致命错误:`, e);
+                }
+                state.sshClient = undefined as any;
+                state.sshShellStream = undefined;
+                clientStates.delete(sId);
+            }
+        }
+
+        // 2. 强制清理挂起服务池中残留的该会话/连接条目
+        try {
+            await sshSuspendService.terminateSuspendedSession(userId, targetSessionId);
+            const userSuspended = (sshSuspendService as any).getUserSessions?.(userId);
+            if (userSuspended) {
+                for (const [suspId, suspSess] of userSuspended.entries()) {
+                    if (suspSess.originalSessionId === targetSessionId ||
+                        (targetConnectionId !== undefined && targetConnectionId !== null && String(suspSess.connectionId) === String(targetConnectionId))) {
+                        console.log(`[WorkspaceSyncService] 强制清理残留挂起条目: ${suspId}`);
+                        await sshSuspendService.terminateSuspendedSession(userId, suspId);
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn(`[WorkspaceSyncService] 清理挂起条目异常:`, e);
+        }
+
+        // 3. 强制从数据库 workspace_sync 快照中剔除该会话并立即落盘
+        let remainingSessionsCount = 0;
+        try {
+            const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
+            if (record && record.state) {
+                const parsedState = JSON.parse(record.state);
+                if (Array.isArray(parsedState.sessions)) {
+                    const beforeCount = parsedState.sessions.length;
+                    parsedState.sessions = parsedState.sessions.filter((s: any) => {
+                        if (s.sessionId === targetSessionId) return false;
+                        if (targetConnectionId !== undefined && targetConnectionId !== null && String(s.connectionId) === String(targetConnectionId)) return false;
+                        return true;
+                    });
+                    remainingSessionsCount = parsedState.sessions.length;
+
+                    // 同步更新 sessionOrder 与 activeSessionId
+                    if (Array.isArray(parsedState.sessionOrder)) {
+                        parsedState.sessionOrder = parsedState.sessionOrder.filter((id: string) => id !== targetSessionId);
+                    }
+                    if (parsedState.activeSessionId === targetSessionId) {
+                        parsedState.activeSessionId = remainingSessionsCount > 0 ? parsedState.sessions[remainingSessionsCount - 1].sessionId : null;
+                    }
+
+                    // 清理属于该会话的文件管理器实例状态与多行命令草稿
+                    if (parsedState.fileManagers) {
+                        for (const key of Object.keys(parsedState.fileManagers)) {
+                            if (key.startsWith(`${targetSessionId}:`)) {
+                                delete parsedState.fileManagers[key];
+                            }
+                        }
+                    }
+
+                    // 立即原子写入数据库落盘
+                    await workspaceSyncRepo.saveWorkspaceSyncRecord(
+                        userId,
+                        JSON.stringify(parsedState),
+                        record.activeClientId || 'system'
+                    );
+                    console.log(`[WorkspaceSyncService] 数据库快照已强制剔除会话 ${targetSessionId} (原数量: ${beforeCount}, 剩余: ${remainingSessionsCount})`);
+                }
+            }
+        } catch (dbErr) {
+            console.error(`[WorkspaceSyncService] 数据库快照剔除会话落盘失败:`, dbErr);
+        }
+
+        return { success: true, remainingSessionsCount };
+    }
 }
 
 export const workspaceSyncService = new WorkspaceSyncService();

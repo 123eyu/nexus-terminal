@@ -81,6 +81,32 @@ export class WorkspaceSyncController {
             res.status(500).json({ success: false, message: '保存工作区状态失败', error: error.message });
         }
     }
+
+    /**
+     * 强制彻底销毁指定的会话（强制切断SSH + 清除挂起 + 数据库快照强制剔除）
+     */
+    public async destroySession(req: Request, res: Response): Promise<void> {
+        const userId = req.session?.userId || 1;
+        const sessionId = req.params.sessionId;
+        const connectionId = (req.query.connectionId || req.body?.connectionId) as string | undefined;
+
+        if (!sessionId) {
+            res.status(400).json({ success: false, message: '缺少 sessionId' });
+            return;
+        }
+
+        try {
+            const result = await workspaceSyncService.destroySessionCompletely(userId, sessionId, connectionId);
+            res.json({
+                success: true,
+                message: '会话已强制彻底销毁并清除数据库记录',
+                data: result
+            });
+        } catch (error: any) {
+            console.error(`[WorkspaceSyncController] 强制销毁会话失败:`, error);
+            res.status(500).json({ success: false, message: '强制销毁会话失败', error: error.message });
+        }
+    }
 }
 
 export const workspaceSyncController = new WorkspaceSyncController();

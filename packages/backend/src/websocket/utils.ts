@@ -82,12 +82,27 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         // 2. 清理 SFTP 会话 (如果存在)
         if (sftpService) sftpService.cleanupSftpSession(sessionId);
 
-        // 3. 处理 SSH 连接 (核心修改点)
-        if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
+        // 3. 处理 SSH 连接 (核心防御：主动关闭或已销毁绝对不挂起)
+        if (state.isExplicitlyClosed) {
+            console.log(`WebSocket: 会话 ${sessionId} 属于显式关闭/彻底销毁，绝不自动挂起，直接释放底层 SSH 资源。`);
+            state.isMarkedForSuspend = false;
+            try {
+                state.sshShellStream?.destroy?.();
+                state.sshShellStream?.end?.();
+                state.sshClient?.destroy?.();
+                state.sshClient?.end?.();
+            } catch (closeErr) {}
+            state.sshClient = undefined as any;
+            state.sshShellStream = undefined;
+        } else if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
             try {
                 const syncRecord = await workspaceSyncService.getState(state.ws.userId);
-                if (syncRecord.state && syncRecord.state.syncEnabled) {
-                    console.log(`WebSocket: 用户 ${state.ws.userId} 已启用工作区实时同步，断开时自动挂起会话 ${sessionId}...`);
+                const isInSyncedSnapshot = syncRecord.state?.sessions?.some(
+                    (s: any) => String(s.sessionId) === String(sessionId) || String(s.connectionId) === String(state.dbConnectionId)
+                );
+
+                if (syncRecord.state && syncRecord.state.syncEnabled && isInSyncedSnapshot) {
+                    console.log(`WebSocket: 用户 ${state.ws.userId} 启用同步且会话在活跃快照中，网络断开时自动挂起 ${sessionId}...`);
                     state.isMarkedForSuspend = true;
                     if (!state.suspendLogPath) {
                         state.suspendLogPath = sessionId;
@@ -110,6 +125,16 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                             }
                         }
                     }
+                } else {
+                    console.log(`WebSocket: 会话 ${sessionId} 未在云端快照中或未启用同步，网络断开时直接释放 SSH。`);
+                    try {
+                        state.sshShellStream?.destroy?.();
+                        state.sshShellStream?.end?.();
+                        state.sshClient?.destroy?.();
+                        state.sshClient?.end?.();
+                    } catch (closeErr) {}
+                    state.sshClient = undefined as any;
+                    state.sshShellStream = undefined;
                 }
             } catch (err: any) {
                 console.warn(`[cleanupClientConnection] 检查工作区同步配置失败:`, err.message);

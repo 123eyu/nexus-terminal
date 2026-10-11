@@ -16,6 +16,8 @@ import { createDockerManager, type DockerManagerDependencies } from '../../../co
 import { registerSshSuspendHandlers } from './sshSuspendActions'; 
 import { isRemoteDesktopSupported } from '../../../utils/platform';
 import { useUiNotificationsStore } from '../../uiNotifications.store'; 
+import apiClient from '../../../utils/apiClient';
+import { useWorkspaceSyncStore } from '../../workspaceSync.store';
 
 
 // --- 辅助函数 (特定于此模块的 actions) ---
@@ -292,6 +294,26 @@ export const closeSession = (sessionId: string) => {
     const nextActiveId = remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1] : null;
     activeSessionId.value = nextActiveId;
     console.log(`[SessionActions] 关闭活动会话后，切换到: ${nextActiveId}`);
+  }
+
+  // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘
+  const connId = sessionToClose.connectionId;
+  apiClient.delete(`/workspace-sync/sessions/${sessionId}`, {
+    params: { connectionId: connId }
+  }).then((res) => {
+    console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
+  }).catch((err) => {
+    console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
+  });
+
+  // 5. 立即同步当前剩余会话至云端快照
+  try {
+    const workspaceSyncStore = useWorkspaceSyncStore();
+    if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+      workspaceSyncStore.saveWorkspaceToCloud();
+    }
+  } catch (syncErr) {
+    console.warn('[SessionActions] 关闭会话后触发工作区云端持久化异常:', syncErr);
   }
 };
 

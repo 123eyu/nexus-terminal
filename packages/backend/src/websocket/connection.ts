@@ -498,7 +498,17 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
             });
 
             ws.on('close', (code, reason) => {
-                console.log(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 已断开连接。代码: ${code}, 原因: ${reason.toString()}`);
+                const reasonStr = reason ? reason.toString() : '';
+                console.log(`WebSocket：客户端 ${ws.username} (会话: ${ws.sessionId}) 已断开连接。代码: ${code}, 原因: ${reasonStr}`);
+                if (code === 1000 || reasonStr.includes('关闭') || reasonStr.includes('主动') || reasonStr.includes('manual')) {
+                    if (ws.sessionId) {
+                        const existing = clientStates.get(ws.sessionId);
+                        if (existing) {
+                            existing.isExplicitlyClosed = true;
+                            existing.isMarkedForSuspend = false;
+                        }
+                    }
+                }
                 workspaceSyncService.unregisterSocket(ws.userId || 1, ws);
                 cleanupClientConnection(ws.sessionId);
             });

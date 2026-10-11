@@ -50,5 +50,6 @@ const isAuthenticatedOrSyncApiKey = async (req: express.Request, res: express.Re
 router.get('/', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.getState(req, res));
 router.post('/claim', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.claimLease(req, res));
 router.post('/save', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.saveState(req, res));
+router.delete('/sessions/:sessionId', isAuthenticatedOrSyncApiKey, (req, res) => workspaceSyncController.destroySession(req, res));
 
 export default router;
