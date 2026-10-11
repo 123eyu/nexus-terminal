@@ -26,6 +26,12 @@
                 :title="viewModeTitle">
           <i :class="['fas', viewModeIcon, 'text-base']"></i>
         </button>
+        <!-- New Folder Button -->
+        <button @click="openCreateFolderDialog"
+                class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center cursor-pointer"
+                :title="t('folders.newFolder', '新建文件夹')">
+          <i class="fas fa-folder-plus text-sm text-amber-400"></i>
+        </button>
         <!-- Add Button -->
         <button @click="openAddForm" class="w-8 h-8 bg-primary text-white border-none rounded-lg text-sm font-semibold cursor-pointer shadow-md transition-colors duration-200 ease-in-out hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary flex-shrink-0 flex items-center justify-center" :title="$t('quickCommands.add', '添加快捷指令')">
           <i class="fas fa-plus text-base"></i>
@@ -65,46 +71,74 @@
             <!-- Grouped View -->
             <div v-if="showQuickCommandTagsBoolean">
                 <div v-for="groupData in filteredAndGroupedCommands" :key="groupData.groupName" class="mb-1 last:mb-0">
-                    <!-- Group Header - Modified for inline editing -->
+                    <!-- Group Header - Modified for folder system -->
                     <div
-                        class="group font-semibold flex items-center text-foreground rounded-md hover:bg-header/80 transition-colors duration-150"
-                        :style="{ padding: isCompactMode ? `calc(0.25rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` : `calc(0.5rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` }"
+                        class="group font-semibold flex items-center justify-between text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150"
+                        :style="{ padding: isCompactMode ? `calc(0.25rem * var(--qc-row-size-multiplier)) calc(0.6rem * var(--qc-row-size-multiplier))` : `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.7rem * var(--qc-row-size-multiplier))` }"
                         :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
                         @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
                     >
-                        <i
-                            :class="['fas', expandedGroups[groupData.groupName] ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-4 text-center text-text-secondary group-hover:text-foreground transition-transform duration-200 ease-in-out', {'transform rotate-0': !expandedGroups[groupData.groupName]}]"
-                            :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
-                            @click.stop="toggleGroup(groupData.groupName)"
-                            class="cursor-pointer flex-shrink-0"
-                        ></i>
-                        <!-- Editing State -->
-                        <input
-                            v-if="editingTagId === (groupData.tagId === null ? 'untagged' : groupData.tagId)"
-                            :key="groupData.tagId === null ? 'untagged-input' : `tag-input-${groupData.tagId}`"
-                            :ref="(el) => setTagInputRef(el, groupData.tagId === null ? 'untagged' : groupData.tagId)"
-                            type="text"
-                            v-model="editedTagName"
-                            class="bg-input border border-primary rounded px-1 py-0 w-full"
-                            :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
-                            @blur="finishEditingTag"
-                            @keydown.enter.prevent="finishEditingTag"
-                            @keydown.esc.prevent="cancelEditingTag"
-                            @click.stop
-                        />
-                        <!-- Display State -->
-                        <span
-                            v-else
-                            class="inline-block overflow-hidden text-ellipsis whitespace-nowrap"
-                            :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
-                            :class="{ 'cursor-pointer hover:underline': true }"
-                            :title="t('quickCommands.tags.clickToEditTag', '点击编辑标签')"
-                            @click.stop="startEditingTag(groupData.tagId, groupData.groupName)"
-                        >
-                            {{ groupData.groupName }}
-                        </span>
-                        <!-- Optional: Add count? -->
-                        <!-- <span v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="ml-auto text-xs text-text-secondary pl-2">({{ groupData.commands.length }})</span> -->
+                        <div class="flex items-center min-w-0 flex-1 mr-2">
+                            <i
+                                :class="['fas', expandedGroups[groupData.groupName] ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-3.5 text-center text-text-secondary group-hover:text-foreground transition-transform duration-200 ease-in-out', {'transform rotate-0': !expandedGroups[groupData.groupName]}]"
+                                :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
+                                @click.stop="toggleGroup(groupData.groupName)"
+                                class="cursor-pointer flex-shrink-0"
+                            ></i>
+
+                            <!-- Folder Icon -->
+                            <i
+                                :class="[
+                                    'fas mr-2 w-4 text-center flex-shrink-0',
+                                    groupData.tagId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
+                                ]"
+                                :style="{ fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
+                            ></i>
+
+                            <!-- Editing State -->
+                            <input
+                                v-if="editingTagId === (groupData.tagId === null ? 'untagged' : groupData.tagId)"
+                                :key="groupData.tagId === null ? 'untagged-input' : `tag-input-${groupData.tagId}`"
+                                :ref="(el) => setTagInputRef(el, groupData.tagId === null ? 'untagged' : groupData.tagId)"
+                                type="text"
+                                v-model="editedTagName"
+                                class="bg-input border border-primary rounded px-1.5 py-0.5 w-full text-xs text-foreground focus:outline-none"
+                                @blur="finishEditingTag"
+                                @keydown.enter.prevent="finishEditingTag"
+                                @keydown.esc.prevent="cancelEditingTag"
+                                @click.stop
+                            />
+                            <!-- Display State -->
+                            <div v-else class="flex items-center gap-2 truncate min-w-0">
+                                <span
+                                    class="inline-block overflow-hidden text-ellipsis whitespace-nowrap text-xs"
+                                    :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
+                                >
+                                    {{ groupData.groupName }}
+                                </span>
+                                <span class="text-[11px] text-text-secondary font-normal flex-shrink-0">({{ groupData.commands.length }})</span>
+                            </div>
+                        </div>
+
+                        <!-- Actions for Folder -->
+                        <div v-if="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)" class="flex items-center gap-1 flex-shrink-0" @click.stop>
+                            <button
+                                v-if="groupData.tagId !== null"
+                                @click="startEditingTag(groupData.tagId, groupData.groupName)"
+                                class="p-1 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors"
+                                :title="t('folders.renameFolder', '重命名文件夹')"
+                            >
+                                <i class="fas fa-pencil-alt text-[10px]"></i>
+                            </button>
+                            <button
+                                v-if="groupData.tagId !== null"
+                                @click="handleDeleteFolder(groupData.tagId, groupData.groupName, $event)"
+                                class="p-1 rounded text-text-secondary hover:text-error hover:bg-muted text-xs transition-colors"
+                                :title="t('folders.deleteFolder', '删除文件夹')"
+                            >
+                                <i class="fas fa-trash-alt text-[10px]"></i>
+                            </button>
+                        </div>
                     </div>
                     <!-- Command Items List (only show if expanded) -->
                     <!-- Command Items List (only show if expanded) -->
@@ -391,10 +425,47 @@
           <span>{{ t('quickCommands.actions.sendToAllSessions', '发送到全部会话') }}</span>
         </li>
 
+        <!-- 5. 移至文件夹 -->
+        <li
+          class="relative group px-3 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="showMoveSubMenu = !showMoveSubMenu"
+        >
+          <div class="flex items-center gap-2.5">
+            <i class="fas fa-folder-tree text-xs text-amber-400 w-4 text-center"></i>
+            <span>{{ t('folders.moveToFolder', '移至文件夹') }}</span>
+          </div>
+          <i :class="['fas text-[10px] text-text-secondary', showMoveSubMenu ? 'fa-chevron-down' : 'fa-chevron-right']"></i>
+        </li>
+
+        <!-- 移动文件夹内嵌列表 (移动端展开式更适合触摸) -->
+        <div
+          v-if="showMoveSubMenu"
+          class="bg-muted/40 rounded-lg mx-2 my-1 p-1 max-h-36 overflow-y-auto"
+          @click.stop
+        >
+          <div
+            @click="handleMoveCommandToFolder(quickCommandContextTargetCommand!, null)"
+            class="px-2.5 py-1 text-xs text-text-secondary hover:bg-muted hover:text-foreground cursor-pointer flex items-center gap-2 rounded"
+          >
+            <i class="fas fa-inbox text-xs"></i>
+            <span>{{ t('folders.uncategorized', '未分类') }}</span>
+          </div>
+          <div v-if="quickCommandTagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
+          <div
+            v-for="folder in quickCommandTagsStore.folders"
+            :key="folder.id"
+            @click="handleMoveCommandToFolder(quickCommandContextTargetCommand!, folder.id)"
+            class="px-2.5 py-1 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate rounded"
+          >
+            <i class="fas fa-folder text-amber-400 text-xs"></i>
+            <span class="truncate">{{ folder.name }}</span>
+          </div>
+        </div>
+
         <!-- 分割线 -->
         <div class="h-px bg-border/40 my-1 mx-1"></div>
 
-        <!-- 5. 删除 -->
+        <!-- 6. 删除 -->
         <li
           class="group px-3 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
           @click="handleQuickCommandMenuAction('delete', quickCommandContextTargetCommand!)"
@@ -403,6 +474,47 @@
           <span>{{ t('common.delete', '删除') }}</span>
         </li>
       </ul>
+    </div>
+
+    <!-- 新建文件夹弹窗 -->
+    <div
+      v-if="isCreatingFolderModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+      @click.self="isCreatingFolderModal = false"
+    >
+      <div class="bg-card border border-border/80 rounded-2xl shadow-2xl p-5 w-80 max-w-[90vw] animate-fadeIn" @click.stop>
+        <div class="flex items-center gap-2 mb-3">
+          <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center">
+            <i class="fas fa-folder-plus text-sm"></i>
+          </div>
+          <h3 class="text-sm font-semibold text-foreground">{{ t('folders.newFolder', '新建文件夹') }}</h3>
+        </div>
+        <input
+          v-model="newQuickCommandFolderName"
+          type="text"
+          :placeholder="t('folders.newFolderPlaceholder', '输入文件夹名称...')"
+          class="w-full px-3 py-2 text-xs border border-border/70 rounded-lg bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 mb-4"
+          @keydown.enter.prevent="confirmCreateQuickCommandFolder"
+          @keydown.esc.prevent="isCreatingFolderModal = false"
+          autofocus
+        />
+        <div class="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            @click="isCreatingFolderModal = false"
+            class="px-3 py-1.5 text-xs text-text-secondary hover:text-foreground rounded-lg border border-border/60 hover:bg-muted"
+          >
+            {{ t('common.cancel', '取消') }}
+          </button>
+          <button
+            type="button"
+            @click="confirmCreateQuickCommandFolder"
+            class="px-3 py-1.5 text-xs bg-primary text-white font-medium rounded-lg hover:bg-primary-hover shadow-xs"
+          >
+            {{ t('common.create', '创建') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -476,6 +588,11 @@ const tagInputRefs = ref(new Map<string | number, HTMLInputElement | null>());
 const quickCommandContextMenuVisible = ref(false);
 const quickCommandContextMenuPosition = ref({ x: 0, y: 0 });
 const quickCommandContextTargetCommand = ref<QuickCommandFE | null>(null);
+const showMoveSubMenu = ref(false);
+
+// +++ 文件夹弹窗状态 +++
+const isCreatingFolderModal = ref(false);
+const newQuickCommandFolderName = ref('');
 
 const localSearchTerm = ref(quickCommandsStore.searchTerm);
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1155,6 +1272,63 @@ const handleQuickCommandMenuAction = (action: QuickCommandMenuAction, command: Q
     case 'delete':
       confirmDelete(command);
       break;
+  }
+};
+
+// --- 文件夹管理操作 ---
+const openCreateFolderDialog = () => {
+  newQuickCommandFolderName.value = '';
+  isCreatingFolderModal.value = true;
+};
+
+const confirmCreateQuickCommandFolder = async () => {
+  const name = newQuickCommandFolderName.value.trim();
+  if (!name) return;
+  try {
+    const created = await quickCommandTagsStore.createFolder(name);
+    if (created) {
+      uiNotificationsStore.showSuccess(t('folders.folderCreated', '文件夹已创建'));
+      await quickCommandTagsStore.fetchTags();
+      await quickCommandsStore.fetchQuickCommands();
+      isCreatingFolderModal.value = false;
+      newQuickCommandFolderName.value = '';
+    }
+  } catch (error: any) {
+    uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
+  }
+};
+
+const handleDeleteFolder = async (folderId: number, folderName: string, event?: Event) => {
+  if (event) event.stopPropagation();
+  const confirmed = await showConfirmDialog({
+    title: t('folders.deleteFolder', '删除文件夹'),
+    message: t('folders.deleteFolderConfirm', { name: folderName }),
+    confirmText: t('common.delete', '删除'),
+  });
+  if (!confirmed) return;
+
+  try {
+    const success = await quickCommandTagsStore.deleteFolder(folderId);
+    if (success) {
+      uiNotificationsStore.showSuccess(t('folders.folderDeleted', '文件夹已删除'));
+      await quickCommandTagsStore.fetchTags();
+      await quickCommandsStore.fetchQuickCommands();
+    }
+  } catch (error: any) {
+    uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
+  }
+};
+
+const handleMoveCommandToFolder = async (command: QuickCommandFE, folderId: number | null) => {
+  try {
+    const success = await quickCommandsStore.moveCommandToFolder(command.id, folderId);
+    if (success) {
+      uiNotificationsStore.showSuccess(t('folders.movedSuccess', '已成功移动到文件夹'));
+      showMoveSubMenu.value = false;
+      closeQuickCommandContextMenu();
+    }
+  } catch (error: any) {
+    uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
   }
 };
 </script>

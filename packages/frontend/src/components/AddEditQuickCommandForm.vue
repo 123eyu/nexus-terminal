@@ -79,19 +79,18 @@
               ></textarea>
               <small v-if="commandError" class="text-error text-xs mt-1 block">{{ commandError }}</small>
             </div>
-            <!-- 标签输入区 -->
+            <!-- 所属文件夹选择区 -->
             <div>
-              <label for="qc-tags" class="block mb-1.5 text-sm font-medium text-text-secondary">{{ t('quickCommands.form.tags', '标签:') }}</label>
-              <TagInput
-                id="qc-tags"
-                v-model="formData.tagIds"
-                :available-tags="quickCommandTagsStore.tags"
-                :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
-                @create-tag="handleCreateTag"
+              <label class="block mb-1.5 text-sm font-medium text-text-secondary">
+                <i class="fas fa-folder text-amber-400 mr-1.5"></i>
+                {{ t('folders.title', '所属文件夹') }}
+              </label>
+              <FolderSelect
+                v-model="selectedFolderId"
+                :folders="quickCommandTagsStore.folders"
                 :allow-create="true"
-                :allow-delete="true"
-                @delete-tag="handleDeleteTag"
-                class="w-full"
+                @create-folder="handleCreateFolder"
+                :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
               />
             </div>
           </div>
@@ -122,7 +121,7 @@ import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
 import { useSessionStore } from '../stores/session.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store'; 
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents'; 
-import TagInput from './TagInput.vue';
+import FolderSelect from './FolderSelect.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useAlertDialog } from '../composables/useAlertDialog'; 
 
@@ -160,6 +159,15 @@ const formData = reactive({
     name: '',
     command: '',
     tagIds: [] as number[],
+});
+
+const selectedFolderId = computed({
+  get: () => {
+    return formData.tagIds && formData.tagIds.length > 0 ? formData.tagIds[0] : null;
+  },
+  set: (val: number | null) => {
+    formData.tagIds = val !== null ? [val] : [];
+  }
 });
 const localVariables = ref<{ name: string; value: string; id: string }[]>([]);
 
@@ -206,11 +214,11 @@ onMounted(() => {
   }
 });
 
-const handleCreateTag = async (tagName: string) => {
-    if (!tagName || tagName.trim().length === 0) return;
-    const newTag = await quickCommandTagsStore.addTag(tagName.trim());
-    if (newTag && !formData.tagIds.includes(newTag.id)) {
-        formData.tagIds.push(newTag.id);
+const handleCreateFolder = async (folderName: string) => {
+    if (!folderName || folderName.trim().length === 0) return;
+    const newFolder = await quickCommandTagsStore.createFolder(folderName.trim());
+    if (newFolder) {
+        formData.tagIds = [newFolder.id];
     }
 };
 

@@ -422,7 +422,13 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         selectedIndex.value = -1;
     };
 
-    // Removed duplicate resetSelection definition
+    // 移动快捷指令到指定文件夹 (folderId 为 null 表示未分类)
+    const moveCommandToFolder = async (id: number, folderId: number | null): Promise<boolean> => {
+        const cmd = quickCommandsList.value.find(c => c.id === id);
+        if (!cmd) return false;
+        const targetTagIds = folderId !== null ? [folderId] : [];
+        return updateQuickCommand(cmd.id, cmd.name, cmd.command, targetTagIds, cmd.variables);
+    };
 
     return {
         quickCommandsList,
@@ -438,6 +444,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         addQuickCommand,
         updateQuickCommand,
         deleteQuickCommand,
+        moveCommandToFolder,
         incrementUsage,
         setSearchTerm,
         setSortBy,

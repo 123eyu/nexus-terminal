@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import TagInput from './TagInput.vue';
+import FolderSelect from './FolderSelect.vue';
 import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
 import { useSessionStore } from '../stores/session.store';
@@ -53,6 +53,15 @@ const formData = reactive({
   tagIds: [] as number[],
 });
 
+const selectedFolderId = computed({
+  get: () => {
+    return formData.tagIds && formData.tagIds.length > 0 ? formData.tagIds[0] : null;
+  },
+  set: (val: number | null) => {
+    formData.tagIds = val !== null ? [val] : [];
+  }
+});
+
 const localVariables = ref<LocalVariable[]>([]);
 
 const placeholder = computed(() => {
@@ -86,11 +95,11 @@ onMounted(() => {
   }
 });
 
-const handleCreateTag = async (tagName: string) => {
-  if (!tagName || tagName.trim().length === 0) return;
-  const newTag = await quickCommandTagsStore.addTag(tagName.trim());
-  if (newTag && !formData.tagIds.includes(newTag.id)) {
-    formData.tagIds.push(newTag.id);
+const handleCreateFolder = async (folderName: string) => {
+  if (!folderName || folderName.trim().length === 0) return;
+  const newFolder = await quickCommandTagsStore.createFolder(folderName.trim());
+  if (newFolder) {
+    formData.tagIds = [newFolder.id];
   }
 };
 
@@ -264,21 +273,18 @@ const handleExecute = () => {
               />
             </div>
 
-            <!-- 3. 标签分类 -->
+            <!-- 3. 所属文件夹 -->
             <div>
-              <label for="m-qc-tags" class="block mb-1.5 text-xs font-semibold text-text-secondary">
-                {{ t('quickCommands.form.tags', '标签:') }}
+              <label class="block mb-1.5 text-xs font-semibold text-text-secondary">
+                <i class="fas fa-folder text-amber-400 mr-1.5"></i>
+                {{ t('folders.title', '所属文件夹') }}
               </label>
-              <TagInput
-                id="m-qc-tags"
-                v-model="formData.tagIds"
-                :available-tags="quickCommandTagsStore.tags"
-                :placeholder="t('quickCommands.form.tagsPlaceholder', '添加或选择标签...')"
-                @create-tag="handleCreateTag"
+              <FolderSelect
+                v-model="selectedFolderId"
+                :folders="quickCommandTagsStore.folders"
                 :allow-create="true"
-                :allow-delete="true"
-                @delete-tag="handleDeleteTag"
-                class="w-full"
+                @create-folder="handleCreateFolder"
+                :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
               />
             </div>
 

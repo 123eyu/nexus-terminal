@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, watch, type Ref, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import TagInput from './TagInput.vue';
+import FolderSelect from './FolderSelect.vue';
 import type { ProxyInfo } from '../stores/proxies.store';
 import type { TagInfo } from '../stores/tags.store';
 import type { ConnectionInfo } from '../stores/connections.store';
@@ -41,6 +41,15 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+const selectedFolderId = computed({
+  get: () => {
+    return props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null;
+  },
+  set: (val: number | null) => {
+    props.formData.tag_ids = val !== null ? [val] : [];
+  }
+});
 
 
 const handleCreateTagEvent = (tagName: string) => {
@@ -146,18 +155,19 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
     </div>
 
     <div>
-      <label class="block text-sm font-medium text-text-secondary mb-1">{{ t('connections.form.tags') }} ({{ t('connections.form.optional') }})</label>
-      <TagInput
-          v-model="props.formData.tag_ids"
-          :available-tags="props.tags"
-          :allow-create="true"
-          :allow-delete="true"
-          @create-tag="handleCreateTagEvent"
-          @delete-tag="handleDeleteTagEvent"
-          :placeholder="t('tags.inputPlaceholder', '添加或选择标签...')"
+      <label class="block text-sm font-medium text-text-secondary mb-1">
+        <i class="fas fa-folder text-amber-400 mr-1.5"></i>
+        {{ t('folders.title', '所属文件夹') }}
+      </label>
+      <FolderSelect
+        v-model="selectedFolderId"
+        :folders="props.tags"
+        :allow-create="true"
+        @create-folder="handleCreateTagEvent"
+        :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
       />
-      <div v-if="props.isTagLoading" class="mt-1 text-xs text-text-secondary">{{ t('tags.loading') }}</div>
-      <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ t('tags.error', { error: props.tagStoreError }) }}</div>
+      <div v-if="props.isTagLoading" class="mt-1 text-xs text-text-secondary">{{ t('common.loading') }}</div>
+      <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ props.tagStoreError }}</div>
     </div>
     
     <!-- Notes Section -->

@@ -152,12 +152,20 @@ export const useTagsStore = defineStore('tags', () => {
 
     return {
         tags,
+        folders: tags, // 文件夹语义别名
         isLoading,
         error,
         fetchTags,
+        fetchFolders: fetchTags,
         addTag,
+        createFolder: addTag,
         updateTag,
+        renameFolder: updateTag,
         deleteTag,
+        deleteFolder: deleteTag,
         updateTagConnections, // 暴露新的 action
     };
 });
+
+// 文件夹信息接口类型别名
+export type FolderInfo = TagInfo;

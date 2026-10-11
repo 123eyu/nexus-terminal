@@ -138,11 +138,19 @@ export const useQuickCommandTagsStore = defineStore('quickCommandTags', () => {
 
     return {
         tags,
+        folders: tags, // 文件夹语义别名
         isLoading,
         error,
         fetchTags,
+        fetchFolders: fetchTags,
         addTag,
+        createFolder: addTag,
         updateTag,
+        renameFolder: updateTag,
         deleteTag,
+        deleteFolder: deleteTag,
     };
 });
+
+// 快捷指令文件夹信息类型别名
+export type QuickCommandFolder = QuickCommandTag;

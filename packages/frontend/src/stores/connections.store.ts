@@ -318,6 +318,34 @@ export const useConnectionsStore = defineStore('connections', {
              }
         },
 
+        // 移动单个连接到指定文件夹 (folderId 为 null 表示未分类)
+        async moveConnectionToFolder(connectionId: number, folderId: number | null): Promise<boolean> {
+            return this.updateConnection(connectionId, {
+                tag_ids: folderId !== null ? [folderId] : []
+            });
+        },
+
+        // 批量移动连接到指定文件夹
+        async batchMoveConnectionsToFolder(connectionIds: number[], folderId: number | null): Promise<boolean> {
+            this.isLoading = true;
+            this.error = null;
+            try {
+                const targetTagIds = folderId !== null ? [folderId] : [];
+                for (const id of connectionIds) {
+                    await apiClient.put(`/connections/${id}`, { tag_ids: targetTagIds });
+                }
+                localStorage.removeItem('connectionsCache');
+                await this.fetchConnections();
+                return true;
+            } catch (err: any) {
+                console.error('批量移动连接到文件夹失败:', err);
+                this.error = err.response?.data?.message || err.message || '批量移动失败';
+                return false;
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
         // (保留) 更新单个连接的标签 (如果仍有需要)
         async updateConnectionTags(connectionId: number, tagIds: number[]): Promise<boolean> {
             this.isLoading = true;

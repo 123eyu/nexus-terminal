@@ -5,11 +5,10 @@ import BatchEditConnectionForm from '../components/BatchEditConnectionForm.vue';
 import { hexToRgba } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useSessionStore } from '../stores/session.store';
-import { useTagsStore } from '../stores/tags.store';
-import type { TagInfo } from '../stores/tags.store';
+import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import type { SortField, SortOrder } from '../stores/settings.store';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
 import type { ConnectionInfo } from '../stores/connections.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useAlertDialog } from '../composables/useAlertDialog';
@@ -24,26 +23,50 @@ const { showAlertDialog } = useAlertDialog();
 const connectionsStore = useConnectionsStore();
 const sessionStore = useSessionStore();
 const tagsStore = useTagsStore();
+const uiNotificationsStore = useUiNotificationsStore();
 
 const { connections, isLoading: isLoadingConnections } = storeToRefs(connectionsStore);
-const { tags, isLoading: isLoadingTags } = storeToRefs(tagsStore);
+const { tags: folders, isLoading: isLoadingFolders } = storeToRefs(tagsStore);
 
 const LS_SORT_BY_KEY = 'connections_view_sort_by';
 const LS_SORT_ORDER_KEY = 'connections_view_sort_order';
-const LS_FILTER_TAG_KEY = 'connections_view_filter_tag';
+const LS_ACTIVE_FOLDER_KEY = 'connections_view_active_folder';
 
 const localSortBy = ref<SortField>(localStorage.getItem(LS_SORT_BY_KEY) as SortField || 'last_connected_at');
 const localSortOrder = ref<SortOrder>(localStorage.getItem(LS_SORT_ORDER_KEY) as SortOrder || 'desc');
 
-const getInitialSelectedTagId = (): number | null => {
-  const storedValue = localStorage.getItem(LS_FILTER_TAG_KEY);
-  return storedValue && storedValue !== 'null' ? parseInt(storedValue, 10) : null;
+// 当前激活的文件夹：'all' | 'uncategorized' | number
+type ActiveFolderType = 'all' | 'uncategorized' | number;
+const getInitialActiveFolder = (): ActiveFolderType => {
+  const stored = localStorage.getItem(LS_ACTIVE_FOLDER_KEY);
+  if (!stored || stored === 'all') return 'all';
+  if (stored === 'uncategorized') return 'uncategorized';
+  const parsed = parseInt(stored, 10);
+  return isNaN(parsed) ? 'all' : parsed;
 };
-const selectedTagId = ref<number | null>(getInitialSelectedTagId());
+const activeFolder = ref<ActiveFolderType>(getInitialActiveFolder());
 const searchQuery = ref('');
+
+// 文件夹行内编辑与新建状态
+const isCreatingFolder = ref(false);
+const newFolderName = ref('');
+const newFolderInputRef = ref<HTMLInputElement | null>(null);
+
+const editingFolderId = ref<number | null>(null);
+const editingFolderName = ref('');
+const editFolderInputRef = ref<HTMLInputElement | null>(null);
+
+// 拖拽状态
+const draggedConnectionId = ref<number | null>(null);
+const dragOverFolderId = ref<ActiveFolderType | null>(null);
+
+// 卡片上单项“移至文件夹”快捷菜单
+const activeMoveMenuConnId = ref<number | null>(null);
+const batchMoveMenuOpen = ref(false);
 
 const showAddEditConnectionForm = ref(false);
 const connectionToEdit = ref<ConnectionInfo | null>(null);
+const defaultFolderForNew = ref<number | null>(null);
 
 // Batch Edit Mode
 const isBatchEditMode = ref(false);
@@ -70,25 +93,57 @@ const sortOptions: { value: SortField; labelKey: string }[] = [
   { value: 'created_at', labelKey: 'dashboard.sortOptions.created' },
 ];
 
+// 统计数量计算
+const totalConnectionsCount = computed(() => connections.value.length);
+const uncategorizedCount = computed(() => {
+  return connections.value.filter(c => !c.tag_ids || c.tag_ids.length === 0).length;
+});
+const folderCountMap = computed(() => {
+  const map = new Map<number, number>();
+  folders.value.forEach(f => map.set(f.id, 0));
+  connections.value.forEach(c => {
+    if (c.tag_ids && c.tag_ids.length > 0) {
+      c.tag_ids.forEach(id => {
+        map.set(id, (map.get(id) || 0) + 1);
+      });
+    }
+  });
+  return map;
+});
+
+// 当前展示的文件夹名
+const currentFolderTitle = computed(() => {
+  if (activeFolder.value === 'all') return t('folders.all', '全部连接');
+  if (activeFolder.value === 'uncategorized') return t('folders.uncategorized', '未分类');
+  const found = folders.value.find(f => f.id === activeFolder.value);
+  return found ? found.name : t('folders.title', '文件夹');
+});
+
+// 过滤与排序
 const filteredAndSortedConnections = computed(() => {
   const sortBy = localSortBy.value;
   const sortOrderVal = localSortOrder.value;
   const factor = sortOrderVal === 'desc' ? -1 : 1;
-  const filterTagId = selectedTagId.value;
+  const targetFolder = activeFolder.value;
   const query = searchQuery.value.toLowerCase().trim();
 
-  let filteredByTag = filterTagId === null
-    ? [...connections.value]
-    : connections.value.filter(conn => conn.tag_ids?.includes(filterTagId));
+  let folderFiltered: ConnectionInfo[] = [];
+  if (targetFolder === 'all') {
+    folderFiltered = [...connections.value];
+  } else if (targetFolder === 'uncategorized') {
+    folderFiltered = connections.value.filter(conn => !conn.tag_ids || conn.tag_ids.length === 0);
+  } else {
+    folderFiltered = connections.value.filter(conn => conn.tag_ids?.includes(targetFolder));
+  }
 
-  let searchedConnections = filteredByTag;
+  let searchedConnections = folderFiltered;
   if (query) {
-    searchedConnections = filteredByTag.filter(conn => {
+    searchedConnections = folderFiltered.filter(conn => {
       const nameMatch = conn.name?.toLowerCase().includes(query);
       const usernameMatch = conn.username?.toLowerCase().includes(query);
       const hostMatch = conn.host?.toLowerCase().includes(query);
       const portMatch = conn.port?.toString().includes(query);
-      const notesMatch = conn.notes?.toLowerCase().includes(query); // 添加对备注的搜索
+      const notesMatch = conn.notes?.toLowerCase().includes(query);
       return nameMatch || usernameMatch || hostMatch || portMatch || notesMatch;
     });
   }
@@ -131,15 +186,23 @@ onMounted(async () => {
     try {
       await connectionsStore.fetchConnections();
     } catch (error) {
-      console.error("加载连接列表失败:", error);
+      console.error('加载连接列表失败:', error);
     }
   }
   try {
-    await tagsStore.fetchTags();
+    await tagsStore.fetchFolders();
   } catch (error) {
-    console.error("加载标签列表失败:", error);
+    console.error('加载文件夹列表失败:', error);
   }
+
+  // 点击外部关闭移至文件夹菜单
+  document.addEventListener('click', handleGlobalClick);
 });
+
+const handleGlobalClick = () => {
+  activeMoveMenuConnId.value = null;
+  batchMoveMenuOpen.value = false;
+};
 
 const connectTo = (connection: ConnectionInfo) => {
   sessionStore.handleConnectRequest(connection);
@@ -159,8 +222,10 @@ watch(localSortOrder, (newValue) => {
   localStorage.setItem(LS_SORT_ORDER_KEY, newValue);
 });
 
-watch(selectedTagId, (newValue) => {
-  localStorage.setItem(LS_FILTER_TAG_KEY, newValue === null ? 'null' : String(newValue));
+watch(activeFolder, (newValue) => {
+  localStorage.setItem(LS_ACTIVE_FOLDER_KEY, String(newValue));
+  // 切换文件夹时清空批量选中
+  selectedConnectionIdsForBatch.value.clear();
 });
 
 const dateFnsLocales: Record<string, Locale> = {
@@ -176,57 +241,190 @@ const formatRelativeTime = (timestampInSeconds: number | null | undefined): stri
   if (!timestampInSeconds) return t('connections.status.never');
   try {
     const timestampInMs = timestampInSeconds * 1000;
-    if (isNaN(timestampInMs)) {
-        console.warn(`[ConnectionsView] Invalid timestamp received: ${timestampInSeconds}`);
-        return String(timestampInSeconds);
-    }
+    if (isNaN(timestampInMs)) return String(timestampInSeconds);
     const date = new Date(timestampInMs);
     const currentI18nLocale = locale.value;
     const langPart = currentI18nLocale.split('-')[0];
     let targetDateFnsLocale = dateFnsLocales[currentI18nLocale] || dateFnsLocales[langPart] || enUS;
     return formatDistanceToNow(date, { addSuffix: true, locale: targetDateFnsLocale });
   } catch (e) {
-    console.error("格式化日期失败:", e);
     return String(timestampInSeconds);
   }
 };
 
-const getTagNames = (tagIds: number[] | undefined): string[] => {
-  if (!tagIds || tagIds.length === 0) {
-    return [];
-  }
-  const allTags = tags.value as TagInfo[];
-  return tagIds
-    .map(id => allTags.find(tag => tag.id === id)?.name)
-    .filter((name): name is string => !!name);
+const getFolderName = (folderId: number): string => {
+  const f = folders.value.find(item => item.id === folderId);
+  return f ? f.name : '';
 };
 
+// --- 文件夹管理交互 ---
+const startCreateFolder = () => {
+  isCreatingFolder.value = true;
+  newFolderName.value = '';
+  nextTick(() => {
+    newFolderInputRef.value?.focus();
+  });
+};
+
+const cancelCreateFolder = () => {
+  isCreatingFolder.value = false;
+  newFolderName.value = '';
+};
+
+const handleConfirmCreateFolder = async () => {
+  const trimmed = newFolderName.value.trim();
+  if (!trimmed) {
+    cancelCreateFolder();
+    return;
+  }
+  const created = await tagsStore.createFolder(trimmed);
+  if (created) {
+    uiNotificationsStore.showSuccess(t('folders.newFolderSuccess', '文件夹已创建'));
+    activeFolder.value = created.id;
+  }
+  isCreatingFolder.value = false;
+  newFolderName.value = '';
+};
+
+const startRenameFolder = (folder: TagInfo, e: Event) => {
+  e.stopPropagation();
+  editingFolderId.value = folder.id;
+  editingFolderName.value = folder.name;
+  nextTick(() => {
+    editFolderInputRef.value?.focus();
+  });
+};
+
+const cancelRenameFolder = () => {
+  editingFolderId.value = null;
+  editingFolderName.value = '';
+};
+
+const handleConfirmRenameFolder = async (folderId: number) => {
+  const trimmed = editingFolderName.value.trim();
+  if (!trimmed || trimmed === getFolderName(folderId)) {
+    cancelRenameFolder();
+    return;
+  }
+  const ok = await tagsStore.renameFolder(folderId, trimmed);
+  if (ok) {
+    uiNotificationsStore.showSuccess(t('folders.renameSuccess', '文件夹名称已修改'));
+  }
+  cancelRenameFolder();
+};
+
+const handleDeleteFolder = async (folder: TagInfo, e: Event) => {
+  e.stopPropagation();
+  const confirmed = await showConfirmDialog({
+    title: t('folders.deleteConfirmTitle', '删除文件夹'),
+    message: t('folders.deleteConfirm', { name: folder.name }, `确定要删除文件夹 "${folder.name}" 吗？内部条目将保留并移至“未分类”。`),
+  });
+  if (confirmed) {
+    const ok = await tagsStore.deleteFolder(folder.id);
+    if (ok) {
+      uiNotificationsStore.showSuccess(t('folders.deleteSuccess', '文件夹已删除'));
+      if (activeFolder.value === folder.id) {
+        activeFolder.value = 'all';
+      }
+      await connectionsStore.fetchConnections();
+    }
+  }
+};
+
+// --- 拖拽与快捷归类 ---
+const handleDragStart = (conn: ConnectionInfo, e: DragEvent) => {
+  draggedConnectionId.value = conn.id;
+  if (e.dataTransfer) {
+    e.dataTransfer.setData('text/plain', String(conn.id));
+    e.dataTransfer.effectAllowed = 'move';
+  }
+};
+
+const handleDragEnd = () => {
+  draggedConnectionId.value = null;
+  dragOverFolderId.value = null;
+};
+
+const handleDragOver = (folderTarget: ActiveFolderType, e: DragEvent) => {
+  e.preventDefault();
+  if (e.dataTransfer) {
+    e.dataTransfer.dropEffect = 'move';
+  }
+  dragOverFolderId.value = folderTarget;
+};
+
+const handleDragLeave = () => {
+  dragOverFolderId.value = null;
+};
+
+const handleDropOnFolder = async (target: ActiveFolderType, e: DragEvent) => {
+  e.preventDefault();
+  dragOverFolderId.value = null;
+  const connId = draggedConnectionId.value || parseInt(e.dataTransfer?.getData('text/plain') || '', 10);
+  if (!connId || isNaN(connId)) return;
+
+  const targetFolderId = typeof target === 'number' ? target : null;
+  const success = await connectionsStore.moveConnectionToFolder(connId, targetFolderId);
+  if (success) {
+    const targetName = target === 'uncategorized'
+      ? t('folders.uncategorized', '未分类')
+      : (typeof target === 'number' ? getFolderName(target) : t('folders.all', '全部'));
+    uiNotificationsStore.showSuccess(t('folders.movedSuccessTo', { name: targetName }, `已移动至 ${targetName}`));
+  }
+};
+
+const handleMoveSingleConnection = async (connId: number, targetFolderId: number | null) => {
+  activeMoveMenuConnId.value = null;
+  const ok = await connectionsStore.moveConnectionToFolder(connId, targetFolderId);
+  if (ok) {
+    const targetName = targetFolderId ? getFolderName(targetFolderId) : t('folders.uncategorized', '未分类');
+    uiNotificationsStore.showSuccess(t('folders.movedSuccessTo', { name: targetName }, `已移动至 ${targetName}`));
+  }
+};
+
+const handleBatchMoveToFolder = async (targetFolderId: number | null) => {
+  batchMoveMenuOpen.value = false;
+  if (selectedConnectionIdsForBatch.value.size === 0) return;
+  const ids = Array.from(selectedConnectionIdsForBatch.value);
+  const ok = await connectionsStore.batchMoveConnectionsToFolder(ids, targetFolderId);
+  if (ok) {
+    const targetName = targetFolderId ? getFolderName(targetFolderId) : t('folders.uncategorized', '未分类');
+    uiNotificationsStore.showSuccess(t('folders.batchMoveSuccess', { count: ids.length, name: targetName }, `已将 ${ids.length} 个连接移动至 ${targetName}`));
+    selectedConnectionIdsForBatch.value.clear();
+  }
+};
+
+// --- 表单与批处理 ---
 const openAddConnectionForm = () => {
   connectionToEdit.value = null;
+  // 若当前聚焦在某个具体文件夹下，默认将新连接归属于该文件夹
+  defaultFolderForNew.value = typeof activeFolder.value === 'number' ? activeFolder.value : null;
   showAddEditConnectionForm.value = true;
 };
 
 const openEditConnectionForm = (conn: ConnectionInfo) => {
   connectionToEdit.value = conn;
+  defaultFolderForNew.value = null;
   showAddEditConnectionForm.value = true;
 };
 
 const handleFormClose = () => {
   showAddEditConnectionForm.value = false;
   connectionToEdit.value = null;
+  defaultFolderForNew.value = null;
 };
 
 const handleConnectionModified = async () => {
   showAddEditConnectionForm.value = false;
   connectionToEdit.value = null;
+  defaultFolderForNew.value = null;
   await connectionsStore.fetchConnections();
 };
 
-// --- Batch Edit Functions ---
 const toggleBatchEditMode = () => {
   isBatchEditMode.value = !isBatchEditMode.value;
   if (!isBatchEditMode.value) {
-    selectedConnectionIdsForBatch.value.clear(); // Clear selection when exiting batch mode
+    selectedConnectionIdsForBatch.value.clear();
   }
 };
 
@@ -267,8 +465,7 @@ const invertSelection = () => {
 
 const openBatchEditModal = () => {
   if (selectedConnectionIdsForBatch.value.size === 0) {
-    // Optionally, show a notification from uiNotificationsStore using your project's method
-    showAlertDialog({ title: t('common.alert', '提示'), message: t('connections.batchEdit.noSelectionForEdit', '请至少选择一个连接进行编辑。') }); // Placeholder
+    showAlertDialog({ title: t('common.alert', '提示'), message: t('connections.batchEdit.noSelectionForEdit', '请至少选择一个连接进行编辑。') });
     return;
   }
   showBatchEditForm.value = true;
@@ -277,19 +474,15 @@ const openBatchEditModal = () => {
 const handleBatchEditSaved = async () => {
   showBatchEditForm.value = false;
   selectedConnectionIdsForBatch.value.clear();
-  // isBatchEditMode.value = false; // Optionally exit batch mode after saving
-  await connectionsStore.fetchConnections(); // Refresh the list
+  await connectionsStore.fetchConnections();
 };
 
 const handleBatchEditFormClose = () => {
   showBatchEditForm.value = false;
 };
 
-// --- 批量删除 ---
 const handleBatchDeleteConnections = async () => {
-  if (selectedConnectionIdsForBatch.value.size === 0 || isDeletingSelectedConnections.value) {
-    return;
-  }
+  if (selectedConnectionIdsForBatch.value.size === 0 || isDeletingSelectedConnections.value) return;
 
   const confirmMessage = t(
     'connections.batchEdit.confirmMessage',
@@ -297,24 +490,16 @@ const handleBatchDeleteConnections = async () => {
     `您确定要删除选中的 ${selectedConnectionIdsForBatch.value.size} 个连接吗？此操作无法撤销。`
   );
 
-
-  const confirmed = await showConfirmDialog({
-    message: confirmMessage
-  });
+  const confirmed = await showConfirmDialog({ message: confirmMessage });
   if (confirmed) {
     isDeletingSelectedConnections.value = true;
     try {
       const idsToDelete = Array.from(selectedConnectionIdsForBatch.value);
       await connectionsStore.deleteBatchConnections(idsToDelete);
-
-
       showAlertDialog({ title: t('common.success', '成功'), message: t('connections.batchEdit.successMessage', '选中的连接已成功删除。') });
-
       selectedConnectionIdsForBatch.value.clear();
-
       await connectionsStore.fetchConnections();
     } catch (error: any) {
-      console.error("Batch delete connections error:", error);
       showAlertDialog({ title: t('common.error'), message: t('connections.batchEdit.errorMessage', `批量删除连接失败: ${error.message || '未知错误'}`) });
     } finally {
       isDeletingSelectedConnections.value = false;
@@ -322,7 +507,7 @@ const handleBatchDeleteConnections = async () => {
   }
 };
 
-// --- Test Connection Logic ---
+// --- 测试连接 ---
 interface ConnectionTestState {
   status: 'idle' | 'testing' | 'success' | 'error';
   resultText: string;
@@ -333,8 +518,7 @@ const connectionTestStates = ref<Map<number, ConnectionTestState>>(new Map());
 const isTestingAll = ref(false);
 
 const getLatencyColorString = (latencyMs?: number): string => {
-  if (latencyMs === undefined) return 'inherit'; // Default or inherit
-  // These colors should ideally come from theme variables if available
+  if (latencyMs === undefined) return 'inherit';
   if (latencyMs < 100) return 'var(--color-success, #4CAF50)';
   if (latencyMs < 300) return 'var(--color-warning, #ff9800)';
   return 'var(--color-error, #F44336)';
@@ -342,34 +526,20 @@ const getLatencyColorString = (latencyMs?: number): string => {
 
 const handleTestSingleConnection = async (conn: ConnectionInfo) => {
   if (!conn.id || conn.type !== 'SSH') return;
-
   connectionTestStates.value.set(conn.id, {
     status: 'testing',
     resultText: t('connections.test.testingInProgress', '测试中...'),
   });
 
   try {
-    // Pass only the ID to testConnection, as per store definition
     const result = await connectionsStore.testConnection(conn.id);
-
     if (result.success) {
       const latencyMs = result.latency;
-      let displayText = ''; // 初始化为空字符串，符合只显示延迟的要求
-      let determinedColor;
-
-      if (latencyMs !== undefined) {
-        displayText = `${latencyMs}ms`;
-        determinedColor = getLatencyColorString(latencyMs);
-      } else {
-        // 测试成功，但没有延迟信息。不显示文本。
-        // 颜色应为明确的成功颜色。
-        // getLatencyColorString(0) 会返回绿色，代表非常好的情况。
-        determinedColor = getLatencyColorString(0); // 或者直接使用 'var(--color-success, #4CAF50)'
-      }
-
+      let displayText = latencyMs !== undefined ? `${latencyMs}ms` : '';
+      let determinedColor = getLatencyColorString(latencyMs ?? 0);
       connectionTestStates.value.set(conn.id, {
         status: 'success',
-        resultText: displayText, // 将显示 "XXms" 或者为空
+        resultText: displayText,
         latency: latencyMs,
         latencyColor: determinedColor,
       });
@@ -389,39 +559,21 @@ const handleTestSingleConnection = async (conn: ConnectionInfo) => {
 
 const handleTestAllFilteredConnections = async () => {
   if (isTestingAll.value || isLoadingConnections.value) return;
-  // Ensure conn.id exists for map function and error handling
   const sshConnectionsToTest = filteredAndSortedConnections.value.filter(c => c.type === 'SSH' && c.id != null);
-  if (sshConnectionsToTest.length === 0) {
-    // Optionally notify user that there are no SSH connections to test
-    // Consider using uiNotificationsStore from your project for a user-friendly message
-    return;
-  }
+  if (sshConnectionsToTest.length === 0) return;
 
   isTestingAll.value = true;
   const testPromises = sshConnectionsToTest.map(conn => {
-    // conn.id is guaranteed to exist here due to the filter above.
-    // We're calling handleTestSingleConnection for each.
-    // Individual errors within handleTestSingleConnection will update that specific connection's state.
-    // We also add a .catch here to handle any unexpected errors from handleTestSingleConnection itself
-    // or if conn.id was somehow null/undefined (though filtered out).
-    return handleTestSingleConnection(conn).catch(error => {
-      console.error(`Error testing connection ${conn.id}:`, error);
-      // Ensure state is updated for this specific connection to show an error
-      // The 'id' here is from the 'conn' object in the map function's scope.
-      connectionTestStates.value.set(conn.id!, { // Using non-null assertion as id is checked
+    return handleTestSingleConnection(conn).catch(() => {
+      connectionTestStates.value.set(conn.id!, {
         status: 'error',
-        resultText: t('connections.test.unknownErrorDuringBatch', '批量测试中发生错误'), // New i18n key
+        resultText: t('connections.test.unknownErrorDuringBatch', '批量测试中发生错误'),
       });
     });
   });
 
   try {
     await Promise.all(testPromises);
-  } catch (error) {
-    // This catch block handles errors if Promise.all itself fails,
-    // though individual promise rejections are handled above.
-    console.error("Error during batch testing of connections (Promise.all):", error);
-    // Optionally, set a general error state or notification for the entire batch operation if needed.
   } finally {
     isTestingAll.value = false;
   }
@@ -429,330 +581,633 @@ const handleTestAllFilteredConnections = async () => {
 
 const getSingleTestButtonInfo = (connId: number | undefined, connType: string | undefined) => {
   const state = connId ? connectionTestStates.value.get(connId) : undefined;
-
   if (connType !== 'SSH') {
-    return {
-      textKey: 'connections.actions.test',
-      iconClass: 'fas fa-plug',
-      disabled: true,
-      loading: false,
-      title: t('connections.test.onlySshSupportedTest', '仅SSH连接支持测试。')
-    };
+    return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: t('connections.test.onlySshSupportedTest', '仅SSH连接支持测试。') };
   }
-  if (!connId) { // Should not happen if connType is SSH and we are in the list
-     return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: '' };
+  if (!connId) {
+    return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: '' };
   }
-
   if (state?.status === 'testing') {
     return { textKey: 'connections.actions.testing', iconClass: 'fas fa-spinner fa-spin', disabled: true, loading: true, title: t('connections.actions.testing', '测试中') };
   }
-  if (state?.status === 'success' || state?.status === 'error') {
-    // 测试完成后，按钮恢复为初始“测试”状态
-    return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: false, loading: false, title: t('connections.actions.test', '测试') };
-  }
-  // 默认状态也是“测试”
   return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: false, loading: false, title: t('connections.actions.test', '测试') };
 };
 
 const getTruncatedNotes = (notes: string | null | undefined): string => {
-  if (!notes || notes.trim() === '') return ''; // 返回空字符串，如果没有备注
-  const maxLength = 100;
+  if (!notes || notes.trim() === '') return '';
+  const maxLength = 80;
   if (notes.length <= maxLength) return notes;
   return notes.substring(0, maxLength) + '...';
 };
 
-
-
-// --- Connect All Filtered Connections ---
+// 一键连接全部
 const isConnectingAll = ref(false);
-
 const handleConnectAllFilteredConnections = async () => {
   if (isConnectingAll.value || isLoadingConnections.value) return;
-
   const sshConnectionsToConnect = filteredAndSortedConnections.value.filter(conn => conn.type === 'SSH');
-  if (sshConnectionsToConnect.length === 0) {
-    console.warn(t('connections.messages.noSshConnectionsToConnectAll', '没有可连接的 SSH 筛选结果。'));
-    // Optionally, use a UI notification if available in your project
-    // e.g., uiNotificationsStore.addNotification({ message: t('connections.messages.noSshConnectionsToConnectAll'), type: 'info' });
-    return;
-  }
+  if (sshConnectionsToConnect.length === 0) return;
 
   isConnectingAll.value = true;
   try {
     for (const conn of sshConnectionsToConnect) {
       connectTo(conn);
-      // Consider a small delay if you want to visually see connections initiating one by one,
-      // or if connectTo triggers operations that might benefit from not being fired too rapidly.
-      // await new Promise(resolve => setTimeout(resolve, 200)); // Example delay
     }
-  } catch (error) {
-    console.error("Error connecting to all filtered SSH connections:", error);
-    // uiNotificationsStore.addNotification({ message: t('connections.errors.connectAllSshFailed', '连接全部 SSH 操作失败。'), type: 'error' });
   } finally {
     isConnectingAll.value = false;
   }
 };
-
 </script>
 
 <template>
-  <div class="p-4 md:p-6 lg:p-8 bg-background text-foreground"> <!-- 最外层，负责背景和整体内边距 -->
-    <div class="max-w-screen-lg mx-auto"> <!-- 将 xl 修改为 lg -->
-      <h1 class="text-2xl font-semibold mb-6">{{ t('nav.connections', '连接管理') }}</h1>
-
-      <div class="bg-card text-card-foreground shadow rounded-lg overflow-hidden border border-border min-h-[400px]"> <!-- 移除了 max-w-screen-2xl mx-auto -->
-        <div class="px-4 py-3 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-        <h2 class="text-lg font-medium flex-shrink-0">{{ t('dashboard.connectionList', '连接列表') }} ({{ filteredAndSortedConnections.length }})</h2>
-        <div class="w-full sm:w-auto flex flex-wrap sm:flex-nowrap items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2">
-          <!-- Batch Edit Toggle -->
-          <div class="flex items-center mr-3">
-            <label for="batch-edit-toggle" class="mr-2 text-sm font-medium text-text-secondary">{{ t('connections.batchEdit.toggleLabel', '批量修改') }}</label>
-            <button
-              id="batch-edit-toggle"
-              @click="toggleBatchEditMode"
-              :class="[
-                'relative inline-flex flex-shrink-0 h-6 w-11 border-2 border-transparent rounded-full cursor-pointer transition-colors ease-in-out duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary',
-                isBatchEditMode ? 'bg-primary' : 'bg-gray-300 dark:bg-gray-600'
-              ]"
-              role="switch"
-              :aria-checked="isBatchEditMode"
-            >
-              <span
-                aria-hidden="true"
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform ring-0 transition ease-in-out duration-200',
-                  isBatchEditMode ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              ></span>
-            </button>
-          </div>
-
-          <input
-            type="text"
-            v-model="searchQuery"
-            :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索连接...')"
-            class="h-8 px-3 py-1 text-sm border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-48"
-          />
-          <div class="flex items-center space-x-2">
-           <select
-              v-model="selectedTagId"
-              class="h-8 px-2 py-1 text-sm border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 16px 12px;"
-              aria-label="Filter connections by tag"
-              :disabled="isLoadingTags"
-            >
-              <option :value="null">{{ t('dashboard.filterTags.all', '所有标签') }}</option>
-              <option v-if="isLoadingTags" disabled>{{ t('common.loading') }}</option>
-              <option v-for="tag in (tags as TagInfo[])" :key="tag.id" :value="tag.id">
-                {{ tag.name }}
-              </option>
-            </select>
-
-           <select
-              v-model="localSortBy"
-              class="h-8 px-2 py-1 text-sm border border-border rounded bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 16px 12px;"
-              aria-label="Sort connections by"
-            >
-              <option v-for="option in sortOptions" :key="option.value" :value="option.value">
-                {{ t(option.labelKey, option.value.replace('_', ' ')) }}
-              </option>
-            </select>
-
-            <button
-              @click="toggleSortOrder"
-              class="h-8 px-1.5 py-1 border border-border rounded hover:bg-muted focus:outline-none focus:ring-1 focus:ring-primary flex items-center justify-center"
-              :aria-label="isAscending ? t('common.sortAscending') : t('common.sortDescending')"
-              :title="isAscending ? t('common.sortAscending') : t('common.sortDescending')"
-            >
-              <i :class="['fas', isAscending ? 'fa-arrow-up-a-z' : 'fa-arrow-down-z-a', 'w-4 h-4']"></i>
-            </button>
-          </div>
-          <button @click="openAddConnectionForm" :title="t('connections.addConnection', 'Add Connection')" class="h-8 w-8 bg-button rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out flex items-center justify-center flex-shrink-0 ml-2 sm:ml-0">
-            <i class="fas fa-plus" style="color: white;"></i>
-          </button>
-          <!-- Test All Filtered Connections Button -->
-          <button
-            @click="handleTestAllFilteredConnections"
-            :disabled="isTestingAll || isLoadingConnections || !filteredAndSortedConnections.some(c => c.type === 'SSH')"
-            class="h-8 px-3 py-1.5 text-sm bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out flex items-center justify-center flex-shrink-0 ml-2 sm:ml-0"
-            :title="t('connections.actions.testAllFiltered', '测试全部筛选的SSH连接')"
-          >
-            <i v-if="isTestingAll" class="fas fa-spinner fa-spin mr-1 sm:mr-2" style="color: white;"></i>
-            <i v-else class="fas fa-check-double mr-1 sm:mr-2" style="color: white;"></i>
-            <span class="hidden sm:inline">{{ t('connections.actions.testAllFiltered') }}</span>
-          </button>
-          <!-- Connect All Filtered Connections Button -->
-          <button
-            @click="handleConnectAllFilteredConnections"
-            :disabled="isConnectingAll || isLoadingConnections || !filteredAndSortedConnections.some(c => c.type === 'SSH')"
-            class="h-8 px-3 py-1.5 text-sm bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out flex items-center justify-center flex-shrink-0 ml-2 sm:ml-0"
-          >
-            <i v-if="isConnectingAll" class="fas fa-spinner fa-spin mr-1 sm:mr-2" style="color: white;"></i>
-            <i v-else class="fas fa-network-wired mr-1 sm:mr-2" style="color: white;"></i>
-            <span class="hidden sm:inline">{{ t('workspaceConnectionList.connectAllSshInGroupMenu', '连接全部') }}</span>
-          </button>
+  <div class="h-full flex flex-col p-3 md:p-6 bg-background text-foreground overflow-hidden">
+    <!-- Top Navigation Bar & Stats -->
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+          <i class="fas fa-network-wired text-base"></i>
+        </div>
+        <div>
+          <h1 class="text-xl md:text-2xl font-bold tracking-tight text-foreground">{{ t('nav.connections', '连接管理') }}</h1>
+          <p class="text-xs text-text-secondary">
+            {{ t('folders.dragTip', '按文件夹层级分类管理主机，支持拖拽快速归类') }}
+          </p>
         </div>
       </div>
 
-      <!-- Batch Action Buttons -->
-      <div v-if="isBatchEditMode" class="px-4 py-2 border-b border-border bg-card flex flex-wrap items-center gap-2">
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2">
         <button
-          @click="selectAllConnections"
-          class="px-3 py-1.5 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
+          @click="openAddConnectionForm"
+          class="h-9 px-3.5 bg-primary text-white rounded-lg shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary/50 transition duration-150 flex items-center gap-1.5 text-xs md:text-sm font-semibold"
         >
-          {{ t('connections.batchEdit.selectAll', '全选') }} ({{ selectedConnectionIdsForBatch.size }})
-        </button>
-        <button
-          @click="deselectAllConnections"
-          class="px-3 py-1.5 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
-        >
-          {{ t('connections.batchEdit.deselectAll', '取消全选') }}
-        </button>
-        <button
-          @click="invertSelection"
-          class="px-3 py-1.5 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
-        >
-          {{ t('connections.batchEdit.invertSelection', '反选') }}
-        </button>
-        <button
-          @click="openBatchEditModal"
-          :disabled="selectedConnectionIdsForBatch.size === 0"
-          class="px-4 py-1.5 text-sm bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <i class="fas fa-edit mr-1" style="color: white;"></i>
-          {{ t('connections.batchEdit.editSelected', '编辑选中') }}
-        </button>
-        <button
-          @click="handleBatchDeleteConnections"
-          :disabled="selectedConnectionIdsForBatch.size === 0 || isDeletingSelectedConnections"
-          class="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-          :title="t('connections.batchEdit.deleteSelectedTooltip', '删除选中的连接')"
-        >
-          <i v-if="isDeletingSelectedConnections" class="fas fa-spinner fa-spin mr-1.5" style="color: white;"></i>
-          <i v-else class="fas fa-trash-alt mr-1.5" style="color: white;"></i>
-          <span>{{ t('connections.batchEdit.deleteSelectedButton', '删除选中') }}</span>
+          <i class="fas fa-plus"></i>
+          <span>{{ t('connections.addConnection', '新建连接') }}</span>
         </button>
       </div>
+    </div>
 
-      <div class="p-4">
-        <div v-if="isLoadingConnections && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary">{{ t('common.loading') }}</div>
-        <ul v-else-if="filteredAndSortedConnections.length > 0" class="space-y-3">
-          <li
-            v-for="conn in filteredAndSortedConnections"
-            :key="conn.id"
-            @click="handleConnectionClick(conn.id)"
-            class="flex items-center p-3 rounded transition duration-150 ease-in-out border"
+    <!-- Main Dual-Pane Workspace Container -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden border border-border/70 rounded-2xl bg-card shadow-sm">
+      <!-- ==================== Left: Folder Sidebar ==================== -->
+      <aside class="w-full md:w-64 lg:w-72 flex-shrink-0 border-b md:border-b-0 md:border-r border-border/60 bg-muted/20 flex flex-col overflow-hidden">
+        <!-- Sidebar Header: Quick Navigation -->
+        <div class="p-3 border-b border-border/50 space-y-1">
+          <!-- All Connections -->
+          <button
+            @click="activeFolder = 'all'"
+            @dragover="handleDragOver('all', $event)"
+            @dragleave="handleDragLeave"
+            @drop="handleDropOnFolder('all', $event)"
+            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150"
             :class="[
-              conn.background_color
-                ? 'connection-colored-card shadow-xs'
-                : ['bg-header/50 border-border/50', isBatchEditMode ? 'hover:bg-border/70' : 'hover:bg-border/30'],
-              { 'ring-2 ring-primary ring-offset-1 ring-offset-background': isBatchEditMode && isConnectionSelectedForBatch(conn.id) },
-              { 'cursor-pointer': isBatchEditMode }
+              activeFolder === 'all'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                : 'text-text-secondary hover:text-foreground hover:bg-muted/60',
+              { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === 'all' }
             ]"
-            :style="getConnectionCardStyle(conn.background_color)"
           >
-            <div class="flex-1 min-w-0 mr-3"> <!-- Changed: flex-1 min-w-0 mr-3 -->
-              <span class="font-medium block truncate flex items-center" :title="conn.name || ''">
+            <div class="flex items-center gap-2.5 truncate">
+              <i class="fas fa-layer-group w-4 text-center text-primary"></i>
+              <span class="truncate">{{ t('folders.all', '全部连接') }}</span>
+            </div>
+            <span
+              class="px-2 py-0.5 text-xs rounded-full font-medium"
+              :class="activeFolder === 'all' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+            >
+              {{ totalConnectionsCount }}
+            </span>
+          </button>
+
+          <!-- Uncategorized -->
+          <button
+            @click="activeFolder = 'uncategorized'"
+            @dragover="handleDragOver('uncategorized', $event)"
+            @dragleave="handleDragLeave"
+            @drop="handleDropOnFolder('uncategorized', $event)"
+            class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150"
+            :class="[
+              activeFolder === 'uncategorized'
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                : 'text-text-secondary hover:text-foreground hover:bg-muted/60',
+              { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === 'uncategorized' }
+            ]"
+          >
+            <div class="flex items-center gap-2.5 truncate">
+              <i class="fas fa-inbox w-4 text-center text-text-secondary"></i>
+              <span class="truncate">{{ t('folders.uncategorized', '未分类') }}</span>
+            </div>
+            <span
+              class="px-2 py-0.5 text-xs rounded-full font-medium"
+              :class="activeFolder === 'uncategorized' ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+            >
+              {{ uncategorizedCount }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Custom Folders Section Title & Add Button -->
+        <div class="px-3 py-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-text-secondary/80">
+          <span>{{ t('folders.customFolders', '文件夹') }}</span>
+          <button
+            @click="startCreateFolder"
+            class="w-6 h-6 flex items-center justify-center rounded-md hover:bg-muted text-text-secondary hover:text-foreground transition-colors"
+            :title="t('folders.newFolder', '新建文件夹')"
+          >
+            <i class="fas fa-plus text-xs"></i>
+          </button>
+        </div>
+
+        <!-- Folder Inline Creation Input -->
+        <div v-if="isCreatingFolder" class="px-3 pb-2">
+          <div class="flex items-center gap-1.5 p-1.5 bg-input border border-primary/50 rounded-lg shadow-inner">
+            <i class="fas fa-folder text-amber-400 text-xs pl-1"></i>
+            <input
+              ref="newFolderInputRef"
+              v-model="newFolderName"
+              type="text"
+              :placeholder="t('folders.newFolderPlaceholder', '输入文件夹名称...')"
+              class="flex-1 min-w-0 bg-transparent text-foreground text-xs focus:outline-none"
+              @keydown.enter.prevent="handleConfirmCreateFolder"
+              @keydown.esc.prevent="cancelCreateFolder"
+            />
+            <button
+              @click="handleConfirmCreateFolder"
+              class="px-2 py-0.5 bg-primary text-white text-xs rounded hover:bg-primary/90"
+            >
+              <i class="fas fa-check text-xs"></i>
+            </button>
+            <button
+              @click="cancelCreateFolder"
+              class="px-1.5 py-0.5 text-text-secondary hover:text-foreground text-xs"
+            >
+              <i class="fas fa-times text-xs"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Folder List Area -->
+        <div class="flex-1 overflow-y-auto px-2 space-y-0.5 pb-3">
+          <div
+            v-for="folder in folders"
+            :key="folder.id"
+            @click="activeFolder = folder.id"
+            @dragover="handleDragOver(folder.id, $event)"
+            @dragleave="handleDragLeave"
+            @drop="handleDropOnFolder(folder.id, $event)"
+            class="group w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs md:text-sm transition-all duration-150 cursor-pointer"
+            :class="[
+              activeFolder === folder.id
+                ? 'bg-primary/15 text-primary font-semibold shadow-xs ring-1 ring-primary/30'
+                : 'text-foreground hover:bg-muted/60',
+              { 'ring-2 ring-primary bg-primary/20': dragOverFolderId === folder.id }
+            ]"
+          >
+            <!-- Editing State -->
+            <div v-if="editingFolderId === folder.id" class="flex-1 flex items-center gap-1.5 mr-1" @click.stop>
+              <i class="fas fa-folder text-amber-400 text-xs"></i>
+              <input
+                ref="editFolderInputRef"
+                v-model="editingFolderName"
+                type="text"
+                class="flex-1 min-w-0 px-1.5 py-0.5 bg-input border border-primary rounded text-xs text-foreground focus:outline-none"
+                @keydown.enter.prevent="handleConfirmRenameFolder(folder.id)"
+                @keydown.esc.prevent="cancelRenameFolder"
+              />
+              <button
+                @click="handleConfirmRenameFolder(folder.id)"
+                class="p-1 text-primary hover:text-primary-hover"
+              >
+                <i class="fas fa-check text-xs"></i>
+              </button>
+              <button
+                @click="cancelRenameFolder"
+                class="p-1 text-text-secondary hover:text-foreground"
+              >
+                <i class="fas fa-times text-xs"></i>
+              </button>
+            </div>
+
+            <!-- Normal Display State -->
+            <template v-else>
+              <div class="flex items-center gap-2.5 truncate min-w-0 mr-2">
                 <i
                   :class="[
                     'fas',
-                    conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-server'),
-                    'mr-2 w-4 text-center',
-                    conn.background_color ? '' : 'text-text-secondary'
+                    activeFolder === folder.id ? 'fa-folder-open' : 'fa-folder',
+                    'text-amber-400 w-4 text-center flex-shrink-0'
                   ]"
-                  :style="conn.background_color ? { color: conn.background_color } : {}"
                 ></i>
-                <span>{{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}</span>
-              </span>
-              <span class="text-sm text-text-secondary block truncate" :title="`${conn.username}@${conn.host}:${conn.port}`">
-                {{ conn.username }}@{{ conn.host }}:{{ conn.port }}
-              </span>
-              <span class="text-xs text-text-alt block">
-                {{ t('dashboard.lastConnected', '上次连接:') }} {{ formatRelativeTime(conn.last_connected_at) }}
-              </span>
-              <!-- 备注信息移到这里 -->
-              <div v-if="conn.notes && conn.notes.trim() !== ''" class="text-xs text-text-secondary mt-1">
-                <span class="font-medium text-text-alt">{{ t('connections.form.notes', '备注:') }}</span>
-                <span class="break-words leading-snug ml-1" :title="conn.notes">
-                  {{ getTruncatedNotes(conn.notes) }}
-                </span>
+                <span class="truncate">{{ folder.name }}</span>
               </div>
-              <div v-if="getTagNames(conn.tag_ids).length > 0" class="flex flex-wrap gap-1 mt-1.5">
-                <span
-                  v-for="tagName in getTagNames(conn.tag_ids)"
-                  :key="tagName"
-                  class="px-1.5 py-0.5 text-xs rounded bg-muted text-muted-foreground border border-border"
-                >
-                  {{ tagName }}
-                </span>
-              </div>
-              <!-- Test Result Display -->
-              <div
-                v-if="conn.type === 'SSH' && connectionTestStates.get(conn.id) && connectionTestStates.get(conn.id)?.status !== 'idle'"
-                class="text-xs mt-1.5 pt-1 border-t border-border/30"
-              >
-                <div v-if="connectionTestStates.get(conn.id)?.status === 'testing'" class="text-text-secondary animate-pulse flex items-center">
-                  <i class="fas fa-spinner fa-spin mr-1.5 text-xs"></i>
-                  {{ t('connections.test.testingInProgress', '测试中...') }}
-                </div>
-                <div
-                  v-else-if="connectionTestStates.get(conn.id)?.status === 'success'"
-                  class="font-medium flex items-center"
-                  :style="{ color: connectionTestStates.get(conn.id)?.latencyColor || 'inherit' }"
-                >
-                  <i class="fas fa-check-circle mr-1.5 text-xs"></i>
-                  {{ connectionTestStates.get(conn.id)?.resultText }}
-                </div>
-                <div
-                  v-else-if="connectionTestStates.get(conn.id)?.status === 'error'"
-                  class="text-error font-medium flex items-center"
-                >
-                  <i class="fas fa-times-circle mr-1.5 text-xs"></i>
-                  {{ t('connections.test.errorPrefix', '错误:') }} {{ connectionTestStates.get(conn.id)?.resultText }}
-                </div>
-              </div>
-            </div>
-            <!-- 中间备注区域已被移除 -->
-            <div class="flex items-center space-x-2 flex-shrink-0">
-              <!-- Test Single Connection Button -->
-              <button
-                v-if="conn.type === 'SSH'"
-                @click.stop="handleTestSingleConnection(conn)"
-                :disabled="isBatchEditMode || getSingleTestButtonInfo(conn.id, conn.type).disabled"
-                class="px-3 py-1.5 bg-transparent text-foreground border border-border rounded-md shadow-sm hover:bg-border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium h-9 flex items-center justify-center"
-                :class="{ 'opacity-50 cursor-not-allowed': isBatchEditMode || getSingleTestButtonInfo(conn.id, conn.type).disabled }"
-                :title="getSingleTestButtonInfo(conn.id, conn.type).title"
-              >
-                <i :class="[getSingleTestButtonInfo(conn.id, conn.type).iconClass, 'w-4 text-center', getSingleTestButtonInfo(conn.id, conn.type).textKey !== 'connections.actions.testing' ? 'mr-1' : '']"></i>
-                <span v-if="getSingleTestButtonInfo(conn.id, conn.type).textKey !== 'connections.actions.testing'">{{ t(getSingleTestButtonInfo(conn.id, conn.type).textKey) }}</span>
-              </button>
-              <button
-                @click.stop="openEditConnectionForm(conn)"
-                class="px-3 py-1.5 bg-transparent text-foreground border border-border rounded-md shadow-sm hover:bg-border focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium h-9 flex items-center justify-center"
-                :disabled="isBatchEditMode"
-                :class="{ 'opacity-50 cursor-not-allowed': isBatchEditMode }"
-              >
-                <i class="fas fa-pencil-alt mr-1"></i>{{ t('connections.actions.edit') }}
-              </button>
-              <button
-                @click.stop="connectTo(conn)"
-                class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out text-sm font-medium h-9 flex items-center justify-center"
-                :disabled="isBatchEditMode"
-                :class="{ 'opacity-50 cursor-not-allowed': isBatchEditMode }"
-              >
-                {{ t('connections.actions.connect') }}
-              </button>
-            </div>
-          </li>
-        </ul>
-        <div v-else-if="!isLoadingConnections && searchQuery && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary">{{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}</div>
-        <div v-else-if="!isLoadingConnections && selectedTagId !== null && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary">{{ t('dashboard.noConnectionsWithTag', '该标签下没有连接记录') }}</div>
-        <div v-else class="text-center text-text-secondary">{{ t('dashboard.noConnections', '没有连接记录') }}</div>
-        </div>
-      </div>
-    </div> <!-- 结束新增的包裹层 -->
 
+              <div class="flex items-center gap-1 flex-shrink-0">
+                <!-- Action Buttons on Hover -->
+                <div class="hidden group-hover:flex items-center gap-0.5 mr-1" @click.stop>
+                  <button
+                    @click="startRenameFolder(folder, $event)"
+                    class="p-1 text-text-secondary hover:text-foreground rounded hover:bg-muted"
+                    :title="t('folders.renameFolder', '重命名')"
+                  >
+                    <i class="fas fa-pencil-alt text-xs"></i>
+                  </button>
+                  <button
+                    @click="handleDeleteFolder(folder, $event)"
+                    class="p-1 text-text-secondary hover:text-error rounded hover:bg-muted"
+                    :title="t('folders.deleteFolder', '删除')"
+                  >
+                    <i class="fas fa-trash-alt text-xs"></i>
+                  </button>
+                </div>
+
+                <span
+                  class="px-2 py-0.5 text-xs rounded-full font-medium"
+                  :class="activeFolder === folder.id ? 'bg-primary/20 text-primary' : 'bg-muted text-text-secondary'"
+                >
+                  {{ folderCountMap.get(folder.id) || 0 }}
+                </span>
+              </div>
+            </template>
+          </div>
+
+          <div v-if="folders.length === 0 && !isCreatingFolder" class="p-6 text-center text-xs text-text-secondary italic">
+            <i class="fas fa-folder-open text-xl mb-1.5 opacity-40 block"></i>
+            {{ t('folders.noCustomFolders', '暂无自定义文件夹') }}
+          </div>
+        </div>
+      </aside>
+
+      <!-- ==================== Right: Connection Content Area ==================== -->
+      <main class="flex-1 flex flex-col overflow-hidden bg-background/50">
+        <!-- Top Toolbar -->
+        <div class="p-3 md:p-4 border-b border-border/60 flex flex-wrap items-center justify-between gap-3 bg-card/60 backdrop-blur-xs flex-shrink-0">
+          <!-- Folder Title and Item Count -->
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2">
+              <i
+                :class="[
+                  'fas',
+                  activeFolder === 'all'
+                    ? 'fa-layer-group text-primary'
+                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open text-amber-400')
+                ]"
+              ></i>
+              <h2 class="text-base md:text-lg font-semibold text-foreground truncate">
+                {{ currentFolderTitle }}
+              </h2>
+            </div>
+            <span class="text-xs text-text-secondary bg-muted px-2 py-0.5 rounded-full font-medium">
+              {{ filteredAndSortedConnections.length }}
+            </span>
+          </div>
+
+          <!-- Controls: Search, Sort, Batch Mode, Batch Connect/Test -->
+          <div class="flex flex-wrap items-center gap-2 ml-auto">
+            <!-- Search Bar -->
+            <div class="relative w-40 sm:w-52">
+              <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-xs"></i>
+              <input
+                type="text"
+                v-model="searchQuery"
+                :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索连接...')"
+                class="w-full h-8 pl-8 pr-3 text-xs bg-input border border-border/70 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition duration-150"
+              />
+            </div>
+
+            <!-- Sort By -->
+            <select
+              v-model="localSortBy"
+              class="h-8 px-2.5 text-xs bg-input border border-border/70 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+            >
+              <option v-for="option in sortOptions" :key="option.value" :value="option.value">
+                {{ t(option.labelKey, option.value) }}
+              </option>
+            </select>
+
+            <!-- Sort Order Toggle -->
+            <button
+              @click="toggleSortOrder"
+              class="h-8 w-8 flex items-center justify-center border border-border/70 rounded-lg text-text-secondary hover:text-foreground hover:bg-muted transition duration-150"
+              :title="isAscending ? t('common.sortAscending') : t('common.sortDescending')"
+            >
+              <i :class="['fas', isAscending ? 'fa-arrow-up-a-z' : 'fa-arrow-down-z-a', 'text-xs']"></i>
+            </button>
+
+            <!-- Batch Mode Switch -->
+            <button
+              @click="toggleBatchEditMode"
+              class="h-8 px-2.5 flex items-center gap-1.5 border rounded-lg text-xs font-medium transition duration-150"
+              :class="isBatchEditMode ? 'bg-primary/20 text-primary border-primary/50' : 'border-border/70 text-text-secondary hover:bg-muted hover:text-foreground'"
+              :title="t('connections.batchEdit.toggleLabel', '批量操作')"
+            >
+              <i class="fas fa-tasks text-xs"></i>
+              <span class="hidden sm:inline">{{ t('connections.batchEdit.toggleLabel', '批量') }}</span>
+            </button>
+
+            <!-- Test All Filtered SSH -->
+            <button
+              @click="handleTestAllFilteredConnections"
+              :disabled="isTestingAll || isLoadingConnections || !filteredAndSortedConnections.some(c => c.type === 'SSH')"
+              class="h-8 px-2.5 bg-muted text-foreground border border-border/70 rounded-lg hover:bg-border transition duration-150 flex items-center gap-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              :title="t('connections.actions.testAllFiltered', '测试全部筛选的SSH连接')"
+            >
+              <i v-if="isTestingAll" class="fas fa-spinner fa-spin text-xs"></i>
+              <i v-else class="fas fa-check-double text-xs"></i>
+              <span class="hidden md:inline">{{ t('connections.actions.testAllFiltered', '测速') }}</span>
+            </button>
+
+            <!-- Connect All Filtered SSH -->
+            <button
+              @click="handleConnectAllFilteredConnections"
+              :disabled="isConnectingAll || isLoadingConnections || !filteredAndSortedConnections.some(c => c.type === 'SSH')"
+              class="h-8 px-2.5 bg-primary/10 text-primary border border-primary/30 rounded-lg hover:bg-primary/20 transition duration-150 flex items-center gap-1.5 text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              :title="t('workspaceConnectionList.connectAllSshInGroupMenu', '连接全部')"
+            >
+              <i v-if="isConnectingAll" class="fas fa-spinner fa-spin text-xs"></i>
+              <i v-else class="fas fa-network-wired text-xs"></i>
+              <span class="hidden md:inline">{{ t('workspaceConnectionList.connectAllSshInGroupMenu', '全部连接') }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Batch Action Bar -->
+        <div v-if="isBatchEditMode" class="px-4 py-2 bg-primary/10 border-b border-primary/20 flex flex-wrap items-center justify-between gap-2 animate-fadeIn flex-shrink-0">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-semibold text-primary">已选 {{ selectedConnectionIdsForBatch.size }} 项</span>
+            <button @click="selectAllConnections" class="text-text-secondary hover:text-foreground underline">全选</button>
+            <button @click="deselectAllConnections" class="text-text-secondary hover:text-foreground underline">取消全选</button>
+            <button @click="invertSelection" class="text-text-secondary hover:text-foreground underline">反选</button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Batch Move to Folder Dropdown -->
+            <div class="relative">
+              <button
+                @click.stop="batchMoveMenuOpen = !batchMoveMenuOpen"
+                :disabled="selectedConnectionIdsForBatch.size === 0"
+                class="px-2.5 py-1 text-xs bg-input border border-border rounded-lg text-foreground hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <i class="fas fa-folder-tree text-amber-400"></i>
+                <span>{{ t('folders.batchMove', '移动至文件夹') }}</span>
+                <i class="fas fa-chevron-down text-xs"></i>
+              </button>
+
+              <div
+                v-if="batchMoveMenuOpen"
+                class="absolute right-0 mt-1 z-50 w-48 bg-popover border border-border rounded-xl shadow-xl p-1 text-xs"
+                @click.stop
+              >
+                <button
+                  @click="handleBatchMoveToFolder(null)"
+                  class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-text-secondary hover:text-foreground flex items-center gap-2"
+                >
+                  <i class="fas fa-inbox text-xs"></i>
+                  <span>{{ t('folders.uncategorized', '未分类') }}</span>
+                </button>
+                <div v-if="folders.length > 0" class="h-px bg-border/40 my-1"></div>
+                <button
+                  v-for="f in folders"
+                  :key="f.id"
+                  @click="handleBatchMoveToFolder(f.id)"
+                  class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-foreground flex items-center gap-2"
+                >
+                  <i class="fas fa-folder text-amber-400 text-xs"></i>
+                  <span class="truncate">{{ f.name }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Batch Edit -->
+            <button
+              @click="openBatchEditModal"
+              :disabled="selectedConnectionIdsForBatch.size === 0"
+              class="px-2.5 py-1 text-xs bg-input border border-border rounded-lg text-foreground hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <i class="fas fa-edit text-xs"></i>
+              <span>编辑</span>
+            </button>
+
+            <!-- Batch Delete -->
+            <button
+              @click="handleBatchDeleteConnections"
+              :disabled="selectedConnectionIdsForBatch.size === 0 || isDeletingSelectedConnections"
+              class="px-2.5 py-1 text-xs bg-red-600/90 text-white rounded-lg hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <i class="fas fa-trash-alt text-xs"></i>
+              <span>删除</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Connection Cards List / Grid -->
+        <div class="flex-1 overflow-y-auto p-3 md:p-4">
+          <div v-if="isLoadingConnections && filteredAndSortedConnections.length === 0" class="flex flex-col items-center justify-center h-64 text-text-secondary">
+            <i class="fas fa-spinner fa-spin text-2xl mb-2 text-primary"></i>
+            <span class="text-xs">{{ t('common.loading') }}</span>
+          </div>
+
+          <!-- Connection Cards -->
+          <div v-else-if="filteredAndSortedConnections.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div
+              v-for="conn in filteredAndSortedConnections"
+              :key="conn.id"
+              :draggable="!isBatchEditMode"
+              @dragstart="handleDragStart(conn, $event)"
+              @dragend="handleDragEnd"
+              @click="handleConnectionClick(conn.id)"
+              class="group relative flex flex-col justify-between p-3.5 rounded-xl border transition-all duration-200"
+              :class="[
+                conn.background_color ? 'connection-colored-card' : 'bg-card/70 hover:bg-muted/40 border-border/70 shadow-xs hover:shadow-md hover:border-primary/40',
+                { 'ring-2 ring-primary ring-offset-1 ring-offset-background': isBatchEditMode && isConnectionSelectedForBatch(conn.id) },
+                { 'cursor-pointer': isBatchEditMode, 'cursor-grab active:cursor-grabbing': !isBatchEditMode }
+              ]"
+              :style="getConnectionCardStyle(conn.background_color)"
+            >
+              <!-- Card Top: Protocol Badge, Name & Folder Badge -->
+              <div>
+                <div class="flex items-start justify-between gap-2 mb-1.5">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <!-- Protocol Icon / Type Badge -->
+                    <span
+                      class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 flex-shrink-0"
+                      :class="[
+                        conn.type === 'SSH' ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30' :
+                        (conn.type === 'RDP' ? 'bg-sky-500/15 text-sky-400 border border-sky-500/30' :
+                        'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30')
+                      ]"
+                    >
+                      <i :class="['fas', conn.type === 'VNC' ? 'fa-plug' : (conn.type === 'RDP' ? 'fa-desktop' : 'fa-terminal')]"></i>
+                      {{ conn.type }}
+                    </span>
+
+                    <!-- Connection Name -->
+                    <h3 class="font-semibold text-sm text-foreground truncate" :title="conn.name || conn.host">
+                      {{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}
+                    </h3>
+                  </div>
+
+                  <!-- Folder Tag Badge (Clickable to switch folder) -->
+                  <div class="flex items-center gap-1 flex-shrink-0">
+                    <span
+                      v-if="conn.tag_ids && conn.tag_ids.length > 0"
+                      @click.stop="activeFolder = conn.tag_ids[0]"
+                      class="px-2 py-0.5 text-[11px] rounded-md bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 cursor-pointer transition-colors flex items-center gap-1 font-medium"
+                      :title="t('folders.viewFolderOnly', '仅查看此文件夹')"
+                    >
+                      <i class="fas fa-folder text-[10px]"></i>
+                      <span class="max-w-[80px] truncate">{{ getFolderName(conn.tag_ids[0]) }}</span>
+                    </span>
+
+                    <span
+                      v-else
+                      class="px-1.5 py-0.5 text-[10px] rounded-md bg-muted text-text-secondary/70 flex items-center gap-1"
+                    >
+                      <i class="fas fa-inbox text-[9px]"></i>
+                      <span>未分类</span>
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Host & Username -->
+                <div class="text-xs text-text-secondary font-mono truncate mb-1" :title="`${conn.username}@${conn.host}:${conn.port}`">
+                  {{ conn.username }}@{{ conn.host }}:{{ conn.port }}
+                </div>
+
+                <!-- Last Connected & Notes -->
+                <div class="flex items-center justify-between text-[11px] text-text-secondary/80 mt-1">
+                  <span>{{ formatRelativeTime(conn.last_connected_at) }}</span>
+                  <span v-if="conn.notes" class="truncate max-w-[140px] italic text-text-secondary/70" :title="conn.notes">
+                    {{ getTruncatedNotes(conn.notes) }}
+                  </span>
+                </div>
+
+                <!-- Test Status Result Bar -->
+                <div
+                  v-if="conn.type === 'SSH' && connectionTestStates.get(conn.id) && connectionTestStates.get(conn.id)?.status !== 'idle'"
+                  class="text-xs mt-2 pt-1.5 border-t border-border/40"
+                >
+                  <div v-if="connectionTestStates.get(conn.id)?.status === 'testing'" class="text-text-secondary animate-pulse flex items-center gap-1 text-[11px]">
+                    <i class="fas fa-spinner fa-spin text-xs"></i>
+                    <span>{{ t('connections.test.testingInProgress', '测试中...') }}</span>
+                  </div>
+                  <div
+                    v-else-if="connectionTestStates.get(conn.id)?.status === 'success'"
+                    class="font-medium flex items-center gap-1 text-[11px]"
+                    :style="{ color: connectionTestStates.get(conn.id)?.latencyColor || 'inherit' }"
+                  >
+                    <i class="fas fa-check-circle text-xs"></i>
+                    <span>{{ connectionTestStates.get(conn.id)?.resultText }}</span>
+                  </div>
+                  <div
+                    v-else-if="connectionTestStates.get(conn.id)?.status === 'error'"
+                    class="text-error font-medium flex items-center gap-1 text-[11px]"
+                  >
+                    <i class="fas fa-times-circle text-xs"></i>
+                    <span class="truncate">{{ connectionTestStates.get(conn.id)?.resultText }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card Bottom Actions -->
+              <div class="mt-3 pt-2.5 border-t border-border/50 flex items-center justify-between gap-1.5">
+                <!-- Move to Folder Shortcut Menu Button -->
+                <div class="relative">
+                  <button
+                    type="button"
+                    @click.stop="activeMoveMenuConnId = activeMoveMenuConnId === conn.id ? null : conn.id"
+                    class="h-7 px-2 text-xs rounded-md text-text-secondary hover:text-foreground hover:bg-muted flex items-center gap-1 border border-border/50"
+                    :title="t('folders.moveToFolder', '移至文件夹')"
+                  >
+                    <i class="fas fa-folder-tree text-amber-400 text-xs"></i>
+                    <i class="fas fa-caret-down text-[10px]"></i>
+                  </button>
+
+                  <!-- Move to Folder Popup Menu -->
+                  <div
+                    v-if="activeMoveMenuConnId === conn.id"
+                    class="absolute left-0 bottom-full mb-1 z-50 w-44 bg-popover border border-border rounded-xl shadow-xl p-1 text-xs"
+                    @click.stop
+                  >
+                    <div class="px-2 py-1 text-[10px] text-text-secondary font-semibold uppercase tracking-wider">
+                      {{ t('folders.moveToFolder', '移至文件夹') }}
+                    </div>
+                    <button
+                      type="button"
+                      @click="handleMoveSingleConnection(conn.id, null)"
+                      class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-text-secondary hover:text-foreground flex items-center gap-2"
+                    >
+                      <i class="fas fa-inbox text-xs"></i>
+                      <span>{{ t('folders.uncategorized', '未分类') }}</span>
+                    </button>
+                    <div v-if="folders.length > 0" class="h-px bg-border/40 my-1"></div>
+                    <button
+                      v-for="f in folders"
+                      :key="f.id"
+                      type="button"
+                      @click="handleMoveSingleConnection(conn.id, f.id)"
+                      class="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-muted text-foreground flex items-center gap-2"
+                    >
+                      <i class="fas fa-folder text-amber-400 text-xs"></i>
+                      <span class="truncate">{{ f.name }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Right Action Buttons -->
+                <div class="flex items-center gap-1.5">
+                  <!-- Test Single Connection -->
+                  <button
+                    v-if="conn.type === 'SSH'"
+                    @click.stop="handleTestSingleConnection(conn)"
+                    :disabled="isBatchEditMode || getSingleTestButtonInfo(conn.id, conn.type).disabled"
+                    class="h-7 px-2 text-xs rounded-md border border-border/60 hover:bg-muted text-foreground flex items-center gap-1 transition-colors disabled:opacity-40"
+                    :title="getSingleTestButtonInfo(conn.id, conn.type).title"
+                  >
+                    <i :class="[getSingleTestButtonInfo(conn.id, conn.type).iconClass, 'text-xs']"></i>
+                  </button>
+
+                  <!-- Edit Connection -->
+                  <button
+                    @click.stop="openEditConnectionForm(conn)"
+                    :disabled="isBatchEditMode"
+                    class="h-7 px-2 text-xs rounded-md border border-border/60 hover:bg-muted text-foreground flex items-center gap-1 transition-colors disabled:opacity-40"
+                    :title="t('connections.actions.edit')"
+                  >
+                    <i class="fas fa-pencil-alt text-xs"></i>
+                  </button>
+
+                  <!-- Connect Button (Main Action) -->
+                  <button
+                    @click.stop="connectTo(conn)"
+                    :disabled="isBatchEditMode"
+                    class="h-7 px-3 bg-primary text-white text-xs font-semibold rounded-md shadow-xs hover:bg-primary-hover flex items-center gap-1.5 transition-colors disabled:opacity-40"
+                  >
+                    <i class="fas fa-play text-[10px]"></i>
+                    <span>{{ t('connections.actions.connect', '连接') }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="flex flex-col items-center justify-center h-64 text-text-secondary text-sm">
+            <i class="fas fa-folder-open text-4xl mb-3 opacity-30"></i>
+            <p v-if="searchQuery" class="text-xs">{{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}</p>
+            <p v-else-if="activeFolder !== 'all'" class="text-xs">{{ t('folders.emptyFolder', '该文件夹下暂无连接') }}</p>
+            <p v-else class="text-xs">{{ t('dashboard.noConnections', '没有连接记录') }}</p>
+            <button
+              @click="openAddConnectionForm"
+              class="mt-3 px-3 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-semibold hover:bg-primary/20 transition-colors"
+            >
+              <i class="fas fa-plus mr-1"></i>
+              <span>创建连接</span>
+            </button>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modals -->
     <AddConnectionForm
       v-if="showAddEditConnectionForm"
       :connectionToEdit="connectionToEdit"
@@ -775,5 +1230,19 @@ const handleConnectAllFilteredConnections = async () => {
 .connection-colored-card:hover {
   background-color: var(--conn-card-hover-bg, var(--conn-card-bg)) !important;
   border-color: var(--conn-card-border) !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.15s ease-out forwards;
 }
 </style>

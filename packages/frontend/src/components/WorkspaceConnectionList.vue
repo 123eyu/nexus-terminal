@@ -54,6 +54,7 @@ const searchInputRef = ref<HTMLInputElement | null>(null); // 搜索输入框的
 const contextMenuVisible = ref(false);
 const contextMenuPosition = ref({ x: 0, y: 0 });
 const contextTargetConnection = ref<ConnectionInfo | null>(null);
+const showMoveSubMenu = ref(false);
 
 // 标签右键菜单状态
 const tagContextMenuVisible = ref(false);
@@ -438,6 +439,25 @@ const handleMenuAction = async (action: 'add' | 'edit' | 'delete' | 'clone') => 
               console.error("Cloning failed in component:", error);
           });
     }
+  }
+};
+
+const handleMoveConnection = async (conn: ConnectionInfo, folderId: number | null) => {
+  try {
+    const success = await connectionsStore.moveConnectionToFolder(conn.id, folderId);
+    if (success) {
+      uiNotificationsStore.addNotification({
+        message: t('folders.movedSuccess', '已成功移动到文件夹'),
+        type: 'success',
+      });
+      showMoveSubMenu.value = false;
+      closeContextMenu();
+    }
+  } catch (error: any) {
+    uiNotificationsStore.addNotification({
+      message: error?.message || t('common.unexpectedError'),
+      type: 'error',
+    });
   }
 };
 
@@ -831,15 +851,22 @@ const cancelEditingTag = () => {
             <div v-for="groupData in filteredAndGroupedConnections" :key="groupData.groupName" class="mb-1 last:mb-0">
               <!-- Group Header -->
               <div
-              class="group px-3 py-2 font-semibold flex items-center text-foreground rounded-md hover:bg-header/80 transition-colors duration-150"
+              class="group px-2.5 py-1.5 font-medium flex items-center text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150"
               :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
               @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
               @contextmenu.prevent="showTagContextMenu($event, groupData)"
             >
               <i
-                :class="['fas', expandedGroups[groupData.groupName] ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-4 text-center text-text-secondary group-hover:text-foreground transition-transform duration-200 ease-in-out', {'transform rotate-0': !expandedGroups[groupData.groupName]}]"
+                :class="['fas', expandedGroups[groupData.groupName] ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-3 text-center text-text-secondary group-hover:text-foreground transition-transform duration-200 ease-in-out', {'transform rotate-0': !expandedGroups[groupData.groupName]}]"
                 @click.stop="toggleGroup(groupData.groupName)"
-                class="cursor-pointer flex-shrink-0"
+                class="cursor-pointer flex-shrink-0 text-xs"
+              ></i>
+              <!-- Folder Icon -->
+              <i
+                :class="[
+                  'fas mr-2 w-4 text-center flex-shrink-0 text-xs',
+                  groupData.tagId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
+                ]"
               ></i>
               <!-- 编辑状态 -->
               <input
@@ -848,32 +875,32 @@ const cancelEditingTag = () => {
                 :ref="(el) => setTagInputRef(el, groupData.tagId === null ? 'untagged' : groupData.tagId)"
                 type="text"
                 v-model="editedTagName"
-                class="text-sm bg-input border border-primary rounded px-1 py-0 w-full"
+                class="text-xs bg-input border border-primary rounded px-1.5 py-0.5 w-full text-foreground focus:outline-none"
                 @blur="finishEditingTag"
                 @keydown.enter.prevent="finishEditingTag"
                 @keydown.esc.prevent="cancelEditingTag"
                 @click.stop
               />
               <!-- 显示状态 -->
-              <span
-                v-else
-                class="text-sm inline-block overflow-hidden text-ellipsis whitespace-nowrap"
-                :class="{ 'cursor-pointer hover:underline': true }"
-                :title="t('workspaceConnectionList.clickToEditTag')"
-                @click.stop="startEditingTag(groupData.tagId, groupData.groupName)"
-              >
-                {{ groupData.groupName }}
-              </span>
-              <!-- 占位符，占据剩余空间 -->
-              <div class="flex-grow min-w-0"></div>
-              <!-- 标签栏右侧的编辑按钮 -->
+              <div v-else class="flex items-center gap-1.5 truncate flex-grow min-w-0">
+                <span
+                  class="text-xs font-semibold inline-block overflow-hidden text-ellipsis whitespace-nowrap"
+                  :class="{ 'cursor-pointer hover:underline': true }"
+                  :title="t('workspaceConnectionList.clickToEditTag')"
+                  @click.stop="startEditingTag(groupData.tagId, groupData.groupName)"
+                >
+                  {{ groupData.groupName }}
+                </span>
+                <span class="text-[10px] text-text-secondary font-normal flex-shrink-0">({{ groupData.connections.length }})</span>
+              </div>
+              <!-- 文件夹右侧的编辑按钮 -->
               <button
                 v-if="groupData.tagId !== null && editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)"
                 @click.stop="handleTagMenuAction('manageTag', groupData)"
-                class="ml-2 px-1 h-6 flex items-center justify-center rounded text-text-secondary hover:text-primary hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-all duration-150 focus:outline-none"
+                class="ml-1 px-1 h-5 flex items-center justify-center rounded text-text-secondary hover:text-primary hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-all duration-150 focus:outline-none"
                 :title="t('workspaceConnectionList.manageTags.menuItem')"
               >
-                <i class="fas fa-edit fa-xs"></i>
+                <i class="fas fa-edit text-[10px]"></i>
               </button>
            </div>
             <!-- Connection Items List -->
@@ -954,6 +981,44 @@ const cancelEditingTag = () => {
               <i class="fas fa-clone mr-3 w-4 text-center text-text-secondary group-hover:text-primary"></i>
               <span>{{ t('connections.actions.clone') }}</span>
           </li>
+          <!-- 移至文件夹 -->
+          <li
+            v-if="contextTargetConnection"
+            class="relative group px-4 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
+            @mouseenter="showMoveSubMenu = true"
+            @mouseleave="showMoveSubMenu = false"
+          >
+            <div class="flex items-center">
+              <i class="fas fa-folder-tree mr-3 w-4 text-center text-amber-400"></i>
+              <span>{{ t('folders.moveToFolder', '移至文件夹') }}</span>
+            </div>
+            <i class="fas fa-chevron-right text-[10px] text-text-secondary"></i>
+
+            <!-- 子菜单 -->
+            <div
+              v-if="showMoveSubMenu"
+              class="absolute left-full top-0 ml-1 bg-popover border border-border shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
+              @click.stop
+            >
+              <div
+                @click="handleMoveConnection(contextTargetConnection!, null)"
+                class="px-2.5 py-1.5 text-xs text-text-secondary hover:bg-muted hover:text-foreground cursor-pointer flex items-center gap-2"
+              >
+                <i class="fas fa-inbox text-xs"></i>
+                <span>{{ t('folders.uncategorized', '未分类') }}</span>
+              </div>
+              <div v-if="tagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
+              <div
+                v-for="folder in tagsStore.folders"
+                :key="folder.id"
+                @click="handleMoveConnection(contextTargetConnection!, folder.id)"
+                class="px-2.5 py-1.5 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate"
+              >
+                <i class="fas fa-folder text-amber-400 text-xs"></i>
+                <span class="truncate">{{ folder.name }}</span>
+              </div>
+            </div>
+          </li>
           <li v-if="contextTargetConnection" class="group px-4 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1" @click="handleMenuAction('delete')">
               <i class="fas fa-trash-alt mr-3 w-4 text-center text-error/80 group-hover:text-error"></i>
               <span>{{ t('connections.actions.delete') }}</span>
@@ -992,8 +1057,8 @@ const cancelEditingTag = () => {
             class="group px-4 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
             @click="handleTagMenuAction('manageTag')"
           >
-            <i class="fas fa-tags mr-3 w-4 text-center text-text-secondary group-hover:text-primary"></i>
-            <span>{{ t('workspaceConnectionList.manageTags.menuItem') }}</span>
+            <i class="fas fa-folder mr-3 w-4 text-center text-amber-400"></i>
+            <span>{{ t('folders.manageFolder', t('workspaceConnectionList.manageTags.menuItem')) }}</span>
           </li>
           <li class="my-1 border-t border-border/50" v-if="contextTargetTagGroup && contextTargetTagGroup.tagId !== null && contextTargetTagGroup.connections.length > 0"></li>
           <li

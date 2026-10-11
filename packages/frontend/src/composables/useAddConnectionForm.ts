@@ -807,8 +807,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   const handleCreateTag = async (tagName: string) => {
       if (!tagName || tagName.trim().length === 0) return;
       const newTag = await tagsStore.addTag(tagName.trim());
-      if (newTag && !formData.tag_ids.includes(newTag.id)) {
-          formData.tag_ids.push(newTag.id);
+      if (newTag) {
+          formData.tag_ids = [newTag.id];
       }
   };
 
