@@ -77,11 +77,19 @@ const route = useRoute(); // Keep for download URL generation for now
 const sessionStore = useSessionStore(); // 实例化 Session Store
 const favoritePathsStore = useFavoritePathsStore(); // 实例化 FavoritePaths Store
 
+// --- 会话与实例级路径同步标记 ---
+let isInitialPathLoaded = false;
+let lastSyncedPath = '';
+let isInternalPathSyncing = false;
+let syncLockTimer: ReturnType<typeof setTimeout> | null = null;
+
 // --- 获取并存储 SFTP 管理器实例 ---
 // 使用 shallowRef 存储管理器实例，以便在 sessionId 变化时切换
 const currentSftpManager = shallowRef<SftpManagerInstance | null>(null);
 
 const initializeSftpManager = (sessionId: string, instanceId: string) => {
+    isInitialPathLoaded = false;
+    lastSyncedPath = '';
     const manager = sessionStore.getOrCreateSftpManager(sessionId, instanceId);
     if (!manager) {
         // 抛出错误或显示错误消息，阻止组件进一步渲染
@@ -219,11 +227,6 @@ watch(() => componentStateStore.isLoaded, () => {
   terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, terminalSyncMode.value);
 });
 
-// 防循环震荡互锁标记与定时器
-let isInternalPathSyncing = false;
-let syncLockTimer: ReturnType<typeof setTimeout> | null = null;
-let lastSyncedPath = '';
-
 // 路径格式标准化辅助方法（去除尾部非根斜杠，方便严格对比）
 const normalizePath = (p?: string | null): string => {
   if (!p) return '';
@@ -234,20 +237,145 @@ const normalizePath = (p?: string | null): string => {
   return trimmed;
 };
 
-// 发送 CD 命令到绑定终端（支持单向及双向防回环）
-const syncPathToTerminal = (targetPath?: string) => {
+interface TerminalSafetyCheckResult {
+  safe: boolean;
+  reason?: string;
+  isAlternateBuffer?: boolean;
+}
+
+/**
+ * 终端安全门禁检查：
+ * 判定目标终端当前是否处于可以安全接收并在空闲 Shell 命令行执行 cd 指令的状态。
+ * 杜绝在终端处于全屏交互程序 (vim/nano/htop/less)、交互式 CLI (Python/Node/MySQL REPL)、
+ * 敏感密码/口令输入、前台阻塞运行或未就绪时盲目注入 cd 指令。
+ */
+const checkTerminalSafety = (targetSession: any): TerminalSafetyCheckResult => {
+  if (!targetSession) {
+    return { safe: false, reason: '未找到关联终端会话' };
+  }
+
+  const termManager = targetSession.terminalManager;
+  if (!termManager) {
+    return { safe: false, reason: '终端管理器尚未就绪' };
+  }
+
+  const term = termManager.terminalInstance?.value;
+  if (!term) {
+    return { safe: false, reason: '终端底层实例尚未就绪' };
+  }
+
+  const activeBuffer = term.buffer?.active;
+  if (!activeBuffer) {
+    return { safe: false, reason: '终端缓冲区尚未就绪' };
+  }
+
+  // 1. 拦截备用屏幕缓冲区 (Alternate Buffer)
+  // 当用户在终端中打开 vim, nvim, vi, nano, less, more, htop, top, lazygit, ranger, tmux 等全屏交互程序时，
+  // 终端必然切换至 alternate 缓冲区。处于此状态下如果注入字符，会导致 vim 误触发快捷键甚至破坏代码！
+  if (activeBuffer.type === 'alternate') {
+    return {
+      safe: false,
+      isAlternateBuffer: true,
+      reason: '终端当前处于全屏交互程序 (如 vim / nano / htop / less) 中',
+    };
+  }
+
+  // 2. 拦截应用按键模式 (Application Cursor Keys Mode)
+  // 很多交互式 TUI 或菜单类 CLI 处于该模式下
+  if (Boolean((term as any).modes?.applicationCursorKeysMode)) {
+    return {
+      safe: false,
+      reason: '终端处于应用按键模式中 (可能处于交互式 TUI 应用中)',
+    };
+  }
+
+  // 3. 检查光标所在行内容与交互式 CLI 提示符
+  try {
+    const cursorY = activeBuffer.cursorY;
+    const baseY = activeBuffer.baseY;
+    const currentLine = activeBuffer.getLine(cursorY + baseY);
+    const lineText = currentLine ? currentLine.translateToString(true).trim() : '';
+
+    // 3.1 敏感输入提示拦截 (密码输入、口令输入、连接确认)
+    const sensitivePatterns = [
+      /(password|passphrase|pin|口令|密码)[:：]\s*$/i,
+      /^\[sudo\]\s+password\s+for/i,
+      /\(yes\/no(\/\[fingerprint\])?\)\?\s*$/i,
+      /\[y\/n\]\s*$/i,
+      /press any key to continue/i,
+      /按任意键继续/i,
+    ];
+    for (const pattern of sensitivePatterns) {
+      if (pattern.test(lineText)) {
+        return {
+          safe: false,
+          reason: `终端正在等待敏感输入或确认提示 ("${lineText}")`,
+        };
+      }
+    }
+
+    // 3.2 交互式 CLI / REPL 提示符拦截
+    const replPatterns = [
+      /^(>>>|\.\.\.)\s*$/, // Python REPL
+      /^>\s*$/, // Node.js / Deno 等简易提示符
+      /^(mysql|mariadb|sqlite|postgres|psql|redis|mongosh|redis-cli|iex|irb).*?>\s*$/i, // 数据库/语言 REPL
+      /^\((gdb|lldb|pdb)\).*>$/i, // 调试器
+      /^(php|julia|scala)\s*>\s*$/i,
+    ];
+    for (const pattern of replPatterns) {
+      if (pattern.test(lineText)) {
+        return {
+          safe: false,
+          reason: `终端处于交互式 CLI / REPL 命令行 ("${lineText}")`,
+        };
+      }
+    }
+
+    // 3.3 检查是否为正常处于空闲等待命令的原生 Shell 提示符
+    // 如果光标所在行有字符，但末尾完全不是任何常见的 Shell 提示符结尾符号
+    // 说明终端极有可能正在输出日志、正在执行前台进程 (如 tail -f, ping, 编译构建等)，或者用户已经输入了一半命令尚未回车提交
+    if (lineText.length > 0) {
+      // 匹配结尾为常规 Shell 提示符：# (root), $ (普通用户), % (zsh), ❯/➜/λ/⟩/»/› (oh-my-zsh/starship 等), > (PowerShell/CMD)
+      const hasStandardPromptEnding = /(#|\$|%|❯|➜|λ|⟩|»|›|>)\s*$/.test(lineText);
+      if (!hasStandardPromptEnding) {
+        return {
+          safe: false,
+          reason: `终端当前未处于空闲 Shell 命令行状态 (可能正在运行前台程序或正在输入: "${lineText.slice(-30)}")`,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[FileManager] 检测终端光标行状态异常:', err);
+  }
+
+  return { safe: true };
+};
+
+// 发送 CD 命令到绑定终端（支持单向及双向防回环 + 终端状态安全门禁）
+const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   const path = targetPath || currentSftpManager.value?.currentPath.value;
   if (!path || !path.trim().startsWith('/')) return;
   if (!props.wsDeps.isConnected.value) return;
 
   const normTarget = normalizePath(path);
-  if (lastSyncedPath && lastSyncedPath === normTarget) {
+  if (!isManual && lastSyncedPath && lastSyncedPath === normTarget) {
     return;
   }
 
   const targetSession = sessionStore.sessions.get(props.sessionId) || sessionStore.activeSession;
   if (!targetSession?.terminalManager) {
     console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot sync path to terminal: Terminal manager not found.`);
+    return;
+  }
+
+  // 核心安全防御门禁：检测终端当前是否安全适合接收 cd 指令
+  const safety = checkTerminalSafety(targetSession);
+  if (!safety.safe) {
+    console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] 已安全拦截向终端发送 cd 指令: ${safety.reason}`);
+    // 如果是用户点击“发送 CD 到终端”按钮主动触发的，弹出友好警告通知告知用户
+    if (isManual) {
+      uiNotificationsStore.showWarning(`无法同步目录：${safety.reason}`);
+    }
     return;
   }
 
@@ -265,8 +393,14 @@ const syncPathToTerminal = (targetPath?: string) => {
   try {
     targetSession.terminalManager.sendData(command);
     console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 已同步路径至终端: ${command.trim()}`);
+    if (isManual) {
+      uiNotificationsStore.showSuccess(`已发送路径切换指令至终端: ${normTarget}`);
+    }
   } catch (err) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 同步路径至终端失败:`, err);
+    if (isManual) {
+      uiNotificationsStore.showError('发送 cd 命令至终端失败');
+    }
   }
 };
 
@@ -279,7 +413,7 @@ const cycleTerminalSyncMode = () => {
 
   // 若切换为向终端同步或双向同步，立即触发一次当前路径同步到终端
   if (nextMode === 'bidirectional' || nextMode === 'to_terminal') {
-    syncPathToTerminal(currentSftpManager.value?.currentPath.value);
+    syncPathToTerminal(currentSftpManager.value?.currentPath.value, true);
   }
 };
 
@@ -433,13 +567,24 @@ watch([isSearchActive, searchQuery], ([active, query]) => {
 });
 
 // 监听当前路径变更，实时同步到云端工作区（仅同步有效绝对路径，杜绝相对路径占位）
-watch(() => currentSftpManager.value?.currentPath.value, (newPath) => {
+watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
   if (newPath && newPath.trim().startsWith('/')) {
     workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, { currentPath: newPath });
 
-    // 文件管理器 -> 终端：若处于双向同步或同步到终端模式，且非内部回环中，触发终端跟随
-    if (!isInternalPathSyncing && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
-      syncPathToTerminal(newPath);
+    const normNew = normalizePath(newPath);
+    const normOld = normalizePath(oldPath);
+
+    // 核心安全守卫：首次加载路径（如刚打开会话/SFTP连接建立后载入初始工作目录），或旧路径尚未确立时
+    // 坚决不向终端发送 cd 指令，避免每次打开会话都多执行一次无谓的 cd
+    if (!isInitialPathLoaded || !oldPath || !oldPath.trim().startsWith('/')) {
+      lastSyncedPath = normNew;
+      isInitialPathLoaded = true;
+      return;
+    }
+
+    // 仅当用户在文件管理器中主动切换了不同目录（且非内部回环）时，且处于同步模式时，才安全触发终端跟随
+    if (normNew !== normOld && !isInternalPathSyncing && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
+      syncPathToTerminal(newPath, false);
     }
   }
 }, { immediate: true });
@@ -1735,7 +1880,7 @@ const handleGoParent = () => {
 // --- 发送 CD 命令到终端的方法 ---
 const sendCdCommandToTerminal = () => {
   lastSyncedPath = ''; // 手动点击时强制同步
-  syncPathToTerminal();
+  syncPathToTerminal(undefined, true);
 };
 
 // --- 打开弹窗编辑器的方法 ---
