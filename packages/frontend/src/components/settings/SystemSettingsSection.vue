@@ -314,7 +314,12 @@
 
           <!-- 对齐策略 (极简单行) -->
           <div class="flex items-center justify-between text-xs text-text-secondary pt-0.5">
-            <span>{{ $t('settings.desktop.conflictPolicyTitle', '策略: 最新修改时间优先 (LWW)') }}</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-text-secondary">当前模式:</span>
+              <span class="font-medium text-foreground px-1.5 py-0.5 rounded bg-muted/40 border border-border/60 text-[11px]">
+                {{ currentSyncModeLabel }}
+              </span>
+            </div>
             <button
               type="button"
               @click="desktopSyncStore.showFirstSyncModal = true"
@@ -376,7 +381,7 @@
               type="button"
               @click="handleTriggerSyncNow"
               :disabled="!isSyncButtonEnabled"
-              :title="isSyncButtonEnabled ? $t('settings.desktop.syncNowTooltip', '立即与云端双向同步') : $t('settings.desktop.syncDisabledTooltip', '请先配置服务器地址和 API Key')"
+              :title="isSyncButtonEnabled ? `立即同步 (当前模式: ${currentSyncModeLabel})` : $t('settings.desktop.syncDisabledTooltip', '请先配置服务器地址和 API Key')"
               class="px-3 py-1.5 rounded-md shadow-sm transition text-xs font-medium flex items-center gap-1.5 ml-auto"
               :class="isSyncButtonEnabled ? 'bg-primary text-white hover:bg-primary/90 cursor-pointer' : 'bg-border/60 text-text-secondary cursor-not-allowed opacity-50'"
             >
@@ -566,6 +571,18 @@ const handleInvertModules = () => {
  */
 const isSyncButtonEnabled = computed(() => {
   return syncVpsUrl.value.trim().length > 0 && syncApiKey.value.trim().length > 0 && desktopSyncStore.selectedModules.length > 0;
+});
+
+const currentSyncModeLabel = computed(() => {
+  switch (desktopSyncStore.syncMode) {
+    case 'cloud_to_local':
+      return '以云端 VPS 为准 (覆盖本地)';
+    case 'local_to_cloud':
+      return '以当前本地为准 (覆盖云端)';
+    case 'bidirectional':
+    default:
+      return '智能双向合并 (推荐)';
+  }
 });
 
 const formatSyncTime = (timestamp: number) => {

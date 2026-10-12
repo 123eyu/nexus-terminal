@@ -35,6 +35,18 @@ function loadPersistedModules(): SyncModuleKey[] {
   return [...DEFAULT_MODULES];
 }
 
+export type SyncMode = 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
+
+function loadPersistedSyncMode(): SyncMode {
+  try {
+    const raw = localStorage.getItem('nexus_sync_mode');
+    if (raw && ['bidirectional', 'cloud_to_local', 'local_to_cloud'].includes(raw)) {
+      return raw as SyncMode;
+    }
+  } catch {}
+  return 'bidirectional';
+}
+
 export interface DesktopSyncStats {
   pushed: number;
   pulled: number;
@@ -47,9 +59,17 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   const vpsUrl = ref<string>('');
   const apiKey = ref<string>('');
   const conflictStrategy = ref<string>('lww');
+  const syncMode = ref<SyncMode>(loadPersistedSyncMode());
   const lastSyncTime = ref<number>(0);
   const autoSyncOnOpen = ref<boolean>(false);
   const selectedModules = ref<SyncModuleKey[]>(loadPersistedModules());
+
+  const setSyncMode = (mode: SyncMode) => {
+    syncMode.value = mode;
+    try {
+      localStorage.setItem('nexus_sync_mode', mode);
+    } catch {}
+  };
 
   const setSelectedModules = (modules: SyncModuleKey[]) => {
     selectedModules.value = [...modules];
@@ -85,6 +105,9 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         vpsUrl.value = res.data.config.vpsUrl || '';
         apiKey.value = res.data.config.apiKey || '';
         conflictStrategy.value = res.data.config.conflictStrategy || 'lww';
+        if (res.data.config.syncMode) {
+          setSyncMode(res.data.config.syncMode);
+        }
         lastSyncTime.value = res.data.config.lastSyncTime || 0;
         autoSyncOnOpen.value = !!res.data.config.autoSyncOnOpen;
       }
@@ -100,6 +123,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     vpsUrl: string;
     apiKey: string;
     conflictStrategy?: string;
+    syncMode?: SyncMode;
     autoSyncOnOpen?: boolean;
   }): Promise<boolean> => {
     try {
@@ -108,6 +132,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         vpsUrl.value = params.vpsUrl.trim();
         apiKey.value = params.apiKey.trim();
         if (params.conflictStrategy) conflictStrategy.value = params.conflictStrategy;
+        if (params.syncMode) setSyncMode(params.syncMode);
         if (typeof params.autoSyncOnOpen === 'boolean') autoSyncOnOpen.value = params.autoSyncOnOpen;
         return true;
       }
@@ -159,7 +184,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    * 触发一次同步 (支持模式: bidirectional, cloud_to_local, local_to_cloud，并支持按模块筛选)
    */
   const triggerSync = async (
-    mode: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud' = 'bidirectional',
+    mode?: SyncMode,
     modulesOverride?: SyncModuleKey[]
   ): Promise<boolean> => {
     if (!isConfigured.value) {
@@ -167,6 +192,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       return false;
     }
 
+    const activeMode = mode || syncMode.value || 'bidirectional';
     const activeModules = modulesOverride || selectedModules.value;
     if (activeModules.length === 0) {
       syncError.value = '请至少选择一个需要同步的数据模块';
@@ -182,11 +208,12 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       const res = await axios.post('/api/v1/desktop/sync/trigger', {
         vpsUrl: vpsUrl.value,
         apiKey: apiKey.value,
-        mode,
+        mode: activeMode,
         modules: activeModules
       });
 
       if (res.data?.success) {
+        setSyncMode(activeMode);
         lastSyncTime.value = res.data.lastSyncTime;
         syncStats.value = res.data.stats;
         const pushedCount = res.data.stats?.pushed || 0;
@@ -269,7 +296,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       showFirstSyncModal.value = true;
       return false;
     }
-    return triggerSync('bidirectional');
+    return triggerSync(syncMode.value);
   };
 
   return {
@@ -277,6 +304,8 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
     vpsUrl,
     apiKey,
     conflictStrategy,
+    syncMode,
+    setSyncMode,
     lastSyncTime,
     autoSyncOnOpen,
     selectedModules,

@@ -168,11 +168,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import { useDesktopSyncStore, SYNC_MODULE_OPTIONS } from '../../stores/desktopSync.store';
+import { ref, computed, watch } from 'vue';
+import { useDesktopSyncStore, SYNC_MODULE_OPTIONS, type SyncMode } from '../../stores/desktopSync.store';
 
 const desktopSyncStore = useDesktopSyncStore();
-const selectedMode = ref<'bidirectional' | 'cloud_to_local' | 'local_to_cloud'>('bidirectional');
+const selectedMode = ref<SyncMode>(desktopSyncStore.syncMode || 'bidirectional');
+
+watch(() => desktopSyncStore.showFirstSyncModal, (isOpen) => {
+  if (isOpen) {
+    selectedMode.value = desktopSyncStore.syncMode || 'bidirectional';
+  }
+});
 
 const activeModuleLabels = computed(() => {
   return SYNC_MODULE_OPTIONS

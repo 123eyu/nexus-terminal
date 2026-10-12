@@ -145,7 +145,27 @@ export class SyncThrottleScheduler {
 
       const hasLocalChanges = maxLocalSeqRow?.maxSeq && maxLocalSeqRow.maxSeq > pushCursor;
 
-      // 如果有本地变更，或者是由兜底定时器/手动调用的，发起一轮双向同步
+      // 检查当前配置的同步模式
+      let currentSyncMode = 'bidirectional';
+      try {
+        const jsonPath = path.join(getDataDir(), 'desktop-settings.json');
+        if (fs.existsSync(jsonPath)) {
+          const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+          if (parsed.syncMode) currentSyncMode = parsed.syncMode;
+        }
+      } catch {}
+
+      // 核心门禁：如果用户设置了以云端为准覆盖本地 (cloud_to_local)，
+      // 绝对禁止自动调用 executeSyncCycle 反向向云端推送本地变更！
+      if (currentSyncMode === 'cloud_to_local') {
+        if (hasLocalChanges && reason !== 'scheduled') {
+          console.log('[SyncScheduler] 当前模式为以云端为准覆盖本地 (cloud_to_local)，安全拦截向云端推送本地变更。');
+          this.isFlushing = false;
+          return;
+        }
+      }
+
+      // 如果有本地变更，或者是由兜底定时器/手动调用的，且当前允许双向同步，发起一轮同步
       if (hasLocalChanges || reason === 'manual' || reason === 'scheduled') {
         const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
         if (stats.pushed > 0 || stats.pulled > 0) {

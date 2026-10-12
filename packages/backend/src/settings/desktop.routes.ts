@@ -25,6 +25,7 @@ export interface DesktopSettings {
   rememberCloseChoice?: boolean;
   windowState?: WindowState;
   lastRoute?: string;
+  syncMode?: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
   [key: string]: any;
 }
 
@@ -167,6 +168,7 @@ router.get('/sync/config', (req: Request, res: Response): void => {
       vpsUrl: settings.syncVpsUrl || '',
       apiKey: settings.syncApiKey || '',
       conflictStrategy: settings.syncConflictStrategy || 'lww',
+      syncMode: settings.syncMode || 'bidirectional',
       lastSyncTime: settings.syncLastTime || 0,
       autoSyncOnOpen: settings.syncAutoOnOpen ?? false
     }
@@ -177,13 +179,14 @@ router.get('/sync/config', (req: Request, res: Response): void => {
  * 保存桌面端云端同步配置
  */
 router.post('/sync/config', (req: Request, res: Response): void => {
-  const { vpsUrl, apiKey, conflictStrategy, autoSyncOnOpen } = req.body;
+  const { vpsUrl, apiKey, conflictStrategy, autoSyncOnOpen, syncMode } = req.body;
   const current = readDesktopSettings();
   const updated: DesktopSettings = {
     ...current,
     syncVpsUrl: vpsUrl !== undefined ? String(vpsUrl).trim() : current.syncVpsUrl,
     syncApiKey: apiKey !== undefined ? String(apiKey).trim() : current.syncApiKey,
     syncConflictStrategy: conflictStrategy || current.syncConflictStrategy || 'lww',
+    syncMode: syncMode || current.syncMode || 'bidirectional',
     syncAutoOnOpen: typeof autoSyncOnOpen === 'boolean' ? autoSyncOnOpen : current.syncAutoOnOpen
   };
 
@@ -259,8 +262,11 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     const modules = Array.isArray(req.body.modules) ? req.body.modules : undefined;
     const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime, mode, modules);
 
-    // 同步成功，更新本地最后同步时间戳
+    // 同步成功，更新本地最后同步时间戳与当前同步模式偏好
     settings.syncLastTime = result.serverTime;
+    if (req.body.mode) {
+      settings.syncMode = req.body.mode;
+    }
     writeDesktopSettings(settings);
 
     // 仅在双向合并 (bidirectional) 且全量同步（未指定模块）时协同执行 v2 增量游标同步；
