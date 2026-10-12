@@ -50,6 +50,7 @@ export class SshSuspendService extends EventEmitter {
     connectionName: string;
     connectionId: string;
     logIdentifier: string;
+    initialBuffer?: string;
     customSuspendName?: string;
   }): Promise<string | null> {
     const {
@@ -60,18 +61,15 @@ export class SshSuspendService extends EventEmitter {
       connectionName,
       connectionId,
       logIdentifier,
+      initialBuffer,
       customSuspendName,
     } = details;
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Called for userId=${userId}, originalSessionId=${originalSessionId}`);
 
     // 检查 SSH client 和 channel 是否仍然可用
-    // ClientChannel 有 readable 和 writable, Client 本身没有直接的此类属性
-    // 如果 channel 不可读写，通常意味着底层连接有问题。
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Checking channel for originalSessionId=${originalSessionId}. Readable: ${channel?.readable}, Writable: ${channel?.writable}`);
     if (!channel || !channel.readable || !channel.writable) {
         console.warn(`[SshSuspendService WARN] takeOverMarkedSession: userId=${userId}, originalSessionId=${originalSessionId}. SSH channel is not usable. readable=${channel?.readable}, writable=${channel?.writable}. Cannot take over.`);
-        // 确保如果 SSH 连接已经关闭，日志文件仍然保留，但不创建挂起条目。
-        // SshSuspendService 不会管理这个“已经断开”的会话，但日志保留供用户清理。
         try { channel?.end(); } catch (e) { /* ignore */ }
         try { sshClient?.end(); } catch (e) { /* ignore */ }
         return null; // 无法接管
@@ -100,10 +98,12 @@ export class SshSuspendService extends EventEmitter {
       backendSshStatus: 'hanging',
       originalSessionId,
       userId,
+      inMemoryBuffer: initialBuffer ? [initialBuffer] : [],
+      pendingResumeBuffer: undefined,
     };
 
     userSessions.set(suspendSessionId, sessionDetails);
-    console.log(`[SshSuspendService INFO] takeOverMarkedSession: userId=${userId}, originalSessionId=${originalSessionId} taken over. New suspendSessionId=${suspendSessionId}, initial status=${sessionDetails.backendSshStatus}. Log identifier=${logIdentifier}`);
+    console.log(`[SshSuspendService INFO] takeOverMarkedSession: userId=${userId}, originalSessionId=${originalSessionId} taken over. New suspendSessionId=${suspendSessionId}, initial status=${sessionDetails.backendSshStatus}. Log identifier=${logIdentifier}, initialBufferLength=${initialBuffer ? initialBuffer.length : 0}`);
 
     await this.logStorageService.ensureLogDirectoryExists();
     
@@ -111,12 +111,18 @@ export class SshSuspendService extends EventEmitter {
     channel.on('data', (data: Buffer) => {
       const currentDetails = userSessions.get(suspendSessionId);
       if (currentDetails?.backendSshStatus === 'hanging') {
-        // console.log(`[SshSuspendService DEBUG] channel.on('data') for suspendSessionId=${suspendSessionId}: Writing to log ${logIdentifier}`);
+        // 如果正在恢复过渡，暂存到 pendingResumeBuffer 绝不丢弃
+        if (currentDetails.pendingResumeBuffer) {
+          currentDetails.pendingResumeBuffer.push(data);
+        } else {
+          const str = data.toString('utf-8');
+          if (!currentDetails.inMemoryBuffer) currentDetails.inMemoryBuffer = [];
+          currentDetails.inMemoryBuffer.push(str);
+        }
+        // 异步写入磁盘日志作为双轨保底
         this.logStorageService.writeToLog(logIdentifier, data.toString('utf-8')).catch(err => {
           console.error(`[SshSuspendService ERROR] channel.on('data') for suspendSessionId=${suspendSessionId}, log=${logIdentifier}: Failed to write to log:`, err);
         });
-      } else {
-        // console.log(`[SshSuspendService DEBUG] channel.on('data') for suspendSessionId=${suspendSessionId}: Backend status is ${currentDetails?.backendSshStatus}, not writing to log.`);
       }
     });
 
@@ -216,60 +222,63 @@ export class SshSuspendService extends EventEmitter {
    * 恢复指定的挂起会话。
    * @param userId 用户ID。
    * @param suspendSessionId 要恢复的挂起会话ID。
-   * @returns Promise<{ sshClient: Client; channel: ClientChannel; logData: string; connectionName: string; originalConnectionId: string; } | null> 恢复成功则返回客户端、通道、日志数据、连接名和原始连接ID，否则返回null。
+   * @returns Promise<{ sshClient: Client; channel: ClientChannel; logData: string; connectionName: string; originalConnectionId: string; getPendingResumeData?: () => Buffer[]; } | null> 恢复成功则返回客户端、通道、日志数据、连接名和原始连接ID，否则返回null。
    */
-  async resumeSession(userId: number, suspendSessionId: string): Promise<{ sshClient: Client; channel: ClientChannel; logData: string; connectionName: string; originalConnectionId: string; } | null> {
-    // console.log(`[SshSuspendService][用户: ${userId}] resumeSession 调用，suspendSessionId: ${suspendSessionId}`);
+  async resumeSession(userId: number, suspendSessionId: string): Promise<{
+    sshClient: Client;
+    channel: ClientChannel;
+    logData: string;
+    connectionName: string;
+    originalConnectionId: string;
+    getPendingResumeData?: () => Buffer[];
+  } | null> {
     const userSessions = this.getUserSessions(userId);
     const session = userSessions.get(suspendSessionId);
 
     if (!session) {
-      // console.warn(`[SshSuspendService][用户: ${userId}] resumeSession: 未找到挂起的会话 ${suspendSessionId}。`);
       return null;
     }
-    // console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 找到会话 ${suspendSessionId}，状态: ${session.backendSshStatus}`);
 
     if (session.backendSshStatus !== 'hanging') {
-      // console.warn(`[SshSuspendService][用户: ${userId}] resumeSession: 会话 ${suspendSessionId} 状态不为 'hanging' (当前: ${session.backendSshStatus})，无法恢复。`);
       return null;
     }
 
-    // 停止监听旧通道事件
-    this.removeChannelListeners(session.channel, session.sshClient);
-    // console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 已移除会话 ${suspendSessionId} 的旧监听器。`);
+    // 1. 先激活过渡队列，防止旧通道在移除监听器或切换期间发生数据丢失
+    session.pendingResumeBuffer = [];
 
+    // 2. 优先从内存缓冲中无缝拼接完整数据，避免异步磁盘 I/O 排队未落盘导致的尾部数据丢失
     let logData = '';
-    try {
-      // 使用 session.tempLogPath (即 logIdentifier, 基于 originalSessionId) 来读取日志
-      logData = await this.logStorageService.readLog(session.tempLogPath);
-      console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 已读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 的数据，长度: ${logData.length}`);
-    } catch (error) {
-      // console.error(`[SshSuspendService][用户: ${userId}] resumeSession: 读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 失败:`, error);
-      // 根据策略，读取日志失败可能也应该导致恢复失败
-      return null;
+    if (session.inMemoryBuffer && session.inMemoryBuffer.length > 0) {
+      logData = session.inMemoryBuffer.join('');
+      console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 优先从内存输出缓冲拼接挂起会话 ${suspendSessionId} 数据，长度: ${logData.length}`);
+    } else {
+      try {
+        logData = await this.logStorageService.readLog(session.tempLogPath);
+        console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 从磁盘读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 数据，长度: ${logData.length}`);
+      } catch (error) {
+        logData = '';
+      }
     }
+
+    // 停止挂起阶段的旧监听器
+    this.removeChannelListeners(session.channel, session.sshClient);
     
-    // 在从 userSessions 删除会话之前，保存需要返回的会话详细信息
+    // 保存返回的会话关键信息与过渡期缓冲
     const { sshClient, channel, connectionName, connectionId: originalConnectionId } = session;
+    const pendingData = session.pendingResumeBuffer;
 
     userSessions.delete(suspendSessionId);
-    // console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 已从内存中删除挂起会话 ${suspendSessionId} 的记录。`);
     try {
-      // 删除以 session.tempLogPath (logIdentifier) 命名的日志文件
       await this.logStorageService.deleteLog(session.tempLogPath);
-      // console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 已删除挂起会话 ${suspendSessionId} 的日志文件 (路径: ${session.tempLogPath})。`);
-    } catch (error) {
-      // console.warn(`[SshSuspendService][用户: ${userId}] resumeSession: 删除挂起会话 ${suspendSessionId} 的日志文件 (路径: ${session.tempLogPath}) 失败:`, error);
-      // 日志删除失败不应阻止恢复流程继续
-    }
+    } catch (error) {}
 
-    // console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 挂起会话 ${suspendSessionId} 准备返回恢复数据。`);
     return {
       sshClient,
       channel,
       logData,
       connectionName,
-      originalConnectionId
+      originalConnectionId,
+      getPendingResumeData: () => pendingData || [],
     };
   }
 

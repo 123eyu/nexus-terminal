@@ -183,34 +183,79 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                         dbConnectionId: parseInt(result.originalConnectionId, 10), // 从结果中恢复并转换为数字
                                         connectionName: result.connectionName, // 从结果中恢复
                                         ipAddress: clientIp,
-                                        isShellReady: true, // 假设恢复后 Shell 立即可用
+                                        isShellReady: true, // 恢复后 Shell 立即可用
+                                        recentOutputBuffer: [],
+                                        recentOutputBytes: 0,
                                     };
                                     clientStates.set(newFrontendSessionId, newSessionState);
                                     ws.sessionId = newFrontendSessionId; // 将当前 ws 与新会话关联
-                                    // console.log(`[WebSocket Handler][${type}] 新 ClientState (ID: ${newFrontendSessionId}) 已设置并关联到当前 WebSocket。`);
 
-                                    // +++ 为恢复的会话初始化 SFTP +++
-                                    // console.log(`[WebSocket Handler][${type}] 尝试为恢复的会话 ${newFrontendSessionId} 初始化 SFTP。`);
-                                    sftpService.initializeSftpSession(newFrontendSessionId)
-                                        .then(() => {
-                                            // console.log(`[WebSocket Handler][${type}] SFTP 初始化调用完成 (可能异步) for ${newFrontendSessionId}。`);
-                                            // sftp_ready 消息会由 sftpService 内部发送
-                                        })
-                                        .catch(sftpInitErr => {
-                                            console.error(`[WebSocket Handler][${type}] 为恢复的会话 ${newFrontendSessionId} 初始化 SFTP 失败:`, sftpInitErr);
-                                            // 即使 SFTP 初始化失败，SSH 会话仍然恢复
-                                        });
-                                    // +++ 结束 SFTP 初始化 +++
+                                    // 为恢复的会话初始化 SFTP (异步后台执行)
+                                    sftpService.initializeSftpSession(newFrontendSessionId).catch(sftpInitErr => {
+                                        console.error(`[WebSocket Handler][${type}] 为恢复的会话 ${newFrontendSessionId} 初始化 SFTP 失败:`, sftpInitErr);
+                                    });
 
-                                    // 重新设置事件监听器，将数据流导向新的前端会话
-                                    result.channel.removeAllListeners('data'); // 清除 SshSuspendService 可能设置的监听器
+                                    // 1. 第一步：先向前端发送挂起与历史日志数据块 SSH_OUTPUT_CACHED_CHUNK
+                                    console.log(`[SSH Suspend Backend] 准备发送恢复日志数据给前端 (长度: ${result.logData?.length || 0})`);
+                                    const normalizedLogData = (result.logData || '').replace(/\r?\n/g, '\r\n');
+                                    if (normalizedLogData) {
+                                        if (!newSessionState.recentOutputBuffer) newSessionState.recentOutputBuffer = [];
+                                        newSessionState.recentOutputBuffer.push(normalizedLogData);
+                                        newSessionState.recentOutputBytes = Buffer.byteLength(normalizedLogData);
+                                    }
+                                    const logChunkResponse: SshOutputCachedChunk = {
+                                        type: 'SSH_OUTPUT_CACHED_CHUNK',
+                                        payload: { frontendSessionId: newFrontendSessionId, data: normalizedLogData, isLastChunk: true }
+                                    };
+                                    if (ws.readyState === WebSocket.OPEN) {
+                                        ws.send(JSON.stringify(logChunkResponse));
+                                    }
+
+                                    // 2. 第二步：发送恢复过渡期间暂存的数据（若有）
+                                    if (typeof (result as any).getPendingResumeData === 'function') {
+                                        const pendingBuffers: Buffer[] = (result as any).getPendingResumeData();
+                                        if (pendingBuffers && pendingBuffers.length > 0) {
+                                            console.log(`[SSH Suspend Backend] 正在回放恢复过渡期间暂存的数据块 (${pendingBuffers.length} 块)`);
+                                            for (const buf of pendingBuffers) {
+                                                const utf8Str = buf.toString('utf-8');
+                                                if (!newSessionState.recentOutputBuffer) newSessionState.recentOutputBuffer = [];
+                                                newSessionState.recentOutputBuffer.push(utf8Str);
+                                                newSessionState.recentOutputBytes = (newSessionState.recentOutputBytes || 0) + Buffer.byteLength(utf8Str);
+                                                if (ws.readyState === WebSocket.OPEN) {
+                                                    ws.send(JSON.stringify({
+                                                        type: 'ssh:output',
+                                                        payload: Buffer.from(utf8Str, 'utf8').toString('base64'),
+                                                        encoding: 'base64'
+                                                    }));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲
+                                    result.channel.removeAllListeners('data');
                                     result.channel.on('data', (data: Buffer) => {
+                                        const utf8Data = data.toString('utf8');
+                                        if (!newSessionState.recentOutputBuffer) {
+                                            newSessionState.recentOutputBuffer = [];
+                                            newSessionState.recentOutputBytes = 0;
+                                        }
+                                        newSessionState.recentOutputBuffer.push(utf8Data);
+                                        newSessionState.recentOutputBytes = (newSessionState.recentOutputBytes || 0) + Buffer.byteLength(utf8Data);
+                                        while (newSessionState.recentOutputBytes > 1024 * 1024 && newSessionState.recentOutputBuffer.length > 1) {
+                                            const shifted = newSessionState.recentOutputBuffer.shift();
+                                            if (shifted) newSessionState.recentOutputBytes -= Buffer.byteLength(shifted);
+                                        }
+
                                         if (ws.readyState === WebSocket.OPEN) {
-                                            // console.debug(`[WebSocket Handler][${type}] 发送 ssh:output for ${newFrontendSessionId}`);
-                                            // 保持与 ssh.handler.ts 中 ssh:output 格式一致
-                                            ws.send(JSON.stringify({ type: 'ssh:output', payload: data.toString('base64'), encoding: 'base64' }));
+                                            ws.send(JSON.stringify({
+                                                type: 'ssh:output',
+                                                payload: Buffer.from(utf8Data, 'utf8').toString('base64'),
+                                                encoding: 'base64'
+                                            }));
                                         }
                                     });
+
                                     result.channel.on('close', () => {
                                         console.log(`[WebSocket Handler][${type}] 恢复的会话 ${newFrontendSessionId} 的 channel 已关闭。`);
                                         if (ws.readyState === WebSocket.OPEN) {
@@ -218,52 +263,31 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                         }
                                         cleanupClientConnection(newFrontendSessionId);
                                     });
-                                     result.sshClient.on('error', (err: Error) => {
+                                    result.sshClient.on('error', (err: Error) => {
                                         console.error(`[WebSocket Handler][${type}] 恢复后的 SSH 客户端错误 (会话: ${newFrontendSessionId}):`, err);
                                         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:error', payload: { sessionId: newFrontendSessionId, error: err.message } }));
                                         cleanupClientConnection(newFrontendSessionId);
                                     });
-                                    // console.log(`[WebSocket Handler][${type}] 已为恢复的会话 ${newFrontendSessionId} 设置事件监听器。`);
 
-                                    // 发送缓存日志块
-                                    console.log('[SSH Suspend Backend] Log data to send to frontend:', result.logData);
-                                    const normalizedLogData = (result.logData || '').replace(/\r?\n/g, '\r\n');
-                                    const logChunkResponse: SshOutputCachedChunk = {
-                                        type: 'SSH_OUTPUT_CACHED_CHUNK',
-                                        payload: { frontendSessionId: newFrontendSessionId, data: normalizedLogData, isLastChunk: true }
-                                    };
-                                    if (ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify(logChunkResponse));
-                                        // console.log(`[WebSocket Handler][${type}] 已发送 SSH_OUTPUT_CACHED_CHUNK 给 ${newFrontendSessionId} (数据长度: ${result.logData.length})。`);
-                                    } else {
-                                        // console.warn(`[WebSocket Handler][${type}] WebSocket 在发送 SSH_OUTPUT_CACHED_CHUNK 前已关闭 (会话 ${newFrontendSessionId})。`);
-                                    }
-
-                                    // +++ 发送 ssh:connected 消息 +++
+                                    // 4. 第四步：发送 ssh:connected 与 SSH_SUSPEND_RESUMED_NOTIF 通知前端会话已激活
                                     if (ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify({
                                             type: 'ssh:connected',
                                             payload: {
-                                                connectionId: newSessionState.dbConnectionId, // 使用已恢复的 dbConnectionId
-                                                sessionId: newFrontendSessionId // 使用新的前端会话 ID
+                                                connectionId: newSessionState.dbConnectionId,
+                                                sessionId: newFrontendSessionId
                                             }
                                         }));
                                         console.log(`[WebSocket Handler][SSH_SUSPEND_RESUME_REQUEST] 已发送 ssh:connected 给 ${newFrontendSessionId}。`);
-                                    }
-                                
-                                    
-                                    const responseNotification: SshSuspendResumedNotification = { // 确保变量名不冲突且类型正确
-                                        type: 'SSH_SUSPEND_RESUMED_NOTIF', // 改回与前端和新类型定义一致
-                                        payload: { suspendSessionId, newFrontendSessionId, success: true }
-                                    };
-                                    if (ws.readyState === WebSocket.OPEN) {
+
+                                        const responseNotification: SshSuspendResumedNotification = {
+                                            type: 'SSH_SUSPEND_RESUMED_NOTIF',
+                                            payload: { suspendSessionId, newFrontendSessionId, success: true }
+                                        };
                                         ws.send(JSON.stringify(responseNotification));
-                                        // console.log(`[WebSocket Handler][${type}] 已发送 SSH_SUSPEND_RESUMED_NOTIF 给 ${newFrontendSessionId}。`);
-                                    } else {
-                                        // console.warn(`[WebSocket Handler][${type}] WebSocket 在发送 SSH_SUSPEND_RESUMED_NOTIF 前已关闭 (会话 ${newFrontendSessionId})。`);
                                     }
 
-                                    // 在成功恢复并通知前端后，调用 handleSshResumeSuccess 启动状态监控
+                                    // 启动状态监控
                                     handleSshResumeSuccess(newFrontendSessionId);
 
                                 } else {

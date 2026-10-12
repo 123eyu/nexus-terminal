@@ -27,6 +27,8 @@ export interface ClientState { // 导出以便 Service 可以导入
     pendingDimensions?: { cols: number; rows: number }; // 暂存 Shell 就绪前收到的终端尺寸
     isExplicitlyClosed?: boolean; // 标记是否被客户端主动显式关闭（杜绝转入自动挂起）
     closeReason?: string;
+    recentOutputBuffer?: string[]; // 内存中维护的最近终端输出缓冲（环形保留，避免断线/刷新丢失未同步数据）
+    recentOutputBytes?: number;    // 缓冲累计字节数
     // suspendLogWritableStream?: NodeJS.WritableStream; // 移除，将直接使用 temporaryLogStorageService.writeToLog
 }
 

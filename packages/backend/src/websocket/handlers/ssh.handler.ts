@@ -69,6 +69,8 @@ export async function handleSshConnect(
             connectionName: connInfo!.name,
             ipAddress: clientIp,
             isShellReady: false,
+            recentOutputBuffer: [],
+            recentOutputBytes: 0,
         };
         clientStates.set(newSessionId, newState);
         console.log(`WebSocket: 为用户 ${ws.username} (IP: ${clientIp}) 创建新会话 ${newSessionId} (DB ID: ${dbConnectionIdAsNumber}, 连接名称: ${newState.connectionName})`);
@@ -115,32 +117,58 @@ export async function handleSshConnect(
                 }
 
                 stream.on('data', (data: Buffer) => {
+                    const utf8Data = data.toString('utf8');
                     if (ws.readyState === WebSocket.OPEN) {
-                        // 确保数据以 UTF-8 编码转换为 Base64
-                        const utf8Data = data.toString('utf8');
                         ws.send(JSON.stringify({ type: 'ssh:output', payload: Buffer.from(utf8Data, 'utf8').toString('base64'), encoding: 'base64' }));
                     }
-                    // 如果会话被标记为待挂起，则将输出写入日志
-                    const currentState = clientStates.get(newSessionId); // 获取最新的状态
-                    if (currentState?.isMarkedForSuspend && currentState.suspendLogPath) {
-                        temporaryLogStorageService.writeToLog(currentState.suspendLogPath, data.toString('utf-8')).catch(err => {
-                            console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的日志失败 (路径: ${currentState.suspendLogPath}):`, err);
-                        });
+
+                    const currentState = clientStates.get(newSessionId);
+                    if (currentState) {
+                        if (!currentState.recentOutputBuffer) {
+                            currentState.recentOutputBuffer = [];
+                            currentState.recentOutputBytes = 0;
+                        }
+                        currentState.recentOutputBuffer.push(utf8Data);
+                        currentState.recentOutputBytes = (currentState.recentOutputBytes || 0) + Buffer.byteLength(utf8Data);
+                        // 环形缓冲保留上限 1MB (1024 * 1024 字节)
+                        while (currentState.recentOutputBytes > 1024 * 1024 && currentState.recentOutputBuffer.length > 1) {
+                            const shifted = currentState.recentOutputBuffer.shift();
+                            if (shifted) currentState.recentOutputBytes -= Buffer.byteLength(shifted);
+                        }
+
+                        // 如果会话被标记为待挂起，则同时将输出写入日志
+                        if (currentState.isMarkedForSuspend && currentState.suspendLogPath) {
+                            temporaryLogStorageService.writeToLog(currentState.suspendLogPath, utf8Data).catch(err => {
+                                console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的日志失败 (路径: ${currentState.suspendLogPath}):`, err);
+                            });
+                        }
                     }
                 });
                 stream.stderr.on('data', (data: Buffer) => {
                     console.error(`SSH Stderr (会话: ${newSessionId}): ${data.toString('utf8').substring(0, 100)}...`);
+                    const utf8ErrData = data.toString('utf8');
                     if (ws.readyState === WebSocket.OPEN) {
-                        // 确保数据以 UTF-8 编码转换为 Base64
-                        const utf8ErrData = data.toString('utf8');
                         ws.send(JSON.stringify({ type: 'ssh:output', payload: Buffer.from(utf8ErrData, 'utf8').toString('base64'), encoding: 'base64' }));
                     }
-                    // 同样，如果会话被标记为待挂起，则将 stderr 输出写入日志
+
                     const currentState = clientStates.get(newSessionId);
-                    if (currentState?.isMarkedForSuspend && currentState.suspendLogPath) {
-                        temporaryLogStorageService.writeToLog(currentState.suspendLogPath, `[STDERR] ${data.toString('utf-8')}`).catch(err => {
-                            console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的 STDERR 日志失败 (路径: ${currentState.suspendLogPath}):`, err);
-                        });
+                    if (currentState) {
+                        if (!currentState.recentOutputBuffer) {
+                            currentState.recentOutputBuffer = [];
+                            currentState.recentOutputBytes = 0;
+                        }
+                        currentState.recentOutputBuffer.push(utf8ErrData);
+                        currentState.recentOutputBytes = (currentState.recentOutputBytes || 0) + Buffer.byteLength(utf8ErrData);
+                        while (currentState.recentOutputBytes > 1024 * 1024 && currentState.recentOutputBuffer.length > 1) {
+                            const shifted = currentState.recentOutputBuffer.shift();
+                            if (shifted) currentState.recentOutputBytes -= Buffer.byteLength(shifted);
+                        }
+
+                        if (currentState.isMarkedForSuspend && currentState.suspendLogPath) {
+                            temporaryLogStorageService.writeToLog(currentState.suspendLogPath, `[STDERR] ${utf8ErrData}`).catch(err => {
+                                console.error(`[SSH Handler] 写入标记会话 ${newSessionId} 的 STDERR 日志失败 (路径: ${currentState.suspendLogPath}):`, err);
+                            });
+                        }
                     }
                 });
                 stream.on('close', () => {

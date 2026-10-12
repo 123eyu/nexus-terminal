@@ -33,6 +33,10 @@ export interface SuspendSessionDetails {
   originalSessionId: string;
   /** 用户ID */
   userId: number;
+  /** 内存中的输出缓冲（保证挂起与恢复期间 100% 连续无丢失） */
+  inMemoryBuffer?: string[];
+  /** 挂起恢复过渡期间暂存的实时数据流队列 */
+  pendingResumeBuffer?: Buffer[];
 }
 
 /**

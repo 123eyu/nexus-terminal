@@ -1088,6 +1088,10 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       }
 
       logSync('恭喜！工作区全量状态无缝恢复完成！');
+      // 恢复完成后及时防抖更新一次云端快照，确保新会话 ID 迅速沉淀入库
+      if (syncEnabled.value && !isTakenOver.value) {
+        triggerDebouncedSave(1000);
+      }
     } catch (err: any) {
       logSyncError('恢复工作区发生错误:', err);
     } finally {

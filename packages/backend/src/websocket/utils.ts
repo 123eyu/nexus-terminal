@@ -95,55 +95,46 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
             state.sshClient = undefined as any;
             state.sshShellStream = undefined;
         } else if (!state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.ws.userId !== undefined) {
-            try {
-                const syncRecord = await workspaceSyncService.getState(state.ws.userId);
-                const isInSyncedSnapshot = syncRecord.state?.sessions?.some(
-                    (s: any) => String(s.sessionId) === String(sessionId)
-                );
+            // 只要不是显式主动关闭，网络断开（包括刷新 1001、网络异常等），均保护性自动转入挂起！
+            console.log(`WebSocket: 会话 ${sessionId} 发生网络断开（非显式关闭），自动转入挂起保活模式...`);
+            state.isMarkedForSuspend = true;
+            if (!state.suspendLogPath) {
+                state.suspendLogPath = sessionId;
+            }
 
-                if (syncRecord.state && syncRecord.state.syncEnabled && isInSyncedSnapshot) {
-                    console.log(`WebSocket: 用户 ${state.ws.userId} 启用同步且会话在活跃快照中，网络断开时自动挂起 ${sessionId}...`);
-                    state.isMarkedForSuspend = true;
-                    if (!state.suspendLogPath) {
-                        state.suspendLogPath = sessionId;
-                    }
+            // 获取初始缓冲：优先使用内存中积累的真实最近输出 recentOutputBuffer
+            let initialBuffer = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '';
 
-                    // 如果快照中存有该会话最新的终端屏幕缓冲区，预写入到挂起日志，供恢复时回放
-                    if (syncRecord.state.sessions && Array.isArray(syncRecord.state.sessions)) {
+            // 如果后端内存缓冲为空，尝试从快照终端缓冲区获取保底历史
+            if (!initialBuffer) {
+                try {
+                    const syncRecord = await workspaceSyncService.getState(state.ws.userId);
+                    if (syncRecord.state?.sessions && Array.isArray(syncRecord.state.sessions)) {
                         const matchedSync = syncRecord.state.sessions.find(
                             (s: any) => String(s.sessionId) === String(sessionId)
                         );
                         if (matchedSync && matchedSync.terminalBuffer) {
-                            try {
-                                console.log(`WebSocket: 为自动挂起写入终端屏幕历史 (会话 ${sessionId}, 字符数: ${matchedSync.terminalBuffer.length})...`);
-                                await temporaryLogStorageService.ensureLogDirectoryExists();
-                                const normalized = matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n');
-                                const formatted = normalized;
-                                await temporaryLogStorageService.overwriteLog(state.suspendLogPath, formatted);
-                            } catch (logErr) {
-                                console.warn(`[cleanupClientConnection] 写入终端历史日志失败:`, logErr);
-                            }
+                            initialBuffer = matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n');
                         }
                     }
-                } else {
-                    console.log(`WebSocket: 会话 ${sessionId} 未在云端快照中或未启用同步，网络断开时直接释放 SSH。`);
-                    try {
-                        state.sshShellStream?.destroy?.();
-                        state.sshShellStream?.end?.();
-                        state.sshClient?.destroy?.();
-                        state.sshClient?.end?.();
-                    } catch (closeErr) {}
-                    state.sshClient = undefined as any;
-                    state.sshShellStream = undefined;
+                } catch (e) {}
+            }
+
+            // 写入日志文件作为初始日志（仅写入初始历史，绝不在此后随意覆盖）
+            if (initialBuffer) {
+                try {
+                    await temporaryLogStorageService.ensureLogDirectoryExists();
+                    await temporaryLogStorageService.overwriteLog(state.suspendLogPath, initialBuffer);
+                } catch (logErr) {
+                    console.warn(`[cleanupClientConnection] 写入挂起初始日志失败:`, logErr);
                 }
-            } catch (err: any) {
-                console.warn(`[cleanupClientConnection] 检查工作区同步配置失败:`, err.message);
             }
         }
 
         if (state.isMarkedForSuspend && state.sshClient && state.sshShellStream && state.suspendLogPath && state.ws.userId !== undefined) {
             console.log(`WebSocket: 会话 ${sessionId} 已被标记为待挂起，尝试移交给 SshSuspendService...`);
             try {
+                const initialBufferToPass = state.recentOutputBuffer ? state.recentOutputBuffer.join('') : undefined;
                 const takeoverDetails = {
                     userId: state.ws.userId,
                     originalSessionId: sessionId, // sessionId 是原始活动会话的ID
@@ -152,6 +143,7 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                     connectionName: state.connectionName || '未知连接',
                     connectionId: String(state.dbConnectionId),
                     logIdentifier: state.suspendLogPath, // 这是基于 originalSessionId 的日志标识
+                    initialBuffer: initialBufferToPass,
                     customSuspendName: undefined, // 如果需要，可以从 state 或其他地方获取
                 };
                 
