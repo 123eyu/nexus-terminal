@@ -1,11 +1,7 @@
 name: Build & Release Desktop App
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+  # 仅保留手动触发 (可在 GitHub Actions 页面随时手动点击 "Run workflow" 构建发布，commit不会自动构建)
   workflow_dispatch:
     inputs:
       release_title:
