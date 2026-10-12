@@ -1318,7 +1318,7 @@
     "connectAllSshInGroupMenu": "Connect All",
     "noSshConnectionsToConnectMenu": "No SSH Connections",
     "manageTags": {
-      "title": "Manage Tag Connections",
+      "title": "Manage Connection Folders",
       "searchPlaceholder": "Search connections...",
       "selectAll": "Select All",
       "deselectAll": "Deselect All",

@@ -823,8 +823,8 @@
         <!-- 5. 移至文件夹 -->
         <li
           class="relative group px-3 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @mouseenter="showMoveSubMenu = true"
-          @mouseleave="showMoveSubMenu = false"
+          @mouseenter="handleMoveSubMenuTriggerEnter"
+          @mouseleave="handleMoveSubMenuTriggerLeave"
         >
           <div class="flex items-center gap-2.5">
             <i class="fas fa-folder-tree text-xs text-amber-400 w-4 text-center"></i>
@@ -835,8 +835,19 @@
           <!-- 子菜单：所有文件夹列表 -->
           <div
             v-if="showMoveSubMenu"
-            class="absolute left-full top-0 ml-1 bg-popover text-foreground border border-border/70 shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
-            style="background-color: var(--popover-bg-color, var(--app-bg-color));"
+            :class="[
+              'absolute bg-popover text-foreground border border-border/70 shadow-xl rounded-xl py-1 z-50 min-w-[160px] overflow-y-auto',
+              moveSubMenuPlacement.alignX === 'left'
+                ? 'right-[calc(100%+4px)] after:content-[\'\'] after:absolute after:-right-2 after:top-0 after:bottom-0 after:w-2'
+                : 'left-[calc(100%+4px)] before:content-[\'\'] before:absolute before:-left-2 before:top-0 before:bottom-0 before:w-2',
+              moveSubMenuPlacement.alignY === 'bottom' ? 'bottom-0' : 'top-0'
+            ]"
+            :style="{
+              backgroundColor: 'var(--popover-bg-color, var(--app-bg-color))',
+              maxHeight: moveSubMenuPlacement.maxHeight
+            }"
+            @mouseenter="handleMoveSubMenuEnter"
+            @mouseleave="handleMoveSubMenuLeave"
             @click.stop
           >
             <div
@@ -1092,6 +1103,77 @@ const quickCommandContextMenuVisible = ref(false);
 const quickCommandContextMenuPosition = ref({ x: 0, y: 0 });
 const quickCommandContextTargetCommand = ref<QuickCommandFE | null>(null);
 const showMoveSubMenu = ref(false);
+let moveSubMenuCloseTimer: ReturnType<typeof setTimeout> | null = null;
+const moveSubMenuPlacement = ref<{
+  alignX: 'left' | 'right';
+  alignY: 'top' | 'bottom';
+  maxHeight?: string;
+}>({ alignX: 'right', alignY: 'top', maxHeight: '192px' });
+
+const handleMoveSubMenuTriggerEnter = (event: MouseEvent) => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
+  const triggerEl = event.currentTarget as HTMLElement;
+  if (triggerEl) {
+    const rect = triggerEl.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    const subMenuWidth = 170;
+    const estimatedHeight = 210;
+
+    // 水平方向：右侧空间不足且左侧空间更大时，向左翻转
+    const spaceRight = windowWidth - rect.right;
+    const spaceLeft = rect.left;
+    const alignX = (spaceRight < subMenuWidth && spaceLeft > spaceRight) ? 'left' : 'right';
+
+    // 垂直方向：下方空间不足且上方空间更大时，向上贴底翻转
+    const spaceBelow = windowHeight - rect.top;
+    const spaceAbove = rect.bottom;
+    const alignY = (spaceBelow < estimatedHeight && spaceAbove > spaceBelow) ? 'bottom' : 'top';
+
+    // 动态限制最大高度，防止极端窗口尺寸下溢出可视区域
+    const availableSpace = alignY === 'top' ? (spaceBelow - 16) : (spaceAbove - 16);
+    const calculatedMaxHeight = Math.max(120, Math.min(220, Math.floor(availableSpace)));
+
+    moveSubMenuPlacement.value = {
+      alignX,
+      alignY,
+      maxHeight: `${calculatedMaxHeight}px`
+    };
+  }
+  showMoveSubMenu.value = true;
+};
+
+const handleMoveSubMenuTriggerLeave = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+  }
+  moveSubMenuCloseTimer = setTimeout(() => {
+    showMoveSubMenu.value = false;
+    moveSubMenuCloseTimer = null;
+  }, 180);
+};
+
+const handleMoveSubMenuEnter = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
+  showMoveSubMenu.value = true;
+};
+
+const handleMoveSubMenuLeave = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+  }
+  moveSubMenuCloseTimer = setTimeout(() => {
+    showMoveSubMenu.value = false;
+    moveSubMenuCloseTimer = null;
+  }, 180);
+};
 
 // +++ 文件夹弹窗状态 +++
 const isCreatingFolderModal = ref(false);
@@ -1485,6 +1567,10 @@ onBeforeUnmount(() => {
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
+  }
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
   }
   document.removeEventListener('click', closeQuickCommandContextMenu);
   document.removeEventListener('click', closeFolderContextMenu);
@@ -1919,6 +2005,11 @@ const showQuickCommandContextMenu = (event: MouseEvent, command: QuickCommandFE)
 const closeQuickCommandContextMenu = () => {
   quickCommandContextMenuVisible.value = false;
   quickCommandContextTargetCommand.value = null;
+  showMoveSubMenu.value = false;
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
   document.removeEventListener('click', closeQuickCommandContextMenu);
 };
 

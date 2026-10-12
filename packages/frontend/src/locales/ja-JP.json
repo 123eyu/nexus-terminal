@@ -1554,7 +1554,7 @@
     "connectAllSshInGroupMenu": "すべて接続",
     "noSshConnectionsToConnectMenu": "SSH 接続なし",
     "manageTags": {
-      "title": "タグ接続の管理",
+      "title": "接続フォルダーの管理",
       "searchPlaceholder": "接続を検索...",
       "selectAll": "すべて選択",
       "deselectAll": "すべて選択解除",

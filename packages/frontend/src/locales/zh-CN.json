@@ -1322,7 +1322,7 @@
     "connectAllSshInGroupMenu": "连接全部",
     "noSshConnectionsToConnectMenu": "无 SSH 连接",
     "manageTags": {
-      "title": "管理标签连接",
+      "title": "管理连接文件夹",
       "searchPlaceholder": "搜索连接...",
       "selectAll": "全选",
       "deselectAll": "取消全选",

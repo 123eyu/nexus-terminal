@@ -76,6 +76,77 @@ const contextMenuVisible = ref(false);
 const contextMenuPosition = ref({ x: 0, y: 0 });
 const contextTargetConnection = ref<ConnectionInfo | null>(null);
 const showMoveSubMenu = ref(false);
+let moveSubMenuCloseTimer: ReturnType<typeof setTimeout> | null = null;
+const moveSubMenuPlacement = ref<{
+  alignX: 'left' | 'right';
+  alignY: 'top' | 'bottom';
+  maxHeight?: string;
+}>({ alignX: 'right', alignY: 'top', maxHeight: '192px' });
+
+const handleMoveSubMenuTriggerEnter = (event: MouseEvent) => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
+  const triggerEl = event.currentTarget as HTMLElement;
+  if (triggerEl) {
+    const rect = triggerEl.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    const subMenuWidth = 170;
+    const estimatedHeight = 210;
+
+    // 水平方向：如果父项右侧剩余空间不足以容纳子菜单且左侧空间更大，向左翻转
+    const spaceRight = windowWidth - rect.right;
+    const spaceLeft = rect.left;
+    const alignX = (spaceRight < subMenuWidth && spaceLeft > spaceRight) ? 'left' : 'right';
+
+    // 垂直方向：如果下方剩余空间不足以展开且上方空间更大，向上贴底翻转
+    const spaceBelow = windowHeight - rect.top;
+    const spaceAbove = rect.bottom;
+    const alignY = (spaceBelow < estimatedHeight && spaceAbove > spaceBelow) ? 'bottom' : 'top';
+
+    // 动态限制最大高度，防止极端窗口尺寸下溢出可视区域
+    const availableSpace = alignY === 'top' ? (spaceBelow - 16) : (spaceAbove - 16);
+    const calculatedMaxHeight = Math.max(120, Math.min(220, Math.floor(availableSpace)));
+
+    moveSubMenuPlacement.value = {
+      alignX,
+      alignY,
+      maxHeight: `${calculatedMaxHeight}px`
+    };
+  }
+  showMoveSubMenu.value = true;
+};
+
+const handleMoveSubMenuTriggerLeave = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+  }
+  moveSubMenuCloseTimer = setTimeout(() => {
+    showMoveSubMenu.value = false;
+    moveSubMenuCloseTimer = null;
+  }, 180);
+};
+
+const handleMoveSubMenuEnter = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
+  showMoveSubMenu.value = true;
+};
+
+const handleMoveSubMenuLeave = () => {
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+  }
+  moveSubMenuCloseTimer = setTimeout(() => {
+    showMoveSubMenu.value = false;
+    moveSubMenuCloseTimer = null;
+  }, 180);
+};
 
 // 标签右键菜单状态
 const tagContextMenuVisible = ref(false);
@@ -412,6 +483,11 @@ return false; // 彻底停止事件处理
 const closeContextMenu = () => {
   contextMenuVisible.value = false;
   contextTargetConnection.value = null;
+  showMoveSubMenu.value = false;
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
   document.removeEventListener('click', closeContextMenu);
 };
 
@@ -663,6 +739,10 @@ onBeforeUnmount(() => {
     console.log(`[WkspConnList] Unregistered focus action on unmount.`);
   }
   unregisterFocusAction = null;
+  if (moveSubMenuCloseTimer) {
+    clearTimeout(moveSubMenuCloseTimer);
+    moveSubMenuCloseTimer = null;
+  }
 });
 
 // 处理中键点击（在新标签页打开） - 功能已移除
@@ -1012,8 +1092,8 @@ const cancelEditingTag = () => {
           <li
             v-if="contextTargetConnection"
             class="relative group px-4 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
-            @mouseenter="showMoveSubMenu = true"
-            @mouseleave="showMoveSubMenu = false"
+            @mouseenter="handleMoveSubMenuTriggerEnter"
+            @mouseleave="handleMoveSubMenuTriggerLeave"
           >
             <div class="flex items-center">
               <i class="fas fa-folder-tree mr-3 w-4 text-center text-amber-400"></i>
@@ -1024,7 +1104,16 @@ const cancelEditingTag = () => {
             <!-- 子菜单 -->
             <div
               v-if="showMoveSubMenu"
-              class="absolute left-full top-0 ml-1 bg-popover border border-border shadow-xl rounded-xl py-1 z-50 min-w-[150px] max-h-48 overflow-y-auto"
+              :class="[
+                'absolute bg-popover border border-border shadow-xl rounded-xl py-1 z-50 min-w-[160px] overflow-y-auto',
+                moveSubMenuPlacement.alignX === 'left'
+                  ? 'right-[calc(100%+4px)] after:content-[\'\'] after:absolute after:-right-2 after:top-0 after:bottom-0 after:w-2'
+                  : 'left-[calc(100%+4px)] before:content-[\'\'] before:absolute before:-left-2 before:top-0 before:bottom-0 before:w-2',
+                moveSubMenuPlacement.alignY === 'bottom' ? 'bottom-0' : 'top-0'
+              ]"
+              :style="{ maxHeight: moveSubMenuPlacement.maxHeight }"
+              @mouseenter="handleMoveSubMenuEnter"
+              @mouseleave="handleMoveSubMenuLeave"
               @click.stop
             >
               <div
