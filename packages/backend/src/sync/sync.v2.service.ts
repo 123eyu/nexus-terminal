@@ -92,6 +92,12 @@ export interface SnapshotResponseResult {
       value: string;
       updated_hlc: string;
     }>;
+    command_history?: Array<{
+      uuid: string;
+      command: string;
+      timestamp: number;
+      updated_hlc: string;
+    }>;
   };
   tombstones: Array<{ tbl: string; row_id: string; deleted_hlc: string; deleted_at: number }>;
   server_time: number;
@@ -463,6 +469,22 @@ export const syncV2Service = {
                   }
                 }
               }
+            } else if (item.tbl === 'command_history') {
+              const cmdText = data.command;
+              const cmdTs = data.timestamp || Math.floor(nowMs / 1000);
+              if (existingLive) {
+                await runDb(
+                  db,
+                  `UPDATE command_history SET command = ?, timestamp = ?, updated_hlc = ? WHERE uuid = ?`,
+                  [cmdText, cmdTs, effectiveHlc, item.row_id]
+                );
+              } else {
+                await runDb(
+                  db,
+                  `INSERT INTO command_history (uuid, command, timestamp, updated_hlc) VALUES (?, ?, ?, ?)`,
+                  [item.row_id, cmdText, cmdTs, effectiveHlc]
+                );
+              }
             }
 
             // 清理墓碑
@@ -722,6 +744,21 @@ export const syncV2Service = {
               }
             });
           }
+        } else if (row.tbl === 'command_history') {
+          const ch = await getDb<any>(db, `SELECT * FROM command_history WHERE uuid = ?`, [row.row_id]);
+          if (ch) {
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: ch.updated_hlc || `${Date.now()}-00000-server`,
+              data: {
+                command: ch.command,
+                timestamp: ch.timestamp
+              }
+            });
+          }
         }
       }
     }
@@ -897,6 +934,21 @@ export const syncV2Service = {
               data: {
                 key: s.key,
                 value: s.value
+              }
+            });
+          }
+        } else if (r.tbl === 'command_history') {
+          const ch = await getDb<any>(db, `SELECT * FROM command_history WHERE uuid = ?`, [r.row_id]);
+          if (ch) {
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: ch.updated_hlc || `${Date.now()}-00000-local`,
+              data: {
+                command: ch.command,
+                timestamp: ch.timestamp
               }
             });
           }
@@ -1157,7 +1209,19 @@ export const syncV2Service = {
       updated_hlc: s.updated_hlc || `${Date.now()}-00000-server`
     }));
 
-    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length;
+    // 10. 提取 command_history (最近 500 条)
+    const rawCmdHist = await allDb<any>(
+      db,
+      `SELECT uuid, command, timestamp, updated_hlc FROM command_history ORDER BY id DESC LIMIT 500`
+    );
+    const command_history = rawCmdHist.map(ch => ({
+      uuid: ch.uuid,
+      command: ch.command,
+      timestamp: ch.timestamp,
+      updated_hlc: ch.updated_hlc || `${Date.now()}-00000-server`
+    }));
+
+    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length;
 
     return {
       snapshot_cursor: snapshotCursor,
@@ -1172,7 +1236,8 @@ export const syncV2Service = {
         proxies,
         quick_commands: quickCommands,
         connections,
-        settings
+        settings,
+        command_history
       },
       tombstones,
       server_time: serverTime

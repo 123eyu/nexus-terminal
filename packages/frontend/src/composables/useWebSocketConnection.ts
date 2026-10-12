@@ -214,6 +214,16 @@ export function createWebSocketConnectionManager(
                         return;
                     }
 
+                    // --- 检查是否为双端实时同步完成通知 ---
+                    if (message.type === 'sync:completed' || message.type === 'sync:refreshed') {
+                        console.log('[WebSocket] 收到后台同步完成通知，自动刷新各模块 Store...');
+                        import('../stores/desktopSync.store').then(({ useDesktopSyncStore }) => {
+                            const desktopSyncStore = useDesktopSyncStore();
+                            void desktopSyncStore.refreshAllStores();
+                        }).catch(() => {});
+                        return;
+                    }
+
                     // --- 更新此实例的连接状态 ---
                     if (message.type === 'ssh:connected') {
                         if (connectionStatus.value !== 'connected') {

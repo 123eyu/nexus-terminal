@@ -152,7 +152,9 @@ export const createCommandHistoryTableSQL = `
 CREATE TABLE IF NOT EXISTS command_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     command TEXT NOT NULL,
-    timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    uuid TEXT NULL,
+    updated_hlc TEXT NULL
 );
 `;
 

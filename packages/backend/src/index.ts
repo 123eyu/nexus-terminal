@@ -101,6 +101,7 @@ import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
 import syncV2Router from './sync/sync.v2.routes';
 import { syncThrottleScheduler } from './sync/sync.scheduler';
+import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
 
@@ -384,6 +385,12 @@ const main = async () => {
         console.warn('[Sync] 调度器初始化激活告警:', syncErr.message);
     }
 
+    // 启动桌面端到云端的 WebSocket 实时同步长连接守护客户端
+    try {
+        void syncWsClient.start();
+    } catch (wsErr: any) {
+        console.warn('[Sync] 启动实时长连接客户端告警:', wsErr.message);
+    }
 };
 
 main().catch(error => {

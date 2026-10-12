@@ -615,6 +615,51 @@ const definedMigrations: Migration[] = [
             }
             console.log('[Migrations] Migration 16: tags, quick_command_tags, quick_commands background_color 字段迁移完成。');
         }
+    },
+    {
+        id: 17,
+        name: 'Add uuid and updated_hlc to command_history table for sync engine',
+        check: async (db: Database): Promise<boolean> => {
+            const hasUuid = await columnExists(db, 'command_history', 'uuid');
+            const hasHlc = await columnExists(db, 'command_history', 'updated_hlc');
+            return !hasUuid || !hasHlc;
+        },
+        sql: `
+            -- 安全添加 uuid 和 updated_hlc
+        `,
+        execute: async (db: Database): Promise<void> => {
+            const hasUuid = await columnExists(db, 'command_history', 'uuid');
+            if (!hasUuid) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('ALTER TABLE command_history ADD COLUMN uuid TEXT NULL', (err) => err ? reject(err) : resolve());
+                });
+            }
+            const hasHlc = await columnExists(db, 'command_history', 'updated_hlc');
+            if (!hasHlc) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('ALTER TABLE command_history ADD COLUMN updated_hlc TEXT NULL', (err) => err ? reject(err) : resolve());
+                });
+            }
+            // 回填存量没有 uuid 的 command_history
+            await new Promise<void>((resolve, reject) => {
+                db.all(`SELECT id FROM command_history WHERE uuid IS NULL OR uuid = ''`, async (err, rows: any[]) => {
+                    if (err) return reject(err);
+                    if (!rows || rows.length === 0) return resolve();
+                    for (const r of rows) {
+                        const newUuid = crypto.randomUUID();
+                        await new Promise<void>((res, rej) => {
+                            db.run(
+                                `UPDATE command_history SET uuid = ?, updated_hlc = (SELECT printf('%013d-%05d-%s', hlc_ms, hlc_ctr, device_id) FROM sync_state WHERE id = 1) WHERE id = ?`,
+                                [newUuid, r.id],
+                                (upErr) => upErr ? rej(upErr) : res()
+                            );
+                        });
+                    }
+                    resolve();
+                });
+            });
+            console.log('[Migrations] Migration 17: command_history 表 uuid 与 updated_hlc 迁移完成。');
+        }
     }
 ];
 

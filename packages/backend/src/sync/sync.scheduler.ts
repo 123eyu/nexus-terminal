@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { getDataDir } from '../services/storage-path.service';
 import { getServerSyncApiKey } from './sync.middleware';
+import { broadcastSyncInvalidated, notifyLocalFrontendSyncDone } from './sync.ws-broadcaster';
 
 export class SyncThrottleScheduler {
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -35,6 +36,9 @@ export class SyncThrottleScheduler {
     if (!this.firstNotifyTime) {
       this.firstNotifyTime = now;
     }
+
+    // 向在线的客户端广播实时变动失效信号 (若当前节点有在线客户端)
+    broadcastSyncInvalidated();
 
     // 重置 1 秒防抖计时器
     if (this.debounceTimer) {
@@ -165,11 +169,12 @@ export class SyncThrottleScheduler {
         }
       }
 
-      // 如果有本地变更，或者是由兜底定时器/手动调用的，且当前允许双向同步，发起一轮同步
-      if (hasLocalChanges || reason === 'manual' || reason === 'scheduled') {
+      // 如果有本地变更，或者是由兜底定时器/手动/WS长连接通知调用的，发起一轮同步
+      if (hasLocalChanges || reason === 'manual' || reason === 'scheduled' || reason.startsWith('ws_')) {
         const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
         if (stats.pushed > 0 || stats.pulled > 0) {
           console.log(`[SyncScheduler] 自动同步完成 (触发源: ${reason})，推送: ${stats.pushed}，拉取: ${stats.pulled}`);
+          notifyLocalFrontendSyncDone(stats);
         }
       }
 
@@ -200,7 +205,7 @@ export class SyncThrottleScheduler {
     const db = await getDbInstance();
     console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
 
-    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags'];
+    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags', 'command_history'];
     let totalCatchup = 0;
 
     for (const tbl of tables) {

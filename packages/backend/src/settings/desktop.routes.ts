@@ -5,6 +5,7 @@ import { getDataDir } from '../services/storage-path.service';
 import { syncService } from '../sync/sync.service';
 import { syncV2Service } from '../sync/sync.v2.service';
 import { syncThrottleScheduler } from '../sync/sync.scheduler';
+import { syncWsClient } from '../sync/sync.ws-client';
 
 import { settingsRepository } from './settings.repository';
 
@@ -198,6 +199,7 @@ router.post('/sync/config', (req: Request, res: Response): void => {
         JSON.stringify({ vpsUrl: updated.syncVpsUrl, apiKey: updated.syncApiKey })
       );
       syncThrottleScheduler.notifyChange();
+      void syncWsClient.restart();
     }
     res.json({ success: true, message: '云端同步配置已保存', config: updated });
   } catch (err: any) {

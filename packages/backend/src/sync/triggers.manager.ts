@@ -67,6 +67,12 @@ export const syncTableConfigs: TableTriggerConfig[] = [
       'value'
     ],
     primaryKeyColumn: 'key'
+  },
+  {
+    tableName: 'command_history',
+    updateOfColumns: [
+      'command', 'timestamp'
+    ]
   }
 ];
 

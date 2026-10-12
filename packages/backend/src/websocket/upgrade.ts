@@ -3,6 +3,8 @@ import url from 'url';
 import { Request, RequestHandler } from 'express';
 import { WebSocketServer } from 'ws';
 import { AuthenticatedWebSocket } from './types';
+import { handleSyncWsConnection } from '../sync/sync.ws-broadcaster';
+import { getServerSyncApiKey } from '../sync/sync.middleware';
 
 export function initializeUpgradeHandler(
     server: http.Server,
@@ -47,6 +49,28 @@ export function initializeUpgradeHandler(
         
 
         console.log(`WebSocket: 升级请求来自 IP: ${ipAddress}, Path: ${pathname}`); // 使用新获取的 ipAddress
+
+        // --- 双端实时同步长连接专用路由 (/ws/sync 或 /sync) ---
+        if (pathname === '/ws/sync' || pathname === '/sync') {
+            const rawApiKey = (parsedUrl.query.apiKey as string) || (request.headers['x-sync-api-key'] as string);
+            getServerSyncApiKey().then(serverApiKey => {
+                if (!serverApiKey || !rawApiKey || rawApiKey !== serverApiKey) {
+                    console.warn(`[Sync WS] 鉴权失败，拒绝来自 ${ipAddress} 的同步长连接。`);
+                    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
+                console.log(`[Sync WS] 鉴权成功，升级建立双端同步实时广播通道 (来自 IP: ${ipAddress})。`);
+                wss.handleUpgrade(request, socket, head, (ws) => {
+                    handleSyncWsConnection(ws, request);
+                });
+            }).catch(err => {
+                console.error('[Sync WS] 鉴权流程异常:', err);
+                socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+                socket.destroy();
+            });
+            return;
+        }
 
         // @ts-ignore Express-session 类型问题
         sessionParser(request, {} as any, () => {
