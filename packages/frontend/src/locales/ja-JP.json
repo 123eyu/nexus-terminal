@@ -1535,7 +1535,14 @@
   },
   "workspace": {
     "terminal": {
-      "reconnectingMsg": "再接続を試行中..."
+      "reconnectingMsg": "再接続を試行中...",
+      "reconnectedMsg": "セッションが正常に再接続されました",
+      "disconnectMsg": "[接続が切断されました: {reason}]",
+      "unknownReason": "不明な理由",
+      "unknownSshError": "不明なSSHエラー",
+      "genericErrorMsg": "エラー: {message}",
+      "infoPrefix": "[情報]",
+      "errorPrefix": "[エラー]"
     }
   },
   "workspaceConnectionList": {

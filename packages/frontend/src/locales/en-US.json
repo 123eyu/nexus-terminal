@@ -461,7 +461,14 @@
   },
   "workspace": {
     "terminal": {
-      "reconnectingMsg": "Attempting to reconnect..."
+      "reconnectingMsg": "Attempting to reconnect...",
+      "reconnectedMsg": "Session reconnected successfully",
+      "disconnectMsg": "[Connection closed: {reason}]",
+      "unknownReason": "Unknown reason",
+      "unknownSshError": "Unknown SSH error",
+      "genericErrorMsg": "Error: {message}",
+      "infoPrefix": "[Info]",
+      "errorPrefix": "[Error]"
     }
   },
   "fileEditor": {

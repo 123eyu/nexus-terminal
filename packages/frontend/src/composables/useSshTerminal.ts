@@ -36,6 +36,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     // const currentSearchResultIndex = ref(-1);
     const terminalOutputBuffer = ref<(string | Uint8Array)[]>([]); // 缓冲 WebSocket 消息直到终端准备好
     const isSshConnected = ref(false); // 跟踪 SSH 连接状态
+    const hasConnectedBefore = ref(false); // 跟踪是否曾经连接过（用于识别重连事件）
 
     // 终端数据流防抖同步至云端工作区 (输出停歇 1.5s 后触发，命令执行中自动延后)
     let terminalSyncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -189,6 +190,12 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         }
 
         if (terminalInstance.value) {
+            // 如果之前连接过且断开后重新连上，输出一条醒目的重连成功分割线，完整保留原有历史
+            if (hasConnectedBefore.value) {
+                terminalInstance.value.writeln(`\r\n\x1b[32m--- [${getTerminalText('reconnectedMsg')}] ---\x1b[0m\r\n`);
+            }
+            hasConnectedBefore.value = true;
+
             const currentDimensions = { cols: terminalInstance.value.cols, rows: terminalInstance.value.rows };
             // 检查尺寸是否有效
             if (currentDimensions.cols > 0 && currentDimensions.rows > 0) {
@@ -198,6 +205,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接成功，但获取到的初始尺寸无效，跳过发送 resize:`, currentDimensions);
             }
         } else {
+             hasConnectedBefore.value = true;
              console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接成功，但 terminalInstance 不可用，无法发送初始 resize。`);
         }
 

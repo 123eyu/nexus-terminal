@@ -462,7 +462,14 @@
   },
   "workspace": {
     "terminal": {
-      "reconnectingMsg": "正在尝试重新连接..."
+      "reconnectingMsg": "正在尝试重新连接...",
+      "reconnectedMsg": "会话已重新连接",
+      "disconnectMsg": "[已断开连接: {reason}]",
+      "unknownReason": "未知原因",
+      "unknownSshError": "未知 SSH 错误",
+      "genericErrorMsg": "发生错误: {message}",
+      "infoPrefix": "[提示]",
+      "errorPrefix": "[错误]"
     }
   },
   "fileEditor": {

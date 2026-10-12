@@ -38,10 +38,19 @@ export async function handleSshConnect(
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: '正在获取连接信息...' }));
         connInfo = await SshService.getConnectionDetails(dbConnectionId);
 
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: `正在连接到 ${connInfo.host}...` }));
         const sshClient = await SshService.establishSshConnection(connInfo);
 
-        const newSessionId = uuidv4();
+        // 优先复用客户端提供的 sessionId，保证同一终端会话重连时标识一致不销毁前端实例
+        const newSessionId = (typeof payload?.sessionId === 'string' && payload.sessionId.trim().length > 0)
+            ? payload.sessionId.trim()
+            : uuidv4();
+
+        // 若当前服务中仍残留该会话的历史状态（例如网络断开未触发 close），安全清理旧连接
+        if (clientStates.has(newSessionId)) {
+            console.log(`[SSH Handler] 检测到会话 ${newSessionId} 已存在旧状态，执行重连前置清理...`);
+            cleanupClientConnection(newSessionId);
+        }
+
         ws.sessionId = newSessionId; // Assign new sessionId to the WebSocket
 
         const dbConnectionIdAsNumber = parseInt(dbConnectionId, 10);
