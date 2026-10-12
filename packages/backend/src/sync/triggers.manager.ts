@@ -52,13 +52,13 @@ export const syncTableConfigs: TableTriggerConfig[] = [
   {
     tableName: 'quick_commands',
     updateOfColumns: [
-      'name', 'command', 'variables'
+      'name', 'command', 'variables', 'background_color'
     ]
   },
   {
     tableName: 'quick_command_tags',
     updateOfColumns: [
-      'name'
+      'name', 'background_color'
     ]
   },
   {
@@ -154,6 +154,28 @@ function generateAssociationTriggersSql(): string {
       INSERT INTO sync_changes(tbl, row_id, op, origin)
         SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = OLD.connection_id;
     END;
+
+    -- quick_command_tag_associations AFTER INSERT
+    DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ai;
+    CREATE TRIGGER qc_tag_assoc_sync_ai AFTER INSERT ON quick_command_tag_associations
+    ${WHEN_ACTIVE}
+    BEGIN
+      ${BUMP_HLC}
+      UPDATE quick_commands SET updated_hlc = ${HLC_EXPR}, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE id = NEW.quick_command_id;
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT 'quick_commands', uuid, 'U', NULL FROM quick_commands WHERE id = NEW.quick_command_id;
+    END;
+
+    -- quick_command_tag_associations AFTER DELETE
+    DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ad;
+    CREATE TRIGGER qc_tag_assoc_sync_ad AFTER DELETE ON quick_command_tag_associations
+    ${WHEN_ACTIVE}
+    BEGIN
+      ${BUMP_HLC}
+      UPDATE quick_commands SET updated_hlc = ${HLC_EXPR}, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE id = OLD.quick_command_id;
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT 'quick_commands', uuid, 'U', NULL FROM quick_commands WHERE id = OLD.quick_command_id;
+    END;
   `;
 }
 
@@ -161,8 +183,8 @@ function generateAssociationTriggersSql(): string {
  * 安装所有双端同步触发器
  */
 export async function installSyncTriggers(db: sqlite3.Database): Promise<void> {
-  // 快速检查：若触发器总数已经满足预期，跳过重复的大段 DDL 编译与重装
-  const expectedCount = syncTableConfigs.length * 3 + 2;
+  // 快速检查：若触发器总数已经满足预期 (7 张实体表各 3 个 + connection_tags 2 个 + qc_tag_associations 2 个 = 25 个)，跳过重复编译重装
+  const expectedCount = syncTableConfigs.length * 3 + 4;
   const currentCount = await new Promise<number>((resolve) => {
     db.get("SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%_sync_%'", (err, r: any) => {
       resolve(r?.count ?? 0);

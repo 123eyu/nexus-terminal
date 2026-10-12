@@ -202,6 +202,17 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
           if (activeModules.includes('connections')) {
             const connectionsStore = useConnectionsStore();
             await connectionsStore.fetchConnections();
+            const { useTagsStore } = await import('./tags.store');
+            const tagsStore = useTagsStore();
+            await tagsStore.fetchTags();
+          }
+          if (activeModules.includes('quickCommands')) {
+            const { useQuickCommandsStore } = await import('./quickCommands.store');
+            const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
+            const qcStore = useQuickCommandsStore();
+            const qcTagsStore = useQuickCommandTagsStore();
+            await qcStore.fetchQuickCommands();
+            await qcTagsStore.fetchTags();
           }
           if (activeModules.includes('appearance')) {
             const { useAppearanceStore } = await import('./appearance.store');

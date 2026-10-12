@@ -198,27 +198,39 @@ export const syncService = {
       }
     }
 
-    // 6. 导出 QuickCommands
+    // 6. 导出 QuickCommands (携带所属文件夹/标签 tag_uuids)
     let quick_commands: SyncEntityItem[] = [];
     if (syncCmds) {
       const quickCmdRows = await allDb<any>(
         db,
-        `SELECT uuid, name, command, usage_count, variables, background_color, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
+        `SELECT id, uuid, name, command, usage_count, variables, background_color, created_at, updated_at FROM quick_commands WHERE updated_at > ?`,
         [sinceTimestamp]
       );
-      quick_commands = quickCmdRows.map(r => ({
-        uuid: r.uuid,
-        updated_at: r.updated_at,
-        data: {
-          name: r.name,
-          command: r.command,
-          usage_count: r.usage_count,
-          variables: r.variables,
-          background_color: r.background_color || null,
-          created_at: r.created_at,
-          updated_at: r.updated_at
-        }
-      }));
+      for (const r of quickCmdRows) {
+        const tagRows = await allDb<{ uuid: string }>(
+          db,
+          `SELECT qt.uuid FROM quick_command_tag_associations qa
+           JOIN quick_command_tags qt ON qa.tag_id = qt.id
+           WHERE qa.quick_command_id = ?`,
+          [r.id]
+        );
+        const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
+
+        quick_commands.push({
+          uuid: r.uuid,
+          updated_at: r.updated_at,
+          data: {
+            name: r.name,
+            command: r.command,
+            usage_count: r.usage_count,
+            variables: r.variables,
+            background_color: r.background_color || null,
+            tag_uuids: tagUuids,
+            created_at: r.created_at,
+            updated_at: r.updated_at
+          }
+        });
+      }
     }
 
     // 7. WorkspaceSync (快照)：桌面端数据库同步不推拉动态工作区会话，保持纯净数据同步
