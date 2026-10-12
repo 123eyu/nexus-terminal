@@ -131,6 +131,13 @@ jobs:
           Write-Host "已生成 SHA256 校验清单:"
           Get-Content "release-artifacts/checksums-sha256.txt"
 
+      - name: 上传构建产物至 Actions Artifacts (方便直接在运行页下载测试)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-terminal-desktop-windows-x64
+          path: release-artifacts/*
+          retention-days: 7
+
       - name: 发布至 GitHub Release (默认发布为草稿 Draft，方便撰写文案)
         uses: softprops/action-gh-release@v2
         with:
