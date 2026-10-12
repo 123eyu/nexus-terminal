@@ -25,6 +25,7 @@ const emit = defineEmits<{
   chmod: [item: FileListItem];
   'cd-terminal': [path: string];
   'download-dir': [item: FileListItem];
+  'add-to-favorites': [item: FileListItem];
 }>();
 
 const { t } = useI18n();
@@ -56,7 +57,7 @@ const copyFullPath = async () => {
 };
 
 // 触发条目专属动作
-const triggerAction = (actionName: 'open-file' | 'download' | 'rename' | 'copy' | 'cut' | 'delete' | 'chmod' | 'download-dir') => {
+const triggerAction = (actionName: 'open-file' | 'download' | 'rename' | 'copy' | 'cut' | 'delete' | 'chmod' | 'download-dir' | 'add-to-favorites') => {
   if (!props.item) return;
   const targetItem = props.item;
   emit('close');
@@ -84,6 +85,9 @@ const triggerAction = (actionName: 'open-file' | 'download' | 'rename' | 'copy' 
       break;
     case 'download-dir':
       emit('download-dir', targetItem);
+      break;
+    case 'add-to-favorites':
+      emit('add-to-favorites', targetItem);
       break;
   }
 };
@@ -271,6 +275,22 @@ const triggerCdTerminal = () => {
                 <span class="text-sm font-medium">复制绝对路径</span>
               </div>
               <i class="fas fa-copy text-xs text-text-secondary/40"></i>
+            </button>
+
+            <!-- 9. 添加到收藏路径 (仅文件夹) -->
+            <button
+              v-if="isDirectory"
+              type="button"
+              @click="triggerAction('add-to-favorites')"
+              class="w-full h-11 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer"
+            >
+              <div class="flex items-center gap-3">
+                <div class="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                  <i class="fas fa-star text-xs"></i>
+                </div>
+                <span class="text-sm font-medium">{{ t('fileManager.actions.addToFavorites', '添加到收藏路径') }}</span>
+              </div>
+              <i class="fas fa-chevron-right text-xs text-text-secondary/40"></i>
             </button>
 
             <!-- 分割线 -->

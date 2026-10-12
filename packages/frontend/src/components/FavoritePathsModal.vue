@@ -21,6 +21,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  currentPath: {
+    type: String,
+    default: '',
+  },
 });
 
 const emit = defineEmits(['close', 'navigateToPath']);
@@ -176,6 +180,7 @@ onBeforeUnmount(() => {
   <MobileFavoritePathsModal
     v-if="props.isMobile"
     :is-visible="props.isVisible"
+    :current-path="props.currentPath"
     @close="closeModal"
     @navigate-to-path="(p: string) => emit('navigateToPath', p)"
   />
@@ -255,7 +260,8 @@ onBeforeUnmount(() => {
     <!-- Add/Edit Modal (Desktop) -->
     <AddEditFavoritePathForm
       :is-visible="showAddEditModal"
-      :path-item="editingPathItem"
+      :path-data="editingPathItem"
+      :current-path="props.currentPath"
       :is-mobile="false"
       @close="showAddEditModal = false"
     />

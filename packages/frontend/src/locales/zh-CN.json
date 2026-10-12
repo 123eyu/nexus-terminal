@@ -510,7 +510,9 @@
       "switchToTileView": "切换到平铺视图",
       "switchToListView": "切换到列表视图",
       "tileView": "平铺视图",
-      "listView": "列表视图"
+      "listView": "列表视图",
+      "addToFavorites": "添加到收藏路径",
+      "addCurrentToFavorites": "收藏当前路径"
     },
     "sync": {
       "modeOff": "路径同步：已关闭 (点击开启双向同步)",
@@ -1784,6 +1786,8 @@
       "addTitle": "添加新收藏路径",
       "pathLabel": "路径",
       "pathPlaceholder": "/example/folder/path",
+      "fillCurrentPath": "填入当前路径",
+      "fillCurrentPathTooltip": "点击填入当前激活的文件管理器路径: {path}",
       "nameLabel": "名称 (可选)",
       "namePlaceholder": "我的文档",
       "errors": {

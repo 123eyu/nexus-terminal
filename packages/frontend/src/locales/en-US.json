@@ -509,7 +509,9 @@
       "switchToTileView": "Switch to tile view",
       "switchToListView": "Switch to list view",
       "tileView": "Tile view",
-      "listView": "List view"
+      "listView": "List view",
+      "addToFavorites": "Add to Favorites",
+      "addCurrentToFavorites": "Favorite Current Path"
     },
     "sync": {
       "modeOff": "Path sync: Disabled (Click to enable bidirectional sync)",
@@ -1779,6 +1781,8 @@
       "addTitle": "Add New Favorite Path",
       "pathLabel": "Path",
       "pathPlaceholder": "/example/folder/path",
+      "fillCurrentPath": "Use Current Path",
+      "fillCurrentPathTooltip": "Click to fill active file manager path: {path}",
       "nameLabel": "Name (Optional)",
       "namePlaceholder": "My Documents",
       "errors": {

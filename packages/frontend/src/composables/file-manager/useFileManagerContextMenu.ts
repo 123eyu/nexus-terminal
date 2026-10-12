@@ -49,6 +49,7 @@ export interface UseFileManagerContextMenuOptions {
   onCompressRequest: (items: FileListItem[], format: CompressFormat) => void; // +++ 压缩回调 +++
   onDecompressRequest: (item: FileListItem) => void; // +++ 解压回调 +++
   onCopyPath?: (item: FileListItem) => void; // +++ 复制路径回调 +++
+  onAddToFavorites?: (item?: FileListItem) => void; // +++ 添加到常用路径回调 +++
 }
 
 // 辅助函数：检查文件是否为支持的压缩格式
@@ -84,6 +85,7 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
     onCompressRequest, // +++ 解构压缩回调 +++
     onDecompressRequest, // +++ 解构解压回调 +++
     onCopyPath, // +++ 解构复制路径回调 +++
+    onAddToFavorites, // +++ 解构添加到常用路径回调 +++
   } = options;
 
   const contextMenuVisible = ref(false);
@@ -181,6 +183,9 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
        if (onCopyPath) {
          menu.push({ label: t('fileManager.actions.copyPath', 'Copy Path'), action: () => onCopyPath(targetItem), disabled: !(isConnected.value && isSftpReady.value) });
        }
+       if (onAddToFavorites && targetItem.attrs.isDirectory) {
+         menu.push({ label: t('fileManager.actions.addToFavorites', '添加到收藏路径'), action: () => onAddToFavorites(targetItem), disabled: !(isConnected.value && isSftpReady.value) });
+       }
 
         // --- 分隔符 (视觉) ---
         // The invalid object literal was here and is now removed.
@@ -238,10 +243,11 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
             // 1. 粘贴
             { label: t('fileManager.actions.paste'), action: onPaste, disabled: !(isConnected.value && isSftpReady.value) || !hasClipboardContent },
             // --- 分隔符 (视觉) ---
-            // 2. 新建、上传
+            // 2. 新建、上传、收藏当前目录
             { label: t('fileManager.actions.newFolder'), action: onNewFolder, disabled: !(isConnected.value && isSftpReady.value) },
             { label: t('fileManager.actions.newFile'), action: onNewFile, disabled: !(isConnected.value && isSftpReady.value) },
             { label: t('fileManager.actions.upload'), action: onUpload, disabled: !(isConnected.value && isSftpReady.value) },
+            ...(onAddToFavorites ? [{ label: t('fileManager.actions.addCurrentToFavorites', '收藏当前路径'), action: () => onAddToFavorites(), disabled: !(isConnected.value && isSftpReady.value) }] : []),
             // --- 分隔符 (视觉) ---
             // 3. 刷新
             { label: t('fileManager.actions.refresh'), action: onRefresh, disabled: !(isConnected.value && isSftpReady.value) },

@@ -18,6 +18,7 @@ import { useFileManagerColumnResize } from '../composables/file-manager/useFileM
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
+import { useFavoritePathsStore } from '../stores/favoritePaths.store';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
@@ -74,6 +75,7 @@ const props = defineProps({
 const { t } = useI18n();
 const route = useRoute(); // Keep for download URL generation for now
 const sessionStore = useSessionStore(); // 实例化 Session Store
+const favoritePathsStore = useFavoritePathsStore(); // 实例化 FavoritePaths Store
 
 // --- 获取并存储 SFTP 管理器实例 ---
 // 使用 shallowRef 存储管理器实例，以便在 sessionId 变化时切换
@@ -899,6 +901,35 @@ const handleMobileCdTerminal = (path: string) => {
   }
 };
 
+// 添加到收藏路径处理逻辑
+const handleAddToFavorites = async (item?: FileListItem) => {
+  if (!currentSftpManager.value) return;
+
+  let targetPath = '';
+  let defaultName = '';
+
+  if (item) {
+    targetPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
+    defaultName = item.filename;
+  } else {
+    targetPath = currentSftpManager.value.currentPath.value;
+    const cleanPath = targetPath.replace(/\/+$/, '');
+    const parts = cleanPath.split('/').filter(Boolean);
+    defaultName = parts.length > 0 ? parts[parts.length - 1] : targetPath;
+  }
+
+  if (!targetPath) return;
+
+  try {
+    await favoritePathsStore.addFavoritePath({
+      path: targetPath,
+      name: defaultName || undefined,
+    }, t);
+  } catch (error) {
+    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 添加常用路径失败:`, error);
+  }
+};
+
 // --- 上下文菜单逻辑 (使用 Composable, 需要 Selection 和 Action Handlers) ---
 const {
   contextMenuVisible,
@@ -940,6 +971,7 @@ const {
   onCompressRequest: handleCompress,
   onDecompressRequest: handleDecompress,
   onCopyPath: handleCopyPath, // +++ 传递复制路径回调 +++
+  onAddToFavorites: handleAddToFavorites, // +++ 传递添加到常用路径回调 +++
 });
 
 // --- 目录加载与导航 ---
@@ -2456,6 +2488,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       @delete="handleMobileSingleDelete"
       @chmod="(item) => handleChangePermissionsContextMenuClick(item)"
       @cd-terminal="handleMobileCdTerminal"
+      @add-to-favorites="(item) => handleAddToFavorites(item)"
     />
 
 </div>

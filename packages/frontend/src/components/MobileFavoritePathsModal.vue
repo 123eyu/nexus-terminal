@@ -9,6 +9,7 @@ import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps<{
   isVisible: boolean;
+  currentPath?: string;
 }>();
 
 const emit = defineEmits<{
@@ -200,7 +201,8 @@ watch(() => props.isVisible, (val) => {
   <!-- 添加/编辑常用路径子模态框 -->
   <AddEditFavoritePathForm
     :is-visible="showAddEditModal"
-    :path-item="editingPathItem"
+    :path-data="editingPathItem"
+    :current-path="props.currentPath"
     :is-mobile="true"
     @close="showAddEditModal = false"
   />

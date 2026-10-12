@@ -483,6 +483,7 @@ defineExpose({
           :is-visible="showFavoritePathsModal"
           :trigger-element="favoritePathsButtonRef"
           :is-mobile="false"
+          :current-path="props.currentPath"
           @close="showFavoritePathsModal = false"
           @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"
         />

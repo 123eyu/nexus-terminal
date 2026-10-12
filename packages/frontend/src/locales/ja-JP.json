@@ -409,7 +409,9 @@
       "switchToTileView": "タイル表示に切り替え",
       "switchToListView": "リスト表示に切り替え",
       "tileView": "タイル表示",
-      "listView": "リスト表示"
+      "listView": "リスト表示",
+      "addToFavorites": "お気に入りパスに追加",
+      "addCurrentToFavorites": "現在のパスをお気に入りに追加"
     },
     "sync": {
       "modeOff": "パス同期：無効 (クリックして双方向同期を有効化)",
@@ -1702,6 +1704,8 @@
       "addTitle": "Add New Favorite Path",
       "pathLabel": "Path",
       "pathPlaceholder": "/example/folder/path",
+      "fillCurrentPath": "現在のパスを入力",
+      "fillCurrentPathTooltip": "アクティブなファイルマネージャーのパスを入力: {path}",
       "nameLabel": "Name (Optional)",
       "namePlaceholder": "My Documents",
       "errors": {

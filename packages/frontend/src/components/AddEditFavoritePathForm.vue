@@ -2,6 +2,8 @@
 import { ref, watch, computed, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useSessionStore } from '../stores/session.store';
+import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import MobileAddEditFavoritePathForm from './MobileAddEditFavoritePathForm.vue';
 
 const props = defineProps({
@@ -13,6 +15,14 @@ const props = defineProps({
     type: Object as PropType<FavoritePathItem | null>,
     default: null,
   },
+  pathItem: {
+    type: Object as PropType<FavoritePathItem | null>,
+    default: null,
+  },
+  currentPath: {
+    type: String,
+    default: '',
+  },
   isMobile: {
     type: Boolean,
     default: false,
@@ -23,6 +33,8 @@ const emit = defineEmits(['close', 'saveSuccess']);
 
 const { t } = useI18n();
 const favoritePathsStore = useFavoritePathsStore();
+const sessionStore = useSessionStore();
+const workspaceSyncStore = useWorkspaceSyncStore();
 
 const form = ref({
   id: '',
@@ -30,18 +42,64 @@ const form = ref({
   name: '',
 });
 
-const isEditMode = computed(() => !props.pathData?.id);
+const effectivePathData = computed(() => props.pathData || props.pathItem || null);
+const isEditMode = computed(() => !effectivePathData.value?.id);
 const isLoading = ref(false);
 const errorMessage = ref<string | null>(null);
+
+// 获取当前文件管理器激活的当前路径
+const activeFileManagerPath = computed<string>(() => {
+  // 1. 若外部明确传入了 currentPath，优先采用
+  if (props.currentPath && props.currentPath.trim().startsWith('/')) {
+    return props.currentPath.trim();
+  }
+  // 2. 从当前活跃会话的 SFTP 管理器读取
+  const activeSession = sessionStore.activeSession;
+  if (activeSession?.sftpManagers) {
+    for (const mgr of activeSession.sftpManagers.values()) {
+      const p = mgr.currentPath?.value;
+      if (p && p.trim().startsWith('/')) {
+        return p.trim();
+      }
+    }
+  }
+  // 3. 从工作区同步 Store 获取兼容层路径
+  const syncPath = workspaceSyncStore.fileManagerState?.currentPath;
+  if (syncPath && syncPath.trim().startsWith('/')) {
+    return syncPath.trim();
+  }
+  return '';
+});
+
+// 从路径提取默认文件夹名称
+const extractFolderNameFromPath = (fullPath: string): string => {
+  if (!fullPath || fullPath === '/') return 'root';
+  const clean = fullPath.endsWith('/') ? fullPath.slice(0, -1) : fullPath;
+  const lastSlash = clean.lastIndexOf('/');
+  return lastSlash >= 0 ? clean.substring(lastSlash + 1) : clean;
+};
+
+// 点击填入当前路径
+const fillCurrentPath = () => {
+  const p = activeFileManagerPath.value;
+  if (!p) return;
+  form.value.path = p;
+  // 若用户尚未填写名称，智能填入文件夹名字
+  if (!form.value.name.trim()) {
+    form.value.name = extractFolderNameFromPath(p);
+  }
+  errorMessage.value = null;
+};
 
 watch(() => props.isVisible, (newValue) => {
   if (newValue) {
     errorMessage.value = null;
-    if (props.pathData) {
+    const target = effectivePathData.value;
+    if (target) {
       form.value = { 
-        id: props.pathData.id, 
-        path: props.pathData.path, 
-        name: props.pathData.name || '' 
+        id: target.id, 
+        path: target.path, 
+        name: target.name || '' 
       };
     } else {
       form.value = { id: '', path: '', name: '' };
@@ -98,7 +156,8 @@ const closeModal = () => {
   <MobileAddEditFavoritePathForm
     v-if="isMobile"
     :is-visible="isVisible"
-    :path-data="pathData"
+    :path-data="effectivePathData"
+    :current-path="activeFileManagerPath"
     @close="closeModal"
     @save-success="emit('saveSuccess')"
   />
@@ -131,10 +190,22 @@ const closeModal = () => {
             />
           </div>
           <div>
-            <label for="favPath-path" class="block text-sm font-medium text-text-secondary mb-1">
-              {{ t('favoritePaths.addEditForm.pathLabel', 'Path') }}
-              <span class="text-rose-500 ml-0.5">*</span>
-            </label>
+            <div class="flex items-center justify-between mb-1">
+              <label for="favPath-path" class="block text-sm font-medium text-text-secondary">
+                {{ t('favoritePaths.addEditForm.pathLabel', 'Path') }}
+                <span class="text-rose-500 ml-0.5">*</span>
+              </label>
+              <button
+                v-if="activeFileManagerPath"
+                type="button"
+                @click="fillCurrentPath"
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium text-primary hover:text-primary-hover bg-primary/10 hover:bg-primary/20 rounded transition-colors cursor-pointer"
+                :title="t('favoritePaths.addEditForm.fillCurrentPathTooltip', { path: activeFileManagerPath })"
+              >
+                <i class="fas fa-crosshairs text-[11px]"></i>
+                <span>{{ t('favoritePaths.addEditForm.fillCurrentPath', '填入当前路径') }}</span>
+              </button>
+            </div>
             <input
               id="favPath-path"
               type="text"
