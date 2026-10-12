@@ -173,9 +173,7 @@ export class WorkspaceSyncService {
                 }
 
                 // 写入终端屏幕最新历史 (精准覆盖或清空)
-                const matchedSync = snapshotSessions.find(
-                    (s: any) => String(s.connectionId) === String(state.dbConnectionId) || s.sessionId === sessionId
-                );
+                const matchedSync = snapshotSessions.find((s: any) => s.sessionId === sessionId);
                 if (matchedSync && typeof matchedSync.terminalBuffer === 'string') {
                     try {
                         console.log(`[WorkspaceSyncService] 为挂起会话 ${sessionId} 覆盖同步终端屏幕历史 (字符数: ${matchedSync.terminalBuffer.length})...`);
@@ -276,47 +274,43 @@ export class WorkspaceSyncService {
     /**
      * 强制彻底销毁指定的会话：
      * 1. 强制杀死该会话的底层 SSH 客户端与通道流，绝不转入挂起；
-     * 2. 强制清理挂起服务池中属于该会话或该连接的残留记录；
+     * 2. 强制清理挂起服务池中属于该会话的残留记录；
      * 3. 强制从数据库 workspace_sync 快照中剔除该会话并立即落盘。
+     * 【核心铁律】：严格仅针对特定的 targetSessionId，绝不能因 connectionId 相同而误伤同连接下的其他活跃会话！
      */
     public async destroySessionCompletely(
         userId: number,
-        targetSessionId: string,
-        targetConnectionId?: string | number
+        targetSessionId: string
     ): Promise<{ success: boolean; remainingSessionsCount: number }> {
-        console.log(`[WorkspaceSyncService] 开始强制彻底销毁会话: ${targetSessionId} (用户: ${userId}, 连接ID: ${targetConnectionId || 'none'})`);
+        console.log(`[WorkspaceSyncService] 开始强制彻底销毁会话: ${targetSessionId} (用户: ${userId})`);
 
-        // 1. 强制切断底层 SSH 客户端与通道流
-        for (const [sId, state] of clientStates.entries()) {
-            const isMatch = sId === targetSessionId ||
-                (targetConnectionId !== undefined && targetConnectionId !== null && String(state.dbConnectionId) === String(targetConnectionId) && state.ws?.userId === userId);
-            if (isMatch) {
-                console.log(`[WorkspaceSyncService] 强制切断并关闭活动 SSH 连接: ${sId}`);
-                state.isExplicitlyClosed = true;
-                state.isMarkedForSuspend = false;
-                state.closeReason = 'client_explicit_destroy';
-                try {
-                    state.sshShellStream?.destroy?.();
-                    state.sshShellStream?.end?.();
-                    state.sshClient?.destroy?.();
-                    state.sshClient?.end?.();
-                } catch (e) {
-                    console.warn(`[WorkspaceSyncService] 切断 SSH 连接发生非致命错误:`, e);
-                }
-                state.sshClient = undefined as any;
-                state.sshShellStream = undefined;
-                clientStates.delete(sId);
+        // 1. 强制切断底层 SSH 客户端与通道流（仅针对目标 targetSessionId）
+        const state = clientStates.get(targetSessionId);
+        if (state && (!state.ws?.userId || state.ws.userId === userId)) {
+            console.log(`[WorkspaceSyncService] 强制切断并关闭活动 SSH 连接: ${targetSessionId}`);
+            state.isExplicitlyClosed = true;
+            state.isMarkedForSuspend = false;
+            state.closeReason = 'client_explicit_destroy';
+            try {
+                state.sshShellStream?.destroy?.();
+                state.sshShellStream?.end?.();
+                state.sshClient?.destroy?.();
+                state.sshClient?.end?.();
+            } catch (e) {
+                console.warn(`[WorkspaceSyncService] 切断 SSH 连接发生非致命错误:`, e);
             }
+            state.sshClient = undefined as any;
+            state.sshShellStream = undefined;
+            clientStates.delete(targetSessionId);
         }
 
-        // 2. 强制清理挂起服务池中残留的该会话/连接条目
+        // 2. 强制清理挂起服务池中残留的该会话（仅针对目标 targetSessionId）
         try {
             await sshSuspendService.terminateSuspendedSession(userId, targetSessionId);
             const userSuspended = (sshSuspendService as any).getUserSessions?.(userId);
             if (userSuspended) {
                 for (const [suspId, suspSess] of userSuspended.entries()) {
-                    if (suspSess.originalSessionId === targetSessionId ||
-                        (targetConnectionId !== undefined && targetConnectionId !== null && String(suspSess.connectionId) === String(targetConnectionId))) {
+                    if (suspId === targetSessionId || suspSess.originalSessionId === targetSessionId) {
                         console.log(`[WorkspaceSyncService] 强制清理残留挂起条目: ${suspId}`);
                         await sshSuspendService.terminateSuspendedSession(userId, suspId);
                     }
@@ -326,7 +320,7 @@ export class WorkspaceSyncService {
             console.warn(`[WorkspaceSyncService] 清理挂起条目异常:`, e);
         }
 
-        // 3. 强制从数据库 workspace_sync 快照中剔除该会话并立即落盘
+        // 3. 强制从数据库 workspace_sync 快照中剔除该会话并立即落盘（仅针对目标 targetSessionId）
         let remainingSessionsCount = 0;
         try {
             const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
@@ -334,11 +328,8 @@ export class WorkspaceSyncService {
                 const parsedState = JSON.parse(record.state);
                 if (Array.isArray(parsedState.sessions)) {
                     const beforeCount = parsedState.sessions.length;
-                    parsedState.sessions = parsedState.sessions.filter((s: any) => {
-                        if (s.sessionId === targetSessionId) return false;
-                        if (targetConnectionId !== undefined && targetConnectionId !== null && String(s.connectionId) === String(targetConnectionId)) return false;
-                        return true;
-                    });
+                    // 仅移除目标 sessionId，绝对保留同一连接的其他活跃会话！
+                    parsedState.sessions = parsedState.sessions.filter((s: any) => s.sessionId !== targetSessionId);
                     remainingSessionsCount = parsedState.sessions.length;
 
                     // 同步更新 sessionOrder 与 activeSessionId

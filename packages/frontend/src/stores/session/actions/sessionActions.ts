@@ -296,11 +296,8 @@ export const closeSession = (sessionId: string) => {
     console.log(`[SessionActions] 关闭活动会话后，切换到: ${nextActiveId}`);
   }
 
-  // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘
-  const connId = sessionToClose.connectionId;
-  apiClient.delete(`/workspace-sync/sessions/${sessionId}`, {
-    params: { connectionId: connId }
-  }).then((res) => {
+  // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘（仅针对该 sessionId）
+  apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
     console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
   }).catch((err) => {
     console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);

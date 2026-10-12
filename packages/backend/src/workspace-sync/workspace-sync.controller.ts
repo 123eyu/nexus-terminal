@@ -88,7 +88,6 @@ export class WorkspaceSyncController {
     public async destroySession(req: Request, res: Response): Promise<void> {
         const userId = req.session?.userId || 1;
         const sessionId = req.params.sessionId;
-        const connectionId = (req.query.connectionId || req.body?.connectionId) as string | undefined;
 
         if (!sessionId) {
             res.status(400).json({ success: false, message: '缺少 sessionId' });
@@ -96,7 +95,7 @@ export class WorkspaceSyncController {
         }
 
         try {
-            const result = await workspaceSyncService.destroySessionCompletely(userId, sessionId, connectionId);
+            const result = await workspaceSyncService.destroySessionCompletely(userId, sessionId);
             res.json({
                 success: true,
                 message: '会话已强制彻底销毁并清除数据库记录',

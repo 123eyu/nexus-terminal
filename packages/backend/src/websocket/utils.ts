@@ -98,7 +98,7 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
             try {
                 const syncRecord = await workspaceSyncService.getState(state.ws.userId);
                 const isInSyncedSnapshot = syncRecord.state?.sessions?.some(
-                    (s: any) => String(s.sessionId) === String(sessionId) || String(s.connectionId) === String(state.dbConnectionId)
+                    (s: any) => String(s.sessionId) === String(sessionId)
                 );
 
                 if (syncRecord.state && syncRecord.state.syncEnabled && isInSyncedSnapshot) {
@@ -111,7 +111,7 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                     // 如果快照中存有该会话最新的终端屏幕缓冲区，预写入到挂起日志，供恢复时回放
                     if (syncRecord.state.sessions && Array.isArray(syncRecord.state.sessions)) {
                         const matchedSync = syncRecord.state.sessions.find(
-                            (s: any) => String(s.connectionId) === String(state.dbConnectionId) || s.sessionId === sessionId
+                            (s: any) => String(s.sessionId) === String(sessionId)
                         );
                         if (matchedSync && matchedSync.terminalBuffer) {
                             try {
