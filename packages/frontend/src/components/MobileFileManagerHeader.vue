@@ -142,6 +142,17 @@ defineExpose({
     <template v-else>
       <!-- 左侧快捷工具 -->
       <div class="flex items-center gap-1.5">
+        <!-- 将终端目录切换到当前路径按钮 (最左侧独立快捷操作) -->
+        <button
+          type="button"
+          class="w-8 h-8 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 active:bg-primary/20 transition-all disabled:opacity-40 cursor-pointer"
+          @click.stop="emit('cd-to-terminal')"
+          :disabled="!props.isConnected"
+          :title="t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
+        >
+          <i class="fas fa-terminal text-xs"></i>
+        </button>
+
         <!-- 4态路径同步按钮 (关闭 / 双向同步 / 同步到终端 / 终端同步到这) -->
         <button
           type="button"

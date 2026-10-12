@@ -185,6 +185,17 @@ defineExpose({
   >
       <!-- 左侧快捷导航与搜索工具 -->
       <div class="flex items-center gap-1 min-w-0 flex-shrink">
+        <!-- 将终端目录切换到当前路径按钮 (最左侧独立快捷操作) -->
+        <button
+          type="button"
+          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground flex-shrink-0 cursor-pointer"
+          @click.stop="emit('cd-to-terminal')"
+          :disabled="!isConnected"
+          :title="t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
+        >
+          <i class="fas fa-terminal text-xs"></i>
+        </button>
+
         <!-- 4态路径同步按钮 (关闭 / 双向同步 / 同步到终端 / 终端同步到这) -->
         <button
           type="button"

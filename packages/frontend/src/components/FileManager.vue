@@ -372,10 +372,6 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   const safety = checkTerminalSafety(targetSession);
   if (!safety.safe) {
     console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] 已安全拦截向终端发送 cd 指令: ${safety.reason}`);
-    // 如果是用户点击“发送 CD 到终端”按钮主动触发的，弹出友好警告通知告知用户
-    if (isManual) {
-      uiNotificationsStore.showWarning(`无法同步目录：${safety.reason}`);
-    }
     return;
   }
 
@@ -393,14 +389,8 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   try {
     targetSession.terminalManager.sendData(command);
     console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 已同步路径至终端: ${command.trim()}`);
-    if (isManual) {
-      uiNotificationsStore.showSuccess(`已发送路径切换指令至终端: ${normTarget}`);
-    }
   } catch (err) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 同步路径至终端失败:`, err);
-    if (isManual) {
-      uiNotificationsStore.showError('发送 cd 命令至终端失败');
-    }
   }
 };
 
