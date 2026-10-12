@@ -279,6 +279,7 @@ import { useAlertDialog } from '../composables/useAlertDialog';
 const props = defineProps<{
     commandToEdit?: QuickCommandFE | null; // 接收要编辑的指令对象 (应包含标签ID和变量)
     initialCommand?: string; // 初始命令文本（新增时预填）
+    initialFolderId?: number | null; // 新增时预选的所属文件夹ID
 }>();
 
 const emit = defineEmits(['close']);
@@ -380,8 +381,13 @@ onMounted(() => {
     } else {
       localVariables.value = [];
     }
-  } else if (props.initialCommand) {
-    formData.command = props.initialCommand;
+  } else {
+    if (props.initialCommand) {
+      formData.command = props.initialCommand;
+    }
+    if (props.initialFolderId) {
+      formData.tagIds = [props.initialFolderId];
+    }
   }
 
   window.addEventListener('keydown', onKeyDown);

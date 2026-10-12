@@ -26,6 +26,13 @@
                 :title="viewModeTitle">
           <i :class="['fas', viewModeIcon, 'text-base']"></i>
         </button>
+        <!-- Folder Layout Toggle Button (Accordion / Sidebar) -->
+        <button @click="toggleFolderLayoutMode"
+                class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center cursor-pointer"
+                :class="{ 'bg-primary/20 text-primary border-primary/40': folderLayoutMode === 'sidebar' }"
+                :title="folderLayoutTitle">
+          <i :class="['fas', folderLayoutMode === 'sidebar' ? 'fa-table-columns' : 'fa-folder-tree', 'text-sm']"></i>
+        </button>
         <!-- New Folder Button -->
         <button @click="openCreateFolderDialog"
                 class="w-8 h-8 border border-border/50 rounded-lg text-text-secondary hover:bg-border hover:text-foreground transition-colors duration-150 flex-shrink-0 flex items-center justify-center cursor-pointer"
@@ -37,8 +44,365 @@
           <i class="fas fa-plus text-base"></i>
         </button>
       </div>
-      <!-- List Area -->
-      <div class="flex-grow overflow-y-auto p-2">
+      <!-- 1. 侧栏文件夹视图模式 (Sidebar Layout Mode) -->
+      <div v-if="folderLayoutMode === 'sidebar'" class="flex flex-row flex-grow overflow-hidden min-h-0 bg-background">
+        <!-- 左侧：文件夹导航侧栏 -->
+        <aside
+          class="border-r border-border/50 flex flex-col flex-shrink-0 overflow-hidden bg-header/20 select-none relative"
+          :style="{ width: `${sidebarWidth}px` }"
+        >
+          <div class="flex-grow overflow-y-auto p-1.5 space-y-0.5">
+            <!-- 全部指令条目 -->
+            <div
+              @click="sidebarActiveFolderId = 'all'"
+              class="flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors duration-150 min-h-[30px]"
+              :class="sidebarActiveFolderId === 'all' ? 'bg-primary/15 text-primary font-semibold' : 'text-foreground/80 hover:text-foreground hover:bg-header/60'"
+            >
+              <div class="flex items-center gap-2 truncate min-w-0 pr-1.5">
+                <i class="fas fa-layer-group text-xs text-primary/80 flex-shrink-0"></i>
+                <span class="truncate">{{ t('quickCommands.allCommands', '全部指令') }}</span>
+              </div>
+              <span class="text-[11px] px-1.5 py-0.2 rounded-full bg-border/40 text-text-secondary font-mono flex-shrink-0">
+                {{ getFolderCommandCount('all') }}
+              </span>
+            </div>
+
+            <!-- 分类文件夹列表 -->
+            <div
+              v-for="folder in quickCommandTagsStore.folders"
+              :key="folder.id"
+              @click="editingTagId !== folder.id ? (sidebarActiveFolderId = folder.id) : null"
+              @contextmenu.prevent="showFolderContextMenu($event, folder)"
+              class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors duration-150 relative min-h-[30px]"
+              :class="sidebarActiveFolderId === folder.id ? 'bg-primary/15 text-primary font-semibold' : 'text-foreground/80 hover:text-foreground hover:bg-header/60'"
+              :title="folder.name"
+            >
+              <!-- 编辑状态 -->
+              <input
+                v-if="editingTagId === folder.id"
+                :key="`sidebar-folder-${folder.id}`"
+                :ref="(el) => setTagInputRef(el, folder.id)"
+                type="text"
+                v-model="editedTagName"
+                class="bg-input border border-primary rounded px-1.5 py-0.5 w-full text-xs text-foreground focus:outline-none"
+                @blur="finishEditingTag"
+                @keydown.enter.prevent="finishEditingTag"
+                @keydown.esc.prevent="cancelEditingTag"
+                @click.stop
+              />
+              <!-- 正常展示状态 -->
+              <template v-else>
+                <div class="flex items-center gap-2 truncate min-w-0 flex-1 pr-1.5">
+                  <!-- 文件夹颜色圆点或图标 -->
+                  <span
+                    v-if="folder.background_color"
+                    class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
+                    :style="{ backgroundColor: folder.background_color }"
+                  ></span>
+                  <i
+                    v-else
+                    class="fas fa-folder text-amber-400 text-xs flex-shrink-0"
+                  ></i>
+                  <span class="truncate">{{ folder.name }}</span>
+                </div>
+
+                <!-- 右侧容器：宽侧栏时hover渐变显示3个按钮；窄侧栏时只显示数字角标，绝不与文本重叠！ -->
+                <div class="flex items-center justify-end flex-shrink-0 relative min-w-[20px]" @click.stop>
+                  <!-- 数量角标 (过窄时常驻且不淡出；宽侧栏时hover淡出) -->
+                  <span
+                    class="text-[11px] px-1.5 py-0.2 rounded-full bg-border/40 text-text-secondary font-mono flex-shrink-0 transition-opacity duration-150"
+                    :class="{ 'group-hover:opacity-0 group-hover:pointer-events-none': !isNarrowSidebar }"
+                  >
+                    {{ getFolderCommandCount(folder.id) }}
+                  </span>
+
+                  <!-- 悬浮操作按钮 (仅在非过窄模式下提供 hover 显示，过窄模式完全不渲染，避免文本重叠) -->
+                  <div
+                    v-if="!isNarrowSidebar"
+                    class="absolute right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto bg-inherit rounded-md"
+                  >
+                    <!-- 调色板 -->
+                    <div class="relative inline-flex items-center" @click.stop>
+                      <button
+                        @click.stop="toggleFolderColorPicker(folder.id, $event)"
+                        class="w-5 h-5 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                        :title="t('folders.folderColor', '文件夹背景颜色')"
+                      >
+                        <i class="fas fa-palette"></i>
+                      </button>
+                      <ColorPickerPopover
+                        :visible="activeFolderColorPickerId === folder.id"
+                        :trigger-el="activeFolderColorPickerTriggerEl"
+                        :model-value="folder.background_color || null"
+                        @update:model-value="handleUpdateFolderColor(folder.id, $event)"
+                        @close="activeFolderColorPickerId = null; activeFolderColorPickerTriggerEl = null"
+                      />
+                    </div>
+                    <!-- 重命名 -->
+                    <button
+                      @click.stop="startEditingTag(folder.id, folder.name)"
+                      class="w-5 h-5 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                      :title="t('folders.renameFolder', '重命名文件夹')"
+                    >
+                      <i class="fas fa-pencil-alt"></i>
+                    </button>
+                    <!-- 删除 -->
+                    <button
+                      @click.stop="handleDeleteFolder(folder.id, folder.name, $event)"
+                      class="w-5 h-5 p-0 rounded text-text-secondary hover:text-error hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                      :title="t('folders.deleteFolder', '删除文件夹')"
+                    >
+                      <i class="fas fa-trash-alt"></i>
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </div>
+
+            <!-- 未分类文件夹 -->
+            <div
+              v-if="getFolderCommandCount('untagged') > 0"
+              @click="sidebarActiveFolderId = 'untagged'"
+              class="flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors duration-150 min-h-[30px]"
+              :class="sidebarActiveFolderId === 'untagged' ? 'bg-primary/15 text-primary font-semibold' : 'text-foreground/80 hover:text-foreground hover:bg-header/60'"
+            >
+              <div class="flex items-center gap-2 truncate min-w-0 pr-1.5">
+                <i class="fas fa-inbox text-xs text-text-secondary flex-shrink-0"></i>
+                <span class="truncate">{{ t('quickCommands.untagged', '未分类') }}</span>
+              </div>
+              <span class="text-[11px] px-1.5 py-0.2 rounded-full bg-border/40 text-text-secondary font-mono flex-shrink-0">
+                {{ getFolderCommandCount('untagged') }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 侧栏底部：新建文件夹快捷入口 -->
+          <div class="p-1.5 border-t border-border/40 flex-shrink-0">
+            <button
+              @click="openCreateFolderDialog"
+              class="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs text-text-secondary hover:text-foreground hover:bg-header/60 rounded-lg border border-dashed border-border/60 transition-colors cursor-pointer"
+            >
+              <i class="fas fa-folder-plus text-amber-400 text-xs"></i>
+              <span>{{ t('folders.newFolder', '新建文件夹') }}</span>
+            </button>
+          </div>
+        </aside>
+
+        <!-- 侧栏拖拽调整宽度手柄 -->
+        <div
+          class="w-1.5 -ml-1 z-10 cursor-col-resize flex-shrink-0 flex items-center justify-center group select-none hover:bg-primary/40 active:bg-primary transition-colors duration-150"
+          :class="{ 'bg-primary/60': isDraggingSidebar }"
+          @mousedown="startResizeSidebar"
+          :title="t('quickCommands.dragResize', '拖动调整宽度')"
+        >
+          <div class="w-0.5 h-6 rounded-full bg-border/60 group-hover:bg-primary transition-colors"></div>
+        </div>
+
+        <!-- 右侧：指令展示区域 -->
+        <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <!-- 右侧顶部文件夹栏 -->
+          <div class="flex items-center justify-between px-3 py-1.5 border-b border-border/40 text-xs flex-shrink-0 bg-background/50">
+            <div class="flex items-center gap-2 truncate min-w-0">
+              <span
+                v-if="activeSidebarFolderColor"
+                class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
+                :style="{ backgroundColor: activeSidebarFolderColor }"
+              ></span>
+              <span class="font-semibold text-foreground truncate">{{ activeSidebarFolderName }}</span>
+              <span class="text-text-secondary font-mono text-[11px]">({{ sidebarDisplayCommands.length }})</span>
+
+              <!-- 侧栏过窄时的补充操作按钮组 -->
+              <div
+                v-if="isNarrowSidebar && typeof sidebarActiveFolderId === 'number'"
+                class="flex items-center gap-0.5 ml-2 pl-2 border-l border-border/50"
+              >
+                <!-- 调色板 -->
+                <div class="relative inline-flex items-center">
+                  <button
+                    @click="toggleFolderColorPicker(sidebarActiveFolderId, $event)"
+                    class="w-5 h-5 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                    :title="t('folders.folderColor', '文件夹背景颜色')"
+                  >
+                    <i class="fas fa-palette"></i>
+                  </button>
+                  <ColorPickerPopover
+                    :visible="activeFolderColorPickerId === sidebarActiveFolderId"
+                    :trigger-el="activeFolderColorPickerTriggerEl"
+                    :model-value="activeSidebarFolderColor"
+                    @update:model-value="handleUpdateFolderColor(sidebarActiveFolderId, $event)"
+                    @close="activeFolderColorPickerId = null; activeFolderColorPickerTriggerEl = null"
+                  />
+                </div>
+                <!-- 重命名 -->
+                <button
+                  @click="startEditingTag(sidebarActiveFolderId, activeSidebarFolderName)"
+                  class="w-5 h-5 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                  :title="t('folders.renameFolder', '重命名文件夹')"
+                >
+                  <i class="fas fa-pencil-alt"></i>
+                </button>
+                <!-- 删除 -->
+                <button
+                  @click="handleDeleteFolder(sidebarActiveFolderId, activeSidebarFolderName, $event)"
+                  class="w-5 h-5 rounded text-text-secondary hover:text-error hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
+                  :title="t('folders.deleteFolder', '删除文件夹')"
+                >
+                  <i class="fas fa-trash-alt"></i>
+                </button>
+              </div>
+            </div>
+            <button
+              @click="openAddForm(typeof sidebarActiveFolderId === 'number' ? sidebarActiveFolderId : null)"
+              class="text-xs text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer font-medium"
+            >
+              <i class="fas fa-plus text-[10px]"></i>
+              <span>{{ t('quickCommands.add', '添加指令') }}</span>
+            </button>
+          </div>
+
+          <!-- 右侧指令列表滚动容器 -->
+          <div
+            class="flex-grow overflow-y-auto p-2"
+            tabindex="0"
+            @wheel.ctrl.prevent="handleWheel"
+            :style="{ '--qc-row-size-multiplier': quickCommandRowSizeMultiplier }"
+          >
+            <!-- Loading 状态 -->
+            <div v-if="isLoading && quickCommandsStore.quickCommandsList.length === 0" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
+              <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+              <p>{{ t('common.loading', '加载中...') }}</p>
+            </div>
+            <!-- Empty 状态 (当前文件夹无指令) -->
+            <div v-else-if="sidebarDisplayCommands.length === 0" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
+              <i class="fas fa-search text-xl mb-2" v-if="searchTerm"></i>
+              <i class="fas fa-folder-open text-xl mb-2 text-text-secondary/60" v-else></i>
+              <p class="mb-3">
+                {{ searchTerm ? `${t('quickCommands.noResults', '没有找到匹配的指令')} "${searchTerm}"` : t('quickCommands.empty', '该文件夹下没有快捷指令。') }}
+              </p>
+              <button
+                v-if="!searchTerm"
+                @click="openAddForm(typeof sidebarActiveFolderId === 'number' ? sidebarActiveFolderId : null)"
+                class="px-3 py-1.5 bg-primary text-white border-none rounded-lg text-xs font-semibold cursor-pointer shadow-md transition-colors duration-200 ease-in-out hover:bg-primary-dark"
+              >
+                {{ $t('quickCommands.add', '添加快捷指令') }}
+              </button>
+            </div>
+
+            <!-- 卡片列表渲染 (基于 currentViewMode) -->
+            <div v-else class="list-none p-0 m-0 outline-none">
+              <!-- 1. 网格卡片模式 (Grid) -->
+              <div v-if="currentViewMode === 'grid'" class="qc-grid-container pl-1 pr-1">
+                <div
+                  v-for="(cmd) in sidebarDisplayCommands"
+                  :key="cmd.id"
+                  :data-command-id="cmd.id"
+                  class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
+                  :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
+                  :style="[
+                    { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
+                    getCommandCardStyle(cmd, typeof sidebarActiveFolderId === 'number' ? sidebarActiveFolderId : null)
+                  ]"
+                  @click="handleCommandItemClick(cmd)"
+                  @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                  :title="getCommandTooltip(cmd)"
+                >
+                  <div class="flex-1 min-w-0 flex flex-col justify-center gap-0.5 mr-1.5">
+                    <div class="flex items-center text-foreground truncate"
+                         :style="{ fontSize: `calc(0.82em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                      <i class="fas fa-terminal text-primary text-[10px] mr-1.5 flex-shrink-0"></i>
+                      <span class="font-medium truncate">{{ cmd.name || cmd.command }}</span>
+                    </div>
+                    <div v-if="cmd.name && cmd.command"
+                         class="truncate font-mono text-text-secondary"
+                         :style="{ fontSize: `calc(0.7em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))` }">
+                      {{ cmd.command }}
+                    </div>
+                  </div>
+                  <div class="flex items-center flex-shrink-0">
+                    <button
+                      type="button"
+                      @click.stop="executeCommand(cmd)"
+                      class="rounded-md flex items-center justify-center text-primary bg-primary/15 border border-primary/25 group-hover:bg-primary group-hover:text-white transition-all duration-150"
+                      :style="{
+                        width: `calc(1.35rem * var(--qc-row-size-multiplier))`,
+                        height: `calc(1.35rem * var(--qc-row-size-multiplier))`
+                      }"
+                      :title="t('quickCommands.form.execute', '执行')"
+                    >
+                      <i class="fas fa-play text-[9px]"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. 药丸流式模式 (Pills) -->
+              <div v-else-if="currentViewMode === 'pills'" class="qc-pill-container pl-1 pr-1">
+                <div
+                  v-for="(cmd) in sidebarDisplayCommands"
+                  :key="cmd.id"
+                  :data-command-id="cmd.id"
+                  class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
+                  :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
+                  :style="[
+                    {
+                      padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
+                      fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
+                    },
+                    getCommandCardStyle(cmd, typeof sidebarActiveFolderId === 'number' ? sidebarActiveFolderId : null)
+                  ]"
+                  @click="handleCommandItemClick(cmd)"
+                  @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                  :title="getCommandTooltip(cmd)"
+                >
+                  <i class="fas fa-bolt text-amber-500 text-[10px] mr-1.5 flex-shrink-0"></i>
+                  <span class="truncate max-w-[220px]">{{ cmd.name || cmd.command }}</span>
+                </div>
+              </div>
+
+              <!-- 3. 标准列表模式 (List) -->
+              <ul v-else class="list-none p-0 m-0 pl-1 pr-1">
+                <li
+                  v-for="(cmd) in sidebarDisplayCommands"
+                  :key="cmd.id"
+                  :data-command-id="cmd.id"
+                  class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
+                  :style="[
+                    { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
+                    getCommandCardStyle(cmd, typeof sidebarActiveFolderId === 'number' ? sidebarActiveFolderId : null)
+                  ]"
+                  :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
+                  @click="handleCommandItemClick(cmd)"
+                  @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
+                >
+                  <div class="flex flex-col overflow-hidden mr-2 flex-grow">
+                    <span v-if="cmd.name"
+                          class="font-medium truncate text-foreground mb-0.5"
+                          :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.name }}</span>
+                    <span v-if="cmd.command"
+                          class="truncate font-mono"
+                          :class="{ 'text-sm': !cmd.name, 'text-text-secondary': true }"
+                          :style="{ fontSize: `calc(0.75em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }">{{ cmd.command }}</span>
+                  </div>
+                  <div class="flex items-center flex-shrink-0 opacity-100">
+                    <button @click.stop="copyCommand(cmd.command)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('commandHistory.copy', '复制')">
+                      <i class="fas fa-copy" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                    </button>
+                    <button @click.stop="openEditForm(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-primary" :title="$t('common.edit', '编辑')">
+                      <i class="fas fa-edit" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                    </button>
+                    <button @click.stop="confirmDelete(cmd)" class="p-1.5 rounded hover:bg-black/10 transition-colors duration-150 text-text-secondary hover:text-error" :title="$t('common.delete', '删除')">
+                      <i class="fas fa-times" :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"></i>
+                    </button>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- 2. 折叠树模式 (Accordion Layout Mode) -->
+      <div v-else class="flex-grow overflow-y-auto p-2">
         <!-- Loading State -->
         <div v-if="isLoading && quickCommandsStore.quickCommandsList.length === 0" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
             <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
@@ -394,6 +758,7 @@
     <AddEditQuickCommandForm
       v-if="isFormVisible"
       :command-to-edit="commandToEdit"
+      :initial-folder-id="initialFolderIdForNew"
       @close="closeForm"
     />
 
@@ -504,6 +869,63 @@
         >
           <i class="fas fa-trash-alt text-xs text-error w-4 text-center"></i>
           <span>{{ t('common.delete', '删除') }}</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Context Menu for Folders -->
+    <div
+      v-if="folderContextMenuVisible"
+      class="fixed bg-popover text-foreground border border-border/70 shadow-xl rounded-xl py-1.5 z-50 min-w-[160px] folder-context-menu"
+      style="background-color: var(--popover-bg-color, var(--app-bg-color));"
+      :style="{ top: `${folderContextMenuPosition.y}px`, left: `${folderContextMenuPosition.x}px` }"
+      @click.stop
+    >
+      <div v-if="folderContextMenuTargetFolder" class="px-3 py-1 text-xs text-text-secondary border-b border-border/40 font-mono truncate max-w-[200px] flex items-center gap-1.5">
+        <span
+          v-if="folderContextMenuTargetFolder.background_color"
+          class="w-2 h-2 rounded-full flex-shrink-0"
+          :style="{ backgroundColor: folderContextMenuTargetFolder.background_color }"
+        ></span>
+        <i v-else class="fas fa-folder text-amber-400 text-xs"></i>
+        <span class="truncate">{{ folderContextMenuTargetFolder.name }}</span>
+      </div>
+      <ul v-if="folderContextMenuTargetFolder" class="list-none p-0 m-0 mt-1">
+        <!-- 1. 修改颜色 -->
+        <li
+          class="relative group px-3 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="openFolderColorFromMenu($event, folderContextMenuTargetFolder)"
+        >
+          <div class="flex items-center gap-2.5">
+            <i class="fas fa-palette text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
+            <span>{{ t('folders.folderColor', '文件夹背景颜色') }}</span>
+          </div>
+          <span
+            v-if="folderContextMenuTargetFolder.background_color"
+            class="w-2.5 h-2.5 rounded-full ring-1 ring-white/20"
+            :style="{ backgroundColor: folderContextMenuTargetFolder.background_color }"
+          ></span>
+        </li>
+
+        <!-- 2. 重命名 -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleFolderMenuAction('rename', folderContextMenuTargetFolder)"
+        >
+          <i class="fas fa-pencil-alt text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
+          <span>{{ t('folders.renameFolder', '重命名文件夹') }}</span>
+        </li>
+
+        <!-- 分割线 -->
+        <div class="h-px bg-border/40 my-1 mx-1"></div>
+
+        <!-- 3. 删除 -->
+        <li
+          class="group px-3 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
+          @click="handleFolderMenuAction('delete', folderContextMenuTargetFolder)"
+        >
+          <i class="fas fa-trash-alt text-xs text-error w-4 text-center"></i>
+          <span>{{ t('folders.deleteFolder', '删除文件夹') }}</span>
         </li>
       </ul>
     </div>
@@ -791,6 +1213,120 @@ const viewModeTitle = computed(() => {
   return t('quickCommands.viewMode.toggle', { mode: modeName }, `切换视图 (当前: ${modeName})`);
 });
 
+// --- 文件夹布局模式定义与持久化 (折叠树 Accordion vs 侧栏 Sidebar) ---
+export type FolderLayoutMode = 'accordion' | 'sidebar';
+
+const storageFolderLayoutKey = computed(() => `qc_folder_layout:${platform.value}:${props.instanceId || 'default'}`);
+
+const getInitialFolderLayoutMode = (): FolderLayoutMode => {
+  const saved = componentStateStore.getState<FolderLayoutMode>(storageFolderLayoutKey.value, 'accordion');
+  if (saved && (saved === 'accordion' || saved === 'sidebar')) {
+    return saved;
+  }
+  try {
+    const local = localStorage.getItem('nexus:qc_folder_layout_mode');
+    if (local === 'accordion' || local === 'sidebar') {
+      return local as FolderLayoutMode;
+    }
+  } catch (_) {}
+  return 'accordion';
+};
+
+const folderLayoutMode = ref<FolderLayoutMode>(getInitialFolderLayoutMode());
+
+// 监听 storageFolderLayoutKey 变动同步
+watch(storageFolderLayoutKey, (newKey) => {
+  const saved = componentStateStore.getState<FolderLayoutMode>(newKey, getInitialFolderLayoutMode());
+  if (saved && ['accordion', 'sidebar'].includes(saved)) {
+    folderLayoutMode.value = saved;
+  }
+});
+
+// 监听状态变动持久化
+watch(folderLayoutMode, (newMode) => {
+  componentStateStore.setState(storageFolderLayoutKey.value, newMode);
+  try {
+    localStorage.setItem('nexus:qc_folder_layout_mode', newMode);
+  } catch (_) {}
+});
+
+const toggleFolderLayoutMode = () => {
+  folderLayoutMode.value = folderLayoutMode.value === 'sidebar' ? 'accordion' : 'sidebar';
+};
+
+const folderLayoutTitle = computed(() => {
+  return folderLayoutMode.value === 'sidebar'
+    ? t('quickCommands.folderLayout.switchToAccordion', '切换为折叠树视图')
+    : t('quickCommands.folderLayout.switchToSidebar', '切换为侧栏文件夹视图');
+});
+
+// --- 侧栏文件夹导航状态与指令过滤 ---
+const sidebarActiveFolderId = ref<number | 'all' | 'untagged'>('all');
+
+const getFolderCommandCount = (folderId: number | 'all' | 'untagged'): number => {
+  if (folderId === 'all') {
+    return quickCommandsStore.quickCommandsList.length;
+  }
+  if (folderId === 'untagged') {
+    return quickCommandsStore.quickCommandsList.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0).length;
+  }
+  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(folderId)).length;
+};
+
+const activeSidebarFolderName = computed(() => {
+  if (sidebarActiveFolderId.value === 'all') {
+    return t('quickCommands.allCommands', '全部指令');
+  }
+  if (sidebarActiveFolderId.value === 'untagged') {
+    return t('quickCommands.untagged', '未分类');
+  }
+  const folder = quickCommandTagsStore.folders.find(f => f.id === sidebarActiveFolderId.value);
+  return folder?.name || '';
+});
+
+const activeSidebarFolderColor = computed(() => {
+  if (typeof sidebarActiveFolderId.value === 'number') {
+    return getFolderColorById(sidebarActiveFolderId.value);
+  }
+  return null;
+});
+
+const sidebarDisplayCommands = computed(() => {
+  const allList = quickCommandsStore.quickCommandsList;
+  let baseList: QuickCommandFE[];
+  if (sidebarActiveFolderId.value === 'all') {
+    baseList = allList;
+  } else if (sidebarActiveFolderId.value === 'untagged') {
+    baseList = allList.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0);
+  } else {
+    const fid = sidebarActiveFolderId.value as number;
+    baseList = allList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(fid));
+  }
+
+  const term = searchTerm.value.trim().toLowerCase();
+  if (term) {
+    baseList = baseList.filter(cmd => {
+      const matchName = cmd.name && cmd.name.toLowerCase().includes(term);
+      const matchCommand = cmd.command && cmd.command.toLowerCase().includes(term);
+      return matchName || matchCommand;
+    });
+  }
+
+  const sorted = [...baseList];
+  sorted.sort((a, b) => {
+    if (sortBy.value === 'usage_count') {
+      if (b.usage_count !== a.usage_count) return b.usage_count - a.usage_count;
+    } else if (sortBy.value === 'last_used') {
+      if (b.updated_at !== a.updated_at) return b.updated_at - a.updated_at;
+    }
+    const nameA = a.name ?? a.command;
+    const nameB = b.name ?? b.command;
+    return nameA.localeCompare(nameB);
+  });
+
+  return sorted;
+});
+
 // --- Helper function for selection check ---
 const isCommandSelected = (commandId: number): boolean => {
     // 使用 store 的 flatVisibleCommands 和 storeSelectedIndex
@@ -806,6 +1342,109 @@ const getCommandTooltip = (cmd: QuickCommandFE): string => {
     return cmd.name ? `${cmd.name}: ${cmd.command}` : cmd.command;
   }
   return cmd.name || '';
+};
+
+// --- 侧栏宽度可拖拽调整与本地持久化 ---
+const DEFAULT_SIDEBAR_WIDTH = 200;
+const MIN_SIDEBAR_WIDTH = 140;
+const MAX_SIDEBAR_WIDTH = 420;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'nexus:qc_sidebar_width';
+
+const getInitialSidebarWidth = (): number => {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH && parsed <= MAX_SIDEBAR_WIDTH) {
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  return DEFAULT_SIDEBAR_WIDTH;
+};
+
+const sidebarWidth = ref<number>(getInitialSidebarWidth());
+const isDraggingSidebar = ref(false);
+
+const startResizeSidebar = (e: MouseEvent) => {
+  e.preventDefault();
+  isDraggingSidebar.value = true;
+  const startX = e.clientX;
+  const startWidth = sidebarWidth.value;
+
+  const prevCursor = document.body.style.cursor;
+  const prevUserSelect = document.body.style.userSelect;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    const deltaX = moveEvent.clientX - startX;
+    const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, startWidth + deltaX));
+    sidebarWidth.value = newWidth;
+  };
+
+  const onMouseUp = () => {
+    isDraggingSidebar.value = false;
+    document.body.style.cursor = prevCursor;
+    document.body.style.userSelect = prevUserSelect;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, sidebarWidth.value.toString());
+    } catch (_) {}
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+};
+
+// --- 窄侧栏判定与防按钮文本重叠优化 ---
+const NARROW_SIDEBAR_THRESHOLD = 180;
+const isNarrowSidebar = computed(() => sidebarWidth.value < NARROW_SIDEBAR_THRESHOLD);
+
+// --- 侧栏文件夹右键上下文菜单 ---
+const folderContextMenuVisible = ref(false);
+const folderContextMenuPosition = ref({ x: 0, y: 0 });
+const folderContextMenuTargetFolder = ref<any>(null);
+
+const showFolderContextMenu = (event: MouseEvent, folder: any) => {
+  event.preventDefault();
+  folderContextMenuTargetFolder.value = folder;
+  folderContextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  folderContextMenuVisible.value = true;
+  document.addEventListener('click', closeFolderContextMenu, { once: true });
+
+  nextTick(() => {
+    const menuEl = document.querySelector('.folder-context-menu') as HTMLElement;
+    if (menuEl) {
+      const rect = menuEl.getBoundingClientRect();
+      let fx = folderContextMenuPosition.value.x;
+      let fy = folderContextMenuPosition.value.y;
+      if (fx + rect.width > window.innerWidth) fx = window.innerWidth - rect.width - 8;
+      if (fy + rect.height > window.innerHeight) fy = window.innerHeight - rect.height - 8;
+      folderContextMenuPosition.value = { x: Math.max(8, fx), y: Math.max(8, fy) };
+    }
+  });
+};
+
+const closeFolderContextMenu = () => {
+  folderContextMenuVisible.value = false;
+  folderContextMenuTargetFolder.value = null;
+  document.removeEventListener('click', closeFolderContextMenu);
+};
+
+const handleFolderMenuAction = (action: 'rename' | 'delete', folder: any) => {
+  closeFolderContextMenu();
+  if (action === 'rename') {
+    startEditingTag(folder.id, folder.name);
+  } else if (action === 'delete') {
+    handleDeleteFolder(folder.id, folder.name);
+  }
+};
+
+const openFolderColorFromMenu = (event: MouseEvent, folder: any) => {
+  closeFolderContextMenu();
+  toggleFolderColorPicker(folder.id, event);
 };
 
 
@@ -848,6 +1487,7 @@ onBeforeUnmount(() => {
     longPressTimer = null;
   }
   document.removeEventListener('click', closeQuickCommandContextMenu);
+  document.removeEventListener('click', closeFolderContextMenu);
   // +++ 调用保存的注销函数 +++
   if (unregisterFocus) {
     unregisterFocus();
@@ -1002,12 +1642,16 @@ const sortButtonIcon = computed(() => {
 });
 
 
-const openAddForm = () => {
+const initialFolderIdForNew = ref<number | null>(null);
+
+const openAddForm = (folderId?: number | null | Event) => {
   commandToEdit.value = null;
+  initialFolderIdForNew.value = typeof folderId === 'number' ? folderId : null;
   isFormVisible.value = true;
 };
 
 const openEditForm = (command: QuickCommandFE) => {
+  initialFolderIdForNew.value = null;
   commandToEdit.value = command;
   isFormVisible.value = true;
 };
@@ -1015,6 +1659,7 @@ const openEditForm = (command: QuickCommandFE) => {
 const closeForm = () => {
   isFormVisible.value = false;
   commandToEdit.value = null;
+  initialFolderIdForNew.value = null;
 };
 
 const confirmDelete = async (command: QuickCommandFE) => {
@@ -1338,6 +1983,9 @@ const confirmCreateQuickCommandFolder = async () => {
       uiNotificationsStore.showSuccess(t('folders.folderCreated', '文件夹已创建'));
       await quickCommandTagsStore.fetchTags();
       await quickCommandsStore.fetchQuickCommands();
+      if (folderLayoutMode.value === 'sidebar') {
+        sidebarActiveFolderId.value = created.id;
+      }
       isCreatingFolderModal.value = false;
       newQuickCommandFolderName.value = '';
     }
@@ -1349,10 +1997,6 @@ const confirmCreateQuickCommandFolder = async () => {
 const showDeleteFolderModal = ref(false);
 const folderToDelete = ref<{ id: number; name: string } | null>(null);
 const isDeletingFolder = ref(false);
-
-const getFolderCommandCount = (folderId: number): number => {
-  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(folderId)).length;
-};
 
 const handleDeleteFolder = (folderId: number, folderName: string, event?: Event) => {
   if (event) event.stopPropagation();
@@ -1369,6 +2013,9 @@ const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
     if (success) {
       showDeleteFolderModal.value = false;
       folderToDelete.value = null;
+      if (sidebarActiveFolderId.value === fid) {
+        sidebarActiveFolderId.value = 'all';
+      }
       await Promise.all([
         quickCommandTagsStore.fetchTags(),
         quickCommandsStore.fetchQuickCommands()

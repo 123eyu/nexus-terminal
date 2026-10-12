@@ -38,6 +38,9 @@ const showAddEditModal = ref(false);
 const editingPathItem = ref<FavoritePathItem | null>(null);
 const modalContentRef = ref<HTMLElement | null>(null);
 const modalStyle = ref<Record<string, string>>({});
+const searchInputRef = ref<HTMLInputElement | null>(null);
+const listContainerRef = ref<HTMLElement | null>(null);
+const selectedIndex = ref<number>(0);
 
 const filteredPaths = computed(() => {
   if (!searchTerm.value) {
@@ -50,6 +53,59 @@ const filteredPaths = computed(() => {
       (p.name && p.name.toLowerCase().includes(lowerSearchTerm))
   );
 });
+
+// 当过滤结果变动时，纠偏当前选中的索引
+watch(filteredPaths, (newList) => {
+  if (newList.length === 0) {
+    selectedIndex.value = -1;
+  } else if (selectedIndex.value >= newList.length || selectedIndex.value < 0) {
+    selectedIndex.value = 0;
+  }
+}, { immediate: true });
+
+const scrollToSelectedItem = () => {
+  nextTick(() => {
+    if (!listContainerRef.value) return;
+    const selectedEl = listContainerRef.value.querySelector(`[data-index="${selectedIndex.value}"]`) as HTMLElement;
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: 'nearest' });
+    }
+  });
+};
+
+const handleSearchKeyDown = (event: KeyboardEvent) => {
+  const list = filteredPaths.value;
+  if (list.length === 0) {
+    if (event.key === 'Escape' || event.code === 'Escape') {
+      event.preventDefault();
+      closeModal();
+    }
+    return;
+  }
+
+  const isDown = event.key === 'ArrowDown' || event.code === 'ArrowDown';
+  const isUp = event.key === 'ArrowUp' || event.code === 'ArrowUp';
+  const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.code === 'NumpadEnter';
+  const isEsc = event.key === 'Escape' || event.code === 'Escape';
+
+  if (isDown) {
+    event.preventDefault();
+    selectedIndex.value = (selectedIndex.value + 1) % list.length;
+    scrollToSelectedItem();
+  } else if (isUp) {
+    event.preventDefault();
+    selectedIndex.value = (selectedIndex.value - 1 + list.length) % list.length;
+    scrollToSelectedItem();
+  } else if (isEnter) {
+    event.preventDefault();
+    if (selectedIndex.value >= 0 && selectedIndex.value < list.length) {
+      handleItemClick(list[selectedIndex.value]);
+    }
+  } else if (isEsc) {
+    event.preventDefault();
+    closeModal();
+  }
+};
 
 const currentSortBy = computed(() => favoritePathsStore.currentSortBy);
 
@@ -99,6 +155,8 @@ const handleDelete = async (pathItem: FavoritePathItem) => {
   }
 };
 
+const isPositioned = ref(false);
+
 const updatePosition = () => {
   if (props.isMobile) return;
   if (!props.triggerElement || !modalContentRef.value) return;
@@ -106,28 +164,45 @@ const updatePosition = () => {
   const triggerRect = props.triggerElement.getBoundingClientRect();
   const modalRect = modalContentRef.value.getBoundingClientRect();
 
-  let top = triggerRect.bottom + PADDING;
-  let left = triggerRect.left;
+  if (triggerRect.width === 0 && triggerRect.height === 0) return;
 
-  if (top + modalRect.height > window.innerHeight - PADDING) {
-    top = triggerRect.top - modalRect.height - PADDING;
-    if (top < PADDING) {
-      top = window.innerHeight - modalRect.height - PADDING;
-    }
+  const modalWidth = modalRect.width || 320;
+  const modalHeight = modalRect.height || 280;
+  const windowHeight = window.innerHeight;
+  const windowWidth = window.innerWidth;
+
+  // 1. 水平定位：面包屑按钮多在右侧，优先让弹窗右侧与按钮对齐，避免右侧溢出
+  let left = triggerRect.right - modalWidth;
+  if (left < PADDING) {
+    left = triggerRect.left;
   }
-
-  if (left + modalRect.width > window.innerWidth - PADDING) {
-    left = window.innerWidth - modalRect.width - PADDING;
+  if (left + modalWidth > windowWidth - PADDING) {
+    left = windowWidth - modalWidth - PADDING;
   }
   if (left < PADDING) {
     left = PADDING;
   }
 
+  // 2. 垂直定位：默认优先向下展示（按钮下方）
+  let top = triggerRect.bottom + PADDING;
+  const spaceBelow = windowHeight - triggerRect.bottom - PADDING;
+  const spaceAbove = triggerRect.top - PADDING;
+
+  // 仅在下方空间不足且上方空间更大时才向上展开
+  if (top + modalHeight > windowHeight - PADDING) {
+    if (spaceAbove >= modalHeight || spaceAbove > spaceBelow) {
+      top = Math.max(PADDING, triggerRect.top - modalHeight - PADDING);
+    } else {
+      top = Math.max(PADDING, windowHeight - modalHeight - PADDING);
+    }
+  }
+
   modalStyle.value = {
     position: 'fixed',
-    top: `${top}px`,
-    left: `${left}px`,
+    top: `${Math.round(top)}px`,
+    left: `${Math.round(left)}px`,
   };
+  isPositioned.value = true;
 };
 
 const handleClickOutside = (event: MouseEvent) => {
@@ -145,14 +220,18 @@ const handleClickOutside = (event: MouseEvent) => {
 watch(() => props.isVisible, (newValue: boolean) => {
   if (newValue) {
     searchTerm.value = '';
+    selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
+    isPositioned.value = false;
     if (!props.isMobile) {
       document.addEventListener('mousedown', handleClickOutside);
       nextTick(() => {
         updatePosition();
         window.addEventListener('resize', updatePosition);
+        searchInputRef.value?.focus();
       });
     }
   } else {
+    isPositioned.value = false;
     document.removeEventListener('mousedown', handleClickOutside);
     window.removeEventListener('resize', updatePosition);
   }
@@ -161,10 +240,13 @@ watch(() => props.isVisible, (newValue: boolean) => {
 onMounted(() => {
   if (props.isVisible && !props.isMobile) {
     searchTerm.value = ''; 
+    selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
+    isPositioned.value = false;
     document.addEventListener('mousedown', handleClickOutside);
     nextTick(() => { 
       updatePosition();
       window.addEventListener('resize', updatePosition);
+      searchInputRef.value?.focus();
     });
   }
 });
@@ -185,21 +267,24 @@ onBeforeUnmount(() => {
     @navigate-to-path="(p: string) => emit('navigateToPath', p)"
   />
 
-  <!-- 桌面端常规绝对定位下拉浮层 -->
-  <template v-else>
+  <!-- 桌面端常规绝对定位下拉浮层 (通过 Teleport 挂载到 body，避免被局部容器包含块或尺寸挤压干扰) -->
+  <Teleport to="body" v-else>
     <div
       v-if="isVisible"
       ref="modalContentRef"
       :style="modalStyle"
-      class="z-50 w-72 md:w-80 rounded-md bg-background shadow-lg border border-border/50 max-h-80 flex flex-col overflow-hidden"
+      class="fixed z-[1001] w-72 md:w-80 rounded-md bg-background shadow-lg border border-border/50 max-h-80 flex flex-col overflow-hidden transition-opacity duration-150"
+      :class="isPositioned ? 'opacity-100' : 'opacity-0 pointer-events-none'"
     >
       <!-- Toolbar: Search and Add Button -->
       <div class="p-2 flex-shrink-0 flex items-center gap-2">
         <div class="relative flex-grow">
           <input
+            ref="searchInputRef"
             type="text"
             v-model="searchTerm"
             :placeholder="t('favoritePaths.searchPlaceholder', 'Search by name or path...')"
+            @keydown="handleSearchKeyDown"
             class="w-full bg-input border border-border rounded-md pl-2.5 pr-2 py-1.5 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
           />
         </div>
@@ -219,7 +304,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Path List -->
-      <div class="overflow-y-auto flex-grow p-1 text-sm">
+      <div ref="listContainerRef" class="overflow-y-auto flex-grow p-1 text-sm select-none">
         <div v-if="favoritePathsStore.isLoading && filteredPaths.length === 0" class="p-3 text-center text-text-secondary">
           {{ t('favoritePaths.loading', 'Loading favorite paths...') }}
         </div>
@@ -228,14 +313,21 @@ onBeforeUnmount(() => {
         </div>
         <div
           v-else
-          v-for="favPath in filteredPaths"
+          v-for="(favPath, idx) in filteredPaths"
           :key="favPath.id"
-          class="group flex items-center justify-between p-1.5 rounded hover:bg-primary/10 cursor-pointer"
+          :data-index="idx"
+          class="group flex items-center justify-between p-1.5 rounded cursor-pointer transition-colors duration-150 text-foreground"
+          :class="[
+            idx === selectedIndex
+              ? 'bg-primary/15'
+              : 'hover:bg-primary/10'
+          ]"
           @click="handleItemClick(favPath)"
+          @mouseenter="selectedIndex = idx"
         >
           <div class="truncate flex-grow mr-2">
-            <span v-if="favPath.name" class="font-medium text-foreground block truncate">{{ favPath.name }}</span>
-            <span class="text-xs text-text-secondary block truncate" :class="{ 'font-medium text-foreground': !favPath.name }">{{ favPath.path }}</span>
+            <span v-if="favPath.name" class="font-medium block truncate text-foreground">{{ favPath.name }}</span>
+            <span class="text-xs text-text-secondary block truncate font-normal">{{ favPath.path }}</span>
           </div>
           <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
@@ -265,5 +357,5 @@ onBeforeUnmount(() => {
       :is-mobile="false"
       @close="showAddEditModal = false"
     />
-  </template>
+  </Teleport>
 </template>

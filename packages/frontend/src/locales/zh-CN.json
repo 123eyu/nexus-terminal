@@ -40,8 +40,9 @@
     "dragTip": "可拖拽卡片至左侧文件夹归类",
     "folderCreated": "文件夹已创建",
     "folderDeleted": "文件夹已删除",
-    "deleteFolderConfirm": "确定要删除文件夹 \"{name}\" 吗？",
-    "manageFolder": "管理文件夹"
+    "manageFolder": "管理文件夹",
+    "folderColor": "文件夹背景颜色",
+    "rightClickToManage": "右键管理"
   },
   "styleCustomizer": {
     "title": "外观自定义",
@@ -1458,6 +1459,14 @@
       "pills": "极简药丸",
       "toggle": "切换视图 (当前: {mode})"
     },
+    "folderLayout": {
+      "accordion": "折叠树视图",
+      "sidebar": "侧栏文件夹视图",
+      "switchToSidebar": "切换为侧栏文件夹视图",
+      "switchToAccordion": "切换为折叠树视图"
+    },
+    "allCommands": "全部指令",
+    "dragResize": "拖动调整侧栏宽度",
     "form": {
       "titleAdd": "添加快捷指令",
       "titleEdit": "编辑快捷指令",

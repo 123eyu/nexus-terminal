@@ -40,8 +40,9 @@
     "dragTip": "Drag cards to left folders to categorize",
     "folderCreated": "Folder created",
     "folderDeleted": "Folder deleted",
-    "deleteFolderConfirm": "Are you sure you want to delete folder \"{name}\"?",
-    "manageFolder": "Manage Folder"
+    "manageFolder": "Manage Folder",
+    "folderColor": "Folder Background Color",
+    "rightClickToManage": "Right click to manage"
   },
   "styleCustomizer": {
     "title": "Appearance Customizer",
@@ -1454,6 +1455,14 @@
       "pills": "Pill Flow",
       "toggle": "Switch View (Current: {mode})"
     },
+    "folderLayout": {
+      "accordion": "Tree View",
+      "sidebar": "Sidebar View",
+      "switchToSidebar": "Switch to Sidebar View",
+      "switchToAccordion": "Switch to Tree View"
+    },
+    "allCommands": "All Commands",
+    "dragResize": "Drag to resize sidebar",
     "form": {
       "titleAdd": "Add Quick Command",
       "titleEdit": "Edit Quick Command",

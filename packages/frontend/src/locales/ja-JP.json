@@ -702,8 +702,9 @@
     "dragTip": "カードを左側のフォルダーにドラッグして分類できます",
     "folderCreated": "フォルダーを作成しました",
     "folderDeleted": "フォルダーを削除しました",
-    "deleteFolderConfirm": "フォルダー \"{name}\" を削除してもよろしいですか？",
-    "manageFolder": "フォルダー管理"
+    "manageFolder": "フォルダー管理",
+    "folderColor": "フォルダー背景色",
+    "rightClickToManage": "右クリックで管理"
   },
   "notificationController": {
     "errorCreateSetting": "通知設定の作成に失敗しました",
@@ -772,6 +773,14 @@
       "pills": "ピルフロー",
       "toggle": "ビューを切り替え (現在: {mode})"
     },
+    "folderLayout": {
+      "accordion": "ツリービュー",
+      "sidebar": "サイドバービュー",
+      "switchToSidebar": "サイドバービューに切り替え",
+      "switchToAccordion": "ツリービューに切り替え"
+    },
+    "allCommands": "すべてのコマンド",
+    "dragResize": "ドラッグしてサイドバーの幅を調整",
     "form": {
       "add": "追加",
       "tags": "タグ:",
