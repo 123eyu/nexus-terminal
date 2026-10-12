@@ -74,6 +74,14 @@ async function main() {
   console.log('🎨 正在同步前端页面到 resources/server/public...');
   fs.cpSync(frontendDist, path.join(serverDir, 'public'), { recursive: true, force: true });
 
+  // 4.1 同步多语言包 (locales)
+  const localesSrc = path.join(backendDir, 'src', 'locales');
+  if (fs.existsSync(localesSrc)) {
+    console.log('🌐 正在同步多语言包到 resources/server/locales 与 resources/server/dist/locales...');
+    fs.cpSync(localesSrc, path.join(serverDir, 'locales'), { recursive: true, force: true });
+    fs.cpSync(localesSrc, path.join(serverDir, 'dist', 'locales'), { recursive: true, force: true });
+  }
+
   // 5. 同步 HTML 预设背景主题 (html-presets)
   const htmlPresetsSrc = path.join(backendDir, 'html-presets');
   if (fs.existsSync(htmlPresetsSrc)) {

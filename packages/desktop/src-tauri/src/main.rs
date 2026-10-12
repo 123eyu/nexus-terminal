@@ -233,11 +233,30 @@ fn exit_desktop_app(app: AppHandle, state: tauri::State<AppState>) -> Result<(),
 
 /// 智能寻找后端服务入口脚本 dist/index.js
 
+/// 移除 Windows 上的 UNC 扩展长路径前缀 (\\?\ 或 \\?\UNC\)，规避 Node.js 的 EISDIR 路径解析缺陷
+fn clean_windows_path<P: AsRef<Path>>(path: P) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let path_ref = path.as_ref();
+        let path_str = path_ref.to_string_lossy();
+        if path_str.starts_with(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{}", &path_str[8..]));
+        } else if path_str.starts_with(r"\\?\") {
+            return PathBuf::from(&path_str[4..]);
+        }
+        return path_ref.to_path_buf();
+    }
+    #[cfg(not(windows))]
+    {
+        path.as_ref().to_path_buf()
+    }
+}
+
 /// 智能寻找可用 Node 运行时 (便携版同级 nexus-server.exe / 资源目录 / 系统 PATH)
 fn find_node_runtime(app: &AppHandle) -> Option<PathBuf> {
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
-    let app_dir = current_exe.parent().unwrap_or_else(|| Path::new("."));
-    let resource_dir = app.path().resource_dir().unwrap_or_else(|_| app_dir.to_path_buf());
+    let current_exe = clean_windows_path(std::env::current_exe().unwrap_or_else(|_| PathBuf::from(".")));
+    let app_dir = clean_windows_path(current_exe.parent().unwrap_or_else(|| Path::new(".")));
+    let resource_dir = clean_windows_path(app.path().resource_dir().unwrap_or_else(|_| app_dir.clone()));
 
     let candidates = [
         app_dir.join("nexus-server.exe"),
@@ -251,7 +270,7 @@ fn find_node_runtime(app: &AppHandle) -> Option<PathBuf> {
     for path in &candidates {
         if path.exists() {
             println!("🎯 [Nexus Desktop] 找到原生 Node.js 运行时: {:?}", path);
-            return Some(path.clone());
+            return Some(clean_windows_path(path));
         }
     }
 
@@ -261,7 +280,7 @@ fn find_node_runtime(app: &AppHandle) -> Option<PathBuf> {
         if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout);
             if let Some(first_line) = path_str.lines().next() {
-                let p = PathBuf::from(first_line.trim());
+                let p = clean_windows_path(PathBuf::from(first_line.trim()));
                 if p.exists() {
                     println!("🎯 [Nexus Desktop] 使用系统环境 Node.js: {:?}", p);
                     return Some(p);
@@ -274,10 +293,10 @@ fn find_node_runtime(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn find_server_entry(app: &AppHandle) -> Option<PathBuf> {
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
-    let app_dir = current_exe.parent().unwrap_or_else(|| Path::new("."));
-    let resource_dir = app.path().resource_dir().unwrap_or_else(|_| app_dir.to_path_buf());
-    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let current_exe = clean_windows_path(std::env::current_exe().unwrap_or_else(|_| PathBuf::from(".")));
+    let app_dir = clean_windows_path(current_exe.parent().unwrap_or_else(|| Path::new(".")));
+    let resource_dir = clean_windows_path(app.path().resource_dir().unwrap_or_else(|_| app_dir.clone()));
+    let current_dir = clean_windows_path(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
 
     let candidates = [
         // 1. 已安装/Release 标准解压资源路径
@@ -295,7 +314,7 @@ fn find_server_entry(app: &AppHandle) -> Option<PathBuf> {
     for path in &candidates {
         if path.exists() {
             println!("🎯 [Nexus Desktop] 找到后端服务入口: {:?}", path);
-            return Some(path.clone());
+            return Some(clean_windows_path(path));
         }
     }
 
@@ -323,15 +342,15 @@ fn main() {
     println!("🚀 [Nexus Desktop] 选定后台服务端口: {} (默认固定优先)", port);
 
     // 便携模式优先：数据目录默认在安装目录 / 运行程序同级的 data 文件夹
-    let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
-    let app_dir = current_exe.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
-    let portable_data_dir = app_dir.join("data");
+    let current_exe = clean_windows_path(std::env::current_exe().unwrap_or_else(|_| PathBuf::from(".")));
+    let app_dir = clean_windows_path(current_exe.parent().unwrap_or_else(|| Path::new(".")));
+    let portable_data_dir = clean_windows_path(app_dir.join("data"));
 
     if !portable_data_dir.exists() {
         let _ = std::fs::create_dir_all(&portable_data_dir);
     }
 
-    let app_data_dir = portable_data_dir.to_string_lossy().to_string();
+    let app_data_dir = clean_windows_path(&portable_data_dir).to_string_lossy().to_string();
     println!("📂 [Nexus Desktop] 数据存储目录 (就近便携优先): {}", app_data_dir);
 
     let app = tauri::Builder::default()
@@ -366,13 +385,17 @@ fn main() {
             let server_entry = find_server_entry(&handle);
 
             if let Some(entry_path) = server_entry {
-                let entry_str = entry_path.to_string_lossy().to_string();
-                let server_dir = entry_path
-                    .parent()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| app_dir.join("server"));
-                let node_modules_dir = server_dir.join("node_modules");
+                let clean_entry = clean_windows_path(&entry_path);
+                let entry_str = clean_entry.to_string_lossy().to_string();
+                let server_dir = clean_windows_path(
+                    clean_entry
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| app_dir.join("server"))
+                );
+                let node_modules_dir = clean_windows_path(server_dir.join("node_modules"));
+                let clean_data_dir = clean_windows_path(&portable_data_dir).to_string_lossy().to_string();
 
                 println!("📂 [Nexus Desktop] 后端运行根目录: {:?}", server_dir);
                 println!("📦 [Nexus Desktop] 模块加载目录 NODE_PATH: {:?}", node_modules_dir);
@@ -388,29 +411,88 @@ fn main() {
                             .current_dir(&server_dir)
                             .env("PORT", port.to_string())
                             .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
-                            .env("NEXUS_DATA_DIR", &app_data_dir)
+                            .env("NEXUS_DATA_DIR", &clean_data_dir)
                             .env("NODE_ENV", "production")
                             .spawn()
                     });
 
                 match sidecar_result {
-                    Ok((_rx, child)) => {
+                    Ok((mut rx, child)) => {
                         println!("✅ [Nexus Desktop] 通过 Tauri Sidecar 成功启动后端！PID: {}", child.pid());
                         let mut lock = sidecar_child_clone.lock().unwrap();
                         *lock = Some(child);
                         server_started = true;
+
+                        // 异步消费 Sidecar 输出流，输出到控制台与 data/server.log
+                        let log_path = portable_data_dir.join("server.log");
+                        tauri::async_runtime::spawn(async move {
+                            use tauri_plugin_shell::process::CommandEvent;
+                            use std::io::Write;
+                            let mut log_file = std::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .append(true)
+                                .open(&log_path)
+                                .ok();
+
+                            while let Some(event) = rx.recv().await {
+                                match event {
+                                    CommandEvent::Stdout(line) => {
+                                        let text = String::from_utf8_lossy(&line);
+                                        print!("[Backend Stdout] {}", text);
+                                        if let Some(f) = &mut log_file {
+                                            let _ = f.write_all(&line);
+                                        }
+                                    }
+                                    CommandEvent::Stderr(line) => {
+                                        let text = String::from_utf8_lossy(&line);
+                                        eprint!("[Backend Stderr] {}", text);
+                                        if let Some(f) = &mut log_file {
+                                            let _ = f.write_all(&line);
+                                        }
+                                    }
+                                    CommandEvent::Error(err) => {
+                                        eprintln!("❌ [Backend Error] Sidecar 错误: {}", err);
+                                        if let Some(f) = &mut log_file {
+                                            let _ = writeln!(f, "[Error] {}", err);
+                                        }
+                                    }
+                                    CommandEvent::Terminated(payload) => {
+                                        println!("⚠️ [Backend Terminated] Sidecar 进程终止，退出码: {:?}", payload.code);
+                                        if let Some(f) = &mut log_file {
+                                            let _ = writeln!(f, "[Terminated] Code: {:?}", payload.code);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        });
                     }
                     Err(err) => {
                         println!("⚠️ [Nexus Desktop] Tauri Sidecar 启动未命中 ({})，正在切换至原生进程引擎启动...", err);
                         if let Some(node_exe) = find_node_runtime(&handle) {
-                            let mut native_cmd = std::process::Command::new(&node_exe);
+                            let clean_node = clean_windows_path(&node_exe);
+                            let mut native_cmd = std::process::Command::new(&clean_node);
                             native_cmd
                                 .arg(&entry_str)
                                 .current_dir(&server_dir)
                                 .env("PORT", port.to_string())
                                 .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
-                                .env("NEXUS_DATA_DIR", &app_data_dir)
+                                .env("NEXUS_DATA_DIR", &clean_data_dir)
                                 .env("NODE_ENV", "production");
+
+                            let log_path = portable_data_dir.join("server.log");
+                            if let Ok(file_out) = std::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .append(true)
+                                .open(&log_path)
+                            {
+                                if let Ok(file_err) = file_out.try_clone() {
+                                    native_cmd.stdout(std::process::Stdio::from(file_out));
+                                    native_cmd.stderr(std::process::Stdio::from(file_err));
+                                }
+                            }
 
                             #[cfg(windows)]
                             native_cmd.creation_flags(CREATE_NO_WINDOW);
@@ -564,6 +646,7 @@ fn main() {
                 let win_clone = main_window.clone();
                 let data_dir_for_close = portable_data_dir.clone();
                 let sidecar_for_close = sidecar_child.clone();
+                let native_for_close = native_child.clone();
 
                 main_window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
@@ -586,6 +669,12 @@ fn main() {
                                     let _ = child.kill();
                                     println!("🧹 [Nexus Desktop] Sidecar 进程清理完成！");
                                 }
+                                if let Ok(mut n_lock) = native_for_close.lock() {
+                                    if let Some(mut child) = n_lock.take() {
+                                        let _ = child.kill();
+                                        println!("🧹 [Nexus Desktop] 原生子进程清理完成！");
+                                    }
+                                }
                                 return;
                             }
                         }
@@ -602,6 +691,12 @@ fn main() {
                                 if let Some(child) = lock.take() {
                                     let _ = child.kill();
                                     println!("🧹 [Nexus Desktop] Sidecar 进程清理完成！");
+                                }
+                                if let Ok(mut n_lock) = native_for_close.lock() {
+                                    if let Some(mut child) = n_lock.take() {
+                                        let _ = child.kill();
+                                        println!("🧹 [Nexus Desktop] 原生子进程清理完成！");
+                                    }
                                 }
                             }
                         } else {

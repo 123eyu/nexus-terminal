@@ -3,8 +3,23 @@ import Backend from 'i18next-fs-backend';
 import path from 'path';
 import fs from 'fs';
 
-// --- 动态确定支持的语言 ---
-const localesDir = path.join(__dirname, 'locales');
+// --- 动态确定支持的语言与语言包目录 ---
+const candidateLocalesDirs = [
+  path.join(__dirname, 'locales'),
+  path.join(__dirname, 'src', 'locales'),
+  path.join(process.cwd(), 'locales'),
+  path.join(process.cwd(), 'dist', 'locales'),
+  path.join(process.cwd(), 'dist', 'src', 'locales'),
+  path.join(process.cwd(), 'src', 'locales'),
+];
+const localesDir = candidateLocalesDirs.find(d => {
+  try {
+    return fs.existsSync(d) && fs.statSync(d).isDirectory();
+  } catch {
+    return false;
+  }
+}) || path.join(__dirname, 'locales');
+
 let dynamicSupportedLngs: string[] = [];
 try {
   const entries = fs.readdirSync(localesDir, { withFileTypes: true });
@@ -12,7 +27,7 @@ try {
   dynamicSupportedLngs = entries
     .filter(dirent => dirent.isFile() && dirent.name.endsWith('.json'))
     .map(dirent => dirent.name.replace('.json', '')); // Extract lang code from filename
-  console.log('[i18next] 动态检测到的语言:', dynamicSupportedLngs);
+  console.log('[i18next] 动态检测到的语言 (目录:', localesDir, '):', dynamicSupportedLngs);
 } catch (err) {
   console.error('[i18next] 读取 locales 目录时出错:', err);
   dynamicSupportedLngs = ['en-US']; // Fallback
