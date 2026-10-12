@@ -978,22 +978,63 @@ export const syncV2Service = {
     let totalPushed = 0;
     let totalPulled = 0;
 
-    // --- 步骤 1: PUSH 本地变更 ---
-    const { changes: localChanges, maxSeq } = await this.extractLocalChangesToPush(pairingSecret);
-    if (localChanges.length > 0) {
-      console.log(`[SyncV2:Client] 正在推送 ${localChanges.length} 条本地变更至云端...`);
-      const pushRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/push`, {
-        method: 'POST',
-        headers: { 'x-device-token': deviceToken },
-        body: { device_id: deviceId, changes: localChanges }
-      });
+    // --- 步骤 1: PUSH 本地变更 (安全切片分批与 413 弹性防护) ---
+    try {
+      const { changes: localChanges } = await this.extractLocalChangesToPush(pairingSecret);
+      if (localChanges.length > 0) {
+        console.log(`[SyncV2:Client] 检测到 ${localChanges.length} 条本地变更待推送，采用小批次切片防溢出传输...`);
 
-      if (pushRes && pushRes.success && pushRes.data) {
-        const data: PushResponseResult = pushRes.data;
-        totalPushed += data.accepted.length;
-        // 推进 push_cursor
-        await runDb(db, `UPDATE sync_state SET push_cursor = ? WHERE id = 1`, [maxSeq]);
+        // 设置安全单批条数 (每批 25 条，严格低于 Express/Nginx 默认限制)
+        const CHUNK_SIZE = 25;
+        for (let i = 0; i < localChanges.length; i += CHUNK_SIZE) {
+          const chunk = localChanges.slice(i, i + CHUNK_SIZE);
+
+          // 尝试推送该批次，若遭遇 413 则二分降级重试
+          let subBatchSize = chunk.length;
+          let subIdx = 0;
+
+          while (subIdx < chunk.length) {
+            const subChunk = chunk.slice(subIdx, subIdx + subBatchSize);
+            try {
+              const pushRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/push`, {
+                method: 'POST',
+                headers: { 'x-device-token': deviceToken },
+                body: { device_id: deviceId, changes: subChunk }
+              });
+
+              if (pushRes && pushRes.success && pushRes.data) {
+                const data: PushResponseResult = pushRes.data;
+                totalPushed += (data.accepted || []).length;
+                // 推进该批次中最大的 seq
+                const batchMaxSeq = Math.max(...subChunk.map(c => c.seq || 0));
+                if (batchMaxSeq > 0) {
+                  await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [batchMaxSeq]);
+                }
+                subIdx += subBatchSize;
+              } else {
+                throw new Error(pushRes?.error || '推送响应未成功');
+              }
+            } catch (postErr: any) {
+              const is413 = postErr.message && (postErr.message.includes('413') || postErr.message.includes('Payload Too Large'));
+              if (is413 && subBatchSize > 5) {
+                // 遇到 413 且批次大于 5，立即二分降级重试该段
+                console.warn(`[SyncV2:Client] 遭遇云端 413 限制，自动降级批次大小 (${subBatchSize} -> ${Math.floor(subBatchSize / 2)}) 重试...`);
+                subBatchSize = Math.max(1, Math.floor(subBatchSize / 2));
+              } else {
+                console.warn(`[SyncV2:Client] 推送批次 (偏移 ${i + subIdx}) 告警:`, postErr.message);
+                // 若单条超大无法推送，推进游标防止整体死锁阻塞
+                const failedSeq = subChunk[0]?.seq;
+                if (failedSeq) {
+                  await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [failedSeq]);
+                }
+                subIdx += 1;
+              }
+            }
+          }
+        }
       }
+    } catch (pushErr: any) {
+      console.warn('[SyncV2:Client] PUSH 本地变更流程遇到告警，已安全隔离，继续执行 PULL 拉取:', pushErr.message);
     }
 
     // --- 步骤 2: PULL 云端变更并循环排空 ---
