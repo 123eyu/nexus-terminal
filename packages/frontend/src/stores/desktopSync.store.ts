@@ -205,6 +205,15 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
             const { useTagsStore } = await import('./tags.store');
             const tagsStore = useTagsStore();
             await tagsStore.fetchTags();
+            const { useSshKeysStore } = await import('./sshKeys.store');
+            const sshKeysStore = useSshKeysStore();
+            await sshKeysStore.fetchSshKeys();
+            const { useProxiesStore } = await import('./proxies.store');
+            const proxiesStore = useProxiesStore();
+            await proxiesStore.fetchProxies();
+            const { useFavoritePathsStore } = await import('./favoritePaths.store');
+            const favoritePathsStore = useFavoritePathsStore();
+            await favoritePathsStore.fetchFavoritePaths((_k, d) => d);
           }
           if (activeModules.includes('quickCommands')) {
             const { useQuickCommandsStore } = await import('./quickCommands.store');
@@ -218,6 +227,16 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
             const { useAppearanceStore } = await import('./appearance.store');
             const appearanceStore = useAppearanceStore();
             await appearanceStore.loadInitialAppearanceData();
+          }
+          if (activeModules.includes('layout')) {
+            const { useSettingsStore } = await import('./settings.store');
+            const settingsStore = useSettingsStore();
+            await settingsStore.loadInitialSettings();
+          }
+          if (activeModules.includes('commandHistory')) {
+            const { useCommandHistoryStore } = await import('./commandHistory.store');
+            const cmdHistStore = useCommandHistoryStore();
+            await cmdHistStore.fetchHistory();
           }
         } catch (e: any) {
           console.warn('[DesktopSyncStore] 刷新本地数据发生警告:', e);

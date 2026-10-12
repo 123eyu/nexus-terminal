@@ -287,42 +287,25 @@ export const syncService = {
       }));
     }
 
-    // 11. 导出 users (用户账号密码，默认全量时同步)
-    let users: SyncEntityItem[] = [];
-    if (!modules || modules.length === 0) {
-      const usersRows = await allDb<any>(
-        db,
-        `SELECT id, username, hashed_password, two_factor_secret, updated_at FROM users WHERE updated_at > ?`,
-        [sinceTimestamp]
-      );
-      users = usersRows.map(r => ({
-        uuid: `usr_${r.username}`,
-        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
-        data: {
-          id: r.id,
-          username: r.username,
-          hashed_password: r.hashed_password,
-          two_factor_secret: r.two_factor_secret
-        }
-      }));
-    }
+    // 11. users (节点管理员账号密码遵循物理隔离原则，不跨节点同步)
+    const users: SyncEntityItem[] = [];
 
-    // 12. 导出 terminal_themes (终端主题)
+    // 12. 导出 terminal_themes (仅同步自定义主题，系统内置 preset 预设主题两端一致无需同步)
     let terminal_themes: SyncEntityItem[] = [];
     if (syncApp) {
       const themeRows = await allDb<any>(
         db,
-        `SELECT * FROM terminal_themes WHERE updated_at > ?`,
+        `SELECT * FROM terminal_themes WHERE updated_at > ? AND theme_type != 'preset'`,
         [sinceTimestamp]
       );
       terminal_themes = themeRows.map(r => ({
-        uuid: `theme_${r.id}_${r.name}`,
+        uuid: `theme_${Buffer.from(r.name || '').toString('base64').replace(/=/g, '')}`,
         updated_at: r.updated_at || Math.floor(Date.now() / 1000),
         data: r
       }));
     }
 
-    // 13. 导出 favorite_paths (常用路径)
+    // 13. 导出 favorite_paths (常用路径，以 path 为业务唯一标识)
     let favorite_paths: SyncEntityItem[] = [];
     if (syncConn) {
       const favRows = await allDb<any>(
@@ -331,7 +314,7 @@ export const syncService = {
         [sinceTimestamp]
       );
       favorite_paths = favRows.map(r => ({
-        uuid: `fav_${r.id}`,
+        uuid: `fav_${Buffer.from(r.path || '').toString('base64').replace(/=/g, '')}`,
         updated_at: r.updated_at || Math.floor(Date.now() / 1000),
         data: r
       }));
@@ -478,6 +461,21 @@ export const syncService = {
           if (local.updated_at <= t.deleted_at) {
             await runDb(db, `DELETE FROM quick_commands WHERE uuid = ?`, [t.uuid]);
             await recordTombstone('quick_commands', t.uuid, t.deleted_at);
+            pushed++;
+          } else {
+            conflictsResolved++;
+          }
+        }
+      } else if (t.entity_type === 'quick_command_tags') {
+        const local = await getDb<{ id: number; updated_at: number }>(
+          db,
+          `SELECT id, updated_at FROM quick_command_tags WHERE uuid = ?`,
+          [t.uuid]
+        );
+        if (local) {
+          if (local.updated_at <= t.deleted_at) {
+            await runDb(db, `DELETE FROM quick_command_tags WHERE uuid = ?`, [t.uuid]);
+            await recordTombstone('quick_command_tags', t.uuid, t.deleted_at);
             pushed++;
           } else {
             conflictsResolved++;
@@ -869,77 +867,130 @@ export const syncService = {
             [settingKey, settingVal, nowSec, item.updated_at || nowSec, item.uuid]
           );
           pushed++;
-        } else {
+        } else if ((item.updated_at || nowSec) >= (local.updated_at || 0)) {
           await runDb(
             db,
             `UPDATE settings SET value = ?, uuid = COALESCE(settings.uuid, ?), updated_at = ? WHERE key = ?`,
             [settingVal, item.uuid, item.updated_at || nowSec, settingKey]
           );
           pushed++;
+        } else {
+          conflictsResolved++;
         }
       }
     }
 
-    // --- 步骤 8: 合并 appearance_settings (外观样式) ---
+    // --- 步骤 8: 合并 appearance_settings (外观样式，采用基于时间的 LWW 判定) ---
     if (syncApp && entities.appearance_settings && entities.appearance_settings.length > 0) {
       const nowSec = Math.floor(Date.now() / 1000);
       for (const item of entities.appearance_settings) {
-        await runDb(
+        const local = await getDb<{ updated_at: number }>(
           db,
-          `INSERT OR REPLACE INTO appearance_settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-          [item.data.key, item.data.value, nowSec, item.updated_at || nowSec]
+          `SELECT updated_at FROM appearance_settings WHERE key = ?`,
+          [item.data.key]
         );
-        pushed++;
+        if (!local) {
+          await runDb(
+            db,
+            `INSERT INTO appearance_settings (key, value, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+            [item.data.key, item.data.value, nowSec, item.updated_at || nowSec]
+          );
+          pushed++;
+        } else if ((item.updated_at || nowSec) >= (local.updated_at || 0)) {
+          await runDb(
+            db,
+            `UPDATE appearance_settings SET value = ?, updated_at = ? WHERE key = ?`,
+            [item.data.value, item.updated_at || nowSec, item.data.key]
+          );
+          pushed++;
+        } else {
+          conflictsResolved++;
+        }
       }
     }
 
-    // --- 步骤 9: 合并 users (用户账号密码，仅在全量同步未指定具体模块时同步，避免覆盖本地账号) ---
-    const isFullSync = !modules || modules.length === 0;
-    if (isFullSync && entities.users && entities.users.length > 0) {
-      const nowSec = Math.floor(Date.now() / 1000);
-      for (const item of entities.users) {
-        await runDb(
-          db,
-          `INSERT OR REPLACE INTO users (id, username, hashed_password, two_factor_secret, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-          [item.data.id || null, item.data.username, item.data.hashed_password, item.data.two_factor_secret || null, nowSec, item.updated_at || nowSec]
-        );
-        pushed++;
-      }
-    }
+    // --- 步骤 9: 账号凭据隔离 (各节点管理员 users 账号密码物理隔离，绝对不跨节点覆盖) ---
 
-    // --- 步骤 10: 合并 terminal_themes (终端主题) ---
+    // --- 步骤 10: 合并 terminal_themes (终端主题，保护 preset 预设，自定义主题按 name 合并) ---
     if (syncApp && entities.terminal_themes && entities.terminal_themes.length > 0) {
       for (const item of entities.terminal_themes) {
         const d = item.data;
-        await runDb(
+        if (!d || !d.name || d.theme_type === 'preset') continue; // 绝对跳过预设主题
+
+        const local = await getDb<{ id: number; updated_at: number }>(
           db,
-          `INSERT OR REPLACE INTO terminal_themes (
-             id, name, theme_type, foreground, background, cursor, cursor_accent, selection_background,
-             black, red, green, yellow, blue, magenta, cyan, white,
-             bright_black, bright_red, bright_green, bright_yellow, bright_blue, bright_magenta, bright_cyan, bright_white,
-             created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            d.id, d.name, d.theme_type || 'custom', d.foreground, d.background, d.cursor, d.cursor_accent, d.selection_background,
-            d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
-            d.bright_black, d.bright_red, d.bright_green, d.bright_yellow, d.bright_blue, d.bright_magenta, d.bright_cyan, d.bright_white,
-            d.created_at || item.updated_at, d.updated_at
-          ]
+          `SELECT id, updated_at FROM terminal_themes WHERE name = ?`,
+          [d.name]
         );
-        pushed++;
+
+        if (!local) {
+          await runDb(
+            db,
+            `INSERT INTO terminal_themes (
+               name, theme_type, foreground, background, cursor, cursor_accent, selection_background,
+               black, red, green, yellow, blue, magenta, cyan, white,
+               bright_black, bright_red, bright_green, bright_yellow, bright_blue, bright_magenta, bright_cyan, bright_white,
+               created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              d.name, 'user', d.foreground, d.background, d.cursor, d.cursor_accent, d.selection_background,
+              d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
+              d.bright_black, d.bright_red, d.bright_green, d.bright_yellow, d.bright_blue, d.bright_magenta, d.bright_cyan, d.bright_white,
+              d.created_at || item.updated_at, d.updated_at
+            ]
+          );
+          pushed++;
+        } else if (item.updated_at > (local.updated_at || 0)) {
+          await runDb(
+            db,
+            `UPDATE terminal_themes SET
+               foreground = ?, background = ?, cursor = ?, cursor_accent = ?, selection_background = ?,
+               black = ?, red = ?, green = ?, yellow = ?, blue = ?, magenta = ?, cyan = ?, white = ?,
+               bright_black = ?, bright_red = ?, bright_green = ?, bright_yellow = ?, bright_blue = ?, bright_magenta = ?, bright_cyan = ?, bright_white = ?,
+               updated_at = ?
+             WHERE id = ?`,
+            [
+              d.foreground, d.background, d.cursor, d.cursor_accent, d.selection_background,
+              d.black, d.red, d.green, d.yellow, d.blue, d.magenta, d.cyan, d.white,
+              d.bright_black, d.bright_red, d.bright_green, d.bright_yellow, d.bright_blue, d.bright_magenta, d.bright_cyan, d.bright_white,
+              item.updated_at, local.id
+            ]
+          );
+          pushed++;
+          conflictsResolved++;
+        }
       }
     }
 
-    // --- 步骤 11: 合并 favorite_paths (常用路径) ---
+    // --- 步骤 11: 合并 favorite_paths (常用路径，以 path 业务唯一标识排重合并，保留本地物理自增ID) ---
     if (syncConn && entities.favorite_paths && entities.favorite_paths.length > 0) {
       for (const item of entities.favorite_paths) {
         const d = item.data;
-        await runDb(
+        if (!d || !d.path) continue;
+
+        const local = await getDb<{ id: number; last_used_at: number; updated_at: number }>(
           db,
-          `INSERT OR REPLACE INTO favorite_paths (id, name, path, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-          [d.id, d.name, d.path, d.last_used_at, d.created_at || item.updated_at, d.updated_at]
+          `SELECT id, last_used_at, updated_at FROM favorite_paths WHERE path = ?`,
+          [d.path]
         );
-        pushed++;
+
+        if (!local) {
+          await runDb(
+            db,
+            `INSERT INTO favorite_paths (name, path, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+            [d.name || null, d.path, d.last_used_at || null, d.created_at || item.updated_at, item.updated_at]
+          );
+          pushed++;
+        } else if (item.updated_at > (local.updated_at || 0)) {
+          const maxLastUsed = Math.max(local.last_used_at || 0, d.last_used_at || 0) || null;
+          await runDb(
+            db,
+            `UPDATE favorite_paths SET name = ?, last_used_at = ?, updated_at = ? WHERE id = ?`,
+            [d.name || null, maxLastUsed, item.updated_at, local.id]
+          );
+          pushed++;
+          conflictsResolved++;
+        }
       }
     }
 
@@ -961,6 +1012,7 @@ export const syncService = {
     }
 
     // --- 步骤 7: 合并 WorkspaceSync (工作区快照，仅在未指定特定模块的全量同步时执行) ---
+    const isFullSync = !modules || modules.length === 0;
     if (isFullSync && entities.workspace_sync && entities.workspace_sync.length > 0) {
       for (const item of entities.workspace_sync) {
         const targetUserId = item.data.user_id || 1;
@@ -1062,7 +1114,7 @@ export const syncService = {
 
         if (syncApp) {
           await runDb(db, 'DELETE FROM appearance_settings');
-          await runDb(db, 'DELETE FROM terminal_themes');
+          await runDb(db, "DELETE FROM terminal_themes WHERE theme_type != 'preset'");
           await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
           await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
         }

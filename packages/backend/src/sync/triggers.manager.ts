@@ -27,7 +27,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     updateOfColumns: [
       'name', 'type', 'host', 'port', 'username', 'auth_method',
       'encrypted_password', 'encrypted_private_key', 'encrypted_passphrase',
-      'proxy_type', 'notes', 'jump_chain', 'background_color'
+      'proxy_type', 'proxy_id', 'ssh_key_id', 'notes', 'jump_chain', 'background_color'
     ]
   },
   {
@@ -46,7 +46,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
   {
     tableName: 'tags',
     updateOfColumns: [
-      'name'
+      'name', 'background_color'
     ]
   },
   {
@@ -182,18 +182,19 @@ function generateAssociationTriggersSql(): string {
 /**
  * 安装所有双端同步触发器
  */
-export async function installSyncTriggers(db: sqlite3.Database): Promise<void> {
-  // 快速检查：若触发器总数已经满足预期 (7 张实体表各 3 个 + connection_tags 2 个 + qc_tag_associations 2 个 = 25 个)，跳过重复编译重装
+export async function installSyncTriggers(db: sqlite3.Database, forceReinstall: boolean = false): Promise<void> {
   const expectedCount = syncTableConfigs.length * 3 + 4;
-  const currentCount = await new Promise<number>((resolve) => {
-    db.get("SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%_sync_%'", (err, r: any) => {
-      resolve(r?.count ?? 0);
+  if (!forceReinstall) {
+    const currentCount = await new Promise<number>((resolve) => {
+      db.get("SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%_sync_%'", (err, r: any) => {
+        resolve(r?.count ?? 0);
+      });
     });
-  });
 
-  if (currentCount >= expectedCount) {
-    console.log(`[SyncTriggers] SQLite 同步触发器已就绪 (${currentCount}/${expectedCount})，跳过重复安装。`);
-    return;
+    if (currentCount >= expectedCount) {
+      console.log(`[SyncTriggers] SQLite 同步触发器已就绪 (${currentCount}/${expectedCount})，跳过重复安装。`);
+      return;
+    }
   }
 
   console.log('[SyncTriggers] 开始安装 SQLite 增量同步触发器 (带熔断保护)...');
