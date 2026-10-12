@@ -319,11 +319,14 @@ const startServer = () => {
     // --- 前端静态资源托管与 SPA 回退 ---
     const candidateFrontendDirs = [
       process.env.NEXUS_FRONTEND_DIR,
+      path.resolve(__dirname, 'public'),
       path.resolve(__dirname, '../public'),
+      path.resolve(__dirname, '../../public'),
       path.resolve(__dirname, 'frontend/dist'),
       path.resolve(__dirname, '../../../frontend/dist'),
       path.resolve(__dirname, '../../frontend/dist'),
       path.resolve(process.cwd(), 'resources/server/public'),
+      path.resolve(process.cwd(), 'server/public'),
       path.resolve(process.cwd(), 'public'),
       path.resolve(process.cwd(), 'frontend/dist')
     ].filter((dir): dir is string => Boolean(dir && fs.existsSync(path.join(dir, 'index.html'))));
@@ -361,8 +364,9 @@ const startServer = () => {
       console.log('[Frontend Static] 未检测到前端构建产物，仅提供 API 与 WebSocket 服务。');
     }
 
-    server.listen(port, () => {
-        console.log(`后端服务器正在监听 http://localhost:${port}`);
+    const host = process.env.HOST || '0.0.0.0';
+    server.listen(Number(port), host, () => {
+        console.log(`后端服务器正在监听 http://${host}:${port}`);
         initializeWebSocket(server, sessionMiddleware as RequestHandler); // Initialize existing WebSocket
     });
 };

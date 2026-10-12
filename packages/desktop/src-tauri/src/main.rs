@@ -332,14 +332,24 @@ fn main() {
     let native_child_for_setup = native_child.clone();
 
     // 优先绑定稳定的默认便携端口 18111，保障 WebView 同源 LocalStorage 与 Session 跨次有效持久化；
-    // 仅当 18111 已被其他进程占用时，才动态挑选空闲端口。
     let default_port = 18111;
-    let port = if std::net::TcpListener::bind(("127.0.0.1", default_port)).is_ok() {
+    let target_check = format!("127.0.0.1:{}", default_port);
+    let mut server_already_running = false;
+
+    // 先检查默认端口 18111 是否已有存活服务 (例如已有后台实例正在运行)
+    if std::net::TcpStream::connect(&target_check).is_ok() {
+        println!("💡 [Nexus Desktop] 检测到默认端口 {} 已有存活服务，直接复用该服务！", default_port);
+        server_already_running = true;
+    }
+
+    let port = if server_already_running {
+        default_port
+    } else if std::net::TcpListener::bind(("127.0.0.1", default_port)).is_ok() {
         default_port
     } else {
         portpicker::pick_unused_port().unwrap_or(default_port)
     };
-    println!("🚀 [Nexus Desktop] 选定后台服务端口: {} (默认固定优先)", port);
+    println!("🚀 [Nexus Desktop] 选定后台服务端口: {} (复用状态: {})", port, server_already_running);
 
     // 便携模式优先：数据目录默认在安装目录 / 运行程序同级的 data 文件夹
     let current_exe = clean_windows_path(std::env::current_exe().unwrap_or_else(|_| PathBuf::from(".")));
@@ -354,6 +364,14 @@ fn main() {
     println!("📂 [Nexus Desktop] 数据存储目录 (就近便携优先): {}", app_data_dir);
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            println!("🔔 [Nexus Desktop] 检测到重复启动实例，正在激活已有窗口...");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(AppState {
@@ -381,191 +399,196 @@ fn main() {
                 restore_window_state(&portable_data_dir, &main_window);
             }
 
-            // 2. 定位后端服务入口
-            let server_entry = find_server_entry(&handle);
+            let mut server_started = false;
 
-            if let Some(entry_path) = server_entry {
-                let clean_entry = clean_windows_path(&entry_path);
-                let entry_str = clean_entry.to_string_lossy().to_string();
-                let server_dir = clean_windows_path(
-                    clean_entry
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|| app_dir.join("server"))
-                );
-                let node_modules_dir = clean_windows_path(server_dir.join("node_modules"));
-                let clean_data_dir = clean_windows_path(&portable_data_dir).to_string_lossy().to_string();
+            if server_already_running {
+                println!("⚡ [Nexus Desktop] 发现现有后端服务已就绪，跳过拉起，直接接入！");
+                server_started = true;
+            } else {
+                // 2. 定位后端服务入口
+                let server_entry = find_server_entry(&handle);
 
-                println!("📂 [Nexus Desktop] 后端运行根目录: {:?}", server_dir);
-                println!("📦 [Nexus Desktop] 模块加载目录 NODE_PATH: {:?}", node_modules_dir);
+                if let Some(entry_path) = server_entry {
+                    let clean_entry = clean_windows_path(&entry_path);
+                    let entry_str = clean_entry.to_string_lossy().to_string();
+                    let server_dir = clean_windows_path(
+                        clean_entry
+                            .parent()
+                            .and_then(|p| p.parent())
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(|| app_dir.join("server"))
+                    );
+                    let node_modules_dir = clean_windows_path(server_dir.join("node_modules"));
+                    let clean_data_dir = clean_windows_path(&portable_data_dir).to_string_lossy().to_string();
 
-                let mut server_started = false;
+                    println!("📂 [Nexus Desktop] 后端运行根目录: {:?}", server_dir);
+                    println!("📦 [Nexus Desktop] 模块加载目录 NODE_PATH: {:?}", node_modules_dir);
 
-                // 3. 优先尝试启动 Tauri 官方 Sidecar
-                let sidecar_result = handle
-                    .shell()
-                    .sidecar("nexus-server")
-                    .and_then(|cmd| {
-                        cmd.arg(&entry_str)
-                            .current_dir(&server_dir)
-                            .env("PORT", port.to_string())
-                            .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
-                            .env("NEXUS_DATA_DIR", &clean_data_dir)
-                            .env("NODE_ENV", "production")
-                            .spawn()
-                    });
-
-                match sidecar_result {
-                    Ok((mut rx, child)) => {
-                        println!("✅ [Nexus Desktop] 通过 Tauri Sidecar 成功启动后端！PID: {}", child.pid());
-                        let mut lock = sidecar_child_clone.lock().unwrap();
-                        *lock = Some(child);
-                        server_started = true;
-
-                        // 异步消费 Sidecar 输出流，输出到控制台与 data/server.log
-                        let log_path = portable_data_dir.join("server.log");
-                        tauri::async_runtime::spawn(async move {
-                            use tauri_plugin_shell::process::CommandEvent;
-                            use std::io::Write;
-                            let mut log_file = std::fs::OpenOptions::new()
-                                .create(true)
-                                .write(true)
-                                .append(true)
-                                .open(&log_path)
-                                .ok();
-
-                            while let Some(event) = rx.recv().await {
-                                match event {
-                                    CommandEvent::Stdout(line) => {
-                                        let text = String::from_utf8_lossy(&line);
-                                        print!("[Backend Stdout] {}", text);
-                                        if let Some(f) = &mut log_file {
-                                            let _ = f.write_all(&line);
-                                        }
-                                    }
-                                    CommandEvent::Stderr(line) => {
-                                        let text = String::from_utf8_lossy(&line);
-                                        eprint!("[Backend Stderr] {}", text);
-                                        if let Some(f) = &mut log_file {
-                                            let _ = f.write_all(&line);
-                                        }
-                                    }
-                                    CommandEvent::Error(err) => {
-                                        eprintln!("❌ [Backend Error] Sidecar 错误: {}", err);
-                                        if let Some(f) = &mut log_file {
-                                            let _ = writeln!(f, "[Error] {}", err);
-                                        }
-                                    }
-                                    CommandEvent::Terminated(payload) => {
-                                        println!("⚠️ [Backend Terminated] Sidecar 进程终止，退出码: {:?}", payload.code);
-                                        if let Some(f) = &mut log_file {
-                                            let _ = writeln!(f, "[Terminated] Code: {:?}", payload.code);
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        });
-                    }
-                    Err(err) => {
-                        println!("⚠️ [Nexus Desktop] Tauri Sidecar 启动未命中 ({})，正在切换至原生进程引擎启动...", err);
-                        if let Some(node_exe) = find_node_runtime(&handle) {
-                            let clean_node = clean_windows_path(&node_exe);
-                            let mut native_cmd = std::process::Command::new(&clean_node);
-                            native_cmd
-                                .arg(&entry_str)
+                    // 3. 优先尝试启动 Tauri 官方 Sidecar
+                    let sidecar_result = handle
+                        .shell()
+                        .sidecar("nexus-server")
+                        .and_then(|cmd| {
+                            cmd.arg(&entry_str)
                                 .current_dir(&server_dir)
                                 .env("PORT", port.to_string())
                                 .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
                                 .env("NEXUS_DATA_DIR", &clean_data_dir)
-                                .env("NODE_ENV", "production");
+                                .env("NODE_ENV", "production")
+                                .spawn()
+                        });
 
+                    match sidecar_result {
+                        Ok((mut rx, child)) => {
+                            println!("✅ [Nexus Desktop] 通过 Tauri Sidecar 成功启动后端！PID: {}", child.pid());
+                            let mut lock = sidecar_child_clone.lock().unwrap();
+                            *lock = Some(child);
+                            server_started = true;
+
+                            // 异步消费 Sidecar 输出流，输出到控制台与 data/server.log
                             let log_path = portable_data_dir.join("server.log");
-                            if let Ok(file_out) = std::fs::OpenOptions::new()
-                                .create(true)
-                                .write(true)
-                                .append(true)
-                                .open(&log_path)
-                            {
-                                if let Ok(file_err) = file_out.try_clone() {
-                                    native_cmd.stdout(std::process::Stdio::from(file_out));
-                                    native_cmd.stderr(std::process::Stdio::from(file_err));
-                                }
-                            }
+                            tauri::async_runtime::spawn(async move {
+                                use tauri_plugin_shell::process::CommandEvent;
+                                use std::io::Write;
+                                let mut log_file = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .write(true)
+                                    .append(true)
+                                    .open(&log_path)
+                                    .ok();
 
-                            #[cfg(windows)]
-                            native_cmd.creation_flags(CREATE_NO_WINDOW);
+                                while let Some(event) = rx.recv().await {
+                                    match event {
+                                        CommandEvent::Stdout(line) => {
+                                            let text = String::from_utf8_lossy(&line);
+                                            print!("[Backend Stdout] {}", text);
+                                            if let Some(f) = &mut log_file {
+                                                let _ = f.write_all(&line);
+                                            }
+                                        }
+                                        CommandEvent::Stderr(line) => {
+                                            let text = String::from_utf8_lossy(&line);
+                                            eprint!("[Backend Stderr] {}", text);
+                                            if let Some(f) = &mut log_file {
+                                                let _ = f.write_all(&line);
+                                            }
+                                        }
+                                        CommandEvent::Error(err) => {
+                                            eprintln!("❌ [Backend Error] Sidecar 错误: {}", err);
+                                            if let Some(f) = &mut log_file {
+                                                let _ = writeln!(f, "[Error] {}", err);
+                                            }
+                                        }
+                                        CommandEvent::Terminated(payload) => {
+                                            println!("⚠️ [Backend Terminated] Sidecar 进程终止，退出码: {:?}", payload.code);
+                                            if let Some(f) = &mut log_file {
+                                                let _ = writeln!(f, "[Terminated] Code: {:?}", payload.code);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            });
+                        }
+                        Err(err) => {
+                            println!("⚠️ [Nexus Desktop] Tauri Sidecar 启动未命中 ({})，正在切换至原生进程引擎启动...", err);
+                            if let Some(node_exe) = find_node_runtime(&handle) {
+                                let clean_node = clean_windows_path(&node_exe);
+                                let mut native_cmd = std::process::Command::new(&clean_node);
+                                native_cmd
+                                    .arg(&entry_str)
+                                    .current_dir(&server_dir)
+                                    .env("PORT", port.to_string())
+                                    .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
+                                    .env("NEXUS_DATA_DIR", &clean_data_dir)
+                                    .env("NODE_ENV", "production");
 
-                            match native_cmd.spawn() {
-                                Ok(child) => {
-                                    println!("✅ [Nexus Desktop] 原生引擎成功拉起后端服务！PID: {}", child.id());
-                                    let mut lock = native_child_clone.lock().unwrap();
-                                    *lock = Some(child);
-                                    server_started = true;
+                                let log_path = portable_data_dir.join("server.log");
+                                if let Ok(file_out) = std::fs::OpenOptions::new()
+                                    .create(true)
+                                    .write(true)
+                                    .append(true)
+                                    .open(&log_path)
+                                {
+                                    if let Ok(file_err) = file_out.try_clone() {
+                                        native_cmd.stdout(std::process::Stdio::from(file_out));
+                                        native_cmd.stderr(std::process::Stdio::from(file_err));
+                                    }
                                 }
-                                Err(native_err) => {
-                                    eprintln!("❌ [Nexus Desktop] 原生引擎拉起亦失败: {}", native_err);
+
+                                #[cfg(windows)]
+                                native_cmd.creation_flags(CREATE_NO_WINDOW);
+
+                                match native_cmd.spawn() {
+                                    Ok(child) => {
+                                        println!("✅ [Nexus Desktop] 原生引擎成功拉起后端服务！PID: {}", child.id());
+                                        let mut lock = native_child_clone.lock().unwrap();
+                                        *lock = Some(child);
+                                        server_started = true;
+                                    }
+                                    Err(native_err) => {
+                                        eprintln!("❌ [Nexus Desktop] 原生引擎拉起亦失败: {}", native_err);
+                                    }
                                 }
+                            } else {
+                                eprintln!("❌ [Nexus Desktop] 未找到可用的 node 运行时可执行文件！");
                             }
-                        } else {
-                            eprintln!("❌ [Nexus Desktop] 未找到可用的 node 运行时可执行文件！");
                         }
                     }
+                } else {
+                    eprintln!("❌ [Nexus Desktop] 无法启动后端: 未找到 entry 文件");
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.show();
+                    }
                 }
+            }
 
-                if server_started {
-                    // 4. 后台轮询健康检查，就绪后无缝将主窗口导航至本地同源服务并优雅显示
-                    let handle_for_nav = handle.clone();
-                    let data_dir_for_nav = portable_data_dir.clone();
-                    std::thread::spawn(move || {
-                        let target_addr = format!("127.0.0.1:{}", port);
-                        let mut server_ready = false;
+            if server_started {
+                // 4. 后台轮询健康检查，就绪后无缝将主窗口导航至本地同源服务并优雅显示
+                let handle_for_nav = handle.clone();
+                let data_dir_for_nav = portable_data_dir.clone();
+                std::thread::spawn(move || {
+                    let target_addr = format!("127.0.0.1:{}", port);
+                    let mut server_ready = false;
 
-                        // 优化轮询间隔为 100ms，大幅加速拉起感知 (最高等待 15 秒)
-                        for i in 1..=150 {
+                    // 优化轮询间隔为 100ms，大幅加速拉起感知 (最高等待 15 秒)
+                    for i in 1..=150 {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        if std::net::TcpStream::connect(&target_addr).is_ok() {
+                            println!("🎉 [Nexus Desktop] 本地后端服务在第 {} 次尝试时就绪 (约 {}ms)！", i, i * 100);
+                            server_ready = true;
+                            break;
+                        }
+                    }
+
+                    if let Some(window) = handle_for_nav.get_webview_window("main") {
+                        if server_ready {
+                            // 缓冲 100ms 确保 HTTP 和 WebSocket 监听器完全进入稳定状态
                             std::thread::sleep(std::time::Duration::from_millis(100));
-                            if std::net::TcpStream::connect(&target_addr).is_ok() {
-                                println!("🎉 [Nexus Desktop] 本地后端服务在第 {} 次尝试时就绪 (约 {}ms)！", i, i * 100);
-                                server_ready = true;
-                                break;
-                            }
-                        }
-
-                        if let Some(window) = handle_for_nav.get_webview_window("main") {
-                            if server_ready {
-                                // 缓冲 100ms 确保 HTTP 和 WebSocket 监听器完全进入稳定状态
-                                std::thread::sleep(std::time::Duration::from_millis(100));
-                                let now_ts = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .map(|d| d.as_millis())
-                                    .unwrap_or(0);
-                                let last_route = get_saved_last_route(&data_dir_for_nav);
-                                let url_str = if last_route.contains('?') {
-                                    format!("http://127.0.0.1:{}{}&platform=desktop&_v={}", port, last_route, now_ts)
-                                } else {
-                                    format!("http://127.0.0.1:{}{}?platform=desktop&_v={}", port, last_route, now_ts)
-                                };
-                                if let Ok(target_url) = url_str.parse() {
-                                    println!("🌐 [Nexus Desktop] 正在将主窗口无缝直达目标页面: {}", url_str);
-                                    let _ = window.navigate(target_url);
-                                }
-                                // 短暂缓冲 120ms 等待 WebView 同步首帧渲染，然后瞬时呈现并置顶聚焦
-                                std::thread::sleep(std::time::Duration::from_millis(120));
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                            let now_ts = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis())
+                                .unwrap_or(0);
+                            let last_route = get_saved_last_route(&data_dir_for_nav);
+                            let url_str = if last_route.contains('?') {
+                                format!("http://127.0.0.1:{}{}&platform=desktop&_v={}", port, last_route, now_ts)
                             } else {
-                                eprintln!("❌ [Nexus Desktop] 后端服务就绪超时 (15秒内未响应端口 {})", port);
-                                let _ = window.show();
+                                format!("http://127.0.0.1:{}{}?platform=desktop&_v={}", port, last_route, now_ts)
+                            };
+                            if let Ok(target_url) = url_str.parse() {
+                                println!("🌐 [Nexus Desktop] 正在将主窗口无缝直达目标页面: {}", url_str);
+                                let _ = window.navigate(target_url);
                             }
+                            // 短暂缓冲 120ms 等待 WebView 同步首帧渲染，然后瞬时呈现并置顶聚焦
+                            std::thread::sleep(std::time::Duration::from_millis(120));
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        } else {
+                            eprintln!("❌ [Nexus Desktop] 后端服务就绪超时 (15秒内未响应端口 {})", port);
+                            let _ = window.show();
                         }
-                    });
-                }
-            } else {
-                eprintln!("❌ [Nexus Desktop] 无法启动后端: 未找到 entry 文件");
-                if let Some(window) = handle.get_webview_window("main") {
-                    let _ = window.show();
-                }
+                    }
+                });
             }
 
             // 5. 配置系统托盘与托盘右键菜单 (极简现代风格)

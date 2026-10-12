@@ -72,9 +72,10 @@ async function main() {
   console.log('📦 正在同步后端自包含产物到 resources/server/dist...');
   fs.cpSync(backendDistBundle, serverDistDir, { recursive: true, force: true });
 
-  // 4. 同步 frontend/dist 到 resources/server/public
-  console.log('🎨 正在同步前端页面到 resources/server/public...');
+  // 4. 同步 frontend/dist 到 resources/server/public 与 resources/server/dist/public
+  console.log('🎨 正在同步前端页面到 resources/server/public 与 resources/server/dist/public...');
   fs.cpSync(frontendDist, path.join(serverDir, 'public'), { recursive: true, force: true });
+  fs.cpSync(frontendDist, path.join(serverDir, 'dist', 'public'), { recursive: true, force: true });
 
   // 4.1 同步多语言包 (locales)
   const localesSrc = path.join(backendDir, 'src', 'locales');
