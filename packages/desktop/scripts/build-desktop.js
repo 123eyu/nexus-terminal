@@ -92,13 +92,25 @@ async function main() {
     console.log('✅ 自包含服务端资源镜像同步完成！');
   }
 
-  // 5. 校验交付产物
+  // 5. 校验交付产物并输出
   const nsisDir = path.join(desktopDir, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
   let setupExe = null;
   if (fs.existsSync(nsisDir)) {
-    const files = fs.readdirSync(nsisDir).filter(f => f.endsWith('.exe'));
+    const files = fs.readdirSync(nsisDir)
+      .filter(f => f.endsWith('.exe'))
+      .map(name => {
+        const fullPath = path.join(nsisDir, name);
+        return { name, fullPath, stat: fs.statSync(fullPath) };
+      })
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
     if (files.length > 0) {
-      setupExe = path.join(nsisDir, files[0]);
+      setupExe = files[0].fullPath;
+      // 同步复制最新安装包到根目录 dist-desktop 下，方便用户直接获取
+      const targetDistInstaller = path.join(rootDir, 'dist-desktop', path.basename(setupExe));
+      try {
+        fs.copyFileSync(setupExe, targetDistInstaller);
+        console.log(`✅ 已同步最新安装包至: ${targetDistInstaller}`);
+      } catch (_) {}
     }
   }
   console.log('\n🎉 [Desktop Packager] 桌面端全量构建与同步成功！');
