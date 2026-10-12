@@ -3,8 +3,11 @@
  * 支持多种灵活格式：
  * 1. 标准选项式：user@host:port -p password -k keyName -name "别名" -note "备注"
  * 2. 缺省用户名/端口：192.168.1.1 -p password (默认 root:22)
- * 3. 命令行式：ssh root@192.168.1.1 -P 2222 -p password
- * 4. URL 嵌入式：ssh://root:password@192.168.1.1:22
+ * 3. OpenSSH 命令行复制式（支持选项在前或在后）：
+ *    - ssh root@192.168.1.1 -P 2222 -p password
+ *    - ssh -p 2222 -i my-key root@192.168.1.1
+ *    - ssh -i id_rsa -p 2200 -pass "Secret123" root@192.168.1.1
+ * 4. URL 嵌入式：ssh://root:password@192.168.1.1:22 或 rdp://Administrator:pass@1.2.3.4:3389
  * 5. 常见四段式：192.168.1.1:22:root:password 或 192.168.1.1 22 root password
  * 6. 注释与空行自动忽略（#、//、;）
  */
@@ -31,16 +34,24 @@ export interface ParseScriptResult {
 }
 
 /**
- * 分词辅助函数：按空格切分，但保留双引号内的字符串
+ * 分词辅助函数：按空格切分，保留双引号或单引号内的完整字符串
  */
 export function tokenizeArgs(str: string): string[] {
   const result: string[] = [];
-  const regex = /(?:[^\s"]+|"[^"]*")+/g;
+  const regex = /(?:[^\s"']+|"[^"]*"|'[^']*')+/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(str)) !== null) {
     result.push(match[0]);
   }
   return result;
+}
+
+/**
+ * 清除外层包裹的引号
+ */
+function stripQuotes(val: string): string {
+  if (!val) return '';
+  return val.replace(/^["']|["']$/g, '');
 }
 
 /**
@@ -54,26 +65,28 @@ export function parseScriptSingleLine(rawLine: string): { data?: ParsedScriptCon
     return { isSkipped: true };
   }
 
-  // 2. 协议前缀识别与去除 (ssh://, rdp://, vnc://)
+  // 2. 协议前缀与命令行前缀识别 (ssh://, rdp://, vnc://, ssh ...)
   let inferredType: 'SSH' | 'RDP' | 'VNC' = 'SSH';
+  let isSshCli = false;
+
   const urlProtocolMatch = line.match(/^(ssh|rdp|vnc):\/\/(.*)$/i);
   if (urlProtocolMatch) {
     inferredType = urlProtocolMatch[1].toUpperCase() as 'SSH' | 'RDP' | 'VNC';
     line = urlProtocolMatch[2].trim();
   } else if (/^ssh\s+/i.test(line)) {
-    // 兼容命令行复制：如 "ssh root@1.2.3.4"
     inferredType = 'SSH';
+    isSshCli = true;
     line = line.replace(/^ssh\s+/i, '').trim();
   }
 
   // 3. 常见四段冒号格式：host:port:user:password
   // 例如：192.168.1.1:22:root:Admin@2026
-  const fourMatch = line.match(/^([^:\s]+):(\d{1,5}):([^:\s]+):(.*)$/);
-  if (fourMatch && !line.includes(' -') && !line.includes(' --')) {
-    const cHost = fourMatch[1].trim();
-    const cPort = parseInt(fourMatch[2], 10);
-    const cUser = fourMatch[3].trim();
-    const cPass = fourMatch[4];
+  const fourColonMatch = line.match(/^([^:\s]+):(\d{1,5}):([^:\s]+):(.+)$/);
+  if (fourColonMatch && !line.includes(' -') && !line.includes(' --')) {
+    const cHost = fourColonMatch[1].trim();
+    const cPort = parseInt(fourColonMatch[2], 10);
+    const cUser = fourColonMatch[3].trim();
+    const cPass = stripQuotes(fourColonMatch[4].trim());
     if (cPort > 0 && cPort <= 65535 && cHost && cUser) {
       return {
         data: {
@@ -91,67 +104,69 @@ export function parseScriptSingleLine(rawLine: string): { data?: ParsedScriptCon
     }
   }
 
-  // 4. URL 嵌入式格式：user:password@host[:port]
+  // 4. 空白分隔的 3~4 段纯文本格式检查（如: 192.168.1.1 22 root password）
+  const initialTokens = tokenizeArgs(line);
+  if (initialTokens.length >= 2 && !initialTokens.some(t => t.startsWith('-'))) {
+    // 4 段格式：host port user password
+    if (initialTokens.length === 4 && /^\d+$/.test(initialTokens[1])) {
+      const portVal = parseInt(initialTokens[1], 10);
+      if (portVal > 0 && portVal <= 65535) {
+        const u = stripQuotes(initialTokens[2]);
+        const h = stripQuotes(initialTokens[0]);
+        return {
+          data: {
+            type: inferredType,
+            name: `${u}@${h}`,
+            host: h,
+            port: portVal,
+            username: u,
+            auth_method: 'password',
+            password: stripQuotes(initialTokens[3]),
+            tags: [],
+            note: '',
+          }
+        };
+      }
+    }
+    // 3 段格式：host 22 password (默认 root 用户)
+    if (initialTokens.length === 3 && /^\d+$/.test(initialTokens[1])) {
+      const portVal = parseInt(initialTokens[1], 10);
+      if (portVal > 0 && portVal <= 65535) {
+        const h = stripQuotes(initialTokens[0]);
+        return {
+          data: {
+            type: inferredType,
+            name: `root@${h}`,
+            host: h,
+            port: portVal,
+            username: 'root',
+            auth_method: 'password',
+            password: stripQuotes(initialTokens[2]),
+            tags: [],
+            note: '',
+          }
+        };
+      }
+    }
+  }
+
+  // 5. URL 嵌入式密码提取：user:password@host[:port] 或 :password@host[:port]
   let embeddedPassword: string | null = null;
-  // 查找分隔 host 的最后一个 @ (避免密码中含有 @ 导致切错)
   const lastAtIndex = line.lastIndexOf('@');
   if (lastAtIndex !== -1 && !line.startsWith('-')) {
     const userPassPart = line.substring(0, lastAtIndex);
     const colonInUserPass = userPassPart.indexOf(':');
-    if (colonInUserPass !== -1 && !userPassPart.startsWith('"')) {
+    if (colonInUserPass !== -1 && !userPassPart.startsWith('"') && !userPassPart.startsWith("'")) {
       const u = userPassPart.substring(0, colonInUserPass).trim();
       const p = userPassPart.substring(colonInUserPass + 1);
-      if (u) {
-        embeddedPassword = p;
-        // 重写 line，把前面的 user:pass@ 替换为 user@
-        line = `${u}@${line.substring(lastAtIndex + 1)}`;
-      }
+      embeddedPassword = p;
+      const finalUser = u || 'root';
+      line = `${finalUser}@${line.substring(lastAtIndex + 1)}`;
     }
   }
 
-  // 5. 提取 target 主体（首个 token）与剩余选项
-  const firstSpaceIndex = line.indexOf(' ');
-  const targetPart = firstSpaceIndex === -1 ? line : line.substring(0, firstSpaceIndex).trim();
-  const optionsString = firstSpaceIndex === -1 ? '' : line.substring(firstSpaceIndex + 1).trim();
-
-  // 6. 解析 targetPart：[username@]host[:port]
-  let username = 'root';
-  let host = '';
-  let port: number | null = null;
-
-  if (targetPart.includes('@')) {
-    const atSplit = targetPart.split('@');
-    username = atSplit[0].trim() || 'root';
-    const hostPort = atSplit.slice(1).join('@').trim(); // 避免 host 里包含 @
-    if (hostPort.includes(':')) {
-      const hp = hostPort.split(':');
-      host = hp[0].trim();
-      const pVal = parseInt(hp[1].trim(), 10);
-      if (!isNaN(pVal) && pVal > 0 && pVal <= 65535) {
-        port = pVal;
-      }
-    } else {
-      host = hostPort;
-    }
-  } else {
-    // 纯 host 或 host:port（无用户名，默认 root）
-    if (targetPart.includes(':')) {
-      const hp = targetPart.split(':');
-      host = hp[0].trim();
-      const pVal = parseInt(hp[1].trim(), 10);
-      if (!isNaN(pVal) && pVal > 0 && pVal <= 65535) {
-        port = pVal;
-      }
-    } else {
-      host = targetPart;
-    }
-  }
-
-  if (!host) {
-    return { error: `无法识别主机地址：${targetPart}` };
-  }
-
-  // 7. 解析参数选项
+  // 6. Token 扫描与提取
+  const tokens = tokenizeArgs(line);
   let type: 'SSH' | 'RDP' | 'VNC' = inferredType;
   let customName: string | null = null;
   let password: string | null = embeddedPassword;
@@ -159,61 +174,26 @@ export function parseScriptSingleLine(rawLine: string): { data?: ParsedScriptCon
   let proxyName: string | null = null;
   let tags: string[] = [];
   let note: string | null = null;
+  let explicitPort: number | null = null;
+  let explicitUser: string | null = null;
 
-  // 检查是否是空白分隔的 3~4 段纯文本格式（如: 192.168.1.1 22 root password）
-  const tokens = tokenizeArgs(optionsString);
-  if (tokens.length >= 2 && !tokens.some(t => t.startsWith('-'))) {
-    // 可能是 host 后面紧跟 port user password
-    // 例如 targetPart 是 host，tokens 是 [22, root, pass]
-    if (tokens.length === 3 && /^\d+$/.test(tokens[0])) {
-      port = parseInt(tokens[0], 10);
-      username = tokens[1].replace(/^"|"$/g, '');
-      password = tokens[2].replace(/^"|"$/g, '');
-      return {
-        data: {
-          type,
-          name: `${username}@${host}`,
-          host,
-          port: port || 22,
-          username,
-          auth_method: 'password',
-          password,
-          tags: [],
-          note: '',
-        }
-      };
-    } else if (tokens.length === 2 && /^\d+$/.test(tokens[0])) {
-      // 如 host 22 pass
-      port = parseInt(tokens[0], 10);
-      password = tokens[1].replace(/^"|"$/g, '');
-      return {
-        data: {
-          type,
-          name: `${username}@${host}`,
-          host,
-          port: port || 22,
-          username,
-          auth_method: 'password',
-          password,
-          tags: [],
-          note: '',
-        }
-      };
-    }
-  }
+  // 收集未被选项消耗的位置参数（用于定位 target host）
+  const positionalTokens: string[] = [];
 
   let i = 0;
   while (i < tokens.length) {
     const rawArg = tokens[i];
+
     if (rawArg.startsWith('-')) {
-      // 统一去除开头的 '-' 或 '--'，并转为小写
-      const key = rawArg.replace(/^-+/, '').toLowerCase();
+      const isDoubleDash = rawArg.startsWith('--');
+      const rawFlag = rawArg.replace(/^-+/, '');
+      const flagLower = rawFlag.toLowerCase();
       i++;
 
-      if (key === 'tag' || key === 'tags') {
-        // -tags 可以跟多个空格分隔的标签，或者逗号分隔
+      // 检查标签选项 (-tag, --tag, -tags, --tags)
+      if (flagLower === 'tag' || flagLower === 'tags') {
         while (i < tokens.length && !tokens[i].startsWith('-')) {
-          const val = tokens[i].replace(/^"|"$/g, '');
+          const val = stripQuotes(tokens[i]);
           if (val.includes(',')) {
             tags.push(...val.split(',').map(t => t.trim()).filter(Boolean));
           } else if (val.trim()) {
@@ -221,97 +201,184 @@ export function parseScriptSingleLine(rawLine: string): { data?: ParsedScriptCon
           }
           i++;
         }
-      } else if (key === 'note' || key === 'notes') {
-        // -note 消费后续所有内容
+        continue;
+      }
+
+      // 检查备注选项 (-note, --note, -notes, --notes, -memo, --memo)
+      if (flagLower === 'note' || flagLower === 'notes' || flagLower === 'memo') {
         const noteParts: string[] = [];
-        while (i < tokens.length) {
+        while (i < tokens.length && !tokens[i].startsWith('-')) {
           noteParts.push(tokens[i]);
           i++;
         }
-        note = noteParts.join(' ').replace(/^"|"$/g, '');
-        break;
-      } else {
-        if (i >= tokens.length) {
-          // 参数缺少对应的值
-          return { error: `选项 ${rawArg} 缺少对应的值` };
-        }
-        const val = tokens[i].replace(/^"|"$/g, '');
-        i++;
+        note = stripQuotes(noteParts.join(' '));
+        continue;
+      }
 
-        switch (key) {
-          case 'type':
-          case 't': {
-            const upper = val.toUpperCase();
-            if (upper === 'SSH' || upper === 'RDP' || upper === 'VNC') {
-              type = upper;
-            } else {
-              return { error: `不支持的连接类型: ${val}` };
-            }
-            break;
-          }
-          case 'name':
-          case 'n':
-            customName = val;
-            break;
-          case 'p':
-          case 'pass':
-          case 'password':
-            password = val;
-            break;
-          case 'port': {
-            const pNum = parseInt(val, 10);
-            if (!isNaN(pNum) && pNum > 0 && pNum <= 65535) {
-              port = pNum;
-            } else {
-              return { error: `无效的端口号: ${val}` };
-            }
-            break;
-          }
-          case 'k':
-          case 'key':
-          case 'sshkey':
-            keyName = val;
-            break;
-          case 'proxy':
-            proxyName = val;
-            break;
-          case 'u':
-          case 'user':
-          case 'username':
-            username = val;
-            break;
-          default:
-            // 宽容容错：若遇到未知选项不强制爆炸，作为警告或忽略
-            console.warn(`[ScriptParser] 忽略未知参数: ${rawArg}`);
-            break;
+      // 其它选项必须带有值
+      if (i >= tokens.length) {
+        return { error: `选项 ${rawArg} 缺少对应的值` };
+      }
+
+      const val = stripQuotes(tokens[i]);
+      i++;
+
+      // 判断选项类别（需严格区分大写 -P 与小写 -p）
+      if (!isDoubleDash && rawFlag === 'P') {
+        // 大写单个 -P 为端口（标准 SSH/RDP/VNC 端口选项）
+        const pNum = parseInt(val, 10);
+        if (!isNaN(pNum) && pNum > 0 && pNum <= 65535) {
+          explicitPort = pNum;
+        } else {
+          return { error: `无效的端口号: ${val}` };
         }
+      } else if (flagLower === 'port') {
+        // -port / --port 为端口
+        const pNum = parseInt(val, 10);
+        if (!isNaN(pNum) && pNum > 0 && pNum <= 65535) {
+          explicitPort = pNum;
+        } else {
+          return { error: `无效的端口号: ${val}` };
+        }
+      } else if (flagLower === 'pass' || flagLower === 'password' || flagLower === 'pwd') {
+        // 显式密码选项
+        password = val;
+      } else if (flagLower === 'p') {
+        // 单个小写 -p 的多义性判定：
+        // 1. 如果在 ssh 命令行下且 val 为纯数字，且该行已有其他明确密码选项或有密钥选项 (-i/-k)：作为端口
+        // 2. 如果在 ssh 命令行下且 val 为纯数字，且该行没有任何其他密码选项：作为端口（OpenSSH 标准：ssh -p 2222 ...）
+        // 3. 否则作为密码
+        const isNumeric = /^\d+$/.test(val);
+        const pNum = parseInt(val, 10);
+        if (isSshCli && isNumeric && pNum > 0 && pNum <= 65535) {
+          explicitPort = pNum;
+        } else {
+          password = val;
+        }
+      } else if (
+        flagLower === 'i' ||
+        flagLower === 'identity' ||
+        flagLower === 'k' ||
+        flagLower === 'key' ||
+        flagLower === 'sshkey'
+      ) {
+        // 私钥选项 (支持 -i, -identity, -k, -key, -sshkey)
+        keyName = val;
+      } else if (flagLower === 'type' || flagLower === 't') {
+        const upper = val.toUpperCase();
+        if (upper === 'SSH' || upper === 'RDP' || upper === 'VNC') {
+          type = upper;
+        } else {
+          return { error: `不支持的连接类型: ${val}` };
+        }
+      } else if (flagLower === 'name' || flagLower === 'n') {
+        customName = val;
+      } else if (flagLower === 'proxy') {
+        proxyName = val;
+      } else if (flagLower === 'u' || flagLower === 'user' || flagLower === 'username') {
+        explicitUser = val;
+      } else {
+        // 未知选项宽容忽略并控制台提示
+        console.warn(`[ScriptParser] 忽略未知参数: ${rawArg}`);
       }
     } else {
-      // 容错：如果有未带 - 的悬空参数，且当前没有密码，尝试将其作为密码
-      if (!password && !keyName) {
-        password = rawArg.replace(/^"|"$/g, '');
-      }
+      // 位置参数（非选项 token）
+      positionalTokens.push(rawArg);
       i++;
     }
   }
 
-  // 8. 默认端口补齐
+  // 7. 解析 Target 主体
+  if (positionalTokens.length === 0) {
+    return { error: '缺少主机地址或连接目标' };
+  }
+
+  // 第一个位置参数必定为目标主机（[username@]host[:port]）
+  const targetPart = stripQuotes(positionalTokens[0]);
+
+  let username = explicitUser || 'root';
+  let host = '';
+  let port: number | null = explicitPort;
+
+  if (targetPart.includes('@')) {
+    const atSplit = targetPart.split('@');
+    if (!explicitUser) {
+      username = atSplit[0].trim() || 'root';
+    }
+    const hostPort = atSplit.slice(1).join('@').trim();
+    if (hostPort.includes(':')) {
+      const hp = hostPort.split(':');
+      host = hp[0].trim();
+      if (!port) {
+        const pVal = parseInt(hp[1].trim(), 10);
+        if (!isNaN(pVal) && pVal > 0 && pVal <= 65535) {
+          port = pVal;
+        } else {
+          return { error: `无效的主机端口号: ${hp[1]}` };
+        }
+      }
+    } else {
+      host = hostPort;
+    }
+  } else {
+    // 纯 host 或 host:port
+    if (targetPart.includes(':')) {
+      const hp = targetPart.split(':');
+      host = hp[0].trim();
+      if (!port) {
+        const pVal = parseInt(hp[1].trim(), 10);
+        if (!isNaN(pVal) && pVal > 0 && pVal <= 65535) {
+          port = pVal;
+        } else {
+          return { error: `无效的主机端口号: ${hp[1]}` };
+        }
+      }
+    } else {
+      host = targetPart;
+    }
+  }
+
+  // 容错：如果还有第 2 个位置参数，且当前尚未获取到密码且无密钥，将其作为密码
+  if (positionalTokens.length > 1 && !password && !keyName) {
+    password = stripQuotes(positionalTokens[1]);
+  }
+
+  if (!host) {
+    return { error: `无法识别主机地址: ${targetPart}` };
+  }
+
+  // 8. 默认端口补齐与范围校验
   if (!port) {
     if (type === 'RDP') port = 3389;
     else if (type === 'VNC') port = 5900;
     else port = 22;
   }
 
-  // 9. 确定认证方式
+  if (port < 1 || port > 65535) {
+    return { error: `端口号必须在 1-65535 范围内: ${port}` };
+  }
+
+  // 9. 确定认证方式与完整性校验
   let auth_method: 'password' | 'key' | undefined = undefined;
   if (type === 'SSH') {
     auth_method = keyName ? 'key' : 'password';
+    if (!keyName && !password) {
+      return { error: `缺少认证凭证：请通过 -p 指定密码或通过 -k/-i 指定 SSH 密钥` };
+    }
+  } else {
+    // RDP 与 VNC 必须提供密码
+    if (!password) {
+      return { error: `缺少认证密码：${type} 连接必须提供密码 (-p)` };
+    }
   }
 
   // 10. 确定显示名称
-  const defaultName = port === 22 || port === 3389 || port === 5900
-    ? `${username}@${host}`
-    : `${username}@${host}:${port}`;
+  const isDefaultPort =
+    (type === 'SSH' && port === 22) ||
+    (type === 'RDP' && port === 3389) ||
+    (type === 'VNC' && port === 5900);
+
+  const defaultName = isDefaultPort ? `${username}@${host}` : `${username}@${host}:${port}`;
   const finalName = customName || defaultName;
 
   return {
@@ -332,7 +399,7 @@ export function parseScriptSingleLine(rawLine: string): { data?: ParsedScriptCon
 }
 
 /**
- * 批量解析多行脚本
+ * 批量解析多行脚本文本
  */
 export function parseScriptText(text: string): ParseScriptResult {
   const lines = text.split(/\r?\n/);

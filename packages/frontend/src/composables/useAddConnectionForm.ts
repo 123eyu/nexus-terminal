@@ -278,7 +278,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
 
     // 若存在部分格式解析失败的行，给予用户明确提示
     if (errors.length > 0) {
-      uiNotificationsStore.showWarning(`检测到 ${errors.length} 行格式有误已被跳过（第一处错误：第 ${errors[0].lineIndex + 1} 行 "${errors[0].line}" - ${errors[0].error}），将继续导入其余 ${validConnections.length} 个连接。`);
+      uiNotificationsStore.showWarning(`检测到 ${errors.length} 行格式有误已被跳过（第一处错误：第 ${errors[0].lineIndex} 行 "${errors[0].line}" - ${errors[0].error}），将继续导入其余 ${validConnections.length} 个连接。`);
     }
 
     uiNotificationsStore.showInfo(t('connections.form.scriptModeAddingConnections', { count: validConnections.length }));
