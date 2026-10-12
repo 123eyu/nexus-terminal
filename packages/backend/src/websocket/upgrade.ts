@@ -3,7 +3,7 @@ import url from 'url';
 import { Request, RequestHandler } from 'express';
 import { WebSocketServer } from 'ws';
 import { AuthenticatedWebSocket } from './types';
-import { handleSyncWsConnection } from '../sync/sync.ws-broadcaster';
+import { handleSyncWsConnection, handleFrontendEventsConnection } from '../sync/sync.ws-broadcaster';
 import { getServerSyncApiKey } from '../sync/sync.middleware';
 
 export function initializeUpgradeHandler(
@@ -68,6 +68,26 @@ export function initializeUpgradeHandler(
                 console.error('[Sync WS] 鉴权流程异常:', err);
                 socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
                 socket.destroy();
+            });
+            return;
+        }
+
+        // --- 前端 UI 全局实时事件长连接专用路由 (/ws/events 或 /events) ---
+        if (pathname === '/ws/events' || pathname === '/events') {
+            // @ts-ignore Express-session 类型问题
+            sessionParser(request, {} as any, () => {
+                const isLocal = ipAddress === '127.0.0.1' || ipAddress === '::1' || ipAddress === 'localhost' || ipAddress === '::ffff:127.0.0.1';
+                const isAuthed = !!(request.session && request.session.userId);
+                if (!isAuthed && !isLocal) {
+                    console.warn(`[FrontendEvents] 拒绝未登录且非本地的前端事件连接 (来自 IP: ${ipAddress})。`);
+                    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
+                console.log(`[FrontendEvents] 鉴权通过，建立前端 UI 全局事件订阅通道 (来自 IP: ${ipAddress})。`);
+                wss.handleUpgrade(request, socket, head, (ws) => {
+                    handleFrontendEventsConnection(ws, request);
+                });
             });
             return;
         }

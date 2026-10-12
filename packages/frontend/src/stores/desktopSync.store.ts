@@ -261,49 +261,82 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    * 刷新本地各模块 Store 数据 (供 WS 实时同步完成通知或手动同步复用)
    */
   const refreshAllStores = async (modules?: SyncModuleKey[]) => {
-    const active = modules || selectedModules.value;
-    try {
-      if (active.includes('connections')) {
+    // 若未指定模块，默认全量刷新所有模块，确保界面绝对与数据库保持同步
+    const active = modules || DEFAULT_MODULES;
+    console.log('[DesktopSyncStore] 正在无感刷新本地各模块 Store 数据...', active);
+
+    const refreshTasks: Promise<any>[] = [];
+
+    if (active.includes('connections')) {
+      refreshTasks.push((async () => {
         const connectionsStore = useConnectionsStore();
         await connectionsStore.fetchConnections();
+      })());
+      refreshTasks.push((async () => {
         const { useTagsStore } = await import('./tags.store');
         const tagsStore = useTagsStore();
         await tagsStore.fetchTags();
+      })());
+      refreshTasks.push((async () => {
         const { useSshKeysStore } = await import('./sshKeys.store');
         const sshKeysStore = useSshKeysStore();
         await sshKeysStore.fetchSshKeys();
+      })());
+      refreshTasks.push((async () => {
         const { useProxiesStore } = await import('./proxies.store');
         const proxiesStore = useProxiesStore();
         await proxiesStore.fetchProxies();
+      })());
+      refreshTasks.push((async () => {
         const { useFavoritePathsStore } = await import('./favoritePaths.store');
         const favoritePathsStore = useFavoritePathsStore();
         await favoritePathsStore.fetchFavoritePaths((_k, d) => d);
-      }
-      if (active.includes('quickCommands')) {
+      })());
+    }
+
+    if (active.includes('quickCommands')) {
+      refreshTasks.push((async () => {
         const { useQuickCommandsStore } = await import('./quickCommands.store');
-        const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
         const qcStore = useQuickCommandsStore();
-        const qcTagsStore = useQuickCommandTagsStore();
         await qcStore.fetchQuickCommands();
+      })());
+      refreshTasks.push((async () => {
+        const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
+        const qcTagsStore = useQuickCommandTagsStore();
         await qcTagsStore.fetchTags();
-      }
-      if (active.includes('appearance')) {
+      })());
+    }
+
+    if (active.includes('appearance')) {
+      refreshTasks.push((async () => {
         const { useAppearanceStore } = await import('./appearance.store');
         const appearanceStore = useAppearanceStore();
         await appearanceStore.loadInitialAppearanceData();
-      }
-      if (active.includes('layout')) {
+      })());
+    }
+
+    if (active.includes('layout')) {
+      refreshTasks.push((async () => {
         const { useSettingsStore } = await import('./settings.store');
         const settingsStore = useSettingsStore();
         await settingsStore.loadInitialSettings();
-      }
-      if (active.includes('commandHistory')) {
+      })());
+    }
+
+    if (active.includes('commandHistory')) {
+      refreshTasks.push((async () => {
         const { useCommandHistoryStore } = await import('./commandHistory.store');
         const cmdHistStore = useCommandHistoryStore();
         await cmdHistStore.fetchHistory();
-      }
-    } catch (e: any) {
-      console.warn('[DesktopSyncStore] 刷新本地数据发生警告:', e);
+      })());
+    }
+
+    const results = await Promise.allSettled(refreshTasks);
+    const rejected = results.filter(r => r.status === 'rejected');
+    if (rejected.length > 0) {
+      console.warn('[DesktopSyncStore] 部分模块 Store 刷新遇到警告:', rejected);
+    } else {
+      console.log('[DesktopSyncStore] 所有面板模块 Store 数据已全部完成最新重绘！');
     }
   };
 

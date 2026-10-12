@@ -23,6 +23,7 @@ import ConfirmDialog from './components/common/ConfirmDialog.vue';
 import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
+import { initGlobalSyncListener } from './composables/useGlobalSyncListener';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -69,6 +70,9 @@ const updateUnderline = async () => {
 };
 
 onMounted(() => {
+  // 启动全局实时同步长连接监听器，实现全工作区面板无感自动刷新
+  initGlobalSyncListener();
+
   // Initial position update
   // Use setTimeout to ensure styles are applied and elements have dimensions
   setTimeout(updateUnderline, 100);
