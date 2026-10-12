@@ -79,17 +79,17 @@ async function main() {
     console.error('❌ 未找到可用的 nexus-server Node 运行时二进制！');
   }
 
-  // 4.2 镜像同步完整自包含服务端 (含 node_modules、html-presets、dist、public)
+  // 4.2 镜像同步完整自包含服务端 (零碎片架构：单文件 Bundle、html-presets、dist、public)
   const resourcesServerDir = path.join(desktopDir, 'src-tauri', 'resources', 'server');
   const portableServerDir = path.join(portableDir, 'server');
   if (fs.existsSync(resourcesServerDir)) {
-    console.log(`📦 正在镜像同步完整自包含服务资源 (含 node_modules 与 html-presets) 到 ${portableServerDir}...`);
+    console.log(`📦 正在镜像同步零碎片自包含服务资源到 ${portableServerDir}...`);
     try {
       execSync(`robocopy "${resourcesServerDir}" "${portableServerDir}" /MIR /R:1 /W:1 /NJH /NJS /NFL /NDL`, { stdio: 'ignore' });
     } catch (e) {
       // robocopy 退出码 <= 7 均表示复制成功
     }
-    console.log('✅ 自包含服务端资源镜像同步完成！');
+    console.log('✅ 零碎片自包含服务端资源镜像同步完成！');
   }
 
   // 5. 校验交付产物并输出

@@ -52,12 +52,9 @@ async function main() {
   const backendDir = path.join(rootDir, 'packages', 'backend');
   const frontendDir = path.join(rootDir, 'packages', 'frontend');
 
-  // 1. 确保后端已构建
-  const backendDist = path.join(backendDir, 'dist');
-  if (!fs.existsSync(path.join(backendDist, 'index.js'))) {
-    console.log('⚡ 正在编译后端 TypeScript 源码...');
-    execSync('npm run build', { cwd: backendDir, stdio: 'inherit' });
-  }
+  // 1. 确保后端已构建并打包为自包含单文件 Bundle (零碎文件架构)
+  console.log('⚡ 正在编译并打包后端自包含 Bundle (npm run bundle)...');
+  execSync('npm run bundle', { cwd: backendDir, stdio: 'inherit' });
 
   // 2. 确保前端已构建
   const frontendDist = path.join(frontendDir, 'dist');
@@ -66,9 +63,14 @@ async function main() {
     execSync('npm run build', { cwd: frontendDir, stdio: 'inherit' });
   }
 
-  // 3. 同步 dist 到 resources/server/dist
-  console.log('📦 正在同步后端代码到 resources/server/dist...');
-  fs.cpSync(backendDist, path.join(serverDir, 'dist'), { recursive: true, force: true });
+  // 3. 同步 dist-bundle 到 resources/server/dist (先清空历史旧编译碎片)
+  const serverDistDir = path.join(serverDir, 'dist');
+  if (fs.existsSync(serverDistDir)) {
+    fs.rmSync(serverDistDir, { recursive: true, force: true });
+  }
+  const backendDistBundle = path.join(backendDir, 'dist-bundle');
+  console.log('📦 正在同步后端自包含产物到 resources/server/dist...');
+  fs.cpSync(backendDistBundle, serverDistDir, { recursive: true, force: true });
 
   // 4. 同步 frontend/dist 到 resources/server/public
   console.log('🎨 正在同步前端页面到 resources/server/public...');
@@ -92,25 +94,23 @@ async function main() {
     console.warn('⚠️ 未找到 html-presets 目录: ' + htmlPresetsSrc);
   }
 
-  // 5. 准备 package.json
+  // 5. 准备极简 package.json (已全量 Bundle，零外部运行时依赖)
   const backendPkg = JSON.parse(fs.readFileSync(path.join(backendDir, 'package.json'), 'utf8'));
   const cleanPkg = {
     name: 'nexus-terminal-server',
     version: backendPkg.version,
     private: true,
-    main: 'dist/index.js',
-    dependencies: backendPkg.dependencies
+    main: 'dist/index.js'
   };
   fs.writeFileSync(path.join(serverDir, 'package.json'), JSON.stringify(cleanPkg, null, 2));
 
-  // 6. 检查生产依赖 node_modules
+  // 6. 清理冗余的 node_modules 碎小文件 (Bundle 模式下已完全自包含，消除 13,000+ 碎片)
   const serverNodeModules = path.join(serverDir, 'node_modules');
-  if (!fs.existsSync(serverNodeModules) || !fs.existsSync(path.join(serverNodeModules, 'sqlite3'))) {
-    console.log('📥 正在安装自包含后端纯生产依赖 (npm install --omit=dev)...');
-    execSync('npm install --omit=dev --no-audit --no-fund', { cwd: serverDir, stdio: 'inherit' });
-  } else {
-    console.log('✅ 自包含后端依赖已就绪');
+  if (fs.existsSync(serverNodeModules)) {
+    console.log('🧹 正在清理冗余的 node_modules 碎小文件...');
+    fs.rmSync(serverNodeModules, { recursive: true, force: true });
   }
+  console.log('✅ 零碎片自包含服务资源已就绪 (无需庞大 node_modules)');
 
   // 7. 将当前运行的 node.exe 拷贝为 Sidecar 二进制
   const targetBinaryPath = path.join(binariesDir, sidecarBinaryName);
