@@ -1,5 +1,4 @@
-// packages/backend/src/sync/sync.service.ts
-import { getDbInstance, runDb, getDb, allDb } from '../database/connection';
+import { getDbInstance, runDb, getDb, allDb, acquireApplyLock, applyContext } from '../database/connection';
 import { envelopeCryptoService } from './envelope-crypto.service';
 import { recordTombstone, getTombstonesSince } from './tombstone.service';
 import http from 'http';
@@ -7,6 +6,7 @@ import https from 'https';
 import { URL } from 'url';
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
 import { DEFAULT_SYNC_API_KEY } from './sync.middleware';
+import { syncThrottleScheduler } from './sync.scheduler';
 
 export type SyncModuleKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
 
@@ -372,10 +372,15 @@ export const syncService = {
     modules?: SyncModuleKey[]
   ): Promise<{ pushed: number; conflictsResolved: number }> {
     const db = await getDbInstance();
-    let pushed = 0;
-    let conflictsResolved = 0;
+    const releaseLock = await acquireApplyLock();
 
-    const syncConn = shouldSyncModule(modules, 'connections');
+    return await applyContext.run({ isApplying: true }, async () => {
+      try {
+        await runDb(db, 'UPDATE sync_state SET applying = 1 WHERE id = 1');
+        let pushed = 0;
+        let conflictsResolved = 0;
+
+        const syncConn = shouldSyncModule(modules, 'connections');
     const syncCmds = shouldSyncModule(modules, 'quickCommands');
     const syncApp = shouldSyncModule(modules, 'appearance');
     const syncLayout = shouldSyncModule(modules, 'layout');
@@ -987,67 +992,91 @@ export const syncService = {
       }
     }
 
-    return { pushed, conflictsResolved };
+        return { pushed, conflictsResolved };
+      } finally {
+        await runDb(db, 'UPDATE sync_state SET applying = 0 WHERE id = 1');
+      }
+    }).finally(() => {
+      releaseLock();
+    });
   },
 
   /**
    * 清空所有可同步的实体表与墓碑 (用于强制覆盖场景，支持按模块细粒度清空)
+   * 核心铁律：必须处于 applying=1 独占锁中执行，严禁触发 SQLite 触发器生成删除墓碑或向 sync_changes 写入幽灵变更！
    */
   async clearSyncTables(modules?: SyncModuleKey[]): Promise<void> {
     const db = await getDbInstance();
-    const syncConn = shouldSyncModule(modules, 'connections');
-    const syncCmds = shouldSyncModule(modules, 'quickCommands');
-    const syncApp = shouldSyncModule(modules, 'appearance');
-    const syncLayout = shouldSyncModule(modules, 'layout');
-    const syncHist = shouldSyncModule(modules, 'commandHistory');
-    const isFullSync = !modules || modules.length === 0;
+    const releaseLock = await acquireApplyLock();
 
-    await runDb(db, 'PRAGMA foreign_keys = OFF');
+    return await applyContext.run({ isApplying: true }, async () => {
+      try {
+        await runDb(db, 'UPDATE sync_state SET applying = 1 WHERE id = 1');
+        await runDb(db, 'PRAGMA foreign_keys = OFF');
 
-    if (syncConn) {
-      await runDb(db, 'DELETE FROM connection_tags');
-      await runDb(db, 'DELETE FROM connections');
-      await runDb(db, 'DELETE FROM proxies');
-      await runDb(db, 'DELETE FROM ssh_keys');
-      await runDb(db, 'DELETE FROM tags');
-      await runDb(db, 'DELETE FROM favorite_paths');
-      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
-    }
+        const syncConn = shouldSyncModule(modules, 'connections');
+        const syncCmds = shouldSyncModule(modules, 'quickCommands');
+        const syncApp = shouldSyncModule(modules, 'appearance');
+        const syncLayout = shouldSyncModule(modules, 'layout');
+        const syncHist = shouldSyncModule(modules, 'commandHistory');
+        const isFullSync = !modules || modules.length === 0;
 
-    if (syncCmds) {
-      await runDb(db, 'DELETE FROM quick_command_tag_associations');
-      await runDb(db, 'DELETE FROM quick_commands');
-      await runDb(db, 'DELETE FROM quick_command_tags');
-      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('quick_commands', 'quick_command_tags')`);
-    }
+        if (syncConn) {
+          await runDb(db, 'DELETE FROM connection_tags');
+          await runDb(db, 'DELETE FROM connections');
+          await runDb(db, 'DELETE FROM proxies');
+          await runDb(db, 'DELETE FROM ssh_keys');
+          await runDb(db, 'DELETE FROM tags');
+          await runDb(db, 'DELETE FROM favorite_paths');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
+          await runDb(db, `DELETE FROM sync_pending_references WHERE target_tbl IN ('proxies', 'ssh_keys') OR child_tbl = 'connections'`);
+        }
 
-    if (syncLayout) {
-      // 覆盖本地时，清空常规设置，但保护本地专有的桌面同步配置与服务器密钥
-      await runDb(db, `DELETE FROM settings WHERE key NOT IN ('desktop_sync_config', 'syncApiKey') AND key NOT LIKE 'desktop_%'`);
-      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'settings'`);
-    }
+        if (syncCmds) {
+          await runDb(db, 'DELETE FROM quick_command_tag_associations');
+          await runDb(db, 'DELETE FROM quick_commands');
+          await runDb(db, 'DELETE FROM quick_command_tags');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('quick_commands', 'quick_command_tags')`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('quick_commands', 'quick_command_tags')`);
+        }
 
-    if (syncApp) {
-      await runDb(db, 'DELETE FROM appearance_settings');
-      await runDb(db, 'DELETE FROM terminal_themes');
-      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
-    }
+        if (syncLayout) {
+          // 覆盖本地时，清空常规设置，但保护本地专有的桌面同步配置与服务器密钥
+          await runDb(db, `DELETE FROM settings WHERE key NOT IN ('desktop_sync_config', 'syncApiKey') AND key NOT LIKE 'desktop_%'`);
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'settings'`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'settings'`);
+        }
 
-    if (syncHist) {
-      await runDb(db, 'DELETE FROM command_history');
-      await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history'`);
-    }
+        if (syncApp) {
+          await runDb(db, 'DELETE FROM appearance_settings');
+          await runDb(db, 'DELETE FROM terminal_themes');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('appearance_settings', 'terminal_themes')`);
+        }
 
-    if (isFullSync) {
-      await runDb(db, 'DELETE FROM users');
-      await runDb(db, 'DELETE FROM workspace_sync');
-      await runDb(db, 'DELETE FROM sync_tombstones');
-      await runDb(db, 'DELETE FROM sync_changes');
-      await runDb(db, 'DELETE FROM sync_pending_references');
-    }
+        if (syncHist) {
+          await runDb(db, 'DELETE FROM command_history');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'command_history'`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'command_history'`);
+        }
 
-    await runDb(db, 'PRAGMA foreign_keys = ON');
-    console.log(`[SyncService] 受管业务数据表已根据模块 [${modules && modules.length > 0 ? modules.join(', ') : 'ALL'}] 原子清空完毕`);
+        if (isFullSync) {
+          // 注意：全量覆盖场景下保留本地独立的管理员 users 表，绝不物理清空 users！
+          await runDb(db, 'DELETE FROM workspace_sync');
+          await runDb(db, 'DELETE FROM sync_tombstones');
+          await runDb(db, 'DELETE FROM sync_changes');
+          await runDb(db, 'DELETE FROM sync_pending_references');
+        }
+
+        await runDb(db, 'PRAGMA foreign_keys = ON');
+        console.log(`[SyncService] 受管业务数据表已根据模块 [${modules && modules.length > 0 ? modules.join(', ') : 'ALL'}] 安全原子清空完毕 (触发器已静音且幽灵变更已清除)`);
+      } finally {
+        await runDb(db, 'UPDATE sync_state SET applying = 0 WHERE id = 1');
+      }
+    }).finally(() => {
+      releaseLock();
+    });
   },
 
   /**
@@ -1060,16 +1089,37 @@ export const syncService = {
     const mode = payload.mode || 'bidirectional';
     const modules = payload.modules;
 
+    let pushed = 0;
+    let conflictsResolved = 0;
+
     // 若客户端指定“以本地为准覆盖云端”：服务端先清空已有实体库（按 modules）
     if (mode === 'local_to_cloud') {
-      console.log(`[SyncService] 收到强制以本地覆盖云端请求，正在清空服务端存量数据 (模块: ${modules && modules.length > 0 ? modules.join(', ') : 'ALL'})...`);
-      await this.clearSyncTables(modules);
-      const db = await getDbInstance();
-      await runDb(db, 'UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1');
+      console.log(`[SyncService] 收到强制以本地覆盖云端请求，正在安全清空服务端存量数据 (模块: ${modules && modules.length > 0 ? modules.join(', ') : 'ALL'})...`);
+      syncThrottleScheduler.pause();
+      try {
+        await this.clearSyncTables(modules);
+        const db = await getDbInstance();
+        await runDb(db, 'UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1');
+      } finally {
+        syncThrottleScheduler.resume();
+      }
     }
 
-    // 1. 应用客户端推送过来的数据 (若为 cloud_to_local 则客户端不推数据，直接跳过)
-    const { pushed, conflictsResolved } = await this.applyIncomingData(payload, key, modules);
+    // 1. 应用客户端推送过来的数据：
+    // 若为 cloud_to_local 模式，服务端严格忽略客户端传来的任何实体与墓碑，绝对杜绝逆向抹除云端！
+    if (mode !== 'cloud_to_local') {
+      const applyRes = await this.applyIncomingData(payload, key, modules);
+      pushed = applyRes.pushed;
+      conflictsResolved = applyRes.conflictsResolved;
+    }
+
+    // 若为 local_to_cloud，服务端写入完成后安全推进游标对齐
+    if (mode === 'local_to_cloud') {
+      const db = await getDbInstance();
+      const maxSeqRow = await getDb<{ maxSeq: number }>(db, 'SELECT COALESCE(MAX(seq), 0) as maxSeq FROM sync_changes');
+      const maxSeq = maxSeqRow?.maxSeq || 0;
+      await runDb(db, 'UPDATE sync_state SET push_cursor = ?, pull_cursor = 0 WHERE id = 1', [maxSeq]);
+    }
 
     // 2. 导出服务端自 clientLastSyncTime 之后更新的数据并返回
     // 若为 cloud_to_local，客户端需要获取服务端全量数据 (sinceTimestamp = 0)
@@ -1242,7 +1292,37 @@ export const syncService = {
     // 若用户选择“以云端为准覆盖本地”，本地先清空再全量写入云端数据
     if (mode === 'cloud_to_local') {
       console.log(`[SyncService:Client] 正在以云端为准清空本地并写入数据 (模块: ${modules && modules.length > 0 ? modules.join(', ') : 'ALL'})...`);
-      await this.clearSyncTables(modules);
+      syncThrottleScheduler.pause();
+      try {
+        await this.clearSyncTables(modules);
+        const applyStats = await this.applyIncomingData(
+          {
+            entities: exchangeData.syncedEntities,
+            tombstones: exchangeData.tombstones
+          },
+          apiKey,
+          modules
+        );
+
+        // 核心安全屏障：覆盖完成后将 push_cursor 对齐到本地最新 seq，避免任何反向推送
+        const db = await getDbInstance();
+        const maxSeqRow = await getDb<{ maxSeq: number }>(db, 'SELECT COALESCE(MAX(seq), 0) as maxSeq FROM sync_changes');
+        const maxSeq = maxSeqRow?.maxSeq || 0;
+        await runDb(db, 'UPDATE sync_state SET push_cursor = ?, pull_cursor = 0 WHERE id = 1', [maxSeq]);
+        console.log(`[SyncService:Client] 覆盖对齐完成，本地同步游标已安全对齐至 seq=${maxSeq}。`);
+
+        return {
+          success: true,
+          serverTime: exchangeData.serverTime,
+          stats: {
+            pushed: 0,
+            pulled: applyStats.pushed,
+            conflictsResolved: exchangeData.stats.conflictsResolved + applyStats.conflictsResolved
+          }
+        };
+      } finally {
+        syncThrottleScheduler.resume();
+      }
     }
 
     const applyStats = await this.applyIncomingData(
@@ -1254,11 +1334,12 @@ export const syncService = {
       modules
     );
 
-    // 若为覆盖模式，重置对齐本地游标
-    if (mode === 'cloud_to_local') {
+    // 若为以本地覆盖云端模式，本地同样推进 push_cursor
+    if (mode === 'local_to_cloud') {
       const db = await getDbInstance();
-      await runDb(db, 'UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1');
-      console.log('[SyncService:Client] 覆盖对齐完成，本地同步游标已归零重置。');
+      const maxSeqRow = await getDb<{ maxSeq: number }>(db, 'SELECT COALESCE(MAX(seq), 0) as maxSeq FROM sync_changes');
+      const maxSeq = maxSeqRow?.maxSeq || 0;
+      await runDb(db, 'UPDATE sync_state SET push_cursor = ?, pull_cursor = 0 WHERE id = 1', [maxSeq]);
     }
 
     return {

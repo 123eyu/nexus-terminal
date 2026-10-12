@@ -263,8 +263,9 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     settings.syncLastTime = result.serverTime;
     writeDesktopSettings(settings);
 
-    // 仅在全量同步（未指定模块）时协同执行 v2 增量游标同步；若指定了模块，v1 已按模块精准同步完成
-    if (!modules || modules.length === 0) {
+    // 仅在双向合并 (bidirectional) 且全量同步（未指定模块）时协同执行 v2 增量游标同步；
+    // 若指定了覆盖模式 (cloud_to_local 或 local_to_cloud) 或模块筛选，绝对严禁执行 v2 双向混合，防止破坏单向覆盖语义！
+    if (mode === 'bidirectional' && (!modules || modules.length === 0)) {
       try {
         const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
         result.stats.pushed += v2Stats.pushed;

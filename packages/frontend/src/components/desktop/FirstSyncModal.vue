@@ -47,6 +47,15 @@
           </div>
         </div>
 
+        <!-- 账号安全隔离提示 -->
+        <div class="mx-6 mt-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-start gap-2.5 text-xs text-text-secondary leading-relaxed">
+          <i class="fas fa-shield-alt text-blue-500 mt-0.5 text-sm"></i>
+          <div>
+            <span class="font-medium text-foreground">凭证安全隔离说明：</span>
+            数据同步仅涵盖主机资产、SSH 密钥、代理及外观配置，<span class="text-blue-500 font-medium">不包含系统登录账号与密码</span>。桌面端与云端 VPS 保持各自独立的本地管理员凭证。
+          </div>
+        </div>
+
         <!-- 弹窗内容：3个策略卡片 -->
         <div class="p-6 space-y-3.5">
           <!-- 选项 1: 智能双向合并 (推荐) -->
@@ -100,7 +109,7 @@
                   {{ $t('desktop.firstSync.cloudToLocalTitle', '以云端 VPS 为准 (覆盖本地)') }}
                 </span>
                 <p class="text-xs text-text-secondary mt-1 leading-relaxed">
-                  {{ $t('desktop.firstSync.cloudToLocalDesc', '适合在新设备上首次安装使用。直接从 VPS 拉取全部主机、私钥与工作区，替换本地数据。') }}
+                  {{ $t('desktop.firstSync.cloudToLocalDesc', '适合在新设备上首次安装使用。直接从 VPS 拉取全部主机与密钥，替换本地业务数据（本地桌面端的登录账号密码保持不变）。') }}
                 </p>
               </div>
             </div>

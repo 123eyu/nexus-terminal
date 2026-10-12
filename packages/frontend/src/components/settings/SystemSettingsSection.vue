@@ -323,6 +323,10 @@
               {{ $t('settings.desktop.chooseAlignment', '对齐向导') }}
             </button>
           </div>
+          <div class="text-[11px] text-text-secondary/80 flex items-center gap-1.5">
+            <i class="fas fa-info-circle text-[10px]"></i>
+            <span>各节点登录账号密码独立存储，同步仅涵盖主机资产、密钥与外观设置。</span>
+          </div>
 
           <!-- 状态提示 -->
           <div v-if="desktopSyncStore.testLatency !== null" class="text-xs text-success flex items-center gap-1.5">
