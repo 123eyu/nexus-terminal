@@ -6,6 +6,7 @@ import http from 'http';
 import https from 'https';
 import { URL } from 'url';
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service';
+import { DEFAULT_SYNC_API_KEY } from './sync.middleware';
 
 export type SyncModuleKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
 
@@ -1053,7 +1054,7 @@ export const syncService = {
    * 服务端处理双向数据交换 (支持按模块过滤与清空)
    */
   async processExchange(payload: SyncExchangePayload, apiKey?: string): Promise<SyncExchangeResult> {
-    const key = apiKey || process.env.SYNC_API_KEY || 'default-fallback-key';
+    const key = apiKey || DEFAULT_SYNC_API_KEY;
     const serverTime = Math.floor(Date.now() / 1000);
     const clientLastSyncTime = payload.lastSyncTime || 0;
     const mode = payload.mode || 'bidirectional';
