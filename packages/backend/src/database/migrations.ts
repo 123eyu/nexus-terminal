@@ -660,6 +660,41 @@ const definedMigrations: Migration[] = [
             });
             console.log('[Migrations] Migration 17: command_history 表 uuid 与 updated_hlc 迁移完成。');
         }
+    },
+    {
+        id: 18,
+        name: 'Deduplicate cloned command_history records by command and timestamp',
+        check: async (db: Database): Promise<boolean> => {
+            return new Promise<boolean>((resolve) => {
+                db.get(
+                    `SELECT 1 FROM command_history a WHERE EXISTS (SELECT 1 FROM command_history b WHERE b.command = a.command AND b.timestamp = a.timestamp AND b.id < a.id) LIMIT 1`,
+                    (err, row) => {
+                        if (err || !row) resolve(false);
+                        else resolve(true);
+                    }
+                );
+            });
+        },
+        sql: `-- 安全清理 command_history 相同 command 与 timestamp 的克隆副本`,
+        execute: async (db: Database): Promise<void> => {
+            await new Promise<void>((resolve, reject) => {
+                db.serialize(() => {
+                    db.run('UPDATE sync_state SET applying = 1 WHERE id = 1', () => {});
+                    db.run(
+                        'DELETE FROM command_history WHERE id NOT IN (SELECT min(id) FROM command_history GROUP BY command, timestamp)',
+                        function (err) {
+                            db.run('UPDATE sync_state SET applying = 0 WHERE id = 1', () => {});
+                            if (err) {
+                                console.error('[Migrations] Migration 18 去重清理失败:', err);
+                                return reject(err);
+                            }
+                            console.log(`[Migrations] Migration 18: 成功清理 command_history 重复副本 ${this.changes} 条。`);
+                            resolve();
+                        }
+                    );
+                });
+            });
+        }
     }
 ];
 

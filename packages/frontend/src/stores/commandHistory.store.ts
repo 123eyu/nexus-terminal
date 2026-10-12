@@ -72,25 +72,27 @@ export const useCommandHistoryStore = defineStore('commandHistory', () => {
     };
 
     // 从后端获取历史记录 (带缓存)
-    const fetchHistory = async () => {
+    const fetchHistory = async (force: boolean = false) => {
         error.value = null; // 重置错误
 
-        // 1. 尝试从 localStorage 加载缓存
-        try {
-            const cachedData = localStorage.getItem(CACHE_KEY);
-            if (cachedData) {
-                const parsed = JSON.parse(cachedData);
-                if (Array.isArray(parsed)) {
-                    historyList.value = parsed.slice(0, MAX_STORED_HISTORY);
-                    isLoading.value = false; // 先显示缓存
+        // 1. 若非强制刷新，尝试从 localStorage 加载缓存
+        if (!force) {
+            try {
+                const cachedData = localStorage.getItem(CACHE_KEY);
+                if (cachedData) {
+                    const parsed = JSON.parse(cachedData);
+                    if (Array.isArray(parsed)) {
+                        historyList.value = parsed.slice(0, MAX_STORED_HISTORY);
+                        isLoading.value = false; // 先显示缓存
+                    }
+                } else {
+                    isLoading.value = true; // 无缓存，初始加载
                 }
-            } else {
-                isLoading.value = true; // 无缓存，初始加载
+            } catch (e) {
+                console.error('[CmdHistoryStore] Failed to load or parse history cache:', e);
+                localStorage.removeItem(CACHE_KEY);
+                isLoading.value = true;
             }
-        } catch (e) {
-            console.error('[CmdHistoryStore] Failed to load or parse history cache:', e);
-            localStorage.removeItem(CACHE_KEY);
-            isLoading.value = true;
         }
 
         // 2. 后台获取最新数据
@@ -99,18 +101,23 @@ export const useCommandHistoryStore = defineStore('commandHistory', () => {
             // 后端返回升序，前端需要降序（最新在前）
             const freshData = response.data.reverse().slice(0, MAX_STORED_HISTORY);
 
-            // 3. 避免大数组 JSON.stringify 全量深度比对，使用轻量指纹快速检查是否有变动
-            const current = historyList.value;
-            const hasChanged = current.length !== freshData.length ||
-                (freshData.length > 0 && current.length > 0 && (
-                    current[0]?.id !== freshData[0]?.id ||
-                    current[0]?.command !== freshData[0]?.command ||
-                    current[current.length - 1]?.id !== freshData[freshData.length - 1]?.id
-                )) || (current.length === 0 && freshData.length > 0);
-
-            if (hasChanged) {
+            if (force) {
                 historyList.value = freshData;
                 saveToCache(freshData);
+            } else {
+                const current = historyList.value;
+                const hasChanged = current.length !== freshData.length ||
+                    (freshData.length > 0 && current.length > 0 && (
+                        current[0]?.id !== freshData[0]?.id ||
+                        current[0]?.command !== freshData[0]?.command ||
+                        current[current.length - 1]?.id !== freshData[freshData.length - 1]?.id ||
+                        JSON.stringify(current) !== JSON.stringify(freshData)
+                    )) || (current.length === 0 && freshData.length > 0);
+
+                if (hasChanged) {
+                    historyList.value = freshData;
+                    saveToCache(freshData);
+                }
             }
             error.value = null;
         } catch (err: any) {

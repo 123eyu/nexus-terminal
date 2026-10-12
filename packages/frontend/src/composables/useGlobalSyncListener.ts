@@ -61,7 +61,7 @@ function connect() {
       isConnected.value = true;
       console.log('[GlobalSyncListener] 全局 UI 实时事件长连接已建立 (/ws/events)');
 
-      // 启动 20 秒心跳保活
+      // 启动 15 秒心跳保活
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       heartbeatTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -69,7 +69,7 @@ function connect() {
             ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
           } catch {}
         }
-      }, 20000);
+      }, 15000);
     };
 
     ws.onmessage = (event) => {
@@ -92,10 +92,10 @@ function connect() {
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;
       }
-      // 3 秒后自动重连
+      // 2 秒后自动重连
       reconnectTimer = setTimeout(() => {
         connect();
-      }, 3000);
+      }, 2000);
     };
 
     ws.onerror = (err) => {
@@ -105,8 +105,8 @@ function connect() {
       } catch {}
     };
   } catch (err: any) {
-    console.warn('[GlobalSyncListener] 建立长连接失败，3秒后重试:', err.message);
-    reconnectTimer = setTimeout(connect, 3000);
+    console.warn('[GlobalSyncListener] 建立长连接失败，2秒后重试:', err.message);
+    reconnectTimer = setTimeout(connect, 2000);
   }
 }
 
@@ -117,6 +117,24 @@ export function initGlobalSyncListener() {
   if (isInitialized) return;
   isInitialized = true;
   connect();
+
+  if (typeof window !== 'undefined') {
+    // 页面切回可见时，快速检查连接并静默刷新最新面板数据
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
+          connect();
+        }
+        scheduleStoreRefresh();
+      }
+    });
+
+    // 网络由离线恢复上线时，立即重连并刷新
+    window.addEventListener('online', () => {
+      connect();
+      scheduleStoreRefresh();
+    });
+  }
 }
 
 /**

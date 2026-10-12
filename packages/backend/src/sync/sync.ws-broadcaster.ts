@@ -12,6 +12,11 @@ const syncWsClients = new Set<WebSocket>();
  */
 export function handleSyncWsConnection(ws: WebSocket, req: IncomingMessage): void {
   syncWsClients.add(ws);
+  (ws as any).isAlive = true;
+  (ws as any).isSyncOrEventChannel = true;
+  (ws as any).channelType = 'sync';
+  (ws as any).missedPongs = 0;
+
   console.log(`[SyncBroadcaster] 新增同步长连接客户端，当前活跃客户端总数: ${syncWsClients.size}`);
 
   // 连接握手成功后立即向客户端发送 ready 信号
@@ -25,12 +30,20 @@ export function handleSyncWsConnection(ws: WebSocket, req: IncomingMessage): voi
     console.warn('[SyncBroadcaster] 发送 ready 消息异常:', err);
   }
 
+  // 监听底层 pong 帧 (响应 heartbeat.ts 发送的底层 ping 探测)
+  ws.on('pong', () => {
+    (ws as any).isAlive = true;
+    (ws as any).missedPongs = 0;
+  });
+
   // 心跳响应与协议消息处理
   ws.on('message', (data: any) => {
     try {
       const msgStr = data.toString();
       const msg = JSON.parse(msgStr);
       if (msg.type === 'ping' || msg.type === 'sync:ping') {
+        (ws as any).isAlive = true;
+        (ws as any).missedPongs = 0;
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
       } else if (msg.type === 'sync:notify') {
         console.log(`[SyncBroadcaster] 收到客户端主动广播请求 (seq: ${msg.seq ?? 'latest'})`);
@@ -92,6 +105,11 @@ const frontendEventClients = new Set<WebSocket>();
  */
 export function handleFrontendEventsConnection(ws: WebSocket, req: IncomingMessage): void {
   frontendEventClients.add(ws);
+  (ws as any).isAlive = true;
+  (ws as any).isSyncOrEventChannel = true;
+  (ws as any).channelType = 'events';
+  (ws as any).missedPongs = 0;
+
   console.log(`[FrontendEvents] 新增前端 UI 事件订阅长连接，当前活跃页面数: ${frontendEventClients.size}`);
 
   // 连接握手成功后立即向前端发送 welcome 确认
@@ -103,11 +121,19 @@ export function handleFrontendEventsConnection(ws: WebSocket, req: IncomingMessa
     }));
   } catch {}
 
+  // 监听底层 pong 帧 (响应 heartbeat.ts 发送的底层 ping 探测)
+  ws.on('pong', () => {
+    (ws as any).isAlive = true;
+    (ws as any).missedPongs = 0;
+  });
+
   // 监听心跳与消息
   ws.on('message', (data: any) => {
     try {
       const msg = JSON.parse(data.toString());
       if (msg.type === 'ping') {
+        (ws as any).isAlive = true;
+        (ws as any).missedPongs = 0;
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
       } else if (msg.type === 'test:trigger_notify' || msg.type === 'frontend:broadcast_refresh') {
         notifyLocalFrontendSyncDone(msg.payload);

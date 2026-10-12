@@ -144,12 +144,19 @@ export class SyncWsClient {
 
       this.ws = ws;
 
+      // 监听云端底层 ping 帧探测并即时回复 pong
+      ws.on('ping', () => {
+        try {
+          ws.pong();
+        } catch {}
+      });
+
       ws.on('open', () => {
         this.isConnecting = false;
         this.reconnectAttempt = 0;
         console.log('[SyncWsClient] 双端实时长连接已连通云端！秒级变更推送已激活。');
 
-        // 启动 25 秒心跳保活
+        // 启动 15 秒心跳保活
         this.startHeartbeat();
 
         // 连接建立瞬间，执行一次 Catch-up 检查，拉取离线期间所有云端变更
@@ -224,11 +231,12 @@ export class SyncWsClient {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         try {
           this.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+          this.ws.ping(() => {});
         } catch {
           // 心跳发送失败
         }
       }
-    }, 25000);
+    }, 15000);
   }
 
   private stopHeartbeat(): void {

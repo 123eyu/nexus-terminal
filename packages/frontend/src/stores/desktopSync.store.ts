@@ -298,7 +298,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       refreshTasks.push((async () => {
         const { useQuickCommandsStore } = await import('./quickCommands.store');
         const qcStore = useQuickCommandsStore();
-        await qcStore.fetchQuickCommands();
+        await qcStore.fetchQuickCommands(true);
       })());
       refreshTasks.push((async () => {
         const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
@@ -327,7 +327,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       refreshTasks.push((async () => {
         const { useCommandHistoryStore } = await import('./commandHistory.store');
         const cmdHistStore = useCommandHistoryStore();
-        await cmdHistStore.fetchHistory();
+        await cmdHistStore.fetchHistory(true);
       })());
     }
 

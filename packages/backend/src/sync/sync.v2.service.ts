@@ -473,11 +473,29 @@ export const syncV2Service = {
             } else if (item.tbl === 'command_history') {
               const cmdText = data.command;
               const cmdTs = data.timestamp || Math.floor(nowMs / 1000);
+
+              // 幂等去重保护：如果根据 UUID 没找到，先检查本地是否存在完全相同 command 与 timestamp 的历史记录
+              let matchByContent: { id: number; uuid: string } | undefined = undefined;
+              if (!existingLive) {
+                matchByContent = await getDb<{ id: number; uuid: string }>(
+                  db,
+                  `SELECT id, uuid FROM command_history WHERE command = ? AND timestamp = ? LIMIT 1`,
+                  [cmdText, cmdTs]
+                );
+              }
+
               if (existingLive) {
                 await runDb(
                   db,
                   `UPDATE command_history SET command = ?, timestamp = ?, updated_hlc = ? WHERE uuid = ?`,
                   [cmdText, cmdTs, effectiveHlc, item.row_id]
+                );
+              } else if (matchByContent) {
+                // 本地已存在该历史指令（由不同端独立生成过旧 UUID），直接对齐 UUID 和 HLC，坚决不进行重复 INSERT！
+                await runDb(
+                  db,
+                  `UPDATE command_history SET uuid = ?, updated_hlc = ? WHERE id = ?`,
+                  [item.row_id, effectiveHlc, matchByContent.id]
                 );
               } else {
                 await runDb(

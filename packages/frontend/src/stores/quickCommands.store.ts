@@ -243,7 +243,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     };
 
     // 从后端获取快捷指令 (包含 tagIds，不再发送 sortBy)
-    const fetchQuickCommands = async () => {
+    const fetchQuickCommands = async (force: boolean = false) => {
         // 简化缓存：只缓存原始列表，不再区分排序
         const cacheKey = 'quickCommandsListCache';
         error.value = null;
@@ -257,22 +257,24 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
             }
         };
 
-        // 1. 尝试从 localStorage 加载缓存
-        try {
-            const cachedData = localStorage.getItem(cacheKey);
-            if (cachedData) {
-                const parsedData = JSON.parse(cachedData) as QuickCommandFE[];
-                if (Array.isArray(parsedData)) {
-                    quickCommandsList.value = parsedData;
-                    isLoading.value = false;
+        // 1. 若非强制刷新，尝试从 localStorage 加载缓存
+        if (!force) {
+            try {
+                const cachedData = localStorage.getItem(cacheKey);
+                if (cachedData) {
+                    const parsedData = JSON.parse(cachedData) as QuickCommandFE[];
+                    if (Array.isArray(parsedData)) {
+                        quickCommandsList.value = parsedData;
+                        isLoading.value = false;
+                    }
+                } else {
+                    isLoading.value = true;
                 }
-            } else {
+            } catch (e) {
+                console.error('[QuickCmdStore] Failed to load or parse commands cache:', e);
+                localStorage.removeItem(cacheKey);
                 isLoading.value = true;
             }
-        } catch (e) {
-            console.error('[QuickCmdStore] Failed to load or parse commands cache:', e);
-            localStorage.removeItem(cacheKey);
-            isLoading.value = true;
         }
 
         // 2. 后台获取最新数据
@@ -285,18 +287,23 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                 background_color: cmd.background_color || null
             }));
 
-            // 3. 轻量指纹快速比对，避免大数组深度 JSON.stringify
-            const current = quickCommandsList.value;
-            const hasChanged = current.length !== freshData.length ||
-                (freshData.length > 0 && current.length > 0 && (
-                    current[0]?.id !== freshData[0]?.id ||
-                    current[0]?.updated_at !== freshData[0]?.updated_at ||
-                    current[current.length - 1]?.id !== freshData[freshData.length - 1]?.id
-                )) || (current.length === 0 && freshData.length > 0);
-
-            if (hasChanged) {
+            if (force) {
                 quickCommandsList.value = freshData;
                 saveToCache(freshData);
+            } else {
+                const current = quickCommandsList.value;
+                const hasChanged = current.length !== freshData.length ||
+                    (freshData.length > 0 && current.length > 0 && (
+                        current[0]?.id !== freshData[0]?.id ||
+                        current[0]?.updated_at !== freshData[0]?.updated_at ||
+                        current[current.length - 1]?.id !== freshData[freshData.length - 1]?.id ||
+                        JSON.stringify(current) !== JSON.stringify(freshData)
+                    )) || (current.length === 0 && freshData.length > 0);
+
+                if (hasChanged) {
+                    quickCommandsList.value = freshData;
+                    saveToCache(freshData);
+                }
             }
             error.value = null;
         } catch (err: any) {
