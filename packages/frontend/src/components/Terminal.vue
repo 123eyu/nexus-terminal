@@ -446,6 +446,25 @@ onMounted(() => {
       emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, data });
     });
 
+    // 监听 OSC 7 当前工作目录通告序列 (Operating System Command 7: CWD)
+    // 格式形如: file://hostname/path/to/dir 或 /path/to/dir
+    terminal.parser.registerOscHandler(7, (data: string) => {
+      try {
+        let path = data.trim();
+        if (path.startsWith('file://')) {
+          const urlStr = path.replace(/^file:\/\/[^\/]*/, '');
+          path = urlStr ? decodeURIComponent(urlStr) : '/';
+        }
+        if (path && path.startsWith('/')) {
+          console.log(`[Terminal ${props.sessionId}] 捕获到 OSC 7 工作目录通告: ${path}`);
+          emitWorkspaceEvent('terminal:cwdChanged', { sessionId: props.sessionId, cwd: path });
+        }
+      } catch (err) {
+        console.warn(`[Terminal ${props.sessionId}] 解析 OSC 7 序列失败:`, err, data);
+      }
+      return true; // 返回 true 表示已消费此 OSC，不向屏幕输出控制码
+    });
+
     // 监听终端大小变化 (通过 ResizeObserver) - 主要处理浏览器窗口大小变化等
     // ResizeObserver 观察内部容器 terminalRef
     if (terminalRef.value) {

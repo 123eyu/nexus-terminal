@@ -40,3 +40,6 @@ export interface SftpReadFileSuccessPayload {
     rawContentBase64: string; // Base64 编码的原始文件内容
     encodingUsed: string; // 后端自动检测或用户请求时实际使用的编码
 }
+
+// 文件管理器与终端路径同步模式
+export type TerminalSyncMode = 'off' | 'bidirectional' | 'to_terminal' | 'from_terminal';

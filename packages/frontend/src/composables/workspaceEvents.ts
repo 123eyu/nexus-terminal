@@ -13,6 +13,7 @@ export type WorkspaceEventPayloads = {
   'terminal:clear': void; // sessionId 可选，默认为 active
   'terminal:scrollToBottomRequest': { sessionId: string };
   'terminal:stabilizedResize': { sessionId: string; width: number; height: number }; // 用于传递稳定后的尺寸
+  'terminal:cwdChanged': { sessionId: string; cwd: string }; // 终端当前工作目录变更事件
 
 
   // Editor Events

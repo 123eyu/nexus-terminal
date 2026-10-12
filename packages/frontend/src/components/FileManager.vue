@@ -26,7 +26,7 @@ import FileManagerBreadcrumbs from './FileManagerBreadcrumbs.vue';
 import DirectoryTree from './DirectoryTree.vue';
 import MobileFileManagerList from './MobileFileManagerList.vue';
 import MobileFileActionSheet from './MobileFileActionSheet.vue';
-import type { FileListItem } from '../types/sftp.types';
+import type { FileListItem, TerminalSyncMode } from '../types/sftp.types';
 import type { WebSocketMessage } from '../types/websocket.types';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { getFileIconClass } from '../utils/fileIcons';
@@ -202,6 +202,85 @@ const toggleViewMode = () => {
   });
 };
 
+// --- 文件管理器与终端路径同步状态 (跟随当前组件实例隔离 + 持久化记忆) ---
+const syncModeStorageKey = computed(() => `fm_terminal_sync_mode:${effectiveInstanceId.value}`);
+
+const terminalSyncMode = ref<TerminalSyncMode>(
+  componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, 'off')
+);
+
+watch(syncModeStorageKey, (newKey) => {
+  terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(newKey, 'off');
+});
+
+watch(() => componentStateStore.isLoaded, () => {
+  terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, terminalSyncMode.value);
+});
+
+// 防循环震荡互锁标记与定时器
+let isInternalPathSyncing = false;
+let syncLockTimer: ReturnType<typeof setTimeout> | null = null;
+let lastSyncedPath = '';
+
+// 路径格式标准化辅助方法（去除尾部非根斜杠，方便严格对比）
+const normalizePath = (p?: string | null): string => {
+  if (!p) return '';
+  const trimmed = p.trim();
+  if (trimmed.length > 1 && trimmed.endsWith('/')) {
+    return trimmed.slice(0, -1);
+  }
+  return trimmed;
+};
+
+// 发送 CD 命令到绑定终端（支持单向及双向防回环）
+const syncPathToTerminal = (targetPath?: string) => {
+  const path = targetPath || currentSftpManager.value?.currentPath.value;
+  if (!path || !path.trim().startsWith('/')) return;
+  if (!props.wsDeps.isConnected.value) return;
+
+  const normTarget = normalizePath(path);
+  if (lastSyncedPath && lastSyncedPath === normTarget) {
+    return;
+  }
+
+  const targetSession = sessionStore.sessions.get(props.sessionId) || sessionStore.activeSession;
+  if (!targetSession?.terminalManager) {
+    console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot sync path to terminal: Terminal manager not found.`);
+    return;
+  }
+
+  // 安全转义 POSIX 路径并使用 cd -- "..." 杜绝短横线等参数注入
+  const escapedPath = path.replace(/([\\"\$`])/g, '\\$1');
+  const command = `cd -- "${escapedPath}"\n`;
+
+  isInternalPathSyncing = true;
+  lastSyncedPath = normTarget;
+  if (syncLockTimer) clearTimeout(syncLockTimer);
+  syncLockTimer = setTimeout(() => {
+    isInternalPathSyncing = false;
+  }, 600);
+
+  try {
+    targetSession.terminalManager.sendData(command);
+    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 已同步路径至终端: ${command.trim()}`);
+  } catch (err) {
+    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 同步路径至终端失败:`, err);
+  }
+};
+
+const cycleTerminalSyncMode = () => {
+  const modes: TerminalSyncMode[] = ['off', 'bidirectional', 'to_terminal', 'from_terminal'];
+  const currentIndex = modes.indexOf(terminalSyncMode.value);
+  const nextMode = modes[(currentIndex + 1) % modes.length];
+  terminalSyncMode.value = nextMode;
+  componentStateStore.setState(syncModeStorageKey.value, nextMode);
+
+  // 若切换为向终端同步或双向同步，立即触发一次当前路径同步到终端
+  if (nextMode === 'bidirectional' || nextMode === 'to_terminal') {
+    syncPathToTerminal(currentSftpManager.value?.currentPath.value);
+  }
+};
+
 // 预定义返回上级目录虚拟项目
 const parentDirectoryItem: FileListItem = {
   filename: '..',
@@ -355,6 +434,11 @@ watch([isSearchActive, searchQuery], ([active, query]) => {
 watch(() => currentSftpManager.value?.currentPath.value, (newPath) => {
   if (newPath && newPath.trim().startsWith('/')) {
     workspaceSyncStore.updateFileManagerInstanceState(props.sessionId, props.instanceId, { currentPath: newPath });
+
+    // 文件管理器 -> 终端：若处于双向同步或同步到终端模式，且非内部回环中，触发终端跟随
+    if (!isInternalPathSyncing && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
+      syncPathToTerminal(newPath);
+    }
   }
 }, { immediate: true });
 
@@ -1347,6 +1431,7 @@ let unregisterSetDirectoryTreeVisibleEvent: (() => void) | null = null;
 let unregisterSetDirectoryTreeWidthEvent: (() => void) | null = null;
 let unregisterSetViewModeEvent: (() => void) | null = null;
 let unregisterTerminalInputEvent: (() => void) | null = null;
+let unregisterTerminalCwdChangedEvent: (() => void) | null = null;
 let directoryPollTimer: ReturnType<typeof setInterval> | null = null;
 let terminalDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1400,6 +1485,49 @@ onMounted(() => {
   };
   subscribeToWorkspaceEvent('terminal:input', handleTerminalInputNotification);
   unregisterTerminalInputEvent = () => unsubscribeFromWorkspaceEvent('terminal:input', handleTerminalInputNotification);
+
+  // 终端 -> 文件管理器：监听终端当前工作目录变更事件
+  const handleTerminalCwdChangedNotification = (payload: { sessionId: string; cwd: string }) => {
+    // 1. 会话匹配检查：必须属于当前文件管理器绑定的会话
+    if (payload.sessionId !== props.sessionId) {
+      return;
+    }
+
+    // 2. 同步模式检查：必须为双向同步或终端同步到这
+    if (terminalSyncMode.value !== 'bidirectional' && terminalSyncMode.value !== 'from_terminal') {
+      return;
+    }
+
+    // 3. 内部回环锁判定：若当前是由文件管理器引发的终端 cd，则忽略终端回显的 OSC 7，避免死循环
+    if (isInternalPathSyncing) {
+      return;
+    }
+
+    const newCwd = payload.cwd;
+    if (!newCwd || !newCwd.startsWith('/')) {
+      return;
+    }
+
+    const normNew = normalizePath(newCwd);
+    const normCur = normalizePath(currentSftpManager.value?.currentPath.value);
+
+    if (normNew === normCur) {
+      return;
+    }
+
+    // 启用防回环锁，防止文件管理器 loadDirectory 后再次反向触发向终端 cd
+    isInternalPathSyncing = true;
+    lastSyncedPath = normNew;
+    if (syncLockTimer) clearTimeout(syncLockTimer);
+    syncLockTimer = setTimeout(() => {
+      isInternalPathSyncing = false;
+    }, 600);
+
+    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 响应终端目录变更，自动切换文件管理器路径: ${normNew}`);
+    currentSftpManager.value?.loadDirectory(normNew);
+  };
+  subscribeToWorkspaceEvent('terminal:cwdChanged', handleTerminalCwdChangedNotification);
+  unregisterTerminalCwdChangedEvent = () => unsubscribeFromWorkspaceEvent('terminal:cwdChanged', handleTerminalCwdChangedNotification);
 
   // 同组件实例跨会话目录树显隐联动
   const handleSetDirectoryTreeVisibleNotification = (payload: { instanceId: string; show: boolean }) => {
@@ -1492,6 +1620,14 @@ onBeforeUnmount(() => {
     unregisterTerminalInputEvent();
     unregisterTerminalInputEvent = null;
   }
+  if (unregisterTerminalCwdChangedEvent) {
+    unregisterTerminalCwdChangedEvent();
+    unregisterTerminalCwdChangedEvent = null;
+  }
+  if (syncLockTimer) {
+    clearTimeout(syncLockTimer);
+    syncLockTimer = null;
+  }
 
   if (unregisterSetDirectoryTreeVisibleEvent) {
     unregisterSetDirectoryTreeVisibleEvent();
@@ -1566,34 +1702,8 @@ const handleGoParent = () => {
 
 // --- 发送 CD 命令到终端的方法 ---
 const sendCdCommandToTerminal = () => {
-  if (!currentSftpManager.value || !props.wsDeps.isConnected.value) {
-    console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot send CD command: SFTP manager not ready or not connected.`);
-    return;
-  }
-  const currentPath = currentSftpManager.value.currentPath.value;
-  if (!currentPath) {
-    console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Cannot send CD command: Current path is empty.`);
-    return;
-  }
-
-  const escapedPath = `"${currentPath}"`;
-  const command = `cd ${escapedPath}\n`;
-
-  console.log(`[FileManager ${props.sessionId}-${props.instanceId}] Sending command to terminal: ${command.trim()}`);
-  try {
-    const activeSession = sessionStore.activeSession;
-    if (!activeSession) {
-      console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command: No active session found.`);
-      return;
-    }
-    if (!activeSession.terminalManager) {
-      console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command: Terminal manager not found for active session.`);
-      return;
-    }
-    activeSession.terminalManager.sendData(command);
-  } catch (error) {
-    console.error(`[FileManager ${props.sessionId}-${props.instanceId}] Failed to send command to terminal:`, error);
-  }
+  lastSyncedPath = ''; // 手动点击时强制同步
+  syncPathToTerminal();
 };
 
 // --- 打开弹窗编辑器的方法 ---
@@ -1702,11 +1812,13 @@ defineExpose({ focusSearchInput, startPathEdit });
       :show-directory-tree="showDirectoryTree"
       :view-mode="viewMode"
       :show-popup-file-editor="showPopupFileEditorBoolean"
+      :terminal-sync-mode="terminalSyncMode"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
       @toggle-directory-tree="toggleDirectoryTree"
       @toggle-view-mode="toggleViewMode"
       @cd-to-terminal="sendCdCommandToTerminal"
+      @cycle-terminal-sync-mode="cycleTerminalSyncMode"
       @open-popup-editor="openPopupEditor"
       @upload-files="triggerFileUpload"
       @new-folder="handleNewFolderContextMenuClick"

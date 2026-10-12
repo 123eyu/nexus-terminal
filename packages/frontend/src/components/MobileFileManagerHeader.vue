@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { TerminalSyncMode } from '../types/sftp.types';
 
 const props = defineProps<{
   isConnected: boolean;
@@ -8,6 +9,7 @@ const props = defineProps<{
   isMultiSelectMode: boolean;
   searchQuery: string;
   isSearchActive: boolean;
+  terminalSyncMode?: TerminalSyncMode;
 }>();
 
 const emit = defineEmits<{
@@ -16,6 +18,7 @@ const emit = defineEmits<{
   (e: 'toggle-compact-mode'): void;
   (e: 'toggle-multi-select'): void;
   (e: 'cd-to-terminal'): void;
+  (e: 'cycle-terminal-sync-mode'): void;
   (e: 'upload-files'): void;
   (e: 'new-folder'): void;
   (e: 'new-file'): void;
@@ -23,6 +26,44 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+// --- 4态终端路径同步按钮图标、样式与文案 ---
+const effectiveSyncMode = computed<TerminalSyncMode>(() => props.terminalSyncMode ?? 'off');
+
+const terminalSyncButtonIcon = computed(() => {
+  switch (effectiveSyncMode.value) {
+    case 'bidirectional':
+      return 'fas fa-up-down text-xs';
+    case 'to_terminal':
+      return 'fas fa-arrow-down text-xs';
+    case 'from_terminal':
+      return 'fas fa-arrow-up text-xs';
+    case 'off':
+    default:
+      return 'fas fa-link-slash text-xs text-text-secondary/70';
+  }
+});
+
+const terminalSyncButtonClass = computed(() => {
+  if (effectiveSyncMode.value !== 'off') {
+    return 'bg-primary/20 text-primary border-primary/40 font-medium active:bg-primary/30';
+  }
+  return 'bg-header/60 border border-border/50 text-text-secondary hover:text-foreground active:bg-primary/20';
+});
+
+const terminalSyncButtonTitle = computed(() => {
+  switch (effectiveSyncMode.value) {
+    case 'bidirectional':
+      return t('fileManager.sync.modeBidirectional', '路径同步：双向互通 (点击切换到同步到终端)');
+    case 'to_terminal':
+      return t('fileManager.sync.modeToTerminal', '路径同步：同步到终端 (点击切换到终端同步到这)');
+    case 'from_terminal':
+      return t('fileManager.sync.modeFromTerminal', '路径同步：终端同步到这 (点击关闭)');
+    case 'off':
+    default:
+      return t('fileManager.sync.modeOff', '路径同步：已关闭 (点击开启双向同步)');
+  }
+});
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
 const activateSearch = () => {
@@ -101,15 +142,16 @@ defineExpose({
     <template v-else>
       <!-- 左侧快捷工具 -->
       <div class="flex items-center gap-1.5">
-        <!-- CD 到终端 -->
+        <!-- 4态路径同步按钮 (关闭 / 双向同步 / 同步到终端 / 终端同步到这) -->
         <button
           type="button"
-          class="w-8 h-8 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 active:bg-primary/20 transition-all disabled:opacity-40 cursor-pointer"
-          @click.stop="emit('cd-to-terminal')"
+          class="w-8 h-8 rounded-xl border flex items-center justify-center text-xs active:scale-95 transition-all disabled:opacity-40 cursor-pointer"
+          :class="terminalSyncButtonClass"
+          @click.stop="emit('cycle-terminal-sync-mode')"
           :disabled="!props.isConnected"
-          :title="t('fileManager.actions.cdToTerminal', '在终端打开此路径')"
+          :title="terminalSyncButtonTitle"
         >
-          <i class="fas fa-terminal text-xs"></i>
+          <i :class="terminalSyncButtonIcon"></i>
         </button>
 
         <!-- 搜索按钮 -->

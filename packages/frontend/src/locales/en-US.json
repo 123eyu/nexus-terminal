@@ -511,6 +511,12 @@
       "tileView": "Tile view",
       "listView": "List view"
     },
+    "sync": {
+      "modeOff": "Path sync: Disabled (Click to enable bidirectional sync)",
+      "modeBidirectional": "Path sync: Bidirectional (Click to switch to sync to terminal)",
+      "modeToTerminal": "Path sync: Sync to terminal (Click to switch to sync from terminal)",
+      "modeFromTerminal": "Path sync: Sync from terminal (Click to disable)"
+    },
     "directoryTree": "Directory Tree",
     "fileTree": "File Tree",
     "conflictWarning": "File has been modified remotely. Local unsaved changes exist.",

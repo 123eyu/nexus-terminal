@@ -512,6 +512,12 @@
       "tileView": "平铺视图",
       "listView": "列表视图"
     },
+    "sync": {
+      "modeOff": "路径同步：已关闭 (点击开启双向同步)",
+      "modeBidirectional": "路径同步：双向互通 (点击切换到同步到终端)",
+      "modeToTerminal": "路径同步：同步到终端 (点击切换到终端同步到这)",
+      "modeFromTerminal": "路径同步：终端同步到这 (点击关闭)"
+    },
     "directoryTree": "目录树",
     "fileTree": "文件树",
     "conflictWarning": "文件已在终端或远端被修改，本地有未保存内容。",

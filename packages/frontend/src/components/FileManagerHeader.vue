@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { TerminalSyncMode } from '../types/sftp.types';
 import MobileFileManagerHeader from './MobileFileManagerHeader.vue';
 
 const props = defineProps<{
@@ -15,6 +16,7 @@ const props = defineProps<{
   isCompactMode?: boolean;
   showDirectoryTree?: boolean;
   viewMode?: 'list' | 'tile';
+  terminalSyncMode?: TerminalSyncMode;
 }>();
 
 const emit = defineEmits<{
@@ -24,6 +26,7 @@ const emit = defineEmits<{
   (e: 'toggle-directory-tree'): void;
   (e: 'toggle-view-mode'): void;
   (e: 'cd-to-terminal'): void;
+  (e: 'cycle-terminal-sync-mode'): void;
   (e: 'open-popup-editor'): void;
   (e: 'upload-files'): void;
   (e: 'new-folder'): void;
@@ -33,6 +36,44 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+// --- 4态终端路径同步按钮图标、样式与文案 ---
+const effectiveSyncMode = computed<TerminalSyncMode>(() => props.terminalSyncMode ?? 'off');
+
+const terminalSyncButtonIcon = computed(() => {
+  switch (effectiveSyncMode.value) {
+    case 'bidirectional':
+      return 'fas fa-up-down text-xs';
+    case 'to_terminal':
+      return 'fas fa-arrow-down text-xs';
+    case 'from_terminal':
+      return 'fas fa-arrow-up text-xs';
+    case 'off':
+    default:
+      return 'fas fa-link-slash text-xs text-text-secondary/70';
+  }
+});
+
+const terminalSyncButtonClass = computed(() => {
+  if (effectiveSyncMode.value !== 'off') {
+    return 'bg-primary/20 text-primary font-medium hover:bg-primary/30 ring-1 ring-primary/40';
+  }
+  return 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground';
+});
+
+const terminalSyncButtonTitle = computed(() => {
+  switch (effectiveSyncMode.value) {
+    case 'bidirectional':
+      return t('fileManager.sync.modeBidirectional', '路径同步：双向互通 (点击切换到同步到终端)');
+    case 'to_terminal':
+      return t('fileManager.sync.modeToTerminal', '路径同步：同步到终端 (点击切换到终端同步到这)');
+    case 'from_terminal':
+      return t('fileManager.sync.modeFromTerminal', '路径同步：终端同步到这 (点击关闭)');
+    case 'off':
+    default:
+      return t('fileManager.sync.modeOff', '路径同步：已关闭 (点击开启双向同步)');
+  }
+});
 
 // --- 容器宽度自适应响应式监听 ---
 const headerContainerRef = ref<HTMLDivElement | null>(null);
@@ -123,11 +164,13 @@ defineExpose({
     :is-multi-select-mode="isMultiSelectMode"
     :search-query="searchQuery"
     :is-search-active="isSearchActive"
+    :terminal-sync-mode="props.terminalSyncMode"
     @update:search-query="emit('update:searchQuery', $event)"
     @update:is-search-active="emit('update:isSearchActive', $event)"
     @toggle-compact-mode="emit('toggle-compact-mode')"
     @toggle-multi-select="emit('toggle-multi-select')"
     @cd-to-terminal="emit('cd-to-terminal')"
+    @cycle-terminal-sync-mode="emit('cycle-terminal-sync-mode')"
     @upload-files="emit('upload-files')"
     @new-folder="emit('new-folder')"
     @new-file="emit('new-file')"
@@ -142,15 +185,16 @@ defineExpose({
   >
       <!-- 左侧快捷导航与搜索工具 -->
       <div class="flex items-center gap-1 min-w-0 flex-shrink">
-        <!-- CD 到终端按钮 -->
+        <!-- 4态路径同步按钮 (关闭 / 双向同步 / 同步到终端 / 终端同步到这) -->
         <button
           type="button"
-          class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground flex-shrink-0"
-          @click.stop="emit('cd-to-terminal')"
+          class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 cursor-pointer"
+          :class="terminalSyncButtonClass"
+          @click.stop="emit('cycle-terminal-sync-mode')"
           :disabled="!isConnected"
-          :title="t('fileManager.actions.cdToTerminal', 'Change terminal directory to current path')"
+          :title="terminalSyncButtonTitle"
         >
-          <i class="fas fa-terminal text-xs"></i>
+          <i :class="terminalSyncButtonIcon"></i>
         </button>
 
         <!-- 切换目录树显示按钮 -->
