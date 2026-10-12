@@ -2,6 +2,7 @@
 import { getDbInstance, runDb, getDb, allDb, acquireApplyLock, applyContext } from '../database/connection';
 import { envelopeCryptoService } from './envelope-crypto.service';
 import { syncEventsManager } from './sync.events';
+import { broadcastSyncInvalidated } from './sync.ws-broadcaster';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
@@ -551,6 +552,7 @@ export const syncV2Service = {
     }
     if (maxSeq > 0) {
       syncEventsManager.broadcastChange(maxSeq, device_id);
+      broadcastSyncInvalidated(maxSeq);
     }
 
     return {

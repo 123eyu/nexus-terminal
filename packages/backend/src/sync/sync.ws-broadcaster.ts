@@ -30,8 +30,11 @@ export function handleSyncWsConnection(ws: WebSocket, req: IncomingMessage): voi
     try {
       const msgStr = data.toString();
       const msg = JSON.parse(msgStr);
-      if (msg.type === 'ping') {
+      if (msg.type === 'ping' || msg.type === 'sync:ping') {
         ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      } else if (msg.type === 'sync:notify') {
+        console.log(`[SyncBroadcaster] 收到客户端主动广播请求 (seq: ${msg.seq ?? 'latest'})`);
+        broadcastSyncInvalidated(msg.seq);
       }
     } catch {
       // 容错非 JSON 消息
