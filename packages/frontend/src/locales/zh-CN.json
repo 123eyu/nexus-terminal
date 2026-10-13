@@ -33,6 +33,7 @@
     "clearToUncategorized": "设为未分类",
     "moveTo": "移动至文件夹",
     "moveToFolder": "移至文件夹",
+    "selectDestinationFolder": "选择目标文件夹",
     "movedSuccess": "已移动到文件夹",
     "batchMove": "批量移至文件夹",
     "noCustomFolders": "暂无自定义文件夹",
@@ -1499,7 +1500,12 @@
       "clickToEditTag": "点击编辑标签名称"
     },
     "actions": {
-      "sendToAllSessions": "发送到全部会话"
+      "sendToAllSessions": "发送到全部会话",
+      "executeDesc": "在当前活跃终端发送并运行",
+      "editDesc": "修改指令名称、内容或分类",
+      "copyDesc": "将指令纯文本复制到剪贴板",
+      "sendToAllDesc": "广播发送到所有活跃的 SSH 终端",
+      "deleteDesc": "永久移除此快捷指令"
     },
     "notifications": {
       "sentToAllSessions": "指令已发送到 {count} 个会话。",

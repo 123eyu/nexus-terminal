@@ -33,6 +33,7 @@
     "clearToUncategorized": "Set as Uncategorized",
     "moveTo": "Move to Folder",
     "moveToFolder": "Move to Folder",
+    "selectDestinationFolder": "Select Destination Folder",
     "movedSuccess": "Moved to folder",
     "batchMove": "Batch Move to Folder",
     "noCustomFolders": "No custom folders",
@@ -1495,7 +1496,12 @@
       "clickToEditTag": "Click to edit tag name"
     },
     "actions": {
-      "sendToAllSessions": "Send to All Sessions"
+      "sendToAllSessions": "Send to All Sessions",
+      "executeDesc": "Send and execute in current active terminal",
+      "editDesc": "Modify command name, template, or folder",
+      "copyDesc": "Copy raw command text to clipboard",
+      "sendToAllDesc": "Broadcast command to all active SSH terminals",
+      "deleteDesc": "Permanently remove this quick command"
     },
     "notifications": {
       "sentToAllSessions": "Command sent to {count} sessions.",

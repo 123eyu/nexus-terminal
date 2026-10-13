@@ -175,7 +175,7 @@
                                 v-for="(cmd) in groupData.commands"
                                 :key="cmd.id"
                                 :data-command-id="cmd.id"
-                                class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
+                                class="group qc-touch-item active:scale-[0.98] flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
                                 :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
                                 :style="[
                                     { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
@@ -224,7 +224,7 @@
                                 v-for="(cmd) in groupData.commands"
                                 :key="cmd.id"
                                 :data-command-id="cmd.id"
-                                class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
+                                class="group qc-touch-item active:scale-[0.98] inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
                                 :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
                                 :style="[
                                     {
@@ -252,7 +252,7 @@
                                 v-for="(cmd) in groupData.commands"
                                 :key="cmd.id"
                                 :data-command-id="cmd.id"
-                                class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
+                                class="group qc-touch-item active:scale-[0.98] flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-all duration-150"
                                 :style="[
                                     { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
                                     getCommandCardStyle(cmd, groupData.tagId)
@@ -298,7 +298,7 @@
                         v-for="(cmd) in flatFilteredCommands"
                         :key="cmd.id"
                         :data-command-id="cmd.id"
-                        class="group flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
+                        class="group qc-touch-item active:scale-[0.98] flex items-center justify-between cursor-pointer rounded-lg border border-border/50 bg-header/40 hover:bg-primary/10 hover:border-primary/50 transition-all duration-150 select-none overflow-hidden"
                         :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
                         :style="[
                             { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
@@ -347,7 +347,7 @@
                         v-for="(cmd) in flatFilteredCommands"
                         :key="cmd.id"
                         :data-command-id="cmd.id"
-                        class="group inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
+                        class="group qc-touch-item active:scale-[0.98] inline-flex items-center cursor-pointer rounded-md border border-border/50 bg-header/40 hover:bg-primary/15 hover:border-primary/50 hover:text-primary text-foreground transition-all duration-150 select-none"
                         :class="{ 'bg-primary/25 border-primary text-primary font-medium': isCommandSelected(cmd.id) }"
                         :style="[
                             {
@@ -375,7 +375,7 @@
                         v-for="(cmd) in flatFilteredCommands"
                         :key="cmd.id"
                         :data-command-id="cmd.id"
-                        class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
+                        class="group qc-touch-item active:scale-[0.98] flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-all duration-150"
                         :style="[
                             { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
                             getCommandCardStyle(cmd, null)
@@ -432,103 +432,251 @@
       @close="showDeleteFolderModal = false; folderToDelete = null"
     />
 
-    <!-- Context Menu for Quick Commands -->
-    <div
-      v-if="quickCommandContextMenuVisible"
-      class="fixed bg-background border border-border/60 shadow-xl rounded-lg py-1.5 z-50 min-w-[190px] quick-command-context-menu backdrop-blur-md"
-      :style="{ top: `${quickCommandContextMenuPosition.y}px`, left: `${quickCommandContextMenuPosition.x}px` }"
-      @click.stop
+    <!-- 移动端专属快捷指令动作抽屉 (Bottom Action Sheet) -->
+    <MobileBottomSheet
+      :visible="isActionSheetVisible && !!activeActionCommand"
+      height="h-auto"
+      max-height="max-h-[85dvh]"
+      :z-index="60"
+      :show-close-button="false"
+      @close="closeCommandActionSheet"
     >
-      <div v-if="quickCommandContextTargetCommand" class="px-3 py-1 text-xs text-text-secondary border-b border-border/40 font-mono truncate max-w-[220px]">
-        {{ quickCommandContextTargetCommand.name || quickCommandContextTargetCommand.command }}
-      </div>
-      <ul v-if="quickCommandContextTargetCommand" class="list-none p-0 m-0 mt-1">
-        <!-- 1. 执行 -->
-        <li
-          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="handleQuickCommandMenuAction('execute', quickCommandContextTargetCommand!)"
-        >
-          <i class="fas fa-play text-xs text-primary w-4 text-center"></i>
-          <span>{{ t('quickCommands.form.execute', '执行') }}</span>
-        </li>
-
-        <!-- 2. 编辑 (打开编辑模态框) -->
-        <li
-          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="handleQuickCommandMenuAction('edit', quickCommandContextTargetCommand!)"
-        >
-          <i class="fas fa-edit text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
-          <span>{{ t('common.edit', '编辑') }}</span>
-        </li>
-
-        <!-- 3. 复制命令 -->
-        <li
-          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="handleQuickCommandMenuAction('copy', quickCommandContextTargetCommand!)"
-        >
-          <i class="fas fa-copy text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
-          <span>{{ t('commandHistory.copy', '复制') }}</span>
-        </li>
-
-        <!-- 4. 发送到全部会话 -->
-        <li
-          class="group px-3 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="handleQuickCommandMenuAction('sendToAllSessions', quickCommandContextTargetCommand!)"
-        >
-          <i class="fas fa-paper-plane text-xs text-text-secondary group-hover:text-primary w-4 text-center"></i>
-          <span>{{ t('quickCommands.actions.sendToAllSessions', '发送到全部会话') }}</span>
-        </li>
-
-        <!-- 5. 移至文件夹 -->
-        <li
-          class="relative group px-3 py-1.5 cursor-pointer flex items-center justify-between text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="showMoveSubMenu = !showMoveSubMenu"
-        >
-          <div class="flex items-center gap-2.5">
-            <i class="fas fa-folder-tree text-xs text-amber-400 w-4 text-center"></i>
-            <span>{{ t('folders.moveToFolder', '移至文件夹') }}</span>
-          </div>
-          <i :class="['fas text-[10px] text-text-secondary', showMoveSubMenu ? 'fa-chevron-down' : 'fa-chevron-right']"></i>
-        </li>
-
-        <!-- 移动文件夹内嵌列表 (移动端展开式更适合触摸) -->
-        <div
-          v-if="showMoveSubMenu"
-          class="bg-muted/40 rounded-lg mx-2 my-1 p-1 max-h-36 overflow-y-auto"
-          @click.stop
-        >
+      <!-- 顶部指令卡片概览 -->
+      <template #sub-header>
+        <div v-if="activeActionCommand" class="px-4 py-3 border-b border-border/40 bg-header/20 flex items-center gap-3">
+          <!-- 图标徽章：一体化着色 -->
           <div
-            @click="handleMoveCommandToFolder(quickCommandContextTargetCommand!, null)"
-            class="px-2.5 py-1 text-xs text-text-secondary hover:bg-muted hover:text-foreground cursor-pointer flex items-center gap-2 rounded"
+            class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-2xs border"
+            :style="getCommandFolderColor(activeActionCommand)
+              ? { backgroundColor: `${getCommandFolderColor(activeActionCommand)}20`, borderColor: `${getCommandFolderColor(activeActionCommand)}40`, color: getCommandFolderColor(activeActionCommand)! }
+              : { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)', color: '#f59e0b' }"
           >
-            <i class="fas fa-inbox text-xs"></i>
-            <span>{{ t('folders.uncategorized', '未分类') }}</span>
+            <i class="fas fa-terminal text-lg"></i>
           </div>
-          <div v-if="quickCommandTagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
-          <div
-            v-for="folder in quickCommandTagsStore.folders"
-            :key="folder.id"
-            @click="handleMoveCommandToFolder(quickCommandContextTargetCommand!, folder.id)"
-            class="px-2.5 py-1 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate rounded"
-          >
-            <i class="fas fa-folder text-amber-400 text-xs"></i>
-            <span class="truncate">{{ folder.name }}</span>
+
+          <!-- 文本与分类 -->
+          <div class="min-w-0 flex-1">
+            <h4 class="text-sm font-bold text-foreground truncate tracking-tight">
+              {{ activeActionCommand.name || activeActionCommand.command }}
+            </h4>
+            <!-- 所属分类标签与使用计数 -->
+            <div class="flex items-center gap-2 text-[11px] text-text-secondary mt-0.5 flex-wrap">
+              <span
+                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+                :style="getCommandFolderColor(activeActionCommand)
+                  ? { backgroundColor: `${getCommandFolderColor(activeActionCommand)}20`, color: getCommandFolderColor(activeActionCommand)! }
+                  : { backgroundColor: 'rgba(148, 163, 184, 0.15)', color: 'var(--color-text-secondary)' }"
+              >
+                <i class="fas fa-folder text-[9px]"></i>
+                <span class="truncate max-w-[120px]">{{ getCommandFolderName(activeActionCommand) }}</span>
+              </span>
+              <span v-if="activeActionCommand.usage_count !== undefined" class="text-text-secondary/70">
+                • {{ t('quickCommands.usageCount', '使用次数') }}: {{ activeActionCommand.usage_count }}
+              </span>
+            </div>
           </div>
         </div>
+        <!-- 指令代码预览栏 -->
+        <div v-if="activeActionCommand?.command" class="px-4 py-1.5 bg-header/40 border-b border-border/30 flex items-center justify-between gap-2">
+          <code class="text-[11px] font-mono text-text-secondary truncate flex-1 select-all">
+            {{ activeActionCommand.command }}
+          </code>
+          <button
+            type="button"
+            @click.stop="copyCommand(activeActionCommand!.command)"
+            class="text-[11px] text-primary hover:underline shrink-0 flex items-center gap-1 cursor-pointer"
+          >
+            <i class="fas fa-copy text-[10px]"></i>
+            <span>{{ t('commandHistory.copy', '复制') }}</span>
+          </button>
+        </div>
+      </template>
 
-        <!-- 分割线 -->
-        <div class="h-px bg-border/40 my-1 mx-1"></div>
+      <!-- 抽屉内容区 (大拇指友好大触控热区) -->
+      <div v-if="activeActionCommand" class="p-3.5 overflow-y-auto space-y-1.5 max-h-[60dvh] overscroll-contain">
+        <!-- 视图 1：主操作列表 -->
+        <template v-if="actionSheetView === 'menu'">
+          <!-- 1. 立即执行 -->
+          <button
+            type="button"
+            @click="handleActionSheetItemAction('execute')"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer bg-card/40 border border-border/30"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-emerald-500/15 text-emerald-500 flex items-center justify-center">
+                <i class="fas fa-play text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-foreground">{{ t('quickCommands.form.execute', '执行指令') }}</div>
+                <div class="text-[11px] text-text-secondary leading-tight mt-0.5">{{ t('quickCommands.actions.executeDesc', '在当前活跃终端发送并运行') }}</div>
+              </div>
+            </div>
+            <i class="fas fa-chevron-right text-xs text-text-secondary/30"></i>
+          </button>
 
-        <!-- 6. 删除 -->
-        <li
-          class="group px-3 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1 gap-2.5"
-          @click="handleQuickCommandMenuAction('delete', quickCommandContextTargetCommand!)"
-        >
-          <i class="fas fa-trash-alt text-xs text-error w-4 text-center"></i>
-          <span>{{ t('common.delete', '删除') }}</span>
-        </li>
-      </ul>
-    </div>
+          <!-- 2. 编辑指令 -->
+          <button
+            type="button"
+            @click="handleActionSheetItemAction('edit')"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer bg-card/40 border border-border/30"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-sky-500/15 text-sky-400 flex items-center justify-center">
+                <i class="fas fa-edit text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-foreground">{{ t('common.edit', '编辑指令') }}</div>
+                <div class="text-[11px] text-text-secondary leading-tight mt-0.5">{{ t('quickCommands.actions.editDesc', '修改指令名称、内容或分类') }}</div>
+              </div>
+            </div>
+            <i class="fas fa-chevron-right text-xs text-text-secondary/30"></i>
+          </button>
+
+          <!-- 3. 复制命令 -->
+          <button
+            type="button"
+            @click="handleActionSheetItemAction('copy')"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer bg-card/40 border border-border/30"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center">
+                <i class="fas fa-copy text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-foreground">{{ t('commandHistory.copy', '复制指令') }}</div>
+                <div class="text-[11px] text-text-secondary leading-tight mt-0.5">{{ t('quickCommands.actions.copyDesc', '将指令纯文本复制到剪贴板') }}</div>
+              </div>
+            </div>
+            <i class="fas fa-chevron-right text-xs text-text-secondary/30"></i>
+          </button>
+
+          <!-- 4. 发送到全部会话 -->
+          <button
+            type="button"
+            @click="handleActionSheetItemAction('sendToAllSessions')"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer bg-card/40 border border-border/30"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-indigo-500/15 text-indigo-400 flex items-center justify-center">
+                <i class="fas fa-paper-plane text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-foreground">{{ t('quickCommands.actions.sendToAllSessions', '发送到全部会话') }}</div>
+                <div class="text-[11px] text-text-secondary leading-tight mt-0.5">{{ t('quickCommands.actions.sendToAllDesc', '广播发送到所有活跃的 SSH 终端') }}</div>
+              </div>
+            </div>
+            <i class="fas fa-chevron-right text-xs text-text-secondary/30"></i>
+          </button>
+
+          <!-- 5. 移至文件夹 (点击切换视图) -->
+          <button
+            type="button"
+            @click="actionSheetView = 'moveFolder'"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer bg-card/40 border border-border/30"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                <i class="fas fa-folder-tree text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-foreground">{{ t('folders.moveToFolder', '移至文件夹') }}</div>
+                <div class="text-[11px] text-text-secondary leading-tight mt-0.5">当前: {{ getCommandFolderName(activeActionCommand) }}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-text-secondary/60">
+              <i class="fas fa-chevron-right text-xs"></i>
+            </div>
+          </button>
+
+          <!-- 分割线 -->
+          <div class="h-px bg-border/40 my-1"></div>
+
+          <!-- 6. 删除指令 (危险项) -->
+          <button
+            type="button"
+            @click="handleActionSheetItemAction('delete')"
+            class="w-full h-12 px-3.5 rounded-xl flex items-center justify-between text-error hover:bg-error/10 active:bg-error/20 active:scale-[0.99] transition-all cursor-pointer bg-error/5 border border-error/20"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-error/15 text-error flex items-center justify-center">
+                <i class="fas fa-trash-alt text-xs"></i>
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium leading-tight text-error">{{ t('common.delete', '删除指令') }}</div>
+                <div class="text-[11px] text-error/70 leading-tight mt-0.5">{{ t('quickCommands.actions.deleteDesc', '永久移除此快捷指令') }}</div>
+              </div>
+            </div>
+            <i class="fas fa-chevron-right text-xs text-error/40"></i>
+          </button>
+        </template>
+
+        <!-- 视图 2：选择移动目标文件夹 -->
+        <template v-else-if="actionSheetView === 'moveFolder'">
+          <div class="flex items-center justify-between pb-2 mb-2 border-b border-border/40">
+            <button
+              type="button"
+              @click="actionSheetView = 'menu'"
+              class="flex items-center gap-1.5 text-xs text-primary font-medium hover:underline cursor-pointer"
+            >
+              <i class="fas fa-arrow-left text-[11px]"></i>
+              <span>{{ t('common.back', '返回') }}</span>
+            </button>
+            <span class="text-xs font-semibold text-foreground">{{ t('folders.selectDestinationFolder', '选择目标文件夹') }}</span>
+            <div class="w-8"></div>
+          </div>
+
+          <div class="space-y-1.5 max-h-[45dvh] overflow-y-auto pr-1">
+            <!-- 未分类选项 -->
+            <button
+              type="button"
+              @click="handleActionSheetMoveToFolder(null)"
+              class="w-full h-11 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:scale-[0.99] transition-all cursor-pointer border"
+              :class="getCommandPrimaryFolderId(activeActionCommand) === null
+                ? 'bg-primary/10 border-primary text-primary font-medium'
+                : 'bg-card/40 border-border/30'"
+            >
+              <div class="flex items-center gap-2.5">
+                <i class="fas fa-inbox text-sm text-text-secondary"></i>
+                <span class="text-xs">{{ t('folders.uncategorized', '未分类') }}</span>
+              </div>
+              <i v-if="getCommandPrimaryFolderId(activeActionCommand) === null" class="fas fa-check text-xs text-primary"></i>
+            </button>
+
+            <!-- 各文件夹选项 -->
+            <button
+              v-for="folder in quickCommandTagsStore.folders"
+              :key="folder.id"
+              type="button"
+              @click="handleActionSheetMoveToFolder(folder.id)"
+              class="w-full h-11 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:scale-[0.99] transition-all cursor-pointer border"
+              :class="getCommandPrimaryFolderId(activeActionCommand) === folder.id
+                ? 'bg-primary/10 border-primary text-primary font-medium'
+                : 'bg-card/40 border-border/30'"
+            >
+              <div class="flex items-center gap-2.5 min-w-0">
+                <i
+                  class="fas fa-folder text-sm shrink-0"
+                  :style="{ color: getFolderColorById(folder.id) || '#f59e0b' }"
+                ></i>
+                <span class="text-xs truncate">{{ folder.name }}</span>
+              </div>
+              <i v-if="getCommandPrimaryFolderId(activeActionCommand) === folder.id" class="fas fa-check text-xs text-primary"></i>
+            </button>
+          </div>
+        </template>
+
+        <!-- 底部取消大按钮 -->
+        <div class="pt-2">
+          <button
+            type="button"
+            @click="closeCommandActionSheet"
+            class="w-full h-11 rounded-xl bg-header/60 hover:bg-header border border-border/40 font-medium text-sm text-foreground active:scale-[0.99] transition-all flex items-center justify-center cursor-pointer"
+          >
+            {{ t('common.cancel', '取消') }}
+          </button>
+        </div>
+      </div>
+    </MobileBottomSheet>
 
     <!-- 新建文件夹弹窗 -->
     <div
@@ -596,6 +744,7 @@ import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useComponentStateStore } from '../stores/componentState.store';
 import { useLayoutStore } from '../stores/layout.store';
 import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
+import MobileBottomSheet from '../components/common/MobileBottomSheet.vue';
 import { resolveEffectiveColor, getItemColoredCardStyle } from '../utils/colorUtils';
 
 const quickCommandsStore = useQuickCommandsStore();
@@ -690,11 +839,11 @@ const editingTagId = ref<number | null | 'untagged'>(null);
 const editedTagName = ref('');
 const tagInputRefs = ref(new Map<string | number, HTMLInputElement | null>());
 
-// +++ 右键菜单状态 +++
-const quickCommandContextMenuVisible = ref(false);
-const quickCommandContextMenuPosition = ref({ x: 0, y: 0 });
-const quickCommandContextTargetCommand = ref<QuickCommandFE | null>(null);
-const showMoveSubMenu = ref(false);
+// +++ 移动端专属快捷指令动作抽屉 (Action Sheet) 状态 +++
+const isActionSheetVisible = ref(false);
+const activeActionCommand = ref<QuickCommandFE | null>(null);
+const actionSheetView = ref<'menu' | 'moveFolder'>('menu');
+const quickCommandContextTargetCommand = activeActionCommand; // 保持向后兼容别名
 
 // +++ 文件夹弹窗状态 +++
 const isCreatingFolderModal = ref(false);
@@ -1228,46 +1377,56 @@ const cancelEditingTag = () => {
   editingTagId.value = null;
 };
 
+// --- 移动端快捷指令专用操作抽屉控制 ---
+const openCommandActionSheet = (command: QuickCommandFE) => {
+  activeActionCommand.value = command;
+  actionSheetView.value = 'menu';
+  isActionSheetVisible.value = true;
+};
+
+const closeCommandActionSheet = () => {
+  isActionSheetVisible.value = false;
+  activeActionCommand.value = null;
+  actionSheetView.value = 'menu';
+};
+
+// 获取命令所属首个文件夹 ID
+const getCommandPrimaryFolderId = (command?: QuickCommandFE | null): number | null => {
+  if (!command || !command.tagIds || command.tagIds.length === 0) return null;
+  return command.tagIds[0];
+};
+
+// 获取命令所属文件夹名称
+const getCommandFolderName = (command?: QuickCommandFE | null): string => {
+  const folderId = getCommandPrimaryFolderId(command);
+  if (folderId === null) {
+    return t('folders.uncategorized', '未分类');
+  }
+  const folder = quickCommandTagsStore.folders.find(f => f.id === folderId);
+  return folder?.name || t('folders.uncategorized', '未分类');
+};
+
+// 在操作抽屉中选择移动到文件夹
+const handleActionSheetMoveToFolder = async (folderId: number | null) => {
+  if (!activeActionCommand.value) return;
+  const cmd = activeActionCommand.value;
+  await handleMoveCommandToFolder(cmd, folderId);
+  closeCommandActionSheet();
+};
+
+// 在操作抽屉中触发动作
+const handleActionSheetItemAction = (action: QuickCommandMenuAction) => {
+  if (!activeActionCommand.value) return;
+  const command = activeActionCommand.value;
+  closeCommandActionSheet();
+  handleQuickCommandMenuAction(action, command);
+};
+
 // --- 长按检测 (Touch Long Press) 与右键菜单统一控制 ---
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let touchStartX = 0;
 let touchStartY = 0;
 const isLongPressActive = ref(false);
-
-const openContextMenuAt = (x: number, y: number, command: QuickCommandFE) => {
-  quickCommandContextTargetCommand.value = command;
-  quickCommandContextMenuPosition.value = { x, y };
-  quickCommandContextMenuVisible.value = true;
-  document.addEventListener('click', closeQuickCommandContextMenu, { once: true });
-
-  // 使用 nextTick 获取菜单尺寸并调整位置以防止超出屏幕
-  nextTick(() => {
-    const menuElement = document.querySelector('.quick-command-context-menu') as HTMLElement;
-    if (menuElement) {
-      const menuRect = menuElement.getBoundingClientRect();
-      let finalX = quickCommandContextMenuPosition.value.x;
-      let finalY = quickCommandContextMenuPosition.value.y;
-      const menuWidth = menuRect.width;
-      const menuHeight = menuRect.height;
-
-      // 调整水平位置
-      if (finalX + menuWidth > window.innerWidth) {
-        finalX = window.innerWidth - menuWidth - 8;
-      }
-
-      // 调整垂直位置
-      if (finalY + menuHeight > window.innerHeight) {
-        finalY = window.innerHeight - menuHeight - 8;
-      }
-
-      // 确保菜单不超出屏幕左上角
-      finalX = Math.max(8, finalX);
-      finalY = Math.max(8, finalY);
-
-      quickCommandContextMenuPosition.value = { x: finalX, y: finalY };
-    }
-  });
-};
 
 // 触屏长按处理 (移动端/触摸屏)
 const handleItemTouchStart = (event: TouchEvent, command: QuickCommandFE) => {
@@ -1285,8 +1444,8 @@ const handleItemTouchStart = (event: TouchEvent, command: QuickCommandFE) => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate?.(40);
     }
-    openContextMenuAt(touch.clientX, touch.clientY, command);
-  }, 450);
+    openCommandActionSheet(command);
+  }, 400);
 };
 
 const handleItemTouchMove = (event: TouchEvent) => {
@@ -1323,16 +1482,14 @@ const handleCommandItemClick = (cmd: QuickCommandFE) => {
   executeCommand(cmd);
 };
 
-// 右键点击处理
+// 右键点击处理 (统一唤起移动端底部动作面板)
 const showQuickCommandContextMenu = (event: MouseEvent, command: QuickCommandFE) => {
   event.preventDefault();
-  openContextMenuAt(event.clientX, event.clientY, command);
+  openCommandActionSheet(command);
 };
 
 const closeQuickCommandContextMenu = () => {
-  quickCommandContextMenuVisible.value = false;
-  quickCommandContextTargetCommand.value = null;
-  document.removeEventListener('click', closeQuickCommandContextMenu);
+  closeCommandActionSheet();
 };
 
 // 右键/长按菜单动作处理
@@ -1444,7 +1601,6 @@ const handleMoveCommandToFolder = async (command: QuickCommandFE, folderId: numb
     const success = await quickCommandsStore.moveCommandToFolder(command.id, folderId);
     if (success) {
       uiNotificationsStore.showSuccess(t('folders.movedSuccess', '已成功移动到文件夹'));
-      showMoveSubMenu.value = false;
       closeQuickCommandContextMenu();
     }
   } catch (error: any) {
@@ -1466,5 +1622,13 @@ const handleMoveCommandToFolder = async (command: QuickCommandFE, folderId: numb
   display: flex;
   flex-wrap: wrap;
   gap: calc(0.35rem * var(--qc-row-size-multiplier, 1));
+}
+
+/* 移动端触摸手势防系统长按原生菜单与优化交互 */
+.qc-touch-item {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  touch-action: manipulation;
 }
 </style>

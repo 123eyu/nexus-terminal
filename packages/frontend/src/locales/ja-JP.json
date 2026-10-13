@@ -695,6 +695,7 @@
     "clearToUncategorized": "未分類にする",
     "moveTo": "フォルダーへ移動",
     "moveToFolder": "フォルダーへ移動",
+    "selectDestinationFolder": "移動先フォルダーを選択",
     "movedSuccess": "フォルダーへ移動しました",
     "batchMove": "選択項目をフォルダーへ移動",
     "noCustomFolders": "カスタムフォルダーはありません",
@@ -810,7 +811,12 @@
     "sortByUsage": "使用頻度",
     "usageCount": "使用回数",
     "actions": {
-      "sendToAllSessions": "すべてのセッションに送信"
+      "sendToAllSessions": "すべてのセッションに送信",
+      "executeDesc": "現在のアクティブな端末に送信して実行",
+      "editDesc": "コマンド名、内容、フォルダーを変更",
+      "copyDesc": "コマンドテキストをクリップボードにコピー",
+      "sendToAllDesc": "アクティブなすべての SSH 端末にブロードキャスト",
+      "deleteDesc": "このクイックコマンドを完全に削除"
     },
     "notifications": {
       "sentToAllSessions": "コマンドは {count} 個のセッションに送信されました。",
