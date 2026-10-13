@@ -53,6 +53,11 @@ const sourceConnectionId = computed(() => { // +++ 获取并转换源服务器 I
 const contextMenuRef = ref<HTMLDivElement | null>(null);
 const computedRenderPosition = ref({ x: props.position.x, y: props.position.y });
 
+// 管理二级菜单的展开状态与自适应屏幕边缘定位 (必须提前声明，避免 watch immediate 访问 TDZ)
+const expandedSubmenu = ref<string | null>(null);
+const submenuPlacements = ref<Record<string, { horizontal: 'left' | 'right'; vertical: 'top' | 'bottom' }>>({});
+let closeTimeout: NodeJS.Timeout | null = null;
+
 watch(
   [() => props.isVisible, () => props.position],
   ([newIsVisible, newPosition], [oldIsVisible, oldPosition]) => {
@@ -198,11 +203,6 @@ const handleFilesSent = (payload: any) => {
 };
 
 
-
-// 管理二级菜单的展开状态与自适应屏幕边缘定位
-const expandedSubmenu = ref<string | null>(null);
-const submenuPlacements = ref<Record<string, { horizontal: 'left' | 'right'; vertical: 'top' | 'bottom' }>>({});
-let closeTimeout: NodeJS.Timeout | null = null;
 
 const showSubmenu = (event: MouseEvent, menuItem: ContextMenuItem) => {
   if (closeTimeout) {
