@@ -5,10 +5,12 @@ import type { SftpManagerInstance } from '../composables/useSftpActions';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useComponentStateStore } from '../stores/componentState.store';
 import { useLayoutStore } from '../stores/layout.store';
+import { useFileColorHighlightsStore } from '../stores/fileColorHighlights.store';
 
 const props = withDefaults(
   defineProps<{
     instanceId?: string;
+    connectionId?: number | null;
     currentPath: string;
     isConnected: boolean;
     isSftpReady?: boolean;
@@ -81,6 +83,31 @@ const isShowingFiles = computed<boolean>(() => {
 // 路径 -> 节点映射表
 const nodesMap = ref<Map<string, TreeNode>>(new Map());
 const treeContainerRef = ref<HTMLDivElement | null>(null);
+
+// 文件高亮配置支持
+const fileColorHighlightsStore = useFileColorHighlightsStore();
+
+// 查询指定节点路径的高亮颜色
+const getNodeHighlightColor = (path: string): string | undefined => {
+  if (!props.connectionId) return undefined;
+  return fileColorHighlightsStore.getColor(props.connectionId, path);
+};
+
+// 监听 connectionId 变化加载高亮颜色数据
+watch(
+  () => props.connectionId,
+  (newId) => {
+    if (newId) {
+      fileColorHighlightsStore.loadHighlights(newId);
+    }
+  },
+  { immediate: true }
+);
+
+// 判断是否为当前正在浏览的激活目录
+const isCurrentDirectoryNode = (node: TreeNode): boolean => {
+  return node.isDirectory && normalizePath(props.currentPath) === normalizePath(node.path);
+};
 
 // 保证节点存在
 const ensureNode = (path: string, name: string, depth: number, isDirectory = true): TreeNode => {
@@ -485,11 +512,22 @@ defineExpose({
         @click="handleSelectNode(node)"
         class="group flex items-center py-1 px-1.5 rounded cursor-pointer transition-colors duration-100"
         :class="[
-          node.isDirectory && normalizePath(props.currentPath) === normalizePath(node.path)
+          isCurrentDirectoryNode(node)
             ? 'active-tree-node bg-primary/15 text-primary border-r-2 border-primary font-medium'
-            : 'text-text-secondary hover:text-foreground hover:bg-header/70',
+            : getNodeHighlightColor(node.path)
+              ? 'hover:brightness-95 dark:hover:brightness-110 font-medium'
+              : 'text-text-secondary hover:text-foreground hover:bg-header/70',
         ]"
-        :style="{ paddingLeft: `${node.depth * 14 + 6}px` }"
+        :style="[
+          { paddingLeft: `${node.depth * 14 + 6}px` },
+          (!isCurrentDirectoryNode(node) && getNodeHighlightColor(node.path)) ? {
+            backgroundColor: `${getNodeHighlightColor(node.path)}14`,
+            borderLeft: `2.5px solid ${getNodeHighlightColor(node.path)}`
+          } : {},
+          (isCurrentDirectoryNode(node) && getNodeHighlightColor(node.path)) ? {
+            borderLeft: `2.5px solid ${getNodeHighlightColor(node.path)}`
+          } : {}
+        ]"
         :title="node.path"
       >
         <!-- 展开/折叠箭头（文件节点占位留白） -->
@@ -515,26 +553,39 @@ defineExpose({
           <span v-else class="inline-block w-1.5 h-1.5 rounded-full bg-border/40"></span>
         </span>
 
-        <!-- 图标：文件夹或文件对应类型图标 -->
+        <!-- 图标：文件夹或文件对应类型图标 (高亮色跟随联动) -->
         <template v-if="node.isDirectory">
           <i
-            class="fas mr-1.5 text-xs flex-shrink-0"
+            class="fas mr-1.5 text-xs flex-shrink-0 transition-colors"
             :class="[
               node.isExpanded
-                ? 'fa-folder-open text-amber-500/90'
-                : 'fa-folder text-amber-500/80',
+                ? 'fa-folder-open'
+                : 'fa-folder',
+              getNodeHighlightColor(node.path) ? '' : 'text-amber-500/90'
             ]"
+            :style="getNodeHighlightColor(node.path) ? { color: getNodeHighlightColor(node.path) } : undefined"
           ></i>
         </template>
         <template v-else>
           <i
-            class="mr-1.5 text-xs flex-shrink-0"
-            :class="[getFileIconClass(node.name).icon, getFileIconClass(node.name).color]"
+            class="mr-1.5 text-xs flex-shrink-0 transition-colors"
+            :class="[
+              getFileIconClass(node.name).icon,
+              getNodeHighlightColor(node.path) ? '' : getFileIconClass(node.name).color
+            ]"
+            :style="getNodeHighlightColor(node.path) ? { color: getNodeHighlightColor(node.path) } : undefined"
           ></i>
         </template>
 
         <!-- 名称 -->
-        <span class="truncate flex-1 select-none text-[11px] leading-tight">
+        <span
+          class="truncate flex-1 select-none text-[11px] leading-tight"
+          :class="[
+            getNodeHighlightColor(node.path) && !isCurrentDirectoryNode(node)
+              ? 'text-foreground'
+              : ''
+          ]"
+        >
           {{ node.path === '/' ? '/' : node.name }}
         </span>
       </div>

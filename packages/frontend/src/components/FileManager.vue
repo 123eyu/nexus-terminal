@@ -2147,6 +2147,7 @@ defineExpose({ focusSearchInput, startPathEdit });
           <DirectoryTree
             v-if="showDirectoryTree"
             :instance-id="props.instanceId"
+            :connection-id="numericConnectionId"
             :current-path="currentSftpManager?.currentPath?.value ?? '/'"
             :is-connected="Boolean(props.wsDeps.isConnected.value)"
             :is-sftp-ready="Boolean(props.wsDeps.isSftpReady.value)"
