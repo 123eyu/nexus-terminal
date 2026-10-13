@@ -125,6 +125,15 @@ export const useFileColorHighlightsStore = defineStore('fileColorHighlights', {
     },
 
     /**
+     * 重新加载所有已加载连接的高亮配置 (用于双端数据同步完成后无感刷新)
+     */
+    async reloadLoadedHighlights(): Promise<void> {
+      const connIds = Array.from(this.loadedConnections);
+      this.loadedConnections.clear();
+      await Promise.all(connIds.map((id) => this.loadHighlights(id, true)));
+    },
+
+    /**
      * 高速获取特定路径的高亮颜色
      */
     getColor(connectionId: number | null | undefined, path: string): string | undefined {

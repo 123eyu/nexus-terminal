@@ -292,6 +292,11 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         const favoritePathsStore = useFavoritePathsStore();
         await favoritePathsStore.fetchFavoritePaths((_k, d) => d);
       })());
+      refreshTasks.push((async () => {
+        const { useFileColorHighlightsStore } = await import('./fileColorHighlights.store');
+        const highlightsStore = useFileColorHighlightsStore();
+        await highlightsStore.reloadLoadedHighlights();
+      })());
     }
 
     if (active.includes('quickCommands')) {

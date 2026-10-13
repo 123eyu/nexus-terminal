@@ -54,6 +54,8 @@ export const upsertFileColorHighlight = async (
   `;
 
   await runDb(db, upsertSql, [connectionId, path, color, now, now]);
+  // 联动刷新父连接的更新时间戳，确保基于时间的同步算法能够捕获变动
+  await runDb(db, `UPDATE connections SET updated_at = ? WHERE id = ?`, [now, connectionId]);
 
   const record = await getFileColorHighlight(connectionId, path);
   if (!record) {
@@ -72,6 +74,10 @@ export const deleteFileColorHighlight = async (
   const db = await getDbInstance();
   const sql = `DELETE FROM file_color_highlights WHERE connection_id = ? AND path = ?`;
   const result = await runDb(db, sql, [connectionId, path]);
+  if (result.changes > 0) {
+    const now = Math.floor(Date.now() / 1000);
+    await runDb(db, `UPDATE connections SET updated_at = ? WHERE id = ?`, [now, connectionId]);
+  }
   return result.changes > 0;
 };
 
@@ -84,5 +90,9 @@ export const clearFileColorHighlightsByConnectionId = async (
   const db = await getDbInstance();
   const sql = `DELETE FROM file_color_highlights WHERE connection_id = ?`;
   const result = await runDb(db, sql, [connectionId]);
+  if (result.changes > 0) {
+    const now = Math.floor(Date.now() / 1000);
+    await runDb(db, `UPDATE connections SET updated_at = ? WHERE id = ?`, [now, connectionId]);
+  }
   return result.changes;
 };

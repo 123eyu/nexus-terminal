@@ -171,6 +171,12 @@ export const syncService = {
         );
         const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
 
+        const highlightRows = await allDb<{ path: string; color: string }>(
+          db,
+          `SELECT path, color FROM file_color_highlights WHERE connection_id = ?`,
+          [r.id]
+        );
+
         connections.push({
           uuid: r.uuid,
           updated_at: r.updated_at,
@@ -191,6 +197,7 @@ export const syncService = {
             jump_chain: r.jump_chain || null,
             background_color: r.background_color || null,
             tag_uuids: tagUuids,
+            file_highlights: highlightRows,
             created_at: r.created_at,
             updated_at: r.updated_at
           }
@@ -779,6 +786,21 @@ export const syncService = {
             }
           }
         }
+
+        // 重新对齐 file_color_highlights 文件颜色高亮
+        if (targetConnectionId && Array.isArray(item.data.file_highlights)) {
+          await runDb(db, `DELETE FROM file_color_highlights WHERE connection_id = ?`, [targetConnectionId]);
+          const now = Math.floor(Date.now() / 1000);
+          for (const fh of item.data.file_highlights) {
+            if (fh && fh.path && fh.color) {
+              await runDb(
+                db,
+                `INSERT OR REPLACE INTO file_color_highlights (connection_id, path, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+                [targetConnectionId, fh.path, fh.color, now, now]
+              );
+            }
+          }
+        }
       }
     }
 
@@ -1087,13 +1109,14 @@ export const syncService = {
 
         if (syncConn) {
           await runDb(db, 'DELETE FROM connection_tags');
+          await runDb(db, 'DELETE FROM file_color_highlights');
           await runDb(db, 'DELETE FROM connections');
           await runDb(db, 'DELETE FROM proxies');
           await runDb(db, 'DELETE FROM ssh_keys');
           await runDb(db, 'DELETE FROM tags');
           await runDb(db, 'DELETE FROM favorite_paths');
-          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
-          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths')`);
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths', 'file_color_highlights')`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'proxies', 'ssh_keys', 'tags', 'favorite_paths', 'file_color_highlights')`);
           await runDb(db, `DELETE FROM sync_pending_references WHERE target_tbl IN ('proxies', 'ssh_keys') OR child_tbl = 'connections'`);
         }
 

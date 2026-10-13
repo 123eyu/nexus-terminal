@@ -182,6 +182,39 @@ function generateAssociationTriggersSql(): string {
       INSERT INTO sync_changes(tbl, row_id, op, origin)
         SELECT 'quick_commands', uuid, 'U', NULL FROM quick_commands WHERE id = OLD.quick_command_id;
     END;
+
+    -- file_color_highlights AFTER INSERT
+    DROP TRIGGER IF EXISTS file_color_highlights_sync_ai;
+    CREATE TRIGGER file_color_highlights_sync_ai AFTER INSERT ON file_color_highlights
+    ${WHEN_ACTIVE}
+    BEGIN
+      ${BUMP_HLC}
+      UPDATE connections SET updated_hlc = ${HLC_EXPR}, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE id = NEW.connection_id;
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = NEW.connection_id;
+    END;
+
+    -- file_color_highlights AFTER UPDATE
+    DROP TRIGGER IF EXISTS file_color_highlights_sync_au;
+    CREATE TRIGGER file_color_highlights_sync_au AFTER UPDATE OF color, path ON file_color_highlights
+    ${WHEN_ACTIVE}
+    BEGIN
+      ${BUMP_HLC}
+      UPDATE connections SET updated_hlc = ${HLC_EXPR}, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE id = NEW.connection_id;
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = NEW.connection_id;
+    END;
+
+    -- file_color_highlights AFTER DELETE
+    DROP TRIGGER IF EXISTS file_color_highlights_sync_ad;
+    CREATE TRIGGER file_color_highlights_sync_ad AFTER DELETE ON file_color_highlights
+    ${WHEN_ACTIVE}
+    BEGIN
+      ${BUMP_HLC}
+      UPDATE connections SET updated_hlc = ${HLC_EXPR}, updated_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE id = OLD.connection_id;
+      INSERT INTO sync_changes(tbl, row_id, op, origin)
+        SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = OLD.connection_id;
+    END;
   `;
 }
 
@@ -189,7 +222,7 @@ function generateAssociationTriggersSql(): string {
  * 安装所有双端同步触发器
  */
 export async function installSyncTriggers(db: sqlite3.Database, forceReinstall: boolean = false): Promise<void> {
-  const expectedCount = syncTableConfigs.length * 3 + 4;
+  const expectedCount = syncTableConfigs.length * 3 + 7;
   if (!forceReinstall) {
     const currentCount = await new Promise<number>((resolve) => {
       db.get("SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'trigger' AND name LIKE '%_sync_%'", (err, r: any) => {
@@ -233,7 +266,15 @@ export async function uninstallSyncTriggers(db: sqlite3.Database): Promise<void>
   for (const cfg of syncTableConfigs) {
     triggerNames.push(`${cfg.tableName}_sync_ai`, `${cfg.tableName}_sync_au`, `${cfg.tableName}_sync_ad`);
   }
-  triggerNames.push('connection_tags_sync_ai', 'connection_tags_sync_ad');
+  triggerNames.push(
+    'connection_tags_sync_ai',
+    'connection_tags_sync_ad',
+    'qc_tag_assoc_sync_ai',
+    'qc_tag_assoc_sync_ad',
+    'file_color_highlights_sync_ai',
+    'file_color_highlights_sync_au',
+    'file_color_highlights_sync_ad'
+  );
 
   const drops = triggerNames.map(name => `DROP TRIGGER IF EXISTS ${name};`).join('\n');
   await new Promise<void>((resolve, reject) => {
