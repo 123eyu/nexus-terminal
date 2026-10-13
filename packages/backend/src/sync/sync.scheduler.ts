@@ -224,6 +224,28 @@ export class SyncThrottleScheduler {
       }
     }
 
+    // 针对 tags, quick_command_tags, quick_commands 中带有自定义颜色的存量记录，
+    // 若当前没有排队的待推送变更，主动补录一条更新日志，确保旧版本遗漏的文件夹颜色自动上云
+    const colorTables = ['tags', 'quick_command_tags', 'quick_commands'];
+    for (const tbl of colorTables) {
+      const coloredRows = await allDb<{ uuid: string }>(
+        db,
+        `SELECT uuid FROM ${tbl}
+         WHERE background_color IS NOT NULL AND background_color != ''
+           AND uuid NOT IN (
+             SELECT sc.row_id FROM sync_changes sc
+             CROSS JOIN sync_state ss ON ss.id = 1
+             WHERE sc.tbl = '${tbl}' AND sc.seq > ss.push_cursor
+           )`
+      );
+      for (const r of coloredRows) {
+        if (r.uuid) {
+          await runDb(db, `INSERT INTO sync_changes (tbl, row_id, op, origin) VALUES (?, ?, 'U', NULL)`, [tbl, r.uuid]);
+          totalCatchup++;
+        }
+      }
+    }
+
     // 激活触发器熔断开关
     await runDb(db, `UPDATE sync_state SET enabled = 1 WHERE id = 1`);
     console.log(`[SyncScheduler] 触发器已正式激活 (enabled = 1)！共补录 ${totalCatchup} 条存量记录至变更日志。`);

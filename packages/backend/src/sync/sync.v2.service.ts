@@ -43,8 +43,8 @@ export interface SnapshotResponseResult {
   total_count: number;
   has_more: boolean;
   entities: {
-    tags: Array<{ uuid: string; name: string; updated_hlc: string }>;
-    quick_command_tags: Array<{ uuid: string; name: string; updated_hlc: string }>;
+    tags: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
+    quick_command_tags: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
     ssh_keys: Array<{ uuid: string; name: string; encrypted_private_key: string | null; encrypted_passphrase: string | null; updated_hlc: string }>;
     proxies: Array<{
       uuid: string;
@@ -64,6 +64,7 @@ export interface SnapshotResponseResult {
       name?: string | null;
       command: string;
       variables?: string | null;
+      background_color?: string | null;
       tag_uuids: string[];
       updated_hlc: string;
     }>;
@@ -280,16 +281,17 @@ export const syncV2Service = {
               }
             } else if (item.tbl === 'tags' || item.tbl === 'quick_command_tags') {
               if (existingLive) {
-                await runDb(db, `UPDATE ${item.tbl} SET name = ?, updated_hlc = ? WHERE uuid = ?`, [
+                await runDb(db, `UPDATE ${item.tbl} SET name = ?, background_color = ?, updated_hlc = ? WHERE uuid = ?`, [
                   data.name,
+                  data.background_color || null,
                   effectiveHlc,
                   item.row_id
                 ]);
               } else {
                 const ins = await runDb(
                   db,
-                  `INSERT INTO ${item.tbl} (uuid, name, updated_hlc) VALUES (?, ?, ?)`,
-                  [item.row_id, data.name, effectiveHlc]
+                  `INSERT INTO ${item.tbl} (uuid, name, background_color, updated_hlc) VALUES (?, ?, ?, ?)`,
+                  [item.row_id, data.name, data.background_color || null, effectiveHlc]
                 );
                 targetPhysId = ins.lastID;
               }
@@ -341,15 +343,15 @@ export const syncV2Service = {
               if (existingLive) {
                 await runDb(
                   db,
-                  `UPDATE quick_commands SET name = ?, command = ?, variables = ?, updated_hlc = ? WHERE uuid = ?`,
-                  [data.name || null, data.command, data.variables || null, effectiveHlc, item.row_id]
+                  `UPDATE quick_commands SET name = ?, command = ?, variables = ?, background_color = ?, updated_hlc = ? WHERE uuid = ?`,
+                  [data.name || null, data.command, data.variables || null, data.background_color || null, effectiveHlc, item.row_id]
                 );
               } else {
                 const ins = await runDb(
                   db,
-                  `INSERT INTO quick_commands (uuid, name, command, usage_count, variables, updated_hlc)
-                   VALUES (?, ?, ?, ?, ?, ?)`,
-                  [item.row_id, data.name || null, data.command, data.usage_count || 0, data.variables || null, effectiveHlc]
+                  `INSERT INTO quick_commands (uuid, name, command, usage_count, variables, background_color, updated_hlc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                  [item.row_id, data.name || null, data.command, data.usage_count || 0, data.variables || null, data.background_color || null, effectiveHlc]
                 );
                 targetPhysId = ins.lastID;
               }
@@ -722,7 +724,10 @@ export const syncV2Service = {
               row_id: row.row_id,
               op: 'U',
               hlc: t.updated_hlc,
-              data: { name: t.name }
+              data: {
+                name: t.name,
+                background_color: t.background_color || null
+              }
             });
           }
         } else if (row.tbl === 'quick_commands') {
@@ -745,6 +750,7 @@ export const syncV2Service = {
                 name: q.name,
                 command: q.command,
                 variables: q.variables,
+                background_color: q.background_color || null,
                 tag_uuids: tagUuids
               }
             });
@@ -917,7 +923,10 @@ export const syncV2Service = {
               row_id: r.row_id,
               op: 'U',
               hlc: t.updated_hlc,
-              data: { name: t.name }
+              data: {
+                name: t.name,
+                background_color: t.background_color || null
+              }
             });
           }
         } else if (r.tbl === 'quick_commands') {
@@ -938,6 +947,7 @@ export const syncV2Service = {
                 name: q.name,
                 command: q.command,
                 variables: q.variables,
+                background_color: q.background_color || null,
                 tag_uuids: tagRows.map(t => t.uuid).filter(Boolean)
               }
             });
@@ -1161,15 +1171,15 @@ export const syncV2Service = {
     }
 
     // 3. 提取 tags 标签 (确定性 UUID)
-    const tags = await allDb<{ uuid: string; name: string; updated_hlc: string }>(
+    const tags = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
       db,
-      `SELECT uuid, name, updated_hlc FROM tags ORDER BY id ASC`
+      `SELECT uuid, name, background_color, updated_hlc FROM tags ORDER BY id ASC`
     );
 
     // 4. 提取 quick_command_tags
-    const quickCommandTags = await allDb<{ uuid: string; name: string; updated_hlc: string }>(
+    const quickCommandTags = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
       db,
-      `SELECT uuid, name, updated_hlc FROM quick_command_tags ORDER BY id ASC`
+      `SELECT uuid, name, background_color, updated_hlc FROM quick_command_tags ORDER BY id ASC`
     );
 
     // 5. 提取 ssh_keys (信封加密)
@@ -1212,6 +1222,7 @@ export const syncV2Service = {
         name: q.name || null,
         command: q.command,
         variables: q.variables || null,
+        background_color: q.background_color || null,
         tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         updated_hlc: q.updated_hlc
       });
