@@ -420,10 +420,17 @@ const handleToggleSelectAll = () => {
                   ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
                   : item._justUpdated
                     ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
-                    : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground',
+                    : getItemHighlightColor(item)
+                      ? 'hover:brightness-95 active:brightness-90 dark:hover:brightness-110'
+                      : 'bg-header/20 hover:bg-header/50 active:bg-header/70 border-border/40 text-foreground',
             isEnteringNewDirectory ? 'mobile-card-enter' : ''
           ]"
-          :style="isEnteringNewDirectory ? { animationDelay: `${Math.min(index, 8) * 35}ms` } : undefined"
+          :style="[
+            isEnteringNewDirectory ? { animationDelay: `${Math.min(index, 8) * 35}ms` } : {},
+            (!selectedItems.has(item.filename) && navigatingFolderName !== item.filename && getItemHighlightColor(item))
+              ? { backgroundColor: `${getItemHighlightColor(item)}18`, borderColor: `${getItemHighlightColor(item)}4d` }
+              : {}
+          ]"
           @click="handleRowClick(item)"
           @touchstart="handleTouchStart(item, $event)"
           @touchmove="handleTouchMove($event)"
@@ -445,11 +452,10 @@ const handleToggleSelectAll = () => {
             </div>
           </div>
 
-          <!-- 文件/文件夹图标 -->
+          <!-- 文件/文件夹图标 (无背景方块，通透纯净) -->
           <div
-            class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0 transition-colors"
+            class="flex items-center justify-center shrink-0 transition-colors"
             :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
-            :style="getItemHighlightColor(item) ? { borderColor: `${getItemHighlightColor(item)}60` } : undefined"
           >
             <i
               v-if="navigatingFolderName === item.filename"
@@ -462,22 +468,15 @@ const handleToggleSelectAll = () => {
                 item.attrs.isDirectory ? 'fas fa-folder text-amber-400' :
                 item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400' :
                 `${getFileIconClass(item.filename)}`,
-                isCompact ? (item.attrs.isDirectory ? 'text-base' : 'text-sm') : (item.attrs.isDirectory ? 'text-lg' : 'text-base')
+                isCompact ? (item.attrs.isDirectory ? 'text-lg' : 'text-base') : (item.attrs.isDirectory ? 'text-xl' : 'text-lg')
               ]"
-              :style="getItemHighlightColor(item) ? { color: getItemHighlightColor(item) } : undefined"
             ></i>
           </div>
 
           <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
           <div class="min-w-0 flex-1 flex flex-col justify-center">
-            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight flex items-center gap-1.5">
-              <span class="truncate">{{ item.filename }}</span>
-              <span
-                v-if="getItemHighlightColor(item)"
-                class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
-                :style="{ backgroundColor: getItemHighlightColor(item) }"
-                :title="t('fileManager.highlighted', '已标记高亮')"
-              ></span>
+            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight">
+              {{ item.filename }}
             </div>
             <!-- 详细模式下显示的日期、权限与类型 -->
             <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">

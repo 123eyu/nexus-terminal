@@ -2376,9 +2376,12 @@ defineExpose({ focusSearchInput, startPathEdit });
                             ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-medium ring-1 ring-emerald-500/30'
                             : item._justUpdated
                               ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ring-1 ring-amber-500/30'
-                              : 'hover:bg-header/50',
+                              : getItemHighlightColor(item)
+                                ? 'hover:brightness-95 dark:hover:brightness-110'
+                                : 'hover:bg-header/50',
                       { 'outline-dashed outline-2 outline-offset-[-1px] outline-primary': item.attrs.isDirectory && dragOverTarget === item.filename }
                   ]"
+                 :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { backgroundColor: `${getItemHighlightColor(item)}14` } : undefined"
                  :data-filename="item.filename"
                  @contextmenu.prevent.stop="showContextMenu($event, item)"
                  @dragover.prevent="handleDragOverRow(item, $event)"
@@ -2404,24 +2407,9 @@ defineExpose({ focusSearchInput, startPathEdit });
                           'text-white': navigatingTargetName !== item.filename && (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                         }
                       ]"
-                      :style="{
-                        fontSize: `calc(1.1em * var(--font-scale))`,
-                        color: (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
-                          ? undefined
-                          : getItemHighlightColor(item)
-                      }"></i>
+                      :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
                   </td>
-                  <td v-else-if="colKey === 'name'" class="border-b border-border/30 truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">
-                    <div class="inline-flex items-center gap-1.5 max-w-full">
-                      <span class="truncate">{{ item.filename }}</span>
-                      <span
-                        v-if="getItemHighlightColor(item)"
-                        class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
-                        :style="{ backgroundColor: getItemHighlightColor(item) }"
-                        :title="t('fileManager.highlighted', '已标记高亮')"
-                      ></span>
-                    </div>
-                  </td>
+                  <td v-else-if="colKey === 'name'" class="border-b border-border/30 truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
                   <td v-else-if="colKey === 'size'" class="border-b border-border/30 truncate align-middle" :class="[
                     selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
                   ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
@@ -2488,14 +2476,14 @@ defineExpose({ focusSearchInput, startPathEdit });
               @drop.prevent="handleDropOnRow(parentDirectoryItem, $event)"
               :data-filename="'..'"
             >
-              <div class="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary pointer-events-none">
+              <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 text-primary pointer-events-none">
                 <i
                   v-if="navigatingTargetName === '..'"
-                  class="fas fa-circle-notch fa-spin text-base"
+                  class="fas fa-circle-notch fa-spin text-lg"
                 ></i>
                 <i
                   v-else
-                  class="fas fa-level-up-alt text-base"
+                  class="fas fa-level-up-alt text-xl"
                 ></i>
               </div>
               <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
@@ -2542,32 +2530,23 @@ defineExpose({ focusSearchInput, startPathEdit });
                           ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
                           : item._justUpdated
                             ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
-                            : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground'
+                            : getItemHighlightColor(item)
+                              ? 'hover:brightness-95 dark:hover:brightness-110'
+                              : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground'
                 ]"
+                :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { backgroundColor: `${getItemHighlightColor(item)}18`, borderColor: `${getItemHighlightColor(item)}4d` } : undefined"
                 :data-filename="item.filename"
                 :title="item.filename"
               >
-                <!-- 左侧大图标容器 -->
-                <div
-                  class="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors duration-150 pointer-events-none"
-                  :class="[
-                    (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
-                      ? 'bg-white/20 text-white'
-                      : item.attrs.isDirectory
-                        ? 'bg-amber-500/15 text-amber-500'
-                        : item.attrs.isSymbolicLink
-                          ? 'bg-cyan-500/15 text-cyan-500'
-                          : 'bg-black/5 dark:bg-white/5'
-                  ]"
-                  :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { borderColor: `${getItemHighlightColor(item)}40`, color: getItemHighlightColor(item) } : undefined"
-                >
+                <!-- 左侧大图标容器 (无背景方块，通透纯净) -->
+                <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 pointer-events-none">
                   <i
                     v-if="navigatingTargetName === item.filename"
-                    class="fas fa-circle-notch fa-spin text-base text-primary"
+                    class="fas fa-circle-notch fa-spin text-lg text-primary"
                   ></i>
                   <i
                     v-else
-                    class="text-base"
+                    class="text-xl"
                     :class="[
                       item.attrs.isDirectory
                         ? 'fas fa-folder text-amber-500'
@@ -2578,7 +2557,6 @@ defineExpose({ focusSearchInput, startPathEdit });
                         ? '!text-white'
                         : ''
                     ]"
-                    :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { color: getItemHighlightColor(item) } : undefined"
                   ></i>
                 </div>
 
@@ -2586,7 +2564,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                 <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
                   <!-- 文件名 -->
                   <div
-                    class="text-xs leading-snug truncate flex items-center gap-1.5"
+                    class="text-xs leading-snug truncate"
                     :class="[
                       item.attrs.isDirectory ? 'font-medium' : 'font-normal',
                       (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
@@ -2594,13 +2572,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                         : 'text-foreground'
                     ]"
                   >
-                    <span class="truncate">{{ item.filename }}</span>
-                    <span
-                      v-if="getItemHighlightColor(item)"
-                      class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
-                      :style="{ backgroundColor: getItemHighlightColor(item) }"
-                      :title="t('fileManager.highlighted', '已标记高亮')"
-                    ></span>
+                    {{ item.filename }}
                   </div>
 
                   <!-- 文件属性/大小与修改时间 -->
