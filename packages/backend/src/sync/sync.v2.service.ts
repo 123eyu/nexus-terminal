@@ -472,6 +472,21 @@ export const syncV2Service = {
                   }
                 }
               }
+
+              // 对齐 file_color_highlights 文件颜色高亮关联
+              if (targetPhysId && Array.isArray(data.file_highlights)) {
+                await runDb(db, `DELETE FROM file_color_highlights WHERE connection_id = ?`, [targetPhysId]);
+                const nowMs = Math.floor(Date.now() / 1000);
+                for (const fh of data.file_highlights) {
+                  if (fh && fh.path && fh.color) {
+                    await runDb(
+                      db,
+                      `INSERT OR REPLACE INTO file_color_highlights (connection_id, path, color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+                      [targetPhysId, fh.path, fh.color, nowMs, nowMs]
+                    );
+                  }
+                }
+              }
             } else if (item.tbl === 'command_history') {
               const cmdText = data.command;
               const cmdTs = data.timestamp || Math.floor(nowMs / 1000);
@@ -650,6 +665,11 @@ export const syncV2Service = {
               [c.id]
             );
             const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
+            const highlightRows = await allDb<{ path: string; color: string }>(
+              db,
+              `SELECT path, color FROM file_color_highlights WHERE connection_id = ?`,
+              [c.id]
+            );
 
             resultChanges.push({
               seq: row.seq,
@@ -673,7 +693,8 @@ export const syncV2Service = {
                 notes: c.notes || null,
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
-                tag_uuids: tagUuids
+                tag_uuids: tagUuids,
+                file_highlights: highlightRows
               }
             });
           }
@@ -850,6 +871,11 @@ export const syncV2Service = {
               `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
               [c.id]
             );
+            const highlightRows = await allDb<{ path: string; color: string }>(
+              db,
+              `SELECT path, color FROM file_color_highlights WHERE connection_id = ?`,
+              [c.id]
+            );
             list.push({
               seq: r.seq,
               tbl: r.tbl,
@@ -872,7 +898,8 @@ export const syncV2Service = {
                 notes: c.notes || null,
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
-                tag_uuids: tagRows.map(t => t.uuid).filter(Boolean)
+                tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
+                file_highlights: highlightRows
               }
             });
           }
@@ -1244,6 +1271,11 @@ export const syncV2Service = {
         `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
         [c.id]
       );
+      const highlightRows = await allDb<{ path: string; color: string }>(
+        db,
+        `SELECT path, color FROM file_color_highlights WHERE connection_id = ?`,
+        [c.id]
+      );
       connections.push({
         uuid: c.uuid,
         name: c.name || null,
@@ -1262,6 +1294,7 @@ export const syncV2Service = {
         jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
         background_color: c.background_color || null,
         tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
+        file_highlights: highlightRows,
         updated_hlc: c.updated_hlc
       });
     }

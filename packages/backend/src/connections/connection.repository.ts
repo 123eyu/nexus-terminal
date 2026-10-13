@@ -272,9 +272,16 @@ export const updateConnection = async (id: number, data: Partial<Omit<FullConnec
  * 删除连接
  */
 export const deleteConnection = async (id: number): Promise<boolean> => {
-    const sql = `DELETE FROM connections WHERE id = ?`;
     try {
         const db = await getDbInstance();
+        // 双重保险：显式级联清理关联的文件颜色高亮设置
+        try {
+            await runDb(db, `DELETE FROM file_color_highlights WHERE connection_id = ?`, [id]);
+        } catch (colorCleanErr: any) {
+            console.warn(`Repository: 尝试清理连接 ${id} 的 file_color_highlights 时提示:`, colorCleanErr.message);
+        }
+
+        const sql = `DELETE FROM connections WHERE id = ?`;
         const result = await runDb(db, sql, [id]);
         return result.changes > 0;
     } catch (err: any) {

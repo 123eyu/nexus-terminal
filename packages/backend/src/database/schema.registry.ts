@@ -122,4 +122,16 @@ export const tableDefinitions: TableDefinition[] = [
         name: 'sync_tombstones',
         sql: schemaSql.createSyncTombstonesTableSQL
     },
+    {
+        name: 'file_color_highlights',
+        sql: schemaSql.createFileColorHighlightsTableSQL,
+        init: async (db: Database): Promise<void> => {
+            try {
+                await runDb(db, `CREATE INDEX IF NOT EXISTS idx_file_color_highlights_conn ON file_color_highlights(connection_id);`);
+                await runDb(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_file_color_highlights_conn_path ON file_color_highlights(connection_id, path);`);
+            } catch (err: any) {
+                console.error('[DB Init] 创建 file_color_highlights 索引失败:', err.message);
+            }
+        }
+    },
 ];

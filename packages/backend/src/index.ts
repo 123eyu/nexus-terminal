@@ -100,6 +100,7 @@ import workspaceSyncRouter from './workspace-sync/workspace-sync.routes';
 import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
 import syncV2Router from './sync/sync.v2.routes';
+import fileColorHighlightsRouter from './file-color-highlights/file-color-highlights.routes';
 import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
@@ -309,6 +310,8 @@ const startServer = () => {
     app.use('/api/v1/desktop', desktopRouter);
     app.use('/api/v1/sync', syncRouter);
     app.use('/api/sync/v2', syncV2Router);
+    app.use('/api/v1/connections/:connectionId/file-color-highlights', fileColorHighlightsRouter);
+    app.use('/api/v1/file-color-highlights', fileColorHighlightsRouter);
     
     // 状态检查接口
 

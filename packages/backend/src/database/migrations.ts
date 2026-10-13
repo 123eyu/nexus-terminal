@@ -695,6 +695,40 @@ const definedMigrations: Migration[] = [
                 });
             });
         }
+    },
+    {
+        id: 19,
+        name: 'Create file_color_highlights table with cascade delete on connections',
+        check: async (db: Database): Promise<boolean> => {
+            return new Promise<boolean>((resolve) => {
+                db.get(
+                    `SELECT name FROM sqlite_master WHERE type='table' AND name='file_color_highlights'`,
+                    (err, row) => {
+                        if (err || !row) resolve(true);
+                        else resolve(false);
+                    }
+                );
+            });
+        },
+        sql: `
+            CREATE TABLE IF NOT EXISTS file_color_highlights (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                connection_id INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                color TEXT NOT NULL,
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                uuid TEXT NULL,
+                updated_hlc TEXT NULL,
+                FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+                UNIQUE(connection_id, path)
+            );
+            CREATE INDEX IF NOT EXISTS idx_file_color_highlights_conn ON file_color_highlights(connection_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_file_color_highlights_conn_path ON file_color_highlights(connection_id, path);
+        `,
+        execute: async (db: Database): Promise<void> => {
+            console.log('[Migrations] Migration 19: file_color_highlights 表及索引创建完成。');
+        }
     }
 ];
 

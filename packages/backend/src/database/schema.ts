@@ -272,4 +272,19 @@ CREATE TABLE IF NOT EXISTS sync_tombstones (
     deleted_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 `;
+
+export const createFileColorHighlightsTableSQL = `
+CREATE TABLE IF NOT EXISTS file_color_highlights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    color TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    uuid TEXT NULL,
+    updated_hlc TEXT NULL,
+    FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
+    UNIQUE(connection_id, path)
+);
+`;
 
