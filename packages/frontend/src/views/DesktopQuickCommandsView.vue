@@ -93,15 +93,10 @@
               <!-- 正常展示状态 -->
               <template v-else>
                 <div class="flex items-center gap-2 truncate min-w-0 flex-1 pr-1.5">
-                  <!-- 文件夹颜色圆点或图标 -->
-                  <span
-                    v-if="folder.background_color"
-                    class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                    :style="{ backgroundColor: folder.background_color }"
-                  ></span>
                   <i
-                    v-else
-                    class="fas fa-folder text-amber-400 text-xs flex-shrink-0"
+                    class="fas fa-folder text-xs flex-shrink-0 transition-colors"
+                    :class="folder.background_color ? '' : 'text-amber-400'"
+                    :style="folder.background_color ? { color: folder.background_color } : {}"
                   ></i>
                   <span class="truncate">{{ folder.name }}</span>
                 </div>
@@ -203,11 +198,20 @@
           <!-- 右侧顶部文件夹栏 -->
           <div class="flex items-center justify-between px-3 py-1.5 border-b border-border/40 text-xs flex-shrink-0 bg-background/50">
             <div class="flex items-center gap-2 truncate min-w-0">
-              <span
-                v-if="activeSidebarFolderColor"
-                class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                :style="{ backgroundColor: activeSidebarFolderColor }"
-              ></span>
+              <i
+                v-if="sidebarActiveFolderId === 'all'"
+                class="fas fa-layer-group text-primary text-xs flex-shrink-0"
+              ></i>
+              <i
+                v-else-if="sidebarActiveFolderId === 'untagged'"
+                class="fas fa-inbox text-text-secondary text-xs flex-shrink-0"
+              ></i>
+              <i
+                v-else
+                class="fas fa-folder-open text-xs flex-shrink-0 transition-colors"
+                :class="activeSidebarFolderColor ? '' : 'text-amber-400'"
+                :style="activeSidebarFolderColor ? { color: activeSidebarFolderColor } : {}"
+              ></i>
               <span class="font-semibold text-foreground truncate">{{ activeSidebarFolderName }}</span>
               <span class="text-text-secondary font-mono text-[11px]">({{ sidebarDisplayCommands.length }})</span>
 
@@ -452,10 +456,16 @@
                             <!-- Folder Icon -->
                             <i
                                 :class="[
-                                    'fas mr-2 w-4 text-center flex-shrink-0',
-                                    groupData.tagId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
+                                    'fas mr-2 w-4 text-center flex-shrink-0 transition-colors',
+                                    groupData.tagId === null
+                                        ? 'fa-inbox text-text-secondary'
+                                        : (expandedGroups[groupData.groupName] ? 'fa-folder-open' : 'fa-folder'),
+                                    (!getFolderColorById(groupData.tagId) && groupData.tagId !== null) ? 'text-amber-400' : ''
                                 ]"
-                                :style="{ fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
+                                :style="{
+                                    color: getFolderColorById(groupData.tagId) || undefined,
+                                    fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))`
+                                }"
                             ></i>
 
                             <!-- Editing State -->
@@ -473,11 +483,6 @@
                             />
                             <!-- Display State -->
                             <div v-else class="flex items-center gap-2 truncate min-w-0">
-                                <span
-                                    v-if="getFolderColorById(groupData.tagId)"
-                                    class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                                    :style="{ backgroundColor: getFolderColorById(groupData.tagId)! }"
-                                ></span>
                                 <span
                                     class="inline-block overflow-hidden text-ellipsis whitespace-nowrap text-xs md:text-sm"
                                     :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
@@ -893,12 +898,11 @@
       @click.stop
     >
       <div v-if="folderContextMenuTargetFolder" class="px-3 py-1 text-xs text-text-secondary border-b border-border/40 font-mono truncate max-w-[200px] flex items-center gap-1.5">
-        <span
-          v-if="folderContextMenuTargetFolder.background_color"
-          class="w-2 h-2 rounded-full flex-shrink-0"
-          :style="{ backgroundColor: folderContextMenuTargetFolder.background_color }"
-        ></span>
-        <i v-else class="fas fa-folder text-amber-400 text-xs"></i>
+        <i
+          class="fas fa-folder text-xs flex-shrink-0 transition-colors"
+          :class="folderContextMenuTargetFolder.background_color ? '' : 'text-amber-400'"
+          :style="folderContextMenuTargetFolder.background_color ? { color: folderContextMenuTargetFolder.background_color } : {}"
+        ></i>
         <span class="truncate">{{ folderContextMenuTargetFolder.name }}</span>
       </div>
       <ul v-if="folderContextMenuTargetFolder" class="list-none p-0 m-0 mt-1">

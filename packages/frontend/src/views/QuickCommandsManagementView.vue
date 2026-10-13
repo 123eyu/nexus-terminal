@@ -164,15 +164,10 @@
             <!-- 常态展示模式 -->
             <template v-else>
               <div class="flex items-center gap-2.5 truncate min-w-0 flex-1 mr-1">
-                <!-- 文件夹色标圆点 -->
-                <span
-                  v-if="folder.background_color"
-                  class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                  :style="{ backgroundColor: folder.background_color }"
-                ></span>
                 <i
-                  v-else
-                  class="fas fa-folder text-xs w-4 text-center text-amber-400 group-hover:text-amber-500 transition-colors flex-shrink-0"
+                  class="fas fa-folder text-xs w-4 text-center transition-colors flex-shrink-0"
+                  :class="folder.background_color ? '' : 'text-amber-400 group-hover:text-amber-500'"
+                  :style="folder.background_color ? { color: folder.background_color } : {}"
                 ></i>
 
                 <span class="truncate">{{ folder.name }}</span>
@@ -243,11 +238,13 @@
             <div class="flex items-center gap-2">
               <i
                 :class="[
-                  'fas',
+                  'fas transition-colors',
                   activeFolder === 'all'
                     ? 'fa-layer-group text-primary'
-                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open text-amber-400')
+                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open'),
+                  (activeFolder !== 'all' && activeFolder !== 'uncategorized' && !activeFolderColor) ? 'text-amber-400' : ''
                 ]"
+                :style="activeFolderColor ? { color: activeFolderColor } : {}"
               ></i>
               <h2 class="text-base md:text-lg font-semibold text-foreground truncate">
                 {{ activeFolderTitle }}
@@ -407,12 +404,11 @@
                       @click="handleMoveCommandToFolder(cmd, f.id)"
                       class="px-2.5 py-1.5 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate"
                     >
-                      <span
-                        v-if="f.background_color"
-                        class="w-2 h-2 rounded-full flex-shrink-0"
-                        :style="{ backgroundColor: f.background_color }"
-                      ></span>
-                      <i v-else class="fas fa-folder text-amber-400 text-xs"></i>
+                      <i
+                        class="fas fa-folder text-xs flex-shrink-0 transition-colors"
+                        :class="f.background_color ? '' : 'text-amber-400'"
+                        :style="f.background_color ? { color: f.background_color } : {}"
+                      ></i>
                       <span class="truncate">{{ f.name }}</span>
                     </div>
                   </div>
@@ -690,6 +686,13 @@ const activeFolderTitle = computed(() => {
   if (activeFolder.value === 'uncategorized') return t('folders.uncategorized', '未分类');
   const folder = quickCommandTagsStore.folders.find(f => f.id === activeFolder.value);
   return folder ? folder.name : t('folders.title', '文件夹');
+});
+
+// 当前文件夹颜色
+const activeFolderColor = computed(() => {
+  if (typeof activeFolder.value !== 'number') return null;
+  const folder = quickCommandTagsStore.folders.find(f => f.id === activeFolder.value);
+  return folder?.background_color || null;
 });
 
 // 过滤与排序后的显示指令列表

@@ -88,10 +88,16 @@
                             <!-- Folder Icon -->
                             <i
                                 :class="[
-                                    'fas mr-2 w-4 text-center flex-shrink-0',
-                                    groupData.tagId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
+                                    'fas mr-2 w-4 text-center flex-shrink-0 transition-colors',
+                                    groupData.tagId === null
+                                        ? 'fa-inbox text-text-secondary'
+                                        : (expandedGroups[groupData.groupName] ? 'fa-folder-open' : 'fa-folder'),
+                                    (!getFolderColorById(groupData.tagId) && groupData.tagId !== null) ? 'text-amber-400' : ''
                                 ]"
-                                :style="{ fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"
+                                :style="{
+                                    color: getFolderColorById(groupData.tagId) || undefined,
+                                    fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))`
+                                }"
                             ></i>
 
                             <!-- Editing State -->
@@ -109,11 +115,6 @@
                             />
                             <!-- Display State -->
                             <div v-else class="flex items-center gap-2 truncate min-w-0">
-                                <span
-                                    v-if="getFolderColorById(groupData.tagId)"
-                                    class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-white/20"
-                                    :style="{ backgroundColor: getFolderColorById(groupData.tagId)! }"
-                                ></span>
                                 <span
                                     class="inline-block overflow-hidden text-ellipsis whitespace-nowrap text-xs"
                                     :style="{ fontSize: `calc(0.875em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))` }"

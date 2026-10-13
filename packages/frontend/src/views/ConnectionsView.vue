@@ -156,6 +156,13 @@ const currentFolderTitle = computed(() => {
   return found ? found.name : t('folders.title', '文件夹');
 });
 
+// 当前展示的文件夹颜色
+const currentFolderColor = computed(() => {
+  if (typeof activeFolder.value !== 'number') return null;
+  const found = folders.value.find(f => f.id === activeFolder.value);
+  return found?.background_color || null;
+});
+
 // 过滤与排序
 const filteredAndSortedConnections = computed(() => {
   const sortBy = localSortBy.value;
@@ -829,18 +836,12 @@ const handleConnectAllFilteredConnections = async () => {
               <div class="flex items-center gap-2 truncate min-w-0 mr-2 flex-1">
                 <i
                   :class="[
-                    'fas',
+                    'fas w-4 text-center flex-shrink-0 transition-colors',
                     activeFolder === folder.id ? 'fa-folder-open' : 'fa-folder',
-                    'text-amber-400 w-4 text-center flex-shrink-0'
+                    folder.background_color ? '' : 'text-amber-400'
                   ]"
+                  :style="folder.background_color ? { color: folder.background_color } : {}"
                 ></i>
-                <!-- 文件夹颜色指示圆点 -->
-                <span
-                  v-if="folder.background_color"
-                  class="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-xs ring-1 ring-border/50"
-                  :style="{ backgroundColor: folder.background_color }"
-                  :title="t('folders.currentColor', '文件夹背景色: ') + folder.background_color"
-                ></span>
                 <span class="truncate">{{ folder.name }}</span>
               </div>
 
@@ -909,11 +910,13 @@ const handleConnectAllFilteredConnections = async () => {
             <div class="flex items-center gap-2">
               <i
                 :class="[
-                  'fas',
+                  'fas transition-colors',
                   activeFolder === 'all'
                     ? 'fa-layer-group text-primary'
-                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open text-amber-400')
+                    : (activeFolder === 'uncategorized' ? 'fa-inbox text-text-secondary' : 'fa-folder-open'),
+                  (activeFolder !== 'all' && activeFolder !== 'uncategorized' && !currentFolderColor) ? 'text-amber-400' : ''
                 ]"
+                :style="currentFolderColor ? { color: currentFolderColor } : {}"
               ></i>
               <h2 class="text-base md:text-lg font-semibold text-foreground truncate">
                 {{ currentFolderTitle }}
