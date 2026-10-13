@@ -276,16 +276,58 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
     }
     const wsManager = newSessionState.wsManager;
 
-    // 3. 等待 WebSocket 连接成功
-    const MAX_WAIT_ITERATIONS = 25; // 25 * 200ms = 5 seconds
-    let iterations = 0;
-    while (!wsManager.isConnected.value && iterations < MAX_WAIT_ITERATIONS) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      iterations++;
-    }
+    // 3. 等待 WebSocket 连接就绪（事件监听驱动 + 轮询双保险，适配公网与代理延迟，超时放宽至 30 秒）
+    const waitStartTime = Date.now();
+    const isConnectedReady = await new Promise<boolean>((resolve) => {
+      // 若当前已处于连接就绪状态，立即放行 (0ms)
+      if (wsManager.isConnected.value) {
+        return resolve(true);
+      }
 
-    if (!wsManager.isConnected.value) {
-      console.error(`[${t('term.sshSuspend')}] 新创建的会话 ${newFrontendSessionId} 的 WebSocket 未能连接。无法发送恢复请求。`);
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let pollInterval: ReturnType<typeof setInterval> | null = null;
+      let unregisterOpened: (() => void) | null = null;
+      let unregisterClosed: (() => void) | null = null;
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer);
+        if (pollInterval) clearInterval(pollInterval);
+        if (unregisterOpened) unregisterOpened();
+        if (unregisterClosed) unregisterClosed();
+      };
+
+      // 允许最长 30 秒等待（符合生产公网及反向代理超时标准）
+      timer = setTimeout(() => {
+        cleanup();
+        console.warn(`[${t('term.sshSuspend')}] 等待 WebSocket 连接超时 (耗时: ${Date.now() - waitStartTime}ms, 会话: ${newFrontendSessionId})`);
+        resolve(false);
+      }, 30000);
+
+      // 事件驱动监听：底层 WebSocket 一旦触发 onopen (即 internal:opened)，0ms 立即放行
+      unregisterOpened = wsManager.onMessage('internal:opened', () => {
+        cleanup();
+        resolve(true);
+      });
+
+      // 异常关闭拦截：若 WebSocket 明确主动断开 (code 1000) 且未重连
+      unregisterClosed = wsManager.onMessage('internal:closed', (payload: any) => {
+        if (payload?.code === 1000) {
+          cleanup();
+          resolve(false);
+        }
+      });
+
+      // 双保险轮询：每 100ms 检查一次 isConnected.value（防止事件在注册间隙被消费）
+      pollInterval = setInterval(() => {
+        if (wsManager.isConnected.value) {
+          cleanup();
+          resolve(true);
+        }
+      }, 100);
+    });
+
+    if (!isConnectedReady) {
+      console.error(`[${t('term.sshSuspend')}] 新创建的会话 ${newFrontendSessionId} 的 WebSocket 未能在超时时间内连接 (耗时: ${Date.now() - waitStartTime}ms)。无法发送恢复请求。`);
       uiNotificationsStore.addNotification({ type: 'error', message: t('sshSuspend.notifications.resumeErrorGeneric', { error: '无法连接到服务器以恢复会话' }) });
       if (sessions.value.has(newFrontendSessionId)) {
         closeSession(newFrontendSessionId); // 清理未成功连接的会话
@@ -294,7 +336,7 @@ export const resumeSshSession = async (suspendSessionId: string, shouldActivate:
     }
     
     // 4. 发送恢复请求
-    console.log(`[${t('term.sshSuspend')}] 会话 ${newFrontendSessionId} 的 WebSocket 已连接，准备发送恢复请求。`);
+    console.log(`[${t('term.sshSuspend')}] 会话 ${newFrontendSessionId} 的 WebSocket 已连接就绪 (耗时: ${Date.now() - waitStartTime}ms)，准备发送恢复请求。`);
     const message: SshSuspendResumeReqMessage = {
       type: 'SSH_SUSPEND_RESUME_REQUEST',
       payload: { suspendSessionId, newFrontendSessionId },
