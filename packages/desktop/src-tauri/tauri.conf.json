@@ -23,7 +23,8 @@
         "fullscreen": false,
         "decorations": true,
         "theme": "Dark",
-        "visible": false
+        "visible": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

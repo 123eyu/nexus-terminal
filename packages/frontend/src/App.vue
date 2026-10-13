@@ -97,7 +97,18 @@ onMounted(() => {
   const { initVisualViewport } = useVisualViewport();
   initVisualViewport();
 
+  // +++ 全局防御：防止外部拖入文件在未受控区域释放导致 WebView2 意外打开文件进行页面导航 +++
+  window.addEventListener('dragover', handleGlobalDragOver);
+  window.addEventListener('drop', handleGlobalDrop);
 });
+
+// 全局拖放防御处理函数
+const handleGlobalDragOver = (e: DragEvent) => {
+  e.preventDefault();
+};
+const handleGlobalDrop = (e: DragEvent) => {
+  e.preventDefault();
+};
 
 // +++ 监听用户认证状态，登录后初始化收藏路径 +++
 watch(isAuthenticated, (loggedIn) => {
@@ -110,6 +121,8 @@ watch(isAuthenticated, (loggedIn) => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleAltKeyDown); // +++ 移除 keydown 监听 +++
   window.removeEventListener('keyup', handleGlobalKeyUp);   // +++ 移除 keyup 监听 +++
+  window.removeEventListener('dragover', handleGlobalDragOver);
+  window.removeEventListener('drop', handleGlobalDrop);
 });
 
 
