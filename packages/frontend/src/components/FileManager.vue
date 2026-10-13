@@ -170,6 +170,9 @@ const handleSetHighlightColor = async (item: FileListItem, color: string | null)
       await fileColorHighlightsStore.removeHighlight(numericConnectionId.value, path);
       uiNotificationsStore.showSuccess(t('fileManager.highlightCleared', '已清除高亮颜色'));
     }
+    // 选择完颜色或清除颜色后退出该文件的选中状态，避免全紫高亮遮罩覆盖新效果
+    selectedItems.value.clear();
+    selectedIndex.value = -1;
   } catch (err: any) {
     uiNotificationsStore.showError(t('fileManager.highlightColorFailed', '标记颜色失败'));
   }
@@ -1004,6 +1007,8 @@ const handleOpenMobileActionSheet = (item: FileListItem) => {
 const handleCloseMobileActionSheet = () => {
   showMobileActionSheet.value = false;
   activeMobileActionItem.value = null;
+  selectedItems.value.clear();
+  selectedIndex.value = -1;
 };
 
 const handleMobileToggleSelect = (item: FileListItem) => {

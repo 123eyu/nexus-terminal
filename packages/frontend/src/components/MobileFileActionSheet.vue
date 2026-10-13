@@ -74,6 +74,7 @@ const handleSelectColor = async (color: string | null) => {
       await fileColorHighlightsStore.removeHighlight(connectionId.value, fullPath.value);
       uiNotificationsStore.showSuccess(t('fileManager.highlightCleared', '已清除高亮颜色'));
     }
+    emit('close');
   } catch (e: any) {
     uiNotificationsStore.showError(t('fileManager.highlightColorFailed', '标记颜色失败'));
   }
