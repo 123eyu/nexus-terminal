@@ -431,8 +431,25 @@
       "compressTarGz": "tar.gz に圧縮",
       "compressTarBz2": "tar.bz2 に圧縮",
       "decompress": "解凍",
-      "sendTo": "送信..."
+      "sendTo": "送信...",
+      "highlightColor": "ハイライト色を設定"
     },
+    "colors": {
+      "clear": "色をクリア",
+      "red": "赤色",
+      "orange": "オレンジ",
+      "amber": "琥珀色",
+      "yellow": "黄色",
+      "green": "緑色",
+      "cyan": "シアン",
+      "blue": "青色",
+      "purple": "紫色",
+      "pink": "ピンク"
+    },
+    "highlighted": "ハイライト設定済み",
+    "highlightSetSuccess": "ハイライト色を設定しました",
+    "highlightCleared": "ハイライト色をクリアしました",
+    "highlightColorFailed": "ハイライト色の更新に失敗しました",
     "currentPath": "現在のパス",
     "dropFilesHere": "ファイルをここにドラッグ＆ドロップしてアップロード",
     "editPathTooltip": "パスをクリックして編集",

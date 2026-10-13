@@ -285,17 +285,25 @@ onUnmounted(() => {
               @mouseenter="showSubmenu(menuItem.label)"
               @mouseleave="hideSubmenu()"
             >
-              <li
-                v-for="(subItem, subIndex) in menuItem.submenu"
-                :key="subIndex"
-                @click.stop="handleItemClick(subItem)"
-                :class="[
-                  'px-4 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
-                  'hover:bg-primary/10 hover:text-primary'
-                ]"
-              >
-                {{ subItem.label }}
-              </li>
+              <template v-for="(subItem, subIndex) in menuItem.submenu" :key="subIndex">
+                <li v-if="subItem.separator" class="border-t border-border/50 my-1 mx-1"></li>
+                <li
+                  v-else
+                  @click.stop="handleItemClick(subItem)"
+                  :class="[
+                    'px-3 py-1.5 cursor-pointer text-foreground text-sm flex items-center transition-colors duration-150 rounded mx-1',
+                    'hover:bg-primary/10 hover:text-primary'
+                  ]"
+                >
+                  <span
+                    v-if="subItem.color"
+                    class="w-3 h-3 rounded-full shrink-0 mr-2 border border-black/20 shadow-2xs"
+                    :style="{ backgroundColor: subItem.color }"
+                  ></span>
+                  <i v-else-if="subItem.icon" :class="[subItem.icon, 'text-xs shrink-0 mr-2']"></i>
+                  <span class="flex-1 truncate">{{ subItem.label }}</span>
+                </li>
+              </template>
             </ul>
           </li>
 

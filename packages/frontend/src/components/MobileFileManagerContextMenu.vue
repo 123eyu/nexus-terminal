@@ -179,14 +179,22 @@ const handleFilesSent = (payload: any) => {
 
         <!-- 移动端子菜单平铺模式 -->
         <template v-else-if="menuItem.submenu && menuItem.submenu.length > 0">
-          <li
-            v-for="(subItem, subIndex) in menuItem.submenu"
-            :key="`${index}-${subIndex}`"
-            @click.stop="handleItemClick(subItem)"
-            class="px-3.5 py-2.5 cursor-pointer text-foreground text-sm flex items-center active:bg-primary/20 transition-colors duration-100 rounded-lg mx-1"
-          >
-            {{ subItem.label }}
-          </li>
+          <template v-for="(subItem, subIndex) in menuItem.submenu" :key="`${index}-${subIndex}`">
+            <li v-if="subItem.separator" class="border-t border-border/60 my-1 mx-2"></li>
+            <li
+              v-else
+              @click.stop="handleItemClick(subItem)"
+              class="px-3.5 py-2.5 cursor-pointer text-foreground text-sm flex items-center active:bg-primary/20 transition-colors duration-100 rounded-lg mx-1"
+            >
+              <span
+                v-if="subItem.color"
+                class="w-3.5 h-3.5 rounded-full shrink-0 mr-2.5 border border-black/20 shadow-2xs"
+                :style="{ backgroundColor: subItem.color }"
+              ></span>
+              <i v-else-if="subItem.icon" :class="[subItem.icon, 'text-xs shrink-0 mr-2.5']"></i>
+              <span class="flex-1 truncate">{{ subItem.label }}</span>
+            </li>
+          </template>
           <!-- 压缩项后的“发送到”快捷项 -->
           <template v-if="menuItem.label === t('fileManager.contextMenu.compress')">
             <li

@@ -541,8 +541,25 @@
       "compressTarGz": "压缩为 tar.gz",
       "compressTarBz2": "压缩为 tar.bz2",
       "decompress": "解压",
-      "sendTo": "发送到..."
+      "sendTo": "发送到...",
+      "highlightColor": "标记颜色"
     },
+    "colors": {
+      "clear": "清除颜色",
+      "red": "红色",
+      "orange": "橙色",
+      "amber": "琥珀色",
+      "yellow": "黄色",
+      "green": "绿色",
+      "cyan": "青色",
+      "blue": "蓝色",
+      "purple": "紫色",
+      "pink": "粉色"
+    },
+    "highlighted": "已标记高亮",
+    "highlightSetSuccess": "已标记高亮颜色",
+    "highlightCleared": "已清除高亮颜色",
+    "highlightColorFailed": "标记颜色失败",
     "headers": {
       "type": "类型",
       "name": "名称",

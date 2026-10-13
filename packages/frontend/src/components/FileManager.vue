@@ -19,6 +19,7 @@ import { useFileManagerOperations } from '../composables/file-manager/useFileMan
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
+import { useFileColorHighlightsStore } from '../stores/fileColorHighlights.store';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
@@ -129,6 +130,50 @@ const settingsStore = useSettingsStore(); // 实例化 Settings Store
 const focusSwitcherStore = useFocusSwitcherStore(); // 实例化焦点切换 Store
 const uiNotificationsStore = useUiNotificationsStore(); // 实例化通知 store
 const workspaceSyncStore = useWorkspaceSyncStore(); // 实例化工作区同步 store
+const fileColorHighlightsStore = useFileColorHighlightsStore(); // 实例化文件颜色高亮 store
+
+const numericConnectionId = computed(() => {
+  const parsed = parseInt(props.dbConnectionId, 10);
+  return isNaN(parsed) ? null : parsed;
+});
+
+watch(
+  numericConnectionId,
+  (id) => {
+    if (id) {
+      fileColorHighlightsStore.loadHighlights(id);
+    }
+  },
+  { immediate: true }
+);
+
+const getItemFullPath = (item: FileListItem) => {
+  const currentPath = currentSftpManager.value?.currentPath.value ?? '/';
+  const base = currentPath.endsWith('/') ? currentPath : `${currentPath}/`;
+  return `${base}${item.filename}`;
+};
+
+const getItemHighlightColor = (item: FileListItem): string | undefined => {
+  if (!numericConnectionId.value) return undefined;
+  const path = getItemFullPath(item);
+  return fileColorHighlightsStore.getColor(numericConnectionId.value, path);
+};
+
+const handleSetHighlightColor = async (item: FileListItem, color: string | null) => {
+  if (!numericConnectionId.value) return;
+  const path = getItemFullPath(item);
+  try {
+    if (color) {
+      await fileColorHighlightsStore.setHighlight(numericConnectionId.value, path, color);
+      uiNotificationsStore.showSuccess(t('fileManager.highlightSetSuccess', '已标记高亮颜色'));
+    } else {
+      await fileColorHighlightsStore.removeHighlight(numericConnectionId.value, path);
+      uiNotificationsStore.showSuccess(t('fileManager.highlightCleared', '已清除高亮颜色'));
+    }
+  } catch (err: any) {
+    uiNotificationsStore.showError(t('fileManager.highlightColorFailed', '标记颜色失败'));
+  }
+};
  
 // 从 Settings Store 获取共享设置
 const {
@@ -1107,6 +1152,8 @@ const {
   onDecompressRequest: handleDecompress,
   onCopyPath: handleCopyPath, // +++ 传递复制路径回调 +++
   onAddToFavorites: handleAddToFavorites, // +++ 传递添加到常用路径回调 +++
+  onSetHighlightColor: handleSetHighlightColor, // +++ 传递标记颜色回调 +++
+  currentHighlightColor: getItemHighlightColor, // +++ 传递当前颜色获取 +++
 });
 
 // --- 目录加载与导航 ---
@@ -2357,9 +2404,24 @@ defineExpose({ focusSearchInput, startPathEdit });
                           'text-white': navigatingTargetName !== item.filename && (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                         }
                       ]"
-                      :style="{ fontSize: `calc(1.1em * var(--font-scale))` }"></i>
+                      :style="{
+                        fontSize: `calc(1.1em * var(--font-scale))`,
+                        color: (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
+                          ? undefined
+                          : getItemHighlightColor(item)
+                      }"></i>
                   </td>
-                  <td v-else-if="colKey === 'name'" class="border-b border-border/30 truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">{{ item.filename }}</td>
+                  <td v-else-if="colKey === 'name'" class="border-b border-border/30 truncate align-middle" :class="{'font-medium': item.attrs.isDirectory}" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.8rem * var(--font-scale))` }">
+                    <div class="inline-flex items-center gap-1.5 max-w-full">
+                      <span class="truncate">{{ item.filename }}</span>
+                      <span
+                        v-if="getItemHighlightColor(item)"
+                        class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
+                        :style="{ backgroundColor: getItemHighlightColor(item) }"
+                        :title="t('fileManager.highlighted', '已标记高亮')"
+                      ></span>
+                    </div>
+                  </td>
                   <td v-else-if="colKey === 'size'" class="border-b border-border/30 truncate align-middle" :class="[
                     selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex) ? 'text-white' : 'text-text-secondary'
                   ]" :style="{ padding: `calc(0.4rem * var(--row-size-multiplier)) calc(0.8rem * var(--row-size-multiplier))`, fontSize: `calc(0.72rem * var(--font-scale))` }">{{ item.attrs.isFile ? formatFileSize(item.attrs.size) : '' }}</td> 
@@ -2497,6 +2559,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                           ? 'bg-cyan-500/15 text-cyan-500'
                           : 'bg-black/5 dark:bg-white/5'
                   ]"
+                  :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { borderColor: `${getItemHighlightColor(item)}40`, color: getItemHighlightColor(item) } : undefined"
                 >
                   <i
                     v-if="navigatingTargetName === item.filename"
@@ -2515,6 +2578,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                         ? '!text-white'
                         : ''
                     ]"
+                    :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { color: getItemHighlightColor(item) } : undefined"
                   ></i>
                 </div>
 
@@ -2522,7 +2586,7 @@ defineExpose({ focusSearchInput, startPathEdit });
                 <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
                   <!-- 文件名 -->
                   <div
-                    class="text-xs leading-snug truncate"
+                    class="text-xs leading-snug truncate flex items-center gap-1.5"
                     :class="[
                       item.attrs.isDirectory ? 'font-medium' : 'font-normal',
                       (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
@@ -2530,7 +2594,13 @@ defineExpose({ focusSearchInput, startPathEdit });
                         : 'text-foreground'
                     ]"
                   >
-                    {{ item.filename }}
+                    <span class="truncate">{{ item.filename }}</span>
+                    <span
+                      v-if="getItemHighlightColor(item)"
+                      class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
+                      :style="{ backgroundColor: getItemHighlightColor(item) }"
+                      :title="t('fileManager.highlighted', '已标记高亮')"
+                    ></span>
                   </div>
 
                   <!-- 文件属性/大小与修改时间 -->

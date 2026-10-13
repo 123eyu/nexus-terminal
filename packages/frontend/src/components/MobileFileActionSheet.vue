@@ -5,7 +5,10 @@ import type { FileListItem } from '../types/sftp.types';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import { useSessionStore } from '../stores/session.store';
+import { useFileColorHighlightsStore, PRESET_HIGHLIGHT_COLORS } from '../stores/fileColorHighlights.store';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
+import { copyToClipboard } from '../utils/clipboard';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -30,12 +33,22 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const uiNotificationsStore = useUiNotificationsStore();
+const sessionStore = useSessionStore();
+const fileColorHighlightsStore = useFileColorHighlightsStore();
 
 const isDirectory = computed(() => Boolean(props.item?.attrs.isDirectory));
 const isFile = computed(() => Boolean(props.item?.attrs.isFile));
 const isSymlink = computed(() => Boolean(props.item?.attrs.isSymbolicLink));
 
-import { copyToClipboard } from '../utils/clipboard';
+// 计算当前会话绑定的数据库连接 ID
+const connectionId = computed(() => {
+  const activeConnId = sessionStore.activeSession?.connectionId;
+  if (activeConnId) {
+    const parsed = parseInt(activeConnId, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+});
 
 // 计算完整绝对路径
 const fullPath = computed(() => {
@@ -43,6 +56,28 @@ const fullPath = computed(() => {
   const base = props.currentPath.endsWith('/') ? props.currentPath : `${props.currentPath}/`;
   return `${base}${props.item.filename}`;
 });
+
+// 获取条目当前高亮颜色
+const currentItemColor = computed(() => {
+  if (!connectionId.value || !fullPath.value) return undefined;
+  return fileColorHighlightsStore.getColor(connectionId.value, fullPath.value);
+});
+
+// 选择或清除高亮颜色
+const handleSelectColor = async (color: string | null) => {
+  if (!connectionId.value || !fullPath.value) return;
+  try {
+    if (color) {
+      await fileColorHighlightsStore.setHighlight(connectionId.value, fullPath.value, color);
+      uiNotificationsStore.showSuccess(t('fileManager.highlightSetSuccess', '已标记高亮颜色'));
+    } else {
+      await fileColorHighlightsStore.removeHighlight(connectionId.value, fullPath.value);
+      uiNotificationsStore.showSuccess(t('fileManager.highlightCleared', '已清除高亮颜色'));
+    }
+  } catch (e: any) {
+    uiNotificationsStore.showError(t('fileManager.highlightColorFailed', '标记颜色失败'));
+  }
+};
 
 // 复制绝对路径到剪贴板 (兼容局域网 HTTP 移动端浏览器)
 const copyFullPath = async () => {
@@ -113,18 +148,28 @@ const triggerCdTerminal = () => {
     <!-- 顶部文件概览卡片 -->
     <template #sub-header>
       <div v-if="item" class="px-4 py-3 border-b border-border/40 bg-header/20 flex items-center gap-3">
-        <div class="w-12 h-12 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center shrink-0 shadow-2xs">
+        <div
+          class="w-12 h-12 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center shrink-0 shadow-2xs transition-colors"
+          :style="currentItemColor ? { borderColor: `${currentItemColor}60` } : undefined"
+        >
           <i
             :class="[
               isDirectory ? 'fas fa-folder text-amber-400 text-2xl' :
               isSymlink ? 'fas fa-link text-cyan-400 text-2xl' :
               `${getFileIconClass(item.filename)} text-2xl`
             ]"
+            :style="currentItemColor ? { color: currentItemColor } : undefined"
           ></i>
         </div>
         <div class="min-w-0 flex-1">
-          <h4 class="text-sm font-bold text-foreground break-all line-clamp-1 tracking-tight">
-            {{ item.filename }}
+          <h4 class="text-sm font-bold text-foreground break-all line-clamp-1 tracking-tight flex items-center gap-2">
+            <span>{{ item.filename }}</span>
+            <span
+              v-if="currentItemColor"
+              class="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
+              :style="{ backgroundColor: currentItemColor }"
+              :title="t('fileManager.highlighted', '已标记高亮')"
+            ></span>
           </h4>
           <div class="flex items-center gap-2 text-[11px] text-text-secondary mt-0.5 flex-wrap">
             <span v-if="isFile" class="font-mono">{{ formatFileSize(item.attrs.size) }}</span>
@@ -140,9 +185,42 @@ const triggerCdTerminal = () => {
 
     <!-- 操作选项网格 (大拇指友好大触控热区) -->
     <div v-if="item" class="p-4 overflow-y-auto space-y-1.5 max-h-[60vh] overscroll-contain">
-            <!-- 1. 打开编辑 (仅常规文件) -->
-            <button
-              v-if="isFile"
+      <!-- 标记颜色快速调色板 -->
+      <div class="px-3.5 py-2.5 rounded-xl bg-header/40 border border-border/40 space-y-2 mb-2">
+        <div class="flex items-center justify-between text-xs text-text-secondary">
+          <span class="flex items-center gap-1.5 font-medium text-foreground">
+            <i class="fas fa-palette text-primary"></i>
+            <span>{{ t('fileManager.contextMenu.highlightColor', '标记颜色') }}</span>
+          </span>
+          <button
+            v-if="currentItemColor"
+            type="button"
+            @click="handleSelectColor(null)"
+            class="text-[11px] text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <i class="fas fa-times-circle"></i>
+            <span>{{ t('fileManager.colors.clear', '清除颜色') }}</span>
+          </button>
+        </div>
+        <div class="flex items-center gap-2.5 overflow-x-auto py-1 [scrollbar-width:none]">
+          <button
+            v-for="colorOpt in PRESET_HIGHLIGHT_COLORS"
+            :key="colorOpt.key"
+            type="button"
+            @click="handleSelectColor(colorOpt.color)"
+            class="w-7 h-7 rounded-full shrink-0 border-2 transition-all flex items-center justify-center cursor-pointer shadow-xs active:scale-90"
+            :class="currentItemColor === colorOpt.color ? 'ring-2 ring-primary ring-offset-2 scale-110 border-white' : 'border-black/20 hover:scale-105'"
+            :style="{ backgroundColor: colorOpt.color }"
+            :title="t(`fileManager.colors.${colorOpt.key}`, colorOpt.name)"
+          >
+            <i v-if="currentItemColor === colorOpt.color" class="fas fa-check text-[10px] text-white drop-shadow"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- 1. 打开编辑 (仅常规文件) -->
+      <button
+        v-if="isFile"
               type="button"
               @click="triggerAction('open-file')"
               class="w-full h-11 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer"

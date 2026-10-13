@@ -540,8 +540,25 @@
       "compressTarGz": "Compress to tar.gz",
       "compressTarBz2": "Compress to tar.bz2",
       "decompress": "Decompress",
-      "sendTo": "Send to..."
+      "sendTo": "Send to...",
+      "highlightColor": "Highlight Color"
     },
+    "colors": {
+      "clear": "Clear Color",
+      "red": "Red",
+      "orange": "Orange",
+      "amber": "Amber",
+      "yellow": "Yellow",
+      "green": "Green",
+      "cyan": "Cyan",
+      "blue": "Blue",
+      "purple": "Purple",
+      "pink": "Pink"
+    },
+    "highlighted": "Highlighted",
+    "highlightSetSuccess": "Color highlight set",
+    "highlightCleared": "Color highlight cleared",
+    "highlightColorFailed": "Failed to update highlight color",
     "headers": {
       "type": "Type",
       "name": "Name",

@@ -2,6 +2,7 @@ import { ref, nextTick, type Ref, type ComponentPublicInstance } from 'vue';
 import type { FileListItem } from '../../types/sftp.types'; 
 import { type useI18n } from 'vue-i18n'; 
 import type FileManagerContextMenu from '../../components/FileManagerContextMenu.vue'; 
+import { PRESET_HIGHLIGHT_COLORS } from '../../stores/fileColorHighlights.store';
 
 // 定义菜单项类型 (可以根据需要扩展)
 export interface ContextMenuItem {
@@ -10,6 +11,8 @@ export interface ContextMenuItem {
   disabled?: boolean;
   separator?: boolean; // 添加分隔符类型
   submenu?: ContextMenuItem[]; // 添加二级菜单支持
+  color?: string; // 颜色圆点
+  icon?: string; // 图标类名
 }
 
 // 支持的压缩格式
@@ -50,6 +53,8 @@ export interface UseFileManagerContextMenuOptions {
   onDecompressRequest: (item: FileListItem) => void; // +++ 解压回调 +++
   onCopyPath?: (item: FileListItem) => void; // +++ 复制路径回调 +++
   onAddToFavorites?: (item?: FileListItem) => void; // +++ 添加到常用路径回调 +++
+  onSetHighlightColor?: (item: FileListItem, color: string | null) => void; // +++ 标记颜色回调 +++
+  currentHighlightColor?: (item: FileListItem) => string | undefined; // +++ 当前颜色获取 +++
 }
 
 // 辅助函数：检查文件是否为支持的压缩格式
@@ -86,6 +91,8 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
     onDecompressRequest, // +++ 解构解压回调 +++
     onCopyPath, // +++ 解构复制路径回调 +++
     onAddToFavorites, // +++ 解构添加到常用路径回调 +++
+    onSetHighlightColor, // +++ 解构标记颜色回调 +++
+    currentHighlightColor, // +++ 解构当前颜色获取 +++
   } = options;
 
   const contextMenuVisible = ref(false);
@@ -185,6 +192,33 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
        }
        if (onAddToFavorites && targetItem.attrs.isDirectory) {
          menu.push({ label: t('fileManager.actions.addToFavorites', '添加到收藏路径'), action: () => onAddToFavorites(targetItem), disabled: !(isConnected.value && isSftpReady.value) });
+       }
+
+       // +++ 添加标记颜色二级菜单 +++
+       if (onSetHighlightColor) {
+         const activeColor = currentHighlightColor ? currentHighlightColor(targetItem) : undefined;
+         const colorSubmenu: ContextMenuItem[] = PRESET_HIGHLIGHT_COLORS.map(c => ({
+           label: `${t(`fileManager.colors.${c.key}`, c.name)}${activeColor === c.color ? '  ✓' : ''}`,
+           color: c.color,
+           action: () => onSetHighlightColor(targetItem, c.color),
+           disabled: !(isConnected.value && isSftpReady.value)
+         }));
+
+         if (activeColor) {
+           colorSubmenu.push({ label: '', separator: true });
+           colorSubmenu.push({
+             label: t('fileManager.colors.clear', '清除颜色'),
+             icon: 'fas fa-ban text-rose-500',
+             action: () => onSetHighlightColor(targetItem, null),
+             disabled: !(isConnected.value && isSftpReady.value)
+           });
+         }
+
+         menu.push({
+           label: t('fileManager.contextMenu.highlightColor', '标记颜色'),
+           submenu: colorSubmenu,
+           disabled: !(isConnected.value && isSftpReady.value)
+         });
        }
 
         // --- 分隔符 (视觉) ---

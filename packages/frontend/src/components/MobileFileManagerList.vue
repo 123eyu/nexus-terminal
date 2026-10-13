@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import type { FileListItem } from '../types/sftp.types';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
+import { useSessionStore } from '../stores/session.store';
+import { useFileColorHighlightsStore } from '../stores/fileColorHighlights.store';
 
 const props = withDefaults(
   defineProps<{
@@ -49,6 +51,24 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const sessionStore = useSessionStore();
+const fileColorHighlightsStore = useFileColorHighlightsStore();
+
+const connectionId = computed(() => {
+  const activeConnId = sessionStore.activeSession?.connectionId;
+  if (activeConnId) {
+    const parsed = parseInt(activeConnId, 10);
+    return isNaN(parsed) ? null : parsed;
+  }
+  return null;
+});
+
+const getItemHighlightColor = (item: FileListItem): string | undefined => {
+  if (!connectionId.value) return undefined;
+  const base = props.currentPath.endsWith('/') ? props.currentPath : `${props.currentPath}/`;
+  const fullPath = `${base}${item.filename}`;
+  return fileColorHighlightsStore.getColor(connectionId.value, fullPath);
+};
 
 // 容器引用与滚动状态
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -427,8 +447,9 @@ const handleToggleSelectAll = () => {
 
           <!-- 文件/文件夹图标 -->
           <div
-            class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0"
+            class="rounded-lg bg-header/50 border border-border/40 flex items-center justify-center shrink-0 transition-colors"
             :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
+            :style="getItemHighlightColor(item) ? { borderColor: `${getItemHighlightColor(item)}60` } : undefined"
           >
             <i
               v-if="navigatingFolderName === item.filename"
@@ -443,13 +464,20 @@ const handleToggleSelectAll = () => {
                 `${getFileIconClass(item.filename)}`,
                 isCompact ? (item.attrs.isDirectory ? 'text-base' : 'text-sm') : (item.attrs.isDirectory ? 'text-lg' : 'text-base')
               ]"
+              :style="getItemHighlightColor(item) ? { color: getItemHighlightColor(item) } : undefined"
             ></i>
           </div>
 
           <!-- 中间信息：文件名与元数据 (紧凑模式下隐藏元数据) -->
           <div class="min-w-0 flex-1 flex flex-col justify-center">
-            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight">
-              {{ item.filename }}
+            <div class="text-[13px] font-medium leading-tight truncate text-foreground tracking-tight flex items-center gap-1.5">
+              <span class="truncate">{{ item.filename }}</span>
+              <span
+                v-if="getItemHighlightColor(item)"
+                class="w-2 h-2 rounded-full shrink-0 shadow-2xs border border-black/10 inline-block align-middle"
+                :style="{ backgroundColor: getItemHighlightColor(item) }"
+                :title="t('fileManager.highlighted', '已标记高亮')"
+              ></span>
             </div>
             <!-- 详细模式下显示的日期、权限与类型 -->
             <div v-if="!isCompact" class="flex items-center gap-1.5 text-[10px] text-text-secondary mt-1 flex-wrap">
