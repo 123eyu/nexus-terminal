@@ -2476,14 +2476,14 @@ defineExpose({ focusSearchInput, startPathEdit });
               @drop.prevent="handleDropOnRow(parentDirectoryItem, $event)"
               :data-filename="'..'"
             >
-              <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 text-primary pointer-events-none">
+              <div class="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary pointer-events-none">
                 <i
                   v-if="navigatingTargetName === '..'"
-                  class="fas fa-circle-notch fa-spin text-lg"
+                  class="fas fa-circle-notch fa-spin text-base"
                 ></i>
                 <i
                   v-else
-                  class="fas fa-level-up-alt text-xl"
+                  class="fas fa-level-up-alt text-base"
                 ></i>
               </div>
               <div class="flex-1 min-w-0 flex flex-col justify-center pointer-events-none">
@@ -2534,25 +2534,44 @@ defineExpose({ focusSearchInput, startPathEdit });
                               ? 'hover:brightness-95 dark:hover:brightness-110'
                               : 'bg-header/40 hover:bg-header/80 border-border/60 hover:border-border text-foreground'
                 ]"
-                :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { backgroundColor: `${getItemHighlightColor(item)}18`, borderColor: `${getItemHighlightColor(item)}4d` } : undefined"
+                :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? { backgroundColor: `${getItemHighlightColor(item)}12`, borderColor: `${getItemHighlightColor(item)}40` } : undefined"
                 :data-filename="item.filename"
                 :title="item.filename"
               >
-                <!-- 左侧大图标容器 (无背景方块，通透纯净) -->
-                <div class="w-9 h-9 flex items-center justify-center flex-shrink-0 pointer-events-none">
+                <!-- 左侧大图标容器 (正方形小色块，高亮色阶梯联动防融合) -->
+                <div
+                  class="w-9 h-9 rounded-md flex items-center justify-center flex-shrink-0 transition-colors duration-150 pointer-events-none"
+                  :class="[
+                    (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
+                      ? 'bg-white/20 text-white'
+                      : getItemHighlightColor(item)
+                        ? 'border shadow-2xs'
+                        : item.attrs.isDirectory
+                          ? 'bg-amber-500/15 text-amber-500'
+                          : item.attrs.isSymbolicLink
+                            ? 'bg-cyan-500/15 text-cyan-500'
+                            : 'bg-black/5 dark:bg-white/5'
+                  ]"
+                  :style="(!selectedItems.has(item.filename) && (index + (hasParentLink ? 1 : 0) !== selectedIndex) && getItemHighlightColor(item)) ? {
+                    backgroundColor: `${getItemHighlightColor(item)}30`,
+                    borderColor: `${getItemHighlightColor(item)}55`,
+                    color: getItemHighlightColor(item)
+                  } : undefined"
+                >
                   <i
                     v-if="navigatingTargetName === item.filename"
-                    class="fas fa-circle-notch fa-spin text-lg text-primary"
+                    class="fas fa-circle-notch fa-spin text-base text-primary"
                   ></i>
                   <i
                     v-else
-                    class="text-xl"
+                    class="text-base"
                     :class="[
                       item.attrs.isDirectory
-                        ? 'fas fa-folder text-amber-500'
+                        ? 'fas fa-folder'
                         : item.attrs.isSymbolicLink
-                          ? 'fas fa-link text-cyan-500'
-                          : `${getFileIconClass(item.filename)} text-text-secondary`,
+                          ? 'fas fa-link'
+                          : `${getFileIconClass(item.filename)}`,
+                      (!getItemHighlightColor(item) && !item.attrs.isDirectory && !item.attrs.isSymbolicLink) ? 'text-text-secondary' : '',
                       (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex)) && navigatingTargetName !== item.filename
                         ? '!text-white'
                         : ''

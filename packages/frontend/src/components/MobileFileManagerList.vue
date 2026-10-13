@@ -428,7 +428,7 @@ const handleToggleSelectAll = () => {
           :style="[
             isEnteringNewDirectory ? { animationDelay: `${Math.min(index, 8) * 35}ms` } : {},
             (!selectedItems.has(item.filename) && navigatingFolderName !== item.filename && getItemHighlightColor(item))
-              ? { backgroundColor: `${getItemHighlightColor(item)}18`, borderColor: `${getItemHighlightColor(item)}4d` }
+              ? { backgroundColor: `${getItemHighlightColor(item)}12`, borderColor: `${getItemHighlightColor(item)}40` }
               : {}
           ]"
           @click="handleRowClick(item)"
@@ -452,10 +452,20 @@ const handleToggleSelectAll = () => {
             </div>
           </div>
 
-          <!-- 文件/文件夹图标 (无背景方块，通透纯净) -->
+          <!-- 文件/文件夹图标 (正方形小色块，高亮色阶梯联动防融合) -->
           <div
-            class="flex items-center justify-center shrink-0 transition-colors"
-            :class="isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9'"
+            class="rounded-lg border flex items-center justify-center shrink-0 transition-colors"
+            :class="[
+              isCompact ? 'w-7.5 h-7.5' : 'w-9 h-9',
+              getItemHighlightColor(item)
+                ? 'shadow-2xs'
+                : 'bg-header/50 border-border/40'
+            ]"
+            :style="getItemHighlightColor(item) ? {
+              backgroundColor: `${getItemHighlightColor(item)}30`,
+              borderColor: `${getItemHighlightColor(item)}55`,
+              color: getItemHighlightColor(item)
+            } : undefined"
           >
             <i
               v-if="navigatingFolderName === item.filename"
@@ -465,10 +475,12 @@ const handleToggleSelectAll = () => {
             <i
               v-else
               :class="[
-                item.attrs.isDirectory ? 'fas fa-folder text-amber-400' :
-                item.attrs.isSymbolicLink ? 'fas fa-link text-cyan-400' :
+                item.attrs.isDirectory ? 'fas fa-folder' :
+                item.attrs.isSymbolicLink ? 'fas fa-link' :
                 `${getFileIconClass(item.filename)}`,
-                isCompact ? (item.attrs.isDirectory ? 'text-lg' : 'text-base') : (item.attrs.isDirectory ? 'text-xl' : 'text-lg')
+                (!getItemHighlightColor(item) && item.attrs.isDirectory) ? 'text-amber-400' : '',
+                (!getItemHighlightColor(item) && item.attrs.isSymbolicLink) ? 'text-cyan-400' : '',
+                isCompact ? 'text-base' : 'text-lg'
               ]"
             ></i>
           </div>
