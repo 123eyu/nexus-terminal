@@ -43,7 +43,8 @@ const showVncPassword = ref(false);
     <!-- 1. 用户名 (针对手机输入法禁用首字母大写与自动纠错) -->
     <div class="space-y-1.5">
       <label for="m-conn-username" class="block text-xs font-medium text-text-secondary">
-        {{ t('connections.form.username', '用户名') }} <span class="text-red-400">*</span>
+        {{ t('connections.form.username', '用户名') }}
+        <span class="text-text-secondary/60 font-normal">({{ t('connections.form.defaultRoot', '留空默认 root') }})</span>
       </label>
       <div class="relative flex items-center">
         <div class="absolute left-3 text-text-secondary/60 text-xs pointer-events-none">
@@ -53,11 +54,10 @@ const showVncPassword = ref(false);
           type="text"
           id="m-conn-username"
           v-model="props.formData.username"
-          required
           autocapitalize="none"
           autocorrect="off"
           spellcheck="false"
-          placeholder="例如：root / ubuntu / administrator"
+          placeholder="root (留空默认 root)"
           class="w-full h-10 pl-9 pr-3 text-xs font-mono bg-muted/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"
         />
       </div>

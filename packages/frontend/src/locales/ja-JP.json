@@ -202,6 +202,7 @@
       "typeRdp": "RDP",
       "typeSsh": "SSH",
       "username": "ユーザー名:",
+      "defaultRoot": "省略時は root",
       "sshKey": "SSH キー",
       "privateKeyDirect": "秘密鍵の内容",
       "keyUpdateNoteDirect": "編集時に既存のキーを保持するには、秘密鍵とパスフレーズを空のままにしてください。",

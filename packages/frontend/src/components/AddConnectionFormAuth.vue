@@ -34,12 +34,14 @@ const { t } = useI18n();
 
     <!-- 用户名 -->
     <div>
-      <label for="conn-username" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.username') }}</label>
+      <label for="conn-username" class="block text-xs font-medium text-text-secondary mb-1.5">
+        {{ t('connections.form.username') }}
+        <span class="text-text-secondary/60 font-normal">({{ t('connections.form.defaultRoot', '留空默认 root') }})</span>
+      </label>
       <input
         type="text"
         id="conn-username"
         v-model="props.formData.username"
-        required
         placeholder="root"
         class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
       />

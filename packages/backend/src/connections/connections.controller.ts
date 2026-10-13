@@ -145,11 +145,12 @@ export const testConnection = async (req: Request, res: Response): Promise<void>
 export const testUnsavedConnection = async (req: Request, res: Response): Promise<void> => {
     try {
         // 从请求体中提取连接信息 (添加 ssh_key_id)
-        const { host, port, username, auth_method, password, private_key, passphrase, proxy_id, ssh_key_id } = req.body;
+        const { host, port, auth_method, password, private_key, passphrase, proxy_id, ssh_key_id } = req.body;
+        const username = (req.body.username && req.body.username.trim()) ? req.body.username.trim() : 'root';
 
         // 基本验证
-        if (!host || !port || !username || !auth_method) {
-            res.status(400).json({ success: false, message: '缺少必要的连接信息 (host, port, username, auth_method)。' });
+        if (!host || !port || !auth_method) {
+            res.status(400).json({ success: false, message: '缺少必要的连接信息 (host, port, auth_method)。' });
             return;
         }
         // 密码认证时，password 字段必须存在，但可以为空字符串

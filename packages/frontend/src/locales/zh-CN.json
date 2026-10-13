@@ -286,6 +286,7 @@
       "host": "主机/IP:",
       "port": "端口:",
       "username": "用户名:",
+      "defaultRoot": "留空默认 root",
       "authMethod": "认证方式:",
       "authMethodPassword": "密码",
       "authMethodKey": "SSH 密钥",

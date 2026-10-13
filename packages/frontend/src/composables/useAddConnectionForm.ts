@@ -409,10 +409,11 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     const availableTagIds = tags.value.map(t_ => t_.id);
     const currentSelectedValidTagIds = formData.tag_ids.filter(id => availableTagIds.includes(id));
 
-    if (!formData.host || !formData.username) {
+    if (!formData.host || !formData.host.trim()) {
       uiNotificationsStore.showError(t('connections.form.errorRequiredFields'));
       return;
     }
+    const effectiveUsername = formData.username?.trim() || 'root';
     if (formData.port <= 0 || formData.port > 65535) {
         uiNotificationsStore.showError(t('connections.form.errorPort'));
         return;
@@ -485,7 +486,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     name: formData.name ? `${formData.name}-${ipSuffix}` : currentIp,
                     host: currentIp,
                     port: formData.port,
-                    username: formData.username,
+                    username: effectiveUsername,
                     notes: formData.notes,
                     proxy_id: formData.proxy_id || null,
                     tag_ids: currentSelectedValidTagIds,
@@ -552,7 +553,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         host: formData.host.trim(),
         port: formData.port,
         notes: formData.notes,
-        username: formData.username,
+        username: effectiveUsername,
         proxy_id: formData.proxy_id || null,
         proxy_type: formData.proxy_type,
         tag_ids: currentSelectedValidTagIds,
@@ -658,17 +659,18 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
       if (isEditMode.value && connectionToEdit.value) {
         response = await apiClient.post(`/connections/${connectionToEdit.value.id}/test`);
       } else {
+        const effectiveUsername = formData.username?.trim() || 'root';
         const dataToSend = {
             host: formData.host,
             port: formData.port,
-            username: formData.username,
+            username: effectiveUsername,
             auth_method: formData.auth_method,
             password: formData.auth_method === 'password' ? formData.password : undefined,
             proxy_id: formData.proxy_id || null,
             ssh_key_id: formData.auth_method === 'key' ? formData.selected_ssh_key_id : undefined,
         };
 
-        if (!dataToSend.host || !dataToSend.port || !dataToSend.username || !dataToSend.auth_method) {
+        if (!dataToSend.host || !dataToSend.port || !dataToSend.auth_method) {
           throw new Error(t('connections.test.errorMissingFields'));
         }
         if (dataToSend.auth_method === 'password' && !formData.password) {

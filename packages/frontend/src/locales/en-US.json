@@ -285,6 +285,7 @@
       "host": "Host/IP:",
       "port": "Port:",
       "username": "Username:",
+      "defaultRoot": "default: root",
       "authMethod": "Authentication Method:",
       "authMethodPassword": "Password",
       "authMethodKey": "SSH Key",
