@@ -134,11 +134,8 @@ watch(() => props.isVisible, (newValue) => {
     originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
 
     const initialUsed = getAllLocalUsedPaneNames(localLayoutTree.value, localSidebarPanes.value);
-    if (initialUsed.has('terminal')) {
-        localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p !== 'terminal');
-    } else {
-        localAvailablePanes.value = [...layoutStore.allPossiblePanes];
-    }
+    // 终端作为多实例分屏核心组件，永远保留在可用面板列表中，支持多次拖入
+    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p === 'terminal' || !initialUsed.has(p));
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -174,30 +171,30 @@ function getAllLocalUsedPaneNames(mainNode: LayoutNode | null, sidebars: { left:
 }
 
 function addPaneToAvailableList(paneName: PaneName) {
-   if (paneName === 'terminal' && !localAvailablePanes.value.includes('terminal')) {
-       const originalIndex = layoutStore.allPossiblePanes.indexOf('terminal');
+   if (!localAvailablePanes.value.includes(paneName)) {
+       const originalIndex = layoutStore.allPossiblePanes.indexOf(paneName);
        let inserted = false;
        for (let i = 0; i < localAvailablePanes.value.length; i++) {
            const currentAvailablePane = localAvailablePanes.value[i];
            const currentOriginalIndex = layoutStore.allPossiblePanes.indexOf(currentAvailablePane);
            if (originalIndex < currentOriginalIndex) {
-               localAvailablePanes.value.splice(i, 0, 'terminal');
+               localAvailablePanes.value.splice(i, 0, paneName);
                inserted = true;
                break;
            }
        }
        if (!inserted) {
-            localAvailablePanes.value.push('terminal');
+            localAvailablePanes.value.push(paneName);
        }
    }
 }
 
 function removePaneFromAvailableList(paneName: PaneName) {
-    if (paneName === 'terminal') {
-        const index = localAvailablePanes.value.indexOf('terminal');
-        if (index > -1) {
-            localAvailablePanes.value.splice(index, 1);
-        }
+    // 终端支持多次拉取分屏，永不从可用面板移除
+    if (paneName === 'terminal') return;
+    const index = localAvailablePanes.value.indexOf(paneName);
+    if (index > -1) {
+        localAvailablePanes.value.splice(index, 1);
     }
 }
 
@@ -270,11 +267,8 @@ const resetToDefault = async () => {
     localSidebarPanes.value = JSON.parse(JSON.stringify(defaultSidebarPanes));
 
     const defaultUsed = getAllLocalUsedPaneNames(localLayoutTree.value, localSidebarPanes.value);
-    if (defaultUsed.has('terminal')) {
-        localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p !== 'terminal');
-    } else {
-        localAvailablePanes.value = [...layoutStore.allPossiblePanes];
-    }
+    // 终端支持多实例，永远可用
+    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p === 'terminal' || !defaultUsed.has(p));
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -300,8 +294,8 @@ function findAndRemoveNode(node: LayoutNode | null, parentNodeId: string | undef
     if (node.id === parentNodeId && node.type === 'container' && node.children && node.children[nodeIndex]) {
         const updatedChildren = [...node.children];
         const removedNode = updatedChildren.splice(nodeIndex, 1)[0];
-        if (removedNode.type === 'pane' && removedNode.component === 'terminal') {
-            addPaneToAvailableList('terminal');
+        if (removedNode.type === 'pane' && removedNode.component) {
+            addPaneToAvailableList(removedNode.component);
         }
         return { ...node, children: updatedChildren };
     }
@@ -331,8 +325,8 @@ const handleNodeRemove = async (payload: { parentNodeId: string | undefined; nod
 
 const removeSidebarPane = (side: 'left' | 'right', index: number) => {
    const removedPane = localSidebarPanes.value[side].splice(index, 1)[0];
-   if (removedPane && removedPane === 'terminal') {
-       addPaneToAvailableList('terminal');
+   if (removedPane) {
+       addPaneToAvailableList(removedPane);
    }
 };
 
@@ -351,8 +345,9 @@ const onDraggableChange = (event: any, side: 'left' | 'right') => {
 const handleAvailablePaneDragEnd = (event: any) => {
     if (event.to !== event.from) {
         const paneName = event.oldIndex !== undefined ? localAvailablePanes.value[event.oldIndex] : null;
-        if (paneName === 'terminal') {
-            removePaneFromAvailableList('terminal');
+        // 终端支持无限多次拉取分屏，不从可用列表中移除；其他单例面板拖入后移出可用列表
+        if (paneName && paneName !== 'terminal') {
+            removePaneFromAvailableList(paneName);
         }
     }
 };

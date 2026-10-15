@@ -293,7 +293,8 @@ export const useLayoutStore = defineStore('layout', () => {
   // 计算当前未在布局或侧栏中使用的面板（可用于配置器中添加）
   const availablePanes: ComputedRef<PaneName[]> = computed(() => {
     const used = usedPanes.value;
-    return allPossiblePanes.value.filter(pane => !used.has(pane));
+    // terminal 作为核心多实例分屏组件，始终保留在可用面板列表中，支持多次拉取
+    return allPossiblePanes.value.filter(pane => pane === 'terminal' || !used.has(pane));
   });
 
   // --- Actions ---
