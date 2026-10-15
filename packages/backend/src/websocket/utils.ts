@@ -187,6 +187,17 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
             console.log(`WebSocket: 会话 ${sessionId} 的 SSH 连接已由挂起服务管理，跳过关闭。`);
         }
 
+        // 3.5 清理所有多终端分屏通道 (paneStreams)
+        if (state.paneStreams && state.paneStreams.size > 0) {
+            console.log(`WebSocket: 会话 ${sessionId} 正在清理 ${state.paneStreams.size} 个分屏 Shell 通道...`);
+            for (const [, paneState] of state.paneStreams.entries()) {
+                try {
+                    paneState.stream?.destroy?.();
+                    paneState.stream?.end?.();
+                } catch (e) {}
+            }
+            state.paneStreams.clear();
+        }
 
         // 4. 清理 Docker 状态轮询定时器
         if (state.dockerStatusIntervalId) {

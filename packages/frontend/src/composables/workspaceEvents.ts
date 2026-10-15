@@ -6,14 +6,15 @@ import type { Terminal as XtermTerminal } from 'xterm';
 // 定义事件载荷类型
 export type WorkspaceEventPayloads = {
   // Terminal Events
-  'terminal:input': { sessionId: string; data: string };
-  'terminal:resize': { sessionId: string; dims: { cols: number; rows: number } };
-  'terminal:ready': { sessionId: string; terminal: XtermTerminal; searchAddon: any; serializeAddon?: any };
-  'terminal:sendCommand': { command: string; sessionId?: string }; // sessionId 可选，用于指定目标，默认为 active
+  'terminal:input': { sessionId: string; data: string; paneId?: string };
+  'terminal:resize': { sessionId: string; dims: { cols: number; rows: number }; paneId?: string };
+  'terminal:ready': { sessionId: string; terminal: XtermTerminal; searchAddon: any; serializeAddon?: any; paneId?: string };
+  'terminal:dispose': { sessionId: string; paneId?: string };
+  'terminal:sendCommand': { command: string; sessionId?: string; paneId?: string }; // sessionId/paneId 可选，用于指定目标
   'terminal:clear': void; // sessionId 可选，默认为 active
-  'terminal:scrollToBottomRequest': { sessionId: string };
-  'terminal:stabilizedResize': { sessionId: string; width: number; height: number }; // 用于传递稳定后的尺寸
-  'terminal:cwdChanged': { sessionId: string; cwd: string }; // 终端当前工作目录变更事件
+  'terminal:scrollToBottomRequest': { sessionId: string; paneId?: string };
+  'terminal:stabilizedResize': { sessionId: string; width: number; height: number; paneId?: string }; // 用于传递稳定后的尺寸
+  'terminal:cwdChanged': { sessionId: string; cwd: string; paneId?: string }; // 终端当前工作目录变更事件
 
 
   // Editor Events

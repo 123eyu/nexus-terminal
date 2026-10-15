@@ -323,10 +323,11 @@ onMounted(() => {
   tagsStore.fetchTags().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
 
   // +++ 订阅工作区事件 +++
-  subscribeToWorkspaceEvents('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId));
+  subscribeToWorkspaceEvents('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId, payload.paneId));
   subscribeToWorkspaceEvents('terminal:input', handleTerminalInput);
   subscribeToWorkspaceEvents('terminal:resize', handleTerminalResize);
   subscribeToWorkspaceEvents('terminal:ready', handleTerminalReady);
+  subscribeToWorkspaceEvents('terminal:dispose', handleTerminalDispose);
   subscribeToWorkspaceEvents('terminal:clear', handleClearTerminal);
   subscribeToWorkspaceEvents('terminal:scrollToBottomRequest', handleScrollToBottomRequest);
 
@@ -409,6 +410,7 @@ onBeforeUnmount(() => {
   unsubscribeFromWorkspaceEvents('terminal:input', handleTerminalInput);
   unsubscribeFromWorkspaceEvents('terminal:resize', handleTerminalResize);
   unsubscribeFromWorkspaceEvents('terminal:ready', handleTerminalReady);
+  unsubscribeFromWorkspaceEvents('terminal:dispose', handleTerminalDispose);
   unsubscribeFromWorkspaceEvents('terminal:clear', handleClearTerminal);
   unsubscribeFromWorkspaceEvents('terminal:scrollToBottomRequest', handleScrollToBottomRequest);
 
@@ -492,7 +494,7 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
  // --- 事件处理 (传递给 LayoutRenderer 或直接使用) ---
 
  // 处理命令发送 (用于 CommandBar, CommandHistory, QuickCommands)
- const handleSendCommand = (command: string, targetSessionId?: string) => {
+ const handleSendCommand = (command: string, targetSessionId?: string, targetPaneId?: string) => {
    const sessionToCommand = targetSessionId ? sessionStore.sessions.get(targetSessionId) : activeSession.value;
 
    if (!sessionToCommand) {
@@ -522,7 +524,7 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
      // Only append '\r' for regular commands, not for control characters like Ctrl+C (\x03)
      // Send the raw command as received by the function for control characters
      const dataToSend = command === '\x03' ? command : command + '\r';
-     terminalManager.sendData(dataToSend);
+     terminalManager.sendData(dataToSend, targetPaneId || layoutStore.activeTerminalPaneId || undefined);
 
      // Add to history only if it's a user-typed command (not just Enter or control chars)
      // And only if the command is being sent to the active session (to avoid polluting history from "send to all")
@@ -537,7 +539,7 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
 
  // 处理终端输入 (用于 Terminal)
  // 注意：LayoutRenderer 内部的 Terminal 组件需要 emit('terminal-input', sessionId, data)
- const handleTerminalInput = (payload: { sessionId: string; data: string }) => {
+ const handleTerminalInput = (payload: { sessionId: string; data: string; paneId?: string }) => {
    const { sessionId, data } = payload; // 解构 payload
    const session = sessionStore.sessions.get(sessionId);
    const manager = session?.terminalManager as (SshTerminalInstance | undefined);
@@ -560,20 +562,20 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
        console.error(`[WorkspaceView] handleTerminalInput: 未找到 ID 为 ${session.connectionId} 的连接信息。`);
      }
    } else {
-     manager.handleTerminalData(data);
+     manager.handleTerminalData(data, payload.paneId);
    }
  };
 
  // 处理终端大小调整 (用于 Terminal)
  // 注意：LayoutRenderer 内部的 Terminal 组件需要 emit('terminal-resize', sessionId, dims)
- const handleTerminalResize = (payload: { sessionId: string; dims: { cols: number; rows: number } }) => {
-    sessionStore.sessions.get(payload.sessionId)?.terminalManager.handleTerminalResize(payload.dims);
+ const handleTerminalResize = (payload: { sessionId: string; dims: { cols: number; rows: number }; paneId?: string }) => {
+    sessionStore.sessions.get(payload.sessionId)?.terminalManager.handleTerminalResize(payload.dims, payload.paneId);
  };
 
  // 处理终端就绪 (用于 Terminal)
  // 注意：LayoutRenderer 内部的 Terminal 组件需要 emit('terminal-ready', payload)
  // *** 修正：更新 payload 类型以包含 searchAddon ***
- const handleTerminalReady = (payload: { sessionId: string; terminal: XtermTerminal; searchAddon: any | null; serializeAddon?: any | null }) => { // --- 使用重命名的 XtermTerminal ---
+ const handleTerminalReady = (payload: { sessionId: string; terminal: XtermTerminal; searchAddon: any | null; serializeAddon?: any | null; paneId?: string }) => { // --- 使用重命名的 XtermTerminal ---
     console.log(`[工作区视图 ${payload.sessionId}] 收到 terminal-ready 事件。Payload:`, payload); // *** 添加 Payload 日志 ***
     // *** 检查 payload 中 searchAddon 是否存在 ***
     if (payload && payload.searchAddon) {
@@ -583,6 +585,11 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
     }
     // *** 修正：传递包含 terminal 和 searchAddon 的完整 payload ***
     sessionStore.sessions.get(payload.sessionId)?.terminalManager.handleTerminalReady(payload);
+ };
+
+ const handleTerminalDispose = (payload: { sessionId: string; paneId?: string }) => {
+    console.log(`[工作区视图 ${payload.sessionId}] 收到 terminal-dispose 事件 (paneId: ${payload.paneId})。`);
+    (sessionStore.sessions.get(payload.sessionId)?.terminalManager as any)?.handleTerminalDispose?.(payload.paneId);
 };
 
 // --- 搜索事件处理 ---

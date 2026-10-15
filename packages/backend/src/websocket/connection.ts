@@ -35,7 +35,11 @@ import {
     handleSshConnect,
     handleSshInput,
     handleSshResize,
-    handleSshResumeSuccess
+    handleSshResumeSuccess,
+    handleSshPaneOpen,
+    handleSshPaneInput,
+    handleSshPaneResize,
+    handleSshPaneClose
 } from './handlers/ssh.handler';
 import {
     handleDockerGetStatus,
@@ -96,6 +100,18 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             break;
                         case 'ssh:resize':
                             handleSshResize(ws, payload);
+                            break;
+                        case 'ssh:pane_open':
+                            await handleSshPaneOpen(ws, payload);
+                            break;
+                        case 'ssh:pane_input':
+                            handleSshPaneInput(ws, payload);
+                            break;
+                        case 'ssh:pane_resize':
+                            handleSshPaneResize(ws, payload);
+                            break;
+                        case 'ssh:pane_close':
+                            handleSshPaneClose(ws, payload);
                             break;
 
                         // Docker Cases

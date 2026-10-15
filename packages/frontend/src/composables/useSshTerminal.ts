@@ -16,6 +16,15 @@ export interface SshTerminalDependencies {
     isConnected: ComputedRef<boolean>;
 }
 
+// 多终端分屏实例状态
+export interface PaneTerminalInstance {
+    paneId: string;
+    terminal: Terminal;
+    searchAddon: SearchAddon | null;
+    serializeAddon?: SerializeAddon | null;
+    isReady: boolean;
+}
+
 /**
  * 创建一个 SSH 终端管理器实例
  * @param sessionId 会话唯一标识符
@@ -27,6 +36,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     // 使用依赖注入的 WebSocket 函数
     const { sendMessage, onMessage, isConnected } = wsDeps;
     const highlightStore = useTerminalHighlightStore();
+
+    // 多终端分屏实例 Map (支持同一连接挂载多个终端窗口)
+    const terminalPanes = ref(new Map<string, PaneTerminalInstance>());
+    const primaryPaneId = ref<string | null>(null);
 
     const terminalInstance = ref<Terminal | null>(null);
     const searchAddon = ref<SearchAddon | null>(null); // Keep searchAddon ref
@@ -64,58 +77,113 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- 终端事件处理 ---
 
-    // *** 更新 handleTerminalReady 签名以接收 searchAddon 与 serializeAddon ***
-    const handleTerminalReady = (payload: { terminal: Terminal; searchAddon: SearchAddon | null; serializeAddon?: SerializeAddon | null }) => {
-        const { terminal: term, searchAddon: addon, serializeAddon: sAddon } = payload;
-        console.log(`[会话 ${sessionId}][SSH终端模块] 终端实例已就绪。SearchAddon: ${addon ? '存在' : '不存在'}, SerializeAddon: ${sAddon ? '存在' : '不存在'}`);
-        terminalInstance.value = term;
-        searchAddon.value = addon; // *** 存储 searchAddon 实例 ***
-        serializeAddon.value = sAddon || null; // *** 存储 serializeAddon 实例 ***
+    const handleTerminalReady = (payload: { terminal: Terminal; searchAddon: SearchAddon | null; serializeAddon?: SerializeAddon | null; paneId?: string }) => {
+        const { terminal: term, searchAddon: addon, serializeAddon: sAddon, paneId } = payload;
+        const effectivePaneId = paneId || 'primary';
+        console.log(`[会话 ${sessionId}][SSH终端模块] 终端实例已就绪 (paneId: ${effectivePaneId})。SearchAddon: ${addon ? '存在' : '不存在'}, SerializeAddon: ${sAddon ? '存在' : '不存在'}`);
 
-        
-        // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
-        const currentSessionState = globalSessionsRef.value.get(sessionId);
-        if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
-            // console.log(`[会话 ${sessionId}][SSH终端模块] 发现 SessionState.pendingOutput，长度: ${currentSessionState.pendingOutput.length}。正在写入...`);
-            currentSessionState.pendingOutput.forEach(data => {
-                const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
-                term.write(highlightStore.highlight(normalizedData));
-            });
-            currentSessionState.pendingOutput = []; // 清空
-            // console.log(`[会话 ${sessionId}][SSH终端模块] SessionState.pendingOutput 处理完毕。`);
-            // 如果之前因为 pendingOutput 而将 isResuming 保持为 true，现在可以考虑更新
-            if (currentSessionState.isResuming) {
-                // 检查 isLastChunk 是否已收到 (这部分逻辑在 handleSshOutputCachedChunk 中，这里仅作标记清除)
-                // 假设所有缓存块都已处理完毕
-                // console.log(`[会话 ${sessionId}][SSH终端模块] 所有 pendingOutput 已写入，清除 isResuming 标记。`);
-                currentSessionState.isResuming = false;
+        const entry: PaneTerminalInstance = {
+            paneId: effectivePaneId,
+            terminal: term,
+            searchAddon: addon,
+            serializeAddon: sAddon || null,
+            isReady: false
+        };
+        terminalPanes.value.set(effectivePaneId, entry);
+
+        // 如果尚未选定主终端，优先将当前终端视为主终端
+        if (!primaryPaneId.value) {
+            primaryPaneId.value = effectivePaneId;
+            terminalInstance.value = term;
+            searchAddon.value = addon;
+            serializeAddon.value = sAddon || null;
+        }
+
+        // 如果是主终端，写入历史缓冲
+        if (effectivePaneId === primaryPaneId.value) {
+            // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
+            const currentSessionState = globalSessionsRef.value.get(sessionId);
+            if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
+                currentSessionState.pendingOutput.forEach(data => {
+                    const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
+                    term.write(highlightStore.highlight(normalizedData));
+                });
+                currentSessionState.pendingOutput = []; // 清空
+                if (currentSessionState.isResuming) {
+                    currentSessionState.isResuming = false;
+                }
             }
-        }
 
-        // 2. 将此管理器内部缓冲的输出 (terminalOutputBuffer, 来自 ssh:output) 写入终端
-        if (terminalOutputBuffer.value.length > 0) {
-            terminalOutputBuffer.value.forEach(data => {
-                 term.write(highlightStore.highlight(data));
-            });
-            terminalOutputBuffer.value = []; // 清空内部缓冲区
-        }
-        
-        // 可以在这里自动聚焦或执行其他初始化操作
-        // term.focus(); // 也许在 ssh:connected 时聚焦更好
-    };
-
-    const handleTerminalData = (data: string) => {
-        // console.debug(`[会话 ${sessionId}][SSH终端模块] 接收到终端输入:`, data);
-        sendMessage({ type: 'ssh:input', sessionId, payload: { data } });
-    };
-
-    const handleTerminalResize = (dimensions: { cols: number; rows: number }) => {
-        console.log(`[SSH ${sessionId}] handleTerminalResize called with:`, dimensions);
-        // 只有在连接状态下才发送 resize 命令给后端
-        if (isConnected.value) {
-            sendMessage({ type: 'ssh:resize', sessionId, payload: dimensions });
+            // 2. 将此管理器内部缓冲的输出 (terminalOutputBuffer, 来自 ssh:output) 写入终端
+            if (terminalOutputBuffer.value.length > 0) {
+                terminalOutputBuffer.value.forEach(data => {
+                    term.write(highlightStore.highlight(data));
+                });
+                terminalOutputBuffer.value = []; // 清空内部缓冲区
+            }
         } else {
-            console.log(`[SSH ${sessionId}] WebSocket not connected, skipping ssh:resize.`);
+            // 如果是分屏副终端，向后端请求开辟独立的 Shell 通道！
+            console.log(`[会话 ${sessionId}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} 打开独立 Shell 通道...`);
+            sendMessage({
+                type: 'ssh:pane_open',
+                sessionId,
+                payload: {
+                    paneId: effectivePaneId,
+                    cols: term.cols || 80,
+                    rows: term.rows || 24,
+                }
+            });
+        }
+    };
+
+    const handleTerminalData = (data: string, paneId?: string) => {
+        const targetPaneId = paneId || primaryPaneId.value;
+        if (targetPaneId && targetPaneId !== primaryPaneId.value) {
+            // 分屏副终端走专属通道输入
+            sendMessage({ type: 'ssh:pane_input', sessionId, payload: { paneId: targetPaneId, data } });
+        } else {
+            // 主终端走标准主流输入
+            sendMessage({ type: 'ssh:input', sessionId, payload: { data } });
+        }
+    };
+
+    const handleTerminalResize = (dimensions: { cols: number; rows: number }, paneId?: string) => {
+        if (!isConnected.value) {
+            console.log(`[SSH ${sessionId}] WebSocket not connected, skipping resize.`);
+            return;
+        }
+        const targetPaneId = paneId || primaryPaneId.value;
+        if (targetPaneId && targetPaneId !== primaryPaneId.value) {
+            sendMessage({ type: 'ssh:pane_resize', sessionId, payload: { paneId: targetPaneId, cols: dimensions.cols, rows: dimensions.rows } });
+        } else {
+            sendMessage({ type: 'ssh:resize', sessionId, payload: dimensions });
+        }
+    };
+
+    const handleTerminalDispose = (paneId?: string) => {
+        if (!paneId) return;
+        console.log(`[会话 ${sessionId}][SSH终端模块] 收到终端注销请求: ${paneId}`);
+        if (terminalPanes.value.has(paneId)) {
+            terminalPanes.value.delete(paneId);
+            if (paneId !== primaryPaneId.value) {
+                sendMessage({ type: 'ssh:pane_close', sessionId, payload: { paneId } });
+            } else {
+                // 如果主终端注销，但还有其他分屏终端，接替成为新主终端
+                const remaining = Array.from(terminalPanes.value.values());
+                if (remaining.length > 0) {
+                    const nextPrimary = remaining[0];
+                    primaryPaneId.value = nextPrimary.paneId;
+                    terminalInstance.value = nextPrimary.terminal;
+                    searchAddon.value = nextPrimary.searchAddon;
+                    serializeAddon.value = nextPrimary.serializeAddon || null;
+                    console.log(`[会话 ${sessionId}][SSH终端模块] 原主终端注销，推选 ${nextPrimary.paneId} 为新主终端`);
+                } else {
+                    primaryPaneId.value = null;
+                    terminalInstance.value = null;
+                    searchAddon.value = null;
+                    serializeAddon.value = null;
+                }
+            }
         }
     };
 
@@ -280,6 +348,55 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         terminalInstance.value?.writeln(`\r\n\x1b[31m${getTerminalText('errorPrefix')} ${errorMsg}\x1b[0m`);
     };
 
+    // --- 多终端分屏 WebSocket 消息处理 ---
+
+    const handleSshPaneOutput = (payload: any, message?: WebSocketMessage) => {
+        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const paneId = payload?.paneId;
+        const rawData = payload?.data;
+        if (!paneId || !rawData) return;
+
+        const paneEntry = terminalPanes.value.get(paneId);
+        if (!paneEntry || !paneEntry.terminal) return;
+
+        let outputData: string | Uint8Array = rawData;
+        if (message?.encoding === 'base64' && typeof rawData === 'string') {
+            try {
+                const binaryString = atob(rawData);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                outputData = bytes;
+            } catch (e) {
+                console.error(`[会话 ${sessionId}][分屏终端 ${paneId}] Base64 解码失败:`, e);
+                outputData = `\r\n[分屏解码错误: ${e}]\r\n`;
+            }
+        }
+
+        paneEntry.terminal.write(highlightStore.highlight(outputData));
+        scheduleTerminalSync(1500);
+    };
+
+    const handleSshPaneReady = (payload: any, message?: WebSocketMessage) => {
+        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const paneId = payload?.paneId;
+        console.log(`[会话 ${sessionId}][SSH终端模块] 后端分屏终端 ${paneId} Shell 独立通道就绪`);
+        const paneEntry = terminalPanes.value.get(paneId);
+        if (paneEntry) {
+            paneEntry.isReady = true;
+        }
+    };
+
+    const handleSshPaneClosed = (payload: any, message?: WebSocketMessage) => {
+        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const paneId = payload?.paneId;
+        console.log(`[会话 ${sessionId}][SSH终端模块] 分屏终端 ${paneId} Shell 通道已关闭`);
+        const paneEntry = terminalPanes.value.get(paneId);
+        if (paneEntry && paneEntry.terminal) {
+            paneEntry.terminal.writeln(`\r\n\x1b[31m--- [${getTerminalText('disconnectMsg', { reason: '分屏会话已结束' })}] ---\x1b[0m\r\n`);
+        }
+    };
 
     // --- 注册 WebSocket 消息处理器 ---
     const unregisterHandlers: (() => void)[] = [];
@@ -292,7 +409,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         unregisterHandlers.push(onMessage('ssh:status', handleSshStatus));
         unregisterHandlers.push(onMessage('info', handleInfoMessage));
         unregisterHandlers.push(onMessage('error', handleErrorMessage)); // 也处理通用错误
-        console.log(`[会话 ${sessionId}][SSH终端模块] 已注册 SSH 相关消息处理器。`);
+        // 注册分屏终端事件
+        unregisterHandlers.push(onMessage('ssh:pane_output', handleSshPaneOutput));
+        unregisterHandlers.push(onMessage('ssh:pane_ready', handleSshPaneReady));
+        unregisterHandlers.push(onMessage('ssh:pane_closed', handleSshPaneClosed));
+        console.log(`[会话 ${sessionId}][SSH终端模块] 已注册 SSH 相关消息处理器（含分屏）。`);
     };
 
     const unregisterAllSshHandlers = () => {
@@ -313,16 +434,18 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         unregisterAllSshHandlers();
         // terminalInstance.value?.dispose(); // 终端实例的销毁由 TerminalComponent 负责
         terminalInstance.value = null;
+        terminalPanes.value.clear();
+        primaryPaneId.value = null;
         console.log(`[会话 ${sessionId}][SSH终端模块] 已清理。`);
     };
 
     /**
      * 直接发送数据到 SSH 会话 (例如，从命令输入栏)
      * @param data 要发送的字符串数据
+     * @param paneId 目标分屏终端 ID，缺省时发往主终端
      */
-    const sendData = (data: string) => {
-        // console.debug(`[会话 ${sessionId}][SSH终端模块] 直接发送数据:`, data);
-        sendMessage({ type: 'ssh:input', sessionId, payload: { data } });
+    const sendData = (data: string, paneId?: string) => {
+        handleTerminalData(data, paneId);
     };
 
     // --- 搜索相关方法 (移除计数逻辑) ---
@@ -369,6 +492,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         handleTerminalReady,
         handleTerminalData, // 这个处理来自 xterm.js 的输入
         handleTerminalResize,
+        handleTerminalDispose,
         sendData, // 允许外部直接发送数据
         cleanup,
         // --- 搜索方法 ---
@@ -387,9 +511,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             return null;
         },
         serializeAddon,
-        // --- 暴露状态 ---
+        // --- 暴露状态与多终端 Map ---
         isSshConnected: readonly(isSshConnected), // 暴露 SSH 连接状态 (只读)
-        terminalInstance, // 暴露 terminal 实例，以便 WorkspaceView 可以写入提示信息
+        terminalInstance, // 暴露主 terminal 实例，以便 WorkspaceView 写入提示信息
+        terminalPanes,
+        primaryPaneId,
     };
 }
 

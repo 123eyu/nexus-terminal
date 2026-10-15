@@ -1292,6 +1292,8 @@
     "dragHandle": "拖拽调整顺序或移动",
     "dropHere": "将面板或容器拖拽到此处",
     "configAutoExec": "配置 SSH 连接自启指令",
+    "splitHorizontal": "水平拆分：在此终端右侧添加新终端",
+    "splitVertical": "垂直拆分：在此终端下方添加新终端",
     "autoExecTitle": "终端组件连接自启指令配置",
     "autoExecSubtitle": "SSH 连接就绪后自动执行指令，可针对特定连接单独定制",
     "defaultCommandLabel": "全局默认自启指令",

@@ -1288,6 +1288,8 @@
     "dragHandle": "Drag to reorder or move",
     "dropHere": "Drop panes or containers here",
     "configAutoExec": "Configure SSH Auto-exec Commands",
+    "splitHorizontal": "Split Horizontal: Add new terminal on right",
+    "splitVertical": "Split Vertical: Add new terminal below",
     "autoExecTitle": "Terminal Auto-Exec Commands",
     "autoExecSubtitle": "Automatically executes commands after SSH is ready. Can be customized per connection.",
     "defaultCommandLabel": "Global Default Auto-exec Command",

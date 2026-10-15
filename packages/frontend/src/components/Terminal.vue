@@ -143,11 +143,11 @@ const fitAndEmitResizeNow = (term: Terminal) => {
         if (terminalRef.value.offsetHeight > 0 && terminalRef.value.offsetWidth > 0) {
             const dims = calculateTerminalDimensions(term);
             term.resize(dims.cols, dims.rows);
-            emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims });
+            emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims, paneId: props.paneId });
             if (terminalRef.value) {
               const stableWidth = terminalRef.value.offsetWidth;
               const stableHeight = terminalRef.value.offsetHeight;
-              emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight });
+              emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight, paneId: props.paneId });
             }
         } else {
              console.log(`[Terminal ${props.sessionId}] Immediate fit skipped (container not visible or has no dimensions).`);
@@ -449,11 +449,11 @@ onMounted(() => {
     // 适应容器大小
     const initDims = calculateTerminalDimensions(terminal);
     terminal.resize(initDims.cols, initDims.rows);
-    emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows } }); // 触发初始 resize 事件
+    emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows }, paneId: props.paneId }); // 触发初始 resize 事件
 
     // 监听用户输入
     terminal.onData((data) => {
-      emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, data });
+      emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, paneId: props.paneId, data });
     });
 
     // 监听 OSC 7 当前工作目录通告序列 (Operating System Command 7: CWD)
@@ -519,7 +519,7 @@ onMounted(() => {
                   const dims = calculateTerminalDimensions(terminal);
                   terminal.resize(dims.cols, dims.rows);
                   debouncedEmitResize(terminal); // This will log the cols/rows after debouncing
-                  emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: roundedWidth, height: roundedHeight });
+                  emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: roundedWidth, height: roundedHeight, paneId: props.paneId });
                  } catch (e) {
                     console.warn(`[TerminalResizeObserver sessionId=${props.sessionId}] Fit addon or debouncedEmitResize failed:`, e);
                  }
@@ -602,6 +602,7 @@ onMounted(() => {
           terminal: terminal,
           searchAddon: searchAddon,
           serializeAddon: serializeAddon,
+          paneId: props.paneId,
         });
     }
 
@@ -805,6 +806,7 @@ onMounted(() => {
 
 // 组件卸载前清理资源
 onBeforeUnmount(() => {
+  emitWorkspaceEvent('terminal:dispose', { sessionId: props.sessionId, paneId: props.paneId });
   // Ensure observer is cleaned up
   if (resizeObserver && observedElement) {
       try {
@@ -1017,28 +1019,47 @@ watch(() => props.isPaneFocused, (focused) => {
 // 监听 SSH 连接就绪状态并自动执行配置的指令
 const hasExecutedAutoCmd = ref(false);
 
-watch(() => terminalManagerInstance.value?.isSshConnected?.value, (connected) => {
-  if (connected && !hasExecutedAutoCmd.value && props.autoExecConfig) {
-    const targetConnId = String(currentSession.value?.connectionId || '');
-    const rawCmd = props.autoExecConfig.connectionCommands?.[targetConnId] ?? props.autoExecConfig.defaultCommand;
-    const cmdToExec = typeof rawCmd === 'string' ? rawCmd.trim() : '';
+const checkAndExecuteAutoCmd = () => {
+  if (hasExecutedAutoCmd.value || !props.autoExecConfig) return;
+  const isConnected = terminalManagerInstance.value?.isSshConnected?.value;
+  if (!isConnected) return;
 
-    if (cmdToExec.length > 0) {
-      hasExecutedAutoCmd.value = true;
-      console.log(`[Terminal Pane ${props.paneId || 'default'}] 触发 SSH 连接自动执行指令: ${cmdToExec}`);
-      setTimeout(() => {
-        if (terminalManagerInstance.value && typeof terminalManagerInstance.value.sendData === 'function') {
-          terminal?.writeln(`\r\n\x1b[35m⚡ [自动执行指令]: ${cmdToExec}\x1b[0m\r\n`);
-          terminalManagerInstance.value.sendData(cmdToExec + '\r');
-        }
-      }, 350);
-    }
+  // 如果是分屏副终端，等待其独立通道就绪
+  if (props.paneId && props.paneId !== terminalManagerInstance.value?.primaryPaneId?.value) {
+    const paneEntry = terminalManagerInstance.value?.terminalPanes?.value?.get(props.paneId);
+    if (!paneEntry?.isReady) return;
   }
-  // 连接断开后重置标记，便于下次重连可以再次自动触发
-  if (!connected) {
+
+  const targetConnId = String(currentSession.value?.connectionId || '');
+  const rawCmd = props.autoExecConfig.connectionCommands?.[targetConnId] ?? props.autoExecConfig.defaultCommand;
+  const cmdToExec = typeof rawCmd === 'string' ? rawCmd.trim() : '';
+
+  if (cmdToExec.length > 0) {
+    hasExecutedAutoCmd.value = true;
+    console.log(`[Terminal Pane ${props.paneId || 'default'}] 触发 SSH 连接自动执行指令: ${cmdToExec}`);
+    setTimeout(() => {
+      if (terminalManagerInstance.value && typeof terminalManagerInstance.value.sendData === 'function') {
+        terminal?.writeln(`\r\n\x1b[35m⚡ [自动执行指令]: ${cmdToExec}\x1b[0m\r\n`);
+        terminalManagerInstance.value.sendData(cmdToExec + '\r', props.paneId);
+      }
+    }, 350);
+  }
+};
+
+watch(() => terminalManagerInstance.value?.isSshConnected?.value, (connected) => {
+  if (connected) {
+    checkAndExecuteAutoCmd();
+  } else {
     hasExecutedAutoCmd.value = false;
   }
 }, { immediate: true });
+
+// 监听分屏通道就绪状态
+watch(() => terminalManagerInstance.value?.terminalPanes?.value?.get(props.paneId || '')?.isReady, (ready) => {
+  if (ready) {
+    checkAndExecuteAutoCmd();
+  }
+});
 
 
 // 用户主动点击终端画面时聚焦并通知布局管理器更新活动窗格
@@ -1048,6 +1069,12 @@ const handleTerminalClick = () => {
     terminal.focus();
   }
 };
+
+watch(() => props.isPaneFocused, (focused) => {
+  if (focused && terminal) {
+    terminal.focus();
+  }
+});
 </script>
 
 <template>
@@ -1059,6 +1086,7 @@ const handleTerminalClick = () => {
       'is-mobile': isMobile
     }"
     @click="handleTerminalClick"
+    @mousedown="handleTerminalClick"
     @dragenter="handleTerminalDragEnter"
     @dragover="handleTerminalDragOver"
     @dragleave="handleTerminalDragLeave"

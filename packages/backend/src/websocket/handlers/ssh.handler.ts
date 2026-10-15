@@ -305,3 +305,168 @@ export function handleSshResumeSuccess(sessionId: string): void {
         console.error(`[SSH Handler ${sessionId}] 无法为恢复的会话启动状态轮询：未找到会话状态或 SSH 客户端。`);
     }
 }
+
+// --- 多终端分屏 Shell 通道处理器 ---
+
+export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any): Promise<void> {
+    const sessionId = ws.sessionId;
+    const state = sessionId ? clientStates.get(sessionId) : undefined;
+    const paneId = payload?.paneId;
+
+    if (!sessionId || !state || !state.sshClient) {
+        console.warn(`WebSocket: 收到来自 ${ws.username} 的分屏打开请求，但无活动 SSH 客户端 (会话: ${sessionId}, paneId: ${paneId})`);
+        return;
+    }
+
+    if (!paneId || typeof paneId !== 'string') {
+        console.warn(`WebSocket: 收到来自 ${ws.username} 的无效 paneId 分屏打开请求:`, payload);
+        return;
+    }
+
+    if (!state.paneStreams) {
+        state.paneStreams = new Map();
+    }
+
+    // 如果此 pane 已经存在活动流，先安全关闭
+    const existingPane = state.paneStreams.get(paneId);
+    if (existingPane) {
+        try {
+            existingPane.stream?.end();
+        } catch (e) {}
+        state.paneStreams.delete(paneId);
+    }
+
+    const cols = payload?.cols || 80;
+    const rows = payload?.rows || 24;
+    const term = payload?.term || 'xterm-256color';
+
+    console.log(`SSH: 会话 ${sessionId} 正在为分屏终端 ${paneId} 打开独立 Shell (${cols}x${rows})...`);
+
+    state.sshClient.shell({ term, cols, rows }, (err, stream) => {
+        if (err) {
+            console.error(`SSH: 会话 ${sessionId} 打开分屏 Shell ${paneId} 失败:`, err);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_error',
+                    sessionId,
+                    payload: { paneId, error: err.message }
+                }));
+            }
+            return;
+        }
+
+        const paneState = {
+            paneId,
+            stream,
+            isReady: true,
+        };
+        state.paneStreams!.set(paneId, paneState);
+
+        stream.on('data', (data: Buffer) => {
+            const utf8Data = data.toString('utf8');
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_output',
+                    sessionId,
+                    payload: {
+                        paneId,
+                        data: Buffer.from(utf8Data, 'utf8').toString('base64')
+                    },
+                    encoding: 'base64'
+                }));
+            }
+        });
+
+        stream.stderr.on('data', (data: Buffer) => {
+            const utf8ErrData = data.toString('utf8');
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_output',
+                    sessionId,
+                    payload: {
+                        paneId,
+                        data: Buffer.from(utf8ErrData, 'utf8').toString('base64')
+                    },
+                    encoding: 'base64'
+                }));
+            }
+        });
+
+        stream.on('close', () => {
+            console.log(`SSH: 会话 ${sessionId} 的分屏 Shell ${paneId} 已关闭。`);
+            state.paneStreams?.delete(paneId);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_closed',
+                    sessionId,
+                    payload: { paneId }
+                }));
+            }
+        });
+
+        // 通知前端该分屏终端 Shell 就绪
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'ssh:pane_ready',
+                sessionId,
+                payload: { paneId }
+            }));
+        }
+        console.log(`SSH: 会话 ${sessionId} 的分屏终端 ${paneId} Shell 建立成功。`);
+    });
+}
+
+export function handleSshPaneInput(ws: AuthenticatedWebSocket, payload: any): void {
+    const sessionId = ws.sessionId;
+    const state = sessionId ? clientStates.get(sessionId) : undefined;
+    const paneId = payload?.paneId;
+    const data = payload?.data;
+
+    if (!state || !state.paneStreams) {
+        console.warn(`WebSocket: 收到分屏输入，但未找到会话或分屏通道 (sessionId: ${sessionId}, paneId: ${paneId})`);
+        return;
+    }
+
+    const paneState = state.paneStreams.get(paneId);
+    if (!paneState || !paneState.stream || !paneState.isReady) {
+        console.warn(`WebSocket: 分屏终端 ${paneId} 尚未就绪，忽略输入。`);
+        return;
+    }
+
+    if (typeof data === 'string') {
+        paneState.stream.write(data);
+    }
+}
+
+export function handleSshPaneResize(ws: AuthenticatedWebSocket, payload: any): void {
+    const sessionId = ws.sessionId;
+    const state = sessionId ? clientStates.get(sessionId) : undefined;
+    const paneId = payload?.paneId;
+    const { cols, rows } = payload || {};
+
+    if (!state || !state.paneStreams) return;
+
+    const paneState = state.paneStreams.get(paneId);
+    if (paneState && paneState.stream && paneState.isReady) {
+        if (typeof cols === 'number' && typeof rows === 'number' && cols > 0 && rows > 0) {
+            paneState.stream.setWindow(rows, cols, 0, 0);
+        }
+    }
+}
+
+export function handleSshPaneClose(ws: AuthenticatedWebSocket, payload: any): void {
+    const sessionId = ws.sessionId;
+    const state = sessionId ? clientStates.get(sessionId) : undefined;
+    const paneId = payload?.paneId;
+
+    if (!state || !state.paneStreams || !paneId) return;
+
+    const paneState = state.paneStreams.get(paneId);
+    if (paneState) {
+        try {
+            paneState.stream?.end();
+        } catch (e) {}
+        state.paneStreams.delete(paneId);
+        console.log(`SSH: 主动关闭并移除分屏终端 ${paneId} (会话: ${sessionId})`);
+    }
+}

@@ -127,10 +127,44 @@ const getPaneMeta = (componentName?: string) => {
 
 const childrenList = computed({
   get: () => props.node.children || [],
-  set: (_newChildren) => {
-    console.log('[LayoutNodeEditor] childrenList setter called');
+  set: (newChildren) => {
+    emit('update:node', { ...props.node, children: newChildren });
   }
 });
+
+const handleDraggableChange = (event: any) => {
+  if (props.node.children) {
+    // 确保所有子节点具有唯一 id 与合理 size
+    const updated = props.node.children.map(child => {
+      if (!child.id) child.id = layoutStore.generateId();
+      if (!child.size) child.size = 50;
+      return child;
+    });
+    emit('update:node', { ...props.node, children: updated });
+  }
+};
+
+const splitPane = (direction: 'horizontal' | 'vertical') => {
+  const newTerminalNode: LayoutNode = {
+    id: layoutStore.generateId(),
+    type: 'pane',
+    component: 'terminal',
+    size: 50,
+  };
+  const clonedCurrent: LayoutNode = {
+    ...JSON.parse(JSON.stringify(props.node)),
+    id: layoutStore.generateId(),
+    size: 50,
+  };
+  const containerNode: LayoutNode = {
+    id: layoutStore.generateId(),
+    type: 'container',
+    direction,
+    children: [clonedCurrent, newTerminalNode],
+    size: props.node.size || 50,
+  };
+  emit('update:node', containerNode);
+};
 
 const addHorizontalContainer = () => {
   const newNode: LayoutNode = {
@@ -255,6 +289,7 @@ const getChildFlexStyle = (child: LayoutNode) => {
       <draggable
         :list="childrenList"
         @update:list="childrenList = $event"
+        @change="handleDraggableChange"
         tag="div"
         class="flex-grow p-1.5 overflow-hidden flex gap-1.5 min-h-[44px] w-full h-full relative"
         :class="node.direction === 'horizontal' ? 'flex-row' : 'flex-col'"
@@ -262,7 +297,6 @@ const getChildFlexStyle = (child: LayoutNode) => {
         :group="{ name: 'layout-items', pull: true, put: true }"
         :direction="node.direction"
         :sort="true"
-        draggable=".child-node-card-wrapper"
         :empty-insert-threshold="25"
         :invert-swap="true"
         :swap-threshold="0.65"
@@ -335,6 +369,26 @@ const getChildFlexStyle = (child: LayoutNode) => {
             :class="hasAutoExecConfig ? 'text-purple-400 bg-purple-500/20' : 'text-text-secondary/60 hover:text-purple-400 hover:bg-purple-500/15'"
           >
             <i class="fas fa-bolt text-[9px]"></i>
+          </button>
+
+          <!-- 终端快速分屏按钮：水平切分 / 垂直切分 -->
+          <button
+            v-if="node.component === 'terminal'"
+            type="button"
+            @click.stop="splitPane('horizontal')"
+            :title="t('layoutNodeEditor.splitHorizontal', '水平拆分：在此终端右侧添加新终端')"
+            class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/60 hover:text-sky-400 hover:bg-sky-500/15 transition-colors cursor-pointer pointer-events-auto"
+          >
+            <i class="fas fa-columns text-[9px]"></i>
+          </button>
+          <button
+            v-if="node.component === 'terminal'"
+            type="button"
+            @click.stop="splitPane('vertical')"
+            :title="t('layoutNodeEditor.splitVertical', '垂直拆分：在此终端下方添加新终端')"
+            class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/60 hover:text-indigo-400 hover:bg-indigo-500/15 transition-colors cursor-pointer pointer-events-auto"
+          >
+            <i class="fas fa-table-rows text-[9px]"></i>
           </button>
 
           <!-- 尺寸占比 -->
