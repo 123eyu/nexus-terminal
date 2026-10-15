@@ -40,17 +40,22 @@ export class SftpUploadService {
 
         try {
             if (isScp) {
+                let normalizedRemotePath = remotePath.trim();
+                if (normalizedRemotePath.startsWith('./')) normalizedRemotePath = '/' + normalizedRemotePath.slice(2);
+                if (!normalizedRemotePath.startsWith('/')) normalizedRemotePath = '/' + normalizedRemotePath;
+                normalizedRemotePath = normalizedRemotePath.replace(/\/+/g, '/');
+
                 if (relativePath) {
-                    const targetDirectory = pathModule.dirname(remotePath).replace(/\\/g, '/');
+                    const targetDirectory = pathModule.dirname(normalizedRemotePath).replace(/\\/g, '/');
                     const escapedDir = `'${targetDirectory.replace(/'/g, "'\\''")}'`;
                     await new Promise<void>((resolve, reject) => {
-                        state.sshClient.exec(`mkdir -p -- ${escapedDir}`, (err, ch) => {
+                        state.sshClient.exec(`mkdir -p ${escapedDir}`, (err, ch) => {
                             if (err) return reject(err);
                             ch.on('close', () => resolve());
                         });
                     });
                 }
-                const escapedPath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+                const escapedPath = `'${normalizedRemotePath.replace(/'/g, "'\\''")}'`;
                 state.sshClient.exec(`cat > ${escapedPath}`, (err, stream) => {
                     if (err) {
                         state.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: `启动写入流失败: ${err.message}` } }));
@@ -144,7 +149,7 @@ export class SftpUploadService {
         if (uploadState.bytesWritten >= uploadState.totalSize) {
             if (state.activeFileProtocol === 'scp') {
                 const escapedPath = `'${uploadState.remotePath.replace(/'/g, "'\\''")}'`;
-                state.sshClient.exec(`export LC_ALL=C; ls -land -- ${escapedPath}`, (err, ch) => {
+                state.sshClient.exec(`export LC_ALL=C; ls -land ${escapedPath}`, (err, ch) => {
                     if (err) {
                         if (state.ws && state.ws.readyState === WebSocket.OPEN) {
                             state.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: err.message } }));
