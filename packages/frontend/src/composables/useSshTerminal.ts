@@ -128,6 +128,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 type: 'ssh:pane_open',
                 sessionId,
                 payload: {
+                    sessionId,
                     paneId: effectivePaneId,
                     cols: term.cols || 80,
                     rows: term.rows || 24,
@@ -140,10 +141,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const targetPaneId = paneId || primaryPaneId.value;
         if (targetPaneId && targetPaneId !== primaryPaneId.value) {
             // 分屏副终端走专属通道输入
-            sendMessage({ type: 'ssh:pane_input', sessionId, payload: { paneId: targetPaneId, data } });
+            sendMessage({ type: 'ssh:pane_input', sessionId, payload: { sessionId, paneId: targetPaneId, data } });
         } else {
             // 主终端走标准主流输入
-            sendMessage({ type: 'ssh:input', sessionId, payload: { data } });
+            sendMessage({ type: 'ssh:input', sessionId, payload: { sessionId, data } });
         }
     };
 
@@ -154,9 +155,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         }
         const targetPaneId = paneId || primaryPaneId.value;
         if (targetPaneId && targetPaneId !== primaryPaneId.value) {
-            sendMessage({ type: 'ssh:pane_resize', sessionId, payload: { paneId: targetPaneId, cols: dimensions.cols, rows: dimensions.rows } });
+            sendMessage({ type: 'ssh:pane_resize', sessionId, payload: { sessionId, paneId: targetPaneId, cols: dimensions.cols, rows: dimensions.rows } });
         } else {
-            sendMessage({ type: 'ssh:resize', sessionId, payload: dimensions });
+            sendMessage({ type: 'ssh:resize', sessionId, payload: { sessionId, ...dimensions } });
         }
     };
 
@@ -166,7 +167,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (terminalPanes.value.has(paneId)) {
             terminalPanes.value.delete(paneId);
             if (paneId !== primaryPaneId.value) {
-                sendMessage({ type: 'ssh:pane_close', sessionId, payload: { paneId } });
+                sendMessage({ type: 'ssh:pane_close', sessionId, payload: { sessionId, paneId } });
             } else {
                 // 如果主终端注销，但还有其他分屏终端，接替成为新主终端
                 const remaining = Array.from(terminalPanes.value.values());
@@ -245,12 +246,31 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     const handleSshConnected = (payload: MessagePayload, message?: WebSocketMessage) => {
         // 检查消息是否属于此会话
-        if (message?.sessionId && message.sessionId !== sessionId) {
+        const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
+        if (incomingSessionId && incomingSessionId !== sessionId) {
             return; // 忽略不属于此会话的消息
         }
 
-        console.log(`[会话 ${sessionId}][SSH终端模块] SSH 会话已连接。 Payload:`, payload, 'Full message:', message); // 更详细的日志
         isSshConnected.value = true; // 更新状态
+
+        // 主连接就绪，立刻为所有已挂载的分屏副终端打开独立 Shell 通道
+        if (terminalPanes.value.size > 1) {
+            console.log(`[会话 ${sessionId}][SSH终端模块] 主会话已连接，正在为 ${terminalPanes.value.size - 1} 个分屏副终端打开独立 Shell...`);
+            for (const [pId, entry] of terminalPanes.value.entries()) {
+                if (pId !== primaryPaneId.value) {
+                    sendMessage({
+                        type: 'ssh:pane_open',
+                        sessionId,
+                        payload: {
+                            sessionId,
+                            paneId: pId,
+                            cols: entry.terminal.cols || 80,
+                            rows: entry.terminal.rows || 24,
+                        }
+                    });
+                }
+            }
+        }
         // 连接成功后聚焦终端 (仅桌面端自动聚焦，避免手机端自动弹出输入法)
         const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (!isMobileDevice) {
@@ -351,7 +371,8 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     // --- 多终端分屏 WebSocket 消息处理 ---
 
     const handleSshPaneOutput = (payload: any, message?: WebSocketMessage) => {
-        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
+        if (incomingSessionId && incomingSessionId !== sessionId) return;
         const paneId = payload?.paneId;
         const rawData = payload?.data;
         if (!paneId || !rawData) return;
@@ -379,17 +400,32 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     };
 
     const handleSshPaneReady = (payload: any, message?: WebSocketMessage) => {
-        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
+        if (incomingSessionId && incomingSessionId !== sessionId) return;
         const paneId = payload?.paneId;
         console.log(`[会话 ${sessionId}][SSH终端模块] 后端分屏终端 ${paneId} Shell 独立通道就绪`);
         const paneEntry = terminalPanes.value.get(paneId);
         if (paneEntry) {
             paneEntry.isReady = true;
+            // 通道就绪，立即向后端同步一次实际尺寸，触发服务端 PTY 更新尺寸
+            if (paneEntry.terminal && paneEntry.terminal.cols > 0 && paneEntry.terminal.rows > 0) {
+                sendMessage({
+                    type: 'ssh:pane_resize',
+                    sessionId,
+                    payload: {
+                        sessionId,
+                        paneId,
+                        cols: paneEntry.terminal.cols,
+                        rows: paneEntry.terminal.rows,
+                    }
+                });
+            }
         }
     };
 
     const handleSshPaneClosed = (payload: any, message?: WebSocketMessage) => {
-        if (message?.sessionId && message.sessionId !== sessionId) return;
+        const incomingSessionId = (message as any)?.sessionId || (payload as any)?.sessionId;
+        if (incomingSessionId && incomingSessionId !== sessionId) return;
         const paneId = payload?.paneId;
         console.log(`[会话 ${sessionId}][SSH终端模块] 分屏终端 ${paneId} Shell 通道已关闭`);
         const paneEntry = terminalPanes.value.get(paneId);

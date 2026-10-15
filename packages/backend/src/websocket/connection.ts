@@ -80,8 +80,8 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                     return;
                 }
 
-                const { type, payload, requestId } = parsedMessage;
-                const sessionId = ws.sessionId; // Get current WebSocket's session ID
+                const { type, payload, requestId, sessionId: messageSessionId } = parsedMessage;
+                const sessionId = ws.sessionId || messageSessionId; // 优先获取当前 WebSocket 的已绑定 sessionId，若尚未绑定则使用消息附带的 sessionId
 
                 // It's crucial to get the state associated with the current ws.sessionId
                 // For 'ssh:connect', ws.sessionId will be undefined initially, so state will be undefined.
@@ -102,16 +102,16 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             handleSshResize(ws, payload);
                             break;
                         case 'ssh:pane_open':
-                            await handleSshPaneOpen(ws, payload);
+                            await handleSshPaneOpen(ws, payload, sessionId);
                             break;
                         case 'ssh:pane_input':
-                            handleSshPaneInput(ws, payload);
+                            handleSshPaneInput(ws, payload, sessionId);
                             break;
                         case 'ssh:pane_resize':
-                            handleSshPaneResize(ws, payload);
+                            handleSshPaneResize(ws, payload, sessionId);
                             break;
                         case 'ssh:pane_close':
-                            handleSshPaneClose(ws, payload);
+                            handleSshPaneClose(ws, payload, sessionId);
                             break;
 
                         // Docker Cases

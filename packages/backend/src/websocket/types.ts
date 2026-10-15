@@ -33,6 +33,8 @@ export interface ClientState { // 导出以便 Service 可以导入
     recentOutputBytes?: number;    // 缓冲累计字节数
     // 多终端分屏独立 Shell 通道映射 (key 为 paneId)
     paneStreams?: Map<string, PaneStreamState>;
+    // 暂存连接就绪前收到的分屏打开请求
+    pendingPaneOpens?: Map<string, { cols: number; rows: number; term: string }>;
 }
 
 export interface PaneStreamState {

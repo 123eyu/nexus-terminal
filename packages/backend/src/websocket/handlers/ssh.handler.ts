@@ -34,46 +34,52 @@ export async function handleSshConnect(
     const clientIp = (request as any).clientIpAddress || 'unknown';
     let connInfo: SshService.DecryptedConnectionDetails | null = null;
 
+    // 优先复用客户端提供的 sessionId，保证同一终端会话重连时标识一致不销毁前端实例
+    const newSessionId = (typeof payload?.sessionId === 'string' && payload.sessionId.trim().length > 0)
+        ? payload.sessionId.trim()
+        : (ws.sessionId || uuidv4());
+
+    // 若当前服务中仍残留该会话的历史状态（例如网络断开未触发 close），安全清理旧连接
+    if (clientStates.has(newSessionId)) {
+        console.log(`[SSH Handler] 检测到会话 ${newSessionId} 已存在旧状态，执行重连前置清理...`);
+        cleanupClientConnection(newSessionId);
+    }
+
+    ws.sessionId = newSessionId; // 立即为 WebSocket 绑定当前确定好的 sessionId
+
+    const dbConnectionIdAsNumber = parseInt(dbConnectionId, 10);
+    if (isNaN(dbConnectionIdAsNumber)) {
+        console.error(`WebSocket: 无效的 dbConnectionId '${dbConnectionId}' (非数字)，无法创建会话 ${newSessionId}。`);
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:error', payload: '无效的连接 ID。' }));
+        ws.close(1008, 'Invalid Connection ID');
+        return;
+    }
+
+    // 立即注册初始 ClientState 占位对象，保证在 SSH 网络握手期间到达的分屏打开请求能够进入暂存队列排队，绝不丢失！
+    const newState: ClientState = {
+        ws: ws,
+        sshClient: undefined as any,
+        dbConnectionId: dbConnectionIdAsNumber,
+        connectionName: 'Connecting...',
+        ipAddress: clientIp,
+        isShellReady: false,
+        recentOutputBuffer: [],
+        recentOutputBytes: 0,
+        pendingPaneOpens: new Map(),
+        paneStreams: new Map(),
+    };
+    clientStates.set(newSessionId, newState);
+    console.log(`WebSocket: 为用户 ${ws.username} (IP: ${clientIp}) 预注册会话 ${newSessionId} (DB ID: ${dbConnectionIdAsNumber}) 状态队列。`);
+
     try {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: '正在获取连接信息...' }));
         connInfo = await SshService.getConnectionDetails(dbConnectionId);
+        newState.connectionName = connInfo!.name;
 
         const sshClient = await SshService.establishSshConnection(connInfo);
+        newState.sshClient = sshClient;
 
-        // 优先复用客户端提供的 sessionId，保证同一终端会话重连时标识一致不销毁前端实例
-        const newSessionId = (typeof payload?.sessionId === 'string' && payload.sessionId.trim().length > 0)
-            ? payload.sessionId.trim()
-            : uuidv4();
-
-        // 若当前服务中仍残留该会话的历史状态（例如网络断开未触发 close），安全清理旧连接
-        if (clientStates.has(newSessionId)) {
-            console.log(`[SSH Handler] 检测到会话 ${newSessionId} 已存在旧状态，执行重连前置清理...`);
-            cleanupClientConnection(newSessionId);
-        }
-
-        ws.sessionId = newSessionId; // Assign new sessionId to the WebSocket
-
-        const dbConnectionIdAsNumber = parseInt(dbConnectionId, 10);
-        if (isNaN(dbConnectionIdAsNumber)) {
-            console.error(`WebSocket: 无效的 dbConnectionId '${dbConnectionId}' (非数字)，无法创建会话 ${newSessionId}。`);
-            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:error', payload: '无效的连接 ID。' }));
-            sshClient.end();
-            ws.close(1008, 'Invalid Connection ID');
-            return;
-        }
-
-        const newState: ClientState = {
-            ws: ws,
-            sshClient: sshClient,
-            dbConnectionId: dbConnectionIdAsNumber,
-            connectionName: connInfo!.name,
-            ipAddress: clientIp,
-            isShellReady: false,
-            recentOutputBuffer: [],
-            recentOutputBytes: 0,
-        };
-        clientStates.set(newSessionId, newState);
-        console.log(`WebSocket: 为用户 ${ws.username} (IP: ${clientIp}) 创建新会话 ${newSessionId} (DB ID: ${dbConnectionIdAsNumber}, 连接名称: ${newState.connectionName})`);
+        console.log(`WebSocket: 为用户 ${ws.username} 建立 SSH 传输通道成功 (会话: ${newSessionId}, 连接名称: ${newState.connectionName})`);
 
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ssh:status', payload: 'SSH 连接成功，正在打开 Shell...' }));
         try {
@@ -181,12 +187,22 @@ export async function handleSshConnect(
 
                 if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
                     type: 'ssh:connected',
+                    sessionId: newSessionId,
                     payload: {
                         connectionId: dbConnectionIdAsNumber,
                         sessionId: newSessionId
                     }
                 }));
                 console.log(`WebSocket: 会话 ${newSessionId} SSH 连接和 Shell 建立成功。`);
+
+                // 立即处理在连接建立前暂存的分屏打开请求
+                if (newState.pendingPaneOpens && newState.pendingPaneOpens.size > 0) {
+                    console.log(`WebSocket: 会话 ${newSessionId} 处理连接就绪前暂存的 ${newState.pendingPaneOpens.size} 个分屏打开请求...`);
+                    for (const [pId, pOpts] of newState.pendingPaneOpens.entries()) {
+                        openPaneShell(ws, newSessionId, newState, pId, pOpts.cols, pOpts.rows, pOpts.term);
+                    }
+                    newState.pendingPaneOpens.clear();
+                }
                 auditLogService.logAction('SSH_CONNECT_SUCCESS', {
                     userId: ws.userId,
                     username: ws.username,
@@ -308,37 +324,27 @@ export function handleSshResumeSuccess(sessionId: string): void {
 
 // --- 多终端分屏 Shell 通道处理器 ---
 
-export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any): Promise<void> {
-    const sessionId = ws.sessionId;
-    const state = sessionId ? clientStates.get(sessionId) : undefined;
-    const paneId = payload?.paneId;
-
-    if (!sessionId || !state || !state.sshClient) {
-        console.warn(`WebSocket: 收到来自 ${ws.username} 的分屏打开请求，但无活动 SSH 客户端 (会话: ${sessionId}, paneId: ${paneId})`);
+export function openPaneShell(
+    ws: AuthenticatedWebSocket,
+    sessionId: string,
+    state: ClientState,
+    paneId: string,
+    cols: number = 80,
+    rows: number = 24,
+    term: string = 'xterm-256color'
+): void {
+    if (!state.sshClient) {
+        console.warn(`[openPaneShell] 会话 ${sessionId} 缺少活动 sshClient，无法为 ${paneId} 打开 Shell`);
         return;
     }
-
-    if (!paneId || typeof paneId !== 'string') {
-        console.warn(`WebSocket: 收到来自 ${ws.username} 的无效 paneId 分屏打开请求:`, payload);
-        return;
-    }
-
     if (!state.paneStreams) {
         state.paneStreams = new Map();
     }
-
-    // 如果此 pane 已经存在活动流，先安全关闭
     const existingPane = state.paneStreams.get(paneId);
     if (existingPane) {
-        try {
-            existingPane.stream?.end();
-        } catch (e) {}
+        try { existingPane.stream?.end(); } catch (e) {}
         state.paneStreams.delete(paneId);
     }
-
-    const cols = payload?.cols || 80;
-    const rows = payload?.rows || 24;
-    const term = payload?.term || 'xterm-256color';
 
     console.log(`SSH: 会话 ${sessionId} 正在为分屏终端 ${paneId} 打开独立 Shell (${cols}x${rows})...`);
 
@@ -416,8 +422,42 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
     });
 }
 
-export function handleSshPaneInput(ws: AuthenticatedWebSocket, payload: any): void {
-    const sessionId = ws.sessionId;
+export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any, incomingSessionId?: string): Promise<void> {
+    const sessionId = incomingSessionId || ws.sessionId || payload?.sessionId;
+    const paneId = payload?.paneId;
+
+    if (!paneId || typeof paneId !== 'string') {
+        console.warn(`WebSocket: 收到来自 ${ws.username} 的无效 paneId 分屏打开请求:`, payload);
+        return;
+    }
+
+    const state = sessionId ? clientStates.get(sessionId) : undefined;
+    const cols = payload?.cols || 80;
+    const rows = payload?.rows || 24;
+    const term = payload?.term || 'xterm-256color';
+
+    // 情况 A：SSH 已连接就绪，立即派生打开
+    if (state && state.sshClient && state.isShellReady) {
+        // 如果该 paneId 已经成功打开且 stream 仍在活动，忽略重复打开
+        if (state.paneStreams?.get(paneId)?.isReady) {
+            console.log(`WebSocket: 会话 ${sessionId} 的分屏 ${paneId} 通道已处于活动就绪状态，跳过重复创建。`);
+            return;
+        }
+        openPaneShell(ws, sessionId, state, paneId, cols, rows, term);
+    } else if (state) {
+        // 情况 B：会话正在握手连接中，暂存打开请求，连接成功发 ssh:connected 后自动消费
+        console.log(`WebSocket: 会话 ${sessionId} 收到分屏 ${paneId} 打开请求，SSH 正在握手，加入暂存等待队列...`);
+        if (!state.pendingPaneOpens) {
+            state.pendingPaneOpens = new Map();
+        }
+        state.pendingPaneOpens.set(paneId, { cols, rows, term });
+    } else {
+        console.warn(`WebSocket: 收到分屏打开请求，但未找到对应的活动会话 (sessionId: ${sessionId}, paneId: ${paneId})`);
+    }
+}
+
+export function handleSshPaneInput(ws: AuthenticatedWebSocket, payload: any, incomingSessionId?: string): void {
+    const sessionId = incomingSessionId || ws.sessionId || payload?.sessionId;
     const state = sessionId ? clientStates.get(sessionId) : undefined;
     const paneId = payload?.paneId;
     const data = payload?.data;
@@ -438,8 +478,8 @@ export function handleSshPaneInput(ws: AuthenticatedWebSocket, payload: any): vo
     }
 }
 
-export function handleSshPaneResize(ws: AuthenticatedWebSocket, payload: any): void {
-    const sessionId = ws.sessionId;
+export function handleSshPaneResize(ws: AuthenticatedWebSocket, payload: any, incomingSessionId?: string): void {
+    const sessionId = incomingSessionId || ws.sessionId || payload?.sessionId;
     const state = sessionId ? clientStates.get(sessionId) : undefined;
     const paneId = payload?.paneId;
     const { cols, rows } = payload || {};
@@ -454,8 +494,8 @@ export function handleSshPaneResize(ws: AuthenticatedWebSocket, payload: any): v
     }
 }
 
-export function handleSshPaneClose(ws: AuthenticatedWebSocket, payload: any): void {
-    const sessionId = ws.sessionId;
+export function handleSshPaneClose(ws: AuthenticatedWebSocket, payload: any, incomingSessionId?: string): void {
+    const sessionId = incomingSessionId || ws.sessionId || payload?.sessionId;
     const state = sessionId ? clientStates.get(sessionId) : undefined;
     const paneId = payload?.paneId;
 
@@ -464,9 +504,16 @@ export function handleSshPaneClose(ws: AuthenticatedWebSocket, payload: any): vo
     const paneState = state.paneStreams.get(paneId);
     if (paneState) {
         try {
-            paneState.stream?.end();
+            paneState.stream?.destroy();
         } catch (e) {}
         state.paneStreams.delete(paneId);
         console.log(`SSH: 主动关闭并移除分屏终端 ${paneId} (会话: ${sessionId})`);
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'ssh:pane_closed',
+                sessionId,
+                payload: { paneId }
+            }));
+        }
     }
 }
