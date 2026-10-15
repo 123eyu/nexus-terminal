@@ -399,6 +399,8 @@ export class ScpFileService {
                 type: 'sftp:readfile:success',
                 path: normPath,
                 payload: {
+                    rawContentBase64: fileData.toString('base64'),
+                    encodingUsed: encodingUsed,
                     content: decodedContent,
                     encoding: encodingUsed,
                     decodeError

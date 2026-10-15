@@ -55,6 +55,9 @@ export const getLanguageFromFilename = (filename: string): string => {
  */
 export const decodeRawContent = (rawContentBase64: string, encoding: string): string => {
     try {
+        if (!rawContentBase64 || typeof rawContentBase64 !== 'string') {
+            return '';
+        }
         const buffer = Buffer.from(rawContentBase64, 'base64');
         const normalizedEncoding = encoding.toLowerCase().replace(/[^a-z0-9]/g, ''); // 标准化编码名称
 

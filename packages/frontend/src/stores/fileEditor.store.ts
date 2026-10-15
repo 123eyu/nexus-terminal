@@ -78,6 +78,9 @@ export const getFilenameFromPath = (filePath: string): string => {
 // +++ 前端解码辅助函数 +++
 const decodeRawContent = (rawContentBase64: string, encoding: string): string => {
     try {
+        if (!rawContentBase64 || typeof rawContentBase64 !== 'string') {
+            return '';
+        }
         const buffer = Buffer.from(rawContentBase64, 'base64');
         const normalizedEncoding = encoding.toLowerCase().replace(/[^a-z0-9]/g, ''); // Normalize encoding name
 
