@@ -61,6 +61,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     vncPassword: '',
     custom_background_color: false,
     background_color: '#3b82f6',
+    file_protocol: 'auto' as 'auto' | 'sftp' | 'scp',
   };
   const formData = reactive({ ...initialFormData });
 
@@ -153,6 +154,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
               formData.custom_background_color = false;
               formData.background_color = '#3b82f6';
           }
+          formData.file_protocol = newVal.file_protocol ?? 'auto';
      } else {
          Object.assign(formData, initialFormData);
          formData.tag_ids = [];
@@ -163,6 +165,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.proxy_type = null;
          formData.custom_background_color = false;
          formData.background_color = '#3b82f6';
+         formData.file_protocol = 'auto';
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');
          advancedConnectionMode.value = 'proxy'; 
     }
@@ -296,6 +299,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           port: parsed.port,
           username: parsed.username,
           notes: parsed.note || '',
+          file_protocol: 'auto',
         };
 
         // 处理标签关联
@@ -492,6 +496,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     tag_ids: currentSelectedValidTagIds,
                     proxy_type: formData.proxy_type,
                     background_color: formData.custom_background_color ? (formData.background_color || null) : null,
+                    file_protocol: formData.file_protocol || 'auto',
                 };
 
                 if (formData.type === 'SSH') {
@@ -559,6 +564,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         tag_ids: currentSelectedValidTagIds,
         jump_chain: formData.jump_chain ? JSON.parse(JSON.stringify(formData.jump_chain)) : null,
         background_color: formData.custom_background_color ? (formData.background_color || null) : null,
+        file_protocol: formData.file_protocol || 'auto',
     };
 
     if (formData.type === 'SSH') {

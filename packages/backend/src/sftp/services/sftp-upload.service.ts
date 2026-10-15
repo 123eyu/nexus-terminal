@@ -3,12 +3,13 @@ import { WebSocket } from 'ws';
 import * as pathModule from 'path';
 import { ClientState } from '../../websocket/types';
 import { ensureDirectoryExists } from './sftp-helper';
+import { parseLsLine } from './scp-file.service';
 
 export interface ActiveUpload {
     remotePath: string;
     totalSize: number;
     bytesWritten: number;
-    stream: WriteStream;
+    stream: any;
     sessionId: string;
     relativePath?: string;
     drainPromise?: Promise<void> | null;
@@ -24,9 +25,11 @@ export class SftpUploadService {
     /** 启动一个新文件的上传 */
     async startUpload(sessionId: string, uploadId: string, remotePath: string, totalSize: number, relativePath?: string): Promise<void> {
         const state = this.clientStates.get(sessionId);
-        if (!state || !state.sftp) {
-            console.warn(`[SFTP Upload ${uploadId}] SFTP not ready for session ${sessionId}.`);
-            state?.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: 'SFTP 会话未就绪' } }));
+        const isScp = state?.activeFileProtocol === 'scp';
+
+        if (!state || (!state.sftp && !isScp) || (isScp && !state.sshClient)) {
+            console.warn(`[SFTP Upload ${uploadId}] SFTP/SCP not ready for session ${sessionId}.`);
+            state?.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: '文件服务会话未就绪' } }));
             return;
         }
         if (this.activeUploads.has(uploadId)) {
@@ -36,6 +39,51 @@ export class SftpUploadService {
         }
 
         try {
+            if (isScp) {
+                if (relativePath) {
+                    const targetDirectory = pathModule.dirname(remotePath).replace(/\\/g, '/');
+                    const escapedDir = `'${targetDirectory.replace(/'/g, "'\\''")}'`;
+                    await new Promise<void>((resolve, reject) => {
+                        state.sshClient.exec(`mkdir -p -- ${escapedDir}`, (err, ch) => {
+                            if (err) return reject(err);
+                            ch.on('close', () => resolve());
+                        });
+                    });
+                }
+                const escapedPath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+                state.sshClient.exec(`cat > ${escapedPath}`, (err, stream) => {
+                    if (err) {
+                        state.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: `启动写入流失败: ${err.message}` } }));
+                        return;
+                    }
+                    const uploadState: ActiveUpload = {
+                        remotePath,
+                        totalSize,
+                        bytesWritten: 0,
+                        stream,
+                        sessionId,
+                        relativePath,
+                        drainPromise: null
+                    };
+                    this.activeUploads.set(uploadId, uploadState);
+
+                    stream.on('error', (streamErr: Error) => {
+                        console.error(`[SCP Upload ${uploadId}] stream error for ${remotePath}:`, streamErr);
+                        state.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: `写入流错误: ${streamErr.message}` } }));
+                        this.activeUploads.delete(uploadId);
+                    });
+                    stream.on('finish', () => {
+                        this.finalizeUpload(sessionId, uploadId);
+                    });
+                    stream.on('close', () => {
+                        this.finalizeUpload(sessionId, uploadId);
+                    });
+
+                    state.ws.send(JSON.stringify({ type: 'sftp:upload:ready', payload: { uploadId } }));
+                });
+                return;
+            }
+
             if (relativePath) {
                 const targetDirectory = pathModule.dirname(remotePath).replace(/\\/g, '/');
                 try {
@@ -94,6 +142,39 @@ export class SftpUploadService {
         uploadState.isFinalized = true;
 
         if (uploadState.bytesWritten >= uploadState.totalSize) {
+            if (state.activeFileProtocol === 'scp') {
+                const escapedPath = `'${uploadState.remotePath.replace(/'/g, "'\\''")}'`;
+                state.sshClient.exec(`export LC_ALL=C; ls -land -- ${escapedPath}`, (err, ch) => {
+                    if (err) {
+                        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                            state.ws.send(JSON.stringify({ type: 'sftp:upload:error', payload: { uploadId, message: err.message } }));
+                        }
+                        this.activeUploads.delete(uploadId);
+                        return;
+                    }
+                    let out = '';
+                    ch.on('data', (d: Buffer) => { out += d.toString(); });
+                    ch.on('close', () => {
+                        const lines = out.trim().split(/\r?\n/);
+                        const item = lines.length > 0 ? parseLsLine(lines[0]) : null;
+                        const finalStatsPayload = item || {
+                            filename: pathModule.basename(uploadState.remotePath),
+                            longname: '',
+                            attrs: {
+                                size: uploadState.bytesWritten, uid: 0, gid: 0, mode: 0o644,
+                                atime: Date.now(), mtime: Date.now(),
+                                isDirectory: false, isFile: true, isSymbolicLink: false
+                            }
+                        };
+                        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+                            state.ws.send(JSON.stringify({ type: 'sftp:upload:success', payload: finalStatsPayload, uploadId: uploadId, path: uploadState.remotePath }));
+                        }
+                        this.activeUploads.delete(uploadId);
+                    });
+                });
+                return;
+            }
+
             if (!state.sftp) {
                 this.activeUploads.delete(uploadId);
                 return;
@@ -136,10 +217,11 @@ export class SftpUploadService {
     async handleUploadChunk(sessionId: string, uploadId: string, chunkIndex: number, dataBase64: string): Promise<void> {
         const state = this.clientStates.get(sessionId);
         const uploadState = this.activeUploads.get(uploadId);
+        const isScp = state?.activeFileProtocol === 'scp';
 
-        if (!state || !state.sftp) {
-            console.warn(`[SFTP Upload ${uploadId}] Received chunk ${chunkIndex}, but session ${sessionId} or SFTP is invalid.`);
-            this.cancelUploadInternal(uploadId, 'Session or SFTP invalid');
+        if (!state || (!state.sftp && !isScp) || (isScp && !state.sshClient)) {
+            console.warn(`[SFTP Upload ${uploadId}] Received chunk ${chunkIndex}, but session ${sessionId} or SFTP/SCP is invalid.`);
+            this.cancelUploadInternal(uploadId, 'Session or SFTP/SCP invalid');
             return;
         }
         if (!uploadState) {
@@ -151,7 +233,7 @@ export class SftpUploadService {
             const chunkBuffer = Buffer.from(dataBase64, 'base64');
 
             await new Promise<void>((resolve, reject) => {
-                const writeOk = uploadState.stream.write(chunkBuffer, (err) => {
+                const writeOk = uploadState.stream.write(chunkBuffer, (err: any) => {
                     if (err) {
                         return reject(err);
                     }
@@ -266,15 +348,15 @@ export class SftpUploadService {
             const currentStream = uploadState.stream;
             if (currentStream && !currentStream.destroyed) {
                 if (!currentStream.writableEnded) {
-                    currentStream.end((endErr: Error | undefined) => {
+                    currentStream.end((endErr: any) => {
                         if (endErr) {
                             console.error(`[SFTP Upload ${uploadId}] cancelUploadInternal: Error from stream.end() in cancel:`, endErr, `Original reason for cancel: ${reason}`);
-                            if (!currentStream.destroyed) {
+                            if (!currentStream.destroyed && typeof currentStream.destroy === 'function') {
                                 currentStream.destroy();
                             }
                         }
                     });
-                } else {
+                } else if (typeof currentStream.destroy === 'function') {
                     currentStream.destroy();
                 }
             }

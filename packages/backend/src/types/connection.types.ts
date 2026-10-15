@@ -14,6 +14,7 @@ export interface ConnectionBase {
     notes?: string | null;
     jump_chain: number[] | null;
     background_color?: string | null;
+    file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
 export interface ConnectionWithTags extends ConnectionBase {
@@ -38,6 +39,7 @@ export interface CreateConnectionInput {
     notes?: string | null;
     jump_chain?: number[] | null;
     background_color?: string | null;
+    file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
 
@@ -58,6 +60,7 @@ export interface UpdateConnectionInput {
     tag_ids?: number[];
     jump_chain?: number[] | null;
     background_color?: string | null;
+    file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
 
@@ -81,6 +84,7 @@ export interface FullConnectionData {
     last_connected_at: number | null;
     jump_chain: number[] | null;
     background_color?: string | null;
+    file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
 export interface DecryptedConnectionCredentials {

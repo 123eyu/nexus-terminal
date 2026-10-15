@@ -729,6 +729,26 @@ const definedMigrations: Migration[] = [
         execute: async (db: Database): Promise<void> => {
             console.log('[Migrations] Migration 19: file_color_highlights 表及索引创建完成。');
         }
+    },
+    {
+        id: 20,
+        name: 'Add file_protocol column to connections table',
+        check: async (db: Database): Promise<boolean> => {
+            const exists = await columnExists(db, 'connections', 'file_protocol');
+            return !exists;
+        },
+        sql: `
+            ALTER TABLE connections ADD COLUMN file_protocol TEXT NOT NULL DEFAULT 'auto';
+        `,
+        execute: async (db: Database): Promise<void> => {
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE connections SET file_protocol = 'auto' WHERE file_protocol IS NULL OR file_protocol = ''", (err) => {
+                    if (err) return reject(err);
+                    resolve();
+                });
+            });
+            console.log('[Migrations] Migration 20: connections 表 file_protocol 字段迁移完成 (默认 auto)。');
+        }
     }
 ];
 

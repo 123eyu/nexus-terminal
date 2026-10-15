@@ -23,6 +23,7 @@ export interface ConnectionInfo {
     vncPassword?: string; // VNC specific password
     jump_chain?: number[] | null;
     background_color?: string | null;
+    file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
 // 定义 Store State 的接口

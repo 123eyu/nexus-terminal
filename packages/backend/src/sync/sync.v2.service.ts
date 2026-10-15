@@ -85,6 +85,7 @@ export interface SnapshotResponseResult {
       notes?: string | null;
       jump_chain?: any;
       background_color?: string | null;
+      file_protocol?: 'sftp' | 'scp' | 'auto';
       tag_uuids: string[];
       updated_hlc: string;
     }>;
@@ -408,7 +409,7 @@ export const syncV2Service = {
                   `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                          encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                          proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?,
-                                         background_color = ?, updated_hlc = ?
+                                         background_color = ?, file_protocol = ?, updated_hlc = ?
                    WHERE uuid = ?`,
                   [
                     data.name || null,
@@ -426,6 +427,7 @@ export const syncV2Service = {
                     data.notes || null,
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
+                    data.file_protocol || 'auto',
                     effectiveHlc,
                     item.row_id
                   ]
@@ -437,8 +439,8 @@ export const syncV2Service = {
                   `INSERT INTO connections (uuid, name, type, host, port, username, auth_method,
                                            encrypted_password, encrypted_private_key, encrypted_passphrase,
                                            proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
-                                           updated_hlc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                           file_protocol, updated_hlc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     item.row_id,
                     data.name || null,
@@ -456,6 +458,7 @@ export const syncV2Service = {
                     data.notes || null,
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
+                    data.file_protocol || 'auto',
                     effectiveHlc
                   ]
                 );
@@ -693,6 +696,7 @@ export const syncV2Service = {
                 notes: c.notes || null,
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
+                file_protocol: c.file_protocol || 'auto',
                 tag_uuids: tagUuids,
                 file_highlights: highlightRows
               }
@@ -898,6 +902,7 @@ export const syncV2Service = {
                 notes: c.notes || null,
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
+                file_protocol: c.file_protocol || 'auto',
                 tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
                 file_highlights: highlightRows
               }
@@ -1293,6 +1298,7 @@ export const syncV2Service = {
         notes: c.notes || null,
         jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
         background_color: c.background_color || null,
+        file_protocol: c.file_protocol || 'auto',
         tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         file_highlights: highlightRows,
         updated_hlc: c.updated_hlc

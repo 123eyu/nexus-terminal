@@ -27,7 +27,8 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     updateOfColumns: [
       'name', 'type', 'host', 'port', 'username', 'auth_method',
       'encrypted_password', 'encrypted_private_key', 'encrypted_passphrase',
-      'proxy_type', 'proxy_id', 'ssh_key_id', 'notes', 'jump_chain', 'background_color'
+      'proxy_type', 'proxy_id', 'ssh_key_id', 'notes', 'jump_chain', 'background_color',
+      'file_protocol'
     ]
   },
   {

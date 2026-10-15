@@ -4,8 +4,18 @@ import { clientStates } from '../websocket';
 import * as archiver from 'archiver';
 import { SFTPWrapper, Stats } from 'ssh2';
 import { WebSocket } from 'ws';
-import { ClientState, AuthenticatedWebSocket } from '../websocket/types';
-import { SftpCompressRequestPayload, SftpDecompressRequestPayload, SftpCompressSuccessPayload, SftpCompressErrorPayload, SftpDecompressSuccessPayload, SftpDecompressErrorPayload } from '../websocket/types'; // Import payload types
+import {
+    ClientState,
+    AuthenticatedWebSocket,
+    SftpCompressRequestPayload,
+    SftpDecompressRequestPayload,
+    SftpCompressSuccessPayload,
+    SftpCompressErrorPayload,
+    SftpDecompressSuccessPayload,
+    SftpDecompressErrorPayload
+} from '../websocket/types';
+import { parseLsLine } from './services/scp-file.service';
+
 /**
  * 处理文件下载请求 (GET /api/v1/sftp/download)
  */
@@ -26,7 +36,7 @@ export const downloadFile = async (req: Request, res: Response): Promise<void> =
 
     console.log(`SFTP 下载请求：用户 ${userId}, 连接 ${connectionId}, 路径 ${remotePath}`);
 
-    // --- 修改：查找与 userId 和 connectionId 匹配的活动 SFTP 会话 ---
+    // --- 修改：查找与 userId 和 connectionId 匹配的活动 SFTP/SCP 会话 ---
     let targetState: ClientState | null = null;
     const targetDbConnectionId = parseInt(connectionId, 10); // 将查询参数字符串转换为数字
 
@@ -37,27 +47,88 @@ export const downloadFile = async (req: Request, res: Response): Promise<void> =
 
     console.log(`SFTP 下载：正在查找用户 ${userId} 且连接 ID 为 ${targetDbConnectionId} 的会话...`);
     for (const [sessionId, state] of clientStates.entries()) {
-        // 检查 userId 和 dbConnectionId 是否都匹配，并且 sftp 实例存在
-        if (state.ws.userId === userId && state.dbConnectionId === targetDbConnectionId && state.sftp) {
+        // 检查 userId 和 dbConnectionId 是否都匹配，并且 sftp 或 scp 实例存在
+        if (state.ws.userId === userId && state.dbConnectionId === targetDbConnectionId && (state.sftp || state.activeFileProtocol === 'scp')) {
             targetState = state;
-            console.log(`SFTP 下载：找到匹配的会话 (Session ID: ${sessionId})。`);
+            console.log(`SFTP 下载：找到匹配的会话 (Session ID: ${sessionId}, Protocol: ${state.activeFileProtocol || 'sftp'})。`);
             break;
         }
     }
 
-    if (!targetState || !targetState.sftp) {
-        console.warn(`SFTP 下载失败：未找到用户 ${userId} 且连接 ID 为 ${targetDbConnectionId} 的活动 SFTP 会话。`);
-        res.status(404).json({ message: '未找到指定的活动 SFTP 会话。请确保目标连接处于活动状态。' });
+    if (!targetState || (!targetState.sftp && targetState.activeFileProtocol !== 'scp')) {
+        console.warn(`SFTP 下载失败：未找到用户 ${userId} 且连接 ID 为 ${targetDbConnectionId} 的活动 SFTP/SCP 会话。`);
+        res.status(404).json({ message: '未找到指定的活动文件传输会话。请确保目标连接处于活动状态。' });
         return;
     }
 
+    // --- SCP 模式处理 ---
+    if (targetState.activeFileProtocol === 'scp') {
+        const escapedPath = `'${remotePath.replace(/'/g, "'\\''")}'`;
+        try {
+            // 1. 获取文件状态 (大小与类型)
+            const statCmd = `export LC_ALL=C; ls -land -- ${escapedPath}`;
+            const statResult = await new Promise<{ stdout: string; code: number }>((resolve, reject) => {
+                targetState!.sshClient.exec(statCmd, (err, ch) => {
+                    if (err) return reject(err);
+                    let out = '';
+                    ch.on('data', (d: Buffer) => { out += d.toString(); });
+                    ch.on('close', (code: number | null) => resolve({ stdout: out, code: code ?? 0 }));
+                });
+            });
+
+            if (statResult.code !== 0) {
+                res.status(404).json({ message: '远程文件未找到。' });
+                return;
+            }
+
+            const lines = statResult.stdout.trim().split(/\r?\n/);
+            const item = lines.length > 0 ? parseLsLine(lines[0]) : null;
+
+            if (item && item.attrs.isDirectory) {
+                res.status(400).json({ message: '指定的路径不是一个文件。' });
+                return;
+            }
+
+            // 设置响应头
+            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(path.basename(remotePath))}"`);
+            res.setHeader('Content-Type', 'application/octet-stream');
+            if (item && item.attrs.size) {
+                res.setHeader('Content-Length', item.attrs.size.toString());
+            }
+
+            // 执行 cat 流并 pipe 到响应流
+            targetState.sshClient.exec(`cat -- ${escapedPath}`, (err, stream) => {
+                if (err) {
+                    if (!res.headersSent) {
+                        res.status(500).json({ message: `读取远程文件失败: ${err.message}` });
+                    }
+                    return;
+                }
+                stream.on('error', (streamErr: Error) => {
+                    console.error(`SCP 下载流出错:`, streamErr);
+                    if (!res.headersSent) {
+                        res.status(500).json({ message: `文件流传输错误: ${streamErr.message}` });
+                    } else {
+                        res.end();
+                    }
+                });
+                stream.pipe(res);
+            });
+            return;
+        } catch (error: any) {
+            console.error(`SCP 下载处理异常:`, error);
+            if (!res.headersSent) {
+                res.status(500).json({ message: `处理下载请求时出错: ${error.message}` });
+            }
+            return;
+        }
+    }
+
     const userSftpSession = targetState.sftp; // 获取正确的 SFTP 实例
-    
 
     try {
         // 获取文件状态以确定文件大小（可选，但有助于设置 Content-Length）
         const stats = await new Promise<import('ssh2').Stats>((resolve, reject) => {
-            // +++ 修正类型注解 +++
             userSftpSession!.lstat(remotePath, (err: Error | undefined, stats: import('ssh2').Stats) => {
                 if (err) return reject(err);
                 resolve(stats);
@@ -70,14 +141,14 @@ export const downloadFile = async (req: Request, res: Response): Promise<void> =
         }
 
         // 设置响应头
-        res.setHeader('Content-Disposition', `attachment; filename="${path.basename(remotePath)}"`); // 建议浏览器下载的文件名
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(path.basename(remotePath))}"`); // 建议浏览器下载的文件名
         res.setHeader('Content-Type', 'application/octet-stream'); // 通用二进制类型
         if (stats.size) {
             res.setHeader('Content-Length', stats.size.toString());
         }
 
         // 创建可读流并 pipe 到响应对象
-        const readStream = userSftpSession.createReadStream(remotePath);
+        const readStream = userSftpSession!.createReadStream(remotePath);
 
         readStream.on('error', (err: Error) => { // 添加 Error 类型注解
             console.error(`SFTP 读取流错误 (用户 ${userId}, 路径 ${remotePath}):`, err);

@@ -205,6 +205,7 @@ notes: input.notes ?? null, // Add notes field
         proxy_type: input.proxy_type ?? null, // 新增 proxy_type
         jump_chain: processedJumpChain,
         background_color: input.background_color ?? null,
+        file_protocol: input.file_protocol ?? 'auto',
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
     const finalConnectionData = { ...connectionData };
@@ -291,6 +292,7 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     // Handle ssh_key_id update (can be set to null or a new ID)
     if (input.ssh_key_id !== undefined) dataToUpdate.ssh_key_id = input.ssh_key_id;
     if (input.background_color !== undefined) dataToUpdate.background_color = input.background_color;
+    if (input.file_protocol !== undefined) dataToUpdate.file_protocol = input.file_protocol;
 
     // 处理认证方法更改或凭证更新 (根据 targetType)
     // Use the validated targetType for logic
