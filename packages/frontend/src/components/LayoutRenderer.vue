@@ -557,8 +557,12 @@ onBeforeUnmount(() => {
                 <!-- Terminal Pane: Render ALL SSH sessions, show only the active one -->
                <template v-if="layoutNode.component === 'terminal'">
                    <div
-                       class="terminal-pane-container relative flex-grow overflow-hidden"
-                       :class="{ 'has-global-terminal-background': isTerminalBackgroundEnabled, 'bg-background': !isTerminalBackgroundEnabled }"
+                       class="terminal-pane-container relative flex-grow overflow-hidden transition-all duration-200"
+                        :class="[
+                            { 'has-global-terminal-background': isTerminalBackgroundEnabled, 'bg-background': !isTerminalBackgroundEnabled },
+                            layoutStore.activeTerminalPaneId === layoutNode.id ? 'ring-2 ring-purple-500 ring-inset shadow-[0_0_15px_rgba(168,85,247,0.35)] z-10' : ''
+                        ]"
+                        @mousedown="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
                    >
                        <!-- Shared Background Layers -->
                        <div
@@ -591,14 +595,18 @@ onBeforeUnmount(() => {
                        </div>
 
                        <!-- Terminal Instances -->
-                       <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                       <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="`${sessionId}-${layoutNode.id}`">
                            <template v-if="sessionState.terminalManager">
                                <keep-alive>
                                    <component
                                        :is="componentMap.terminal"
                                        v-show="sessionId === activeSessionId"
                                        :session-id="sessionId"
-                                       :is-active="sessionId === activeSessionId"
+                                       :pane-id="layoutNode.id"
+                                        :auto-exec-config="layoutNode.terminalAutoExec"
+                                        :is-active="sessionId === activeSessionId"
+                                        :is-pane-focused="layoutStore.activeTerminalPaneId === layoutNode.id"
+                                        @focus="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
                                        :class="['terminal-instance-wrapper absolute inset-0 w-full h-full', { 'terminal-transparent': isTerminalBackgroundEnabled }]"
                                        :style="{ zIndex: 3 }"
                                        :options="{}"

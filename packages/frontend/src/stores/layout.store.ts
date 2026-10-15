@@ -6,6 +6,12 @@ import { useComponentStateStore } from './componentState.store';
 // 定义所有可用面板的名称
 export type PaneName = 'connections' | 'terminal' | 'commandBar' | 'fileManager' | 'editor' | 'statusMonitor' | 'commandHistory' | 'quickCommands' | 'dockerManager' | 'suspendedSshSessions' | 'multiLineCommandInput';
 
+// 定义终端自动执行指令配置接口
+export interface TerminalAutoExecConfig {
+  defaultCommand?: string; // 通用默认自动执行指令
+  connectionCommands?: Record<string, string>; // 连接专属自动执行指令 (key: connectionId)
+}
+
 // 定义布局节点接口
 export interface LayoutNode {
   id: string; // 唯一 ID
@@ -14,6 +20,7 @@ export interface LayoutNode {
   direction?: 'horizontal' | 'vertical'; // 如果 type 是 'container'，指定分割方向
   children?: LayoutNode[]; // 如果 type 是 'container'，包含子节点数组
   size?: number; // 节点在父容器中的大小比例 (例如 20, 50, 30)
+  terminalAutoExec?: TerminalAutoExecConfig; // 终端自动执行指令配置
 }
 
 // 本地存储的 Key
@@ -570,11 +577,67 @@ export const useLayoutStore = defineStore('layout', () => {
  // --- REMOVE the old watchers that called persist ---
  // watch(layoutTree, ...); // REMOVE THIS
  // watch(sidebarPanes, ...); // REMOVE THIS
- // --- 初始化 ---
- // Store 创建时自动初始化布局和侧栏
- initializeLayout();
- // 单独加载 Header 可见性（如果需要与布局初始化分开）
- loadHeaderVisibility();
+  // --- 终端多窗格聚焦管理 (方案 A) ---
+  const activeTerminalPaneId = ref<string | null>(null);
+
+  // 提取当前布局树中所有终端 pane ID
+  function collectTerminalPaneIds(node: LayoutNode | null): string[] {
+    if (!node) return [];
+    const ids: string[] = [];
+    if (node.type === 'pane' && node.component === 'terminal') {
+      ids.push(node.id);
+    } else if (node.type === 'container' && node.children) {
+      for (const child of node.children) {
+        ids.push(...collectTerminalPaneIds(child));
+      }
+    }
+    return ids;
+  }
+
+  const currentTerminalPaneIds = computed(() => {
+    return collectTerminalPaneIds(layoutTree.value);
+  });
+
+  // 监听布局树终端节点变化，若当前聚焦 ID 不存在则重置
+  watch(currentTerminalPaneIds, (paneIds) => {
+    if (paneIds.length === 0) {
+      activeTerminalPaneId.value = null;
+    } else if (!activeTerminalPaneId.value || !paneIds.includes(activeTerminalPaneId.value)) {
+      activeTerminalPaneId.value = paneIds[0];
+    }
+  }, { immediate: true });
+
+  function setActiveTerminalPaneId(paneId: string | null) {
+    activeTerminalPaneId.value = paneId;
+  }
+
+  // 循环切换终端焦点 (默认 Alt+` 触发)
+  function cycleTerminalFocus(direction: 'next' | 'prev' = 'next'): string | null {
+    const ids = currentTerminalPaneIds.value;
+    if (ids.length === 0) return null;
+    if (ids.length === 1) {
+      activeTerminalPaneId.value = ids[0];
+      return ids[0];
+    }
+    const currentIndex = activeTerminalPaneId.value ? ids.indexOf(activeTerminalPaneId.value) : -1;
+    let nextIndex = 0;
+    if (currentIndex === -1) {
+      nextIndex = 0;
+    } else if (direction === 'next') {
+      nextIndex = (currentIndex + 1) % ids.length;
+    } else {
+      nextIndex = (currentIndex - 1 + ids.length) % ids.length;
+    }
+    const targetId = ids[nextIndex];
+    activeTerminalPaneId.value = targetId;
+    return targetId;
+  }
+
+  // --- 初始化 ---
+  // Store 创建时自动初始化布局和侧栏
+  initializeLayout();
+  // 单独加载 Header 可见性（如果需要与布局初始化分开）
+  loadHeaderVisibility();
 
 
  // --- 返回 ---
@@ -585,7 +648,9 @@ export const useLayoutStore = defineStore('layout', () => {
    allPossiblePanes,
    isLayoutVisible,
    isHeaderVisible,
+   activeTerminalPaneId,
    // Computed
+   currentTerminalPaneIds,
    availablePanes,
    usedPanes,
    // Actions
@@ -600,6 +665,8 @@ export const useLayoutStore = defineStore('layout', () => {
    toggleHeaderVisibility,
    getSystemDefaultLayout,
    getSystemDefaultSidebarPanes, // <--- 暴露获取默认侧栏配置的方法
+   setActiveTerminalPaneId,
+   cycleTerminalFocus,
    // Persist actions (可选暴露，如果需要手动触发)
    // persistLayoutTree,
    // persistSidebarPanes,

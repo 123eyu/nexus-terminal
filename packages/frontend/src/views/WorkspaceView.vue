@@ -239,9 +239,48 @@ const handleRequestAddQuickCommand = (payload?: { initialCommand?: string }) => 
   showQuickCommandAddModal.value = true;
 };
 
+// 辅助判断全局键盘事件是否匹配配置的快捷键组合
+function isShortcutMatched(e: KeyboardEvent, shortcutStr: string): boolean {
+  if (!shortcutStr) return false;
+  const parts = shortcutStr.split('+').map(p => p.trim().toLowerCase());
+  const hasCtrl = parts.includes('ctrl') || parts.includes('control');
+  const hasAlt = parts.includes('alt');
+  const hasShift = parts.includes('shift');
+  const hasMeta = parts.includes('meta') || parts.includes('cmd') || parts.includes('win');
+
+  if (e.ctrlKey !== hasCtrl) return false;
+  if (e.altKey !== hasAlt) return false;
+  if (e.shiftKey !== hasShift) return false;
+  if (e.metaKey !== hasMeta) return false;
+
+  const keyPart = parts.find(p => !['ctrl', 'control', 'alt', 'shift', 'meta', 'cmd', 'win'].includes(p));
+  if (!keyPart) return false;
+
+  const eventKey = (e.key || '').toLowerCase();
+  const eventCode = (e.code || '').toLowerCase();
+
+  if (keyPart === '`' || keyPart === '~' || keyPart === 'backquote') {
+    return eventKey === '`' || eventKey === '~' || eventCode === 'backquote';
+  }
+
+  return eventKey === keyPart || eventCode === `key${keyPart}` || eventCode === keyPart;
+}
+
 // --- 处理全局键盘事件 ---
 const handleGlobalKeyDown = (event: KeyboardEvent) => {
-  // 检查是否按下了 Alt 键以及上/下箭头键
+  // 1. 终端多窗格快速轮巡切换 (默认 Alt+`，支持设置中自定义组合键)
+  const switchShortcut = settingsStore.terminalSwitchPaneShortcutString || 'Alt+`';
+  if (isShortcutMatched(event, switchShortcut)) {
+    event.preventDefault();
+    event.stopPropagation();
+    const nextPaneId = layoutStore.cycleTerminalFocus('next');
+    if (nextPaneId) {
+      console.log(`[WorkspaceView] 触发分屏终端焦点切换 (${switchShortcut}) -> ${nextPaneId}`);
+    }
+    return;
+  }
+
+  // 2. 检查是否按下了 Alt 键以及上/下箭头键 (切换会话标签)
   if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
     event.preventDefault(); // 阻止默认行为 (例如页面滚动)
 
@@ -249,22 +288,18 @@ const handleGlobalKeyDown = (event: KeyboardEvent) => {
     const currentId = activeSessionId.value;
 
     if (!tabs || tabs.length <= 1 || !currentId) {
-      // 如果没有标签页、只有一个标签页或没有活动标签页，则不执行任何操作
       return;
     }
 
     const currentIndex = tabs.findIndex(tab => tab.sessionId === currentId);
     if (currentIndex === -1) {
-      // 如果找不到当前活动标签页 (理论上不应发生)，则不执行任何操作
       return;
     }
 
     let nextIndex: number;
     if (event.key === 'ArrowDown') {
-      // Alt + 下箭头：切换到下一个标签页
       nextIndex = (currentIndex + 1) % tabs.length;
     } else {
-      // Alt + 上箭头：切换到上一个标签页
       nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
     }
 

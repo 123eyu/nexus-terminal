@@ -22,9 +22,19 @@ const highlightStore = useTerminalHighlightStore();
 
 
 // 定义 props 和 emits
+const emit = defineEmits<{
+  (e: 'focus'): void;
+}>();
+
 const props = defineProps<{
   sessionId: string; // 会话 ID
   isActive: boolean; // 标记此终端是否为活动标签页
+  paneId?: string; // 终端所在布局面板的唯一 ID
+  autoExecConfig?: {
+    defaultCommand?: string;
+    connectionCommands?: Record<string, string>;
+  }; // 布局管理器中配置的连接就绪自动执行指令
+  isPaneFocused?: boolean; // 标记此终端 Pane 是否处于聚焦激活态
   stream?: ReadableStream<string>; // 用于接收来自 WebSocket 的数据流 (可选)
   options?: object; // xterm 的配置选项
 }>();
@@ -992,9 +1002,49 @@ const handleTerminalDrop = (event: DragEvent) => {
   }
 };
 
-// 移动端：用户主动点击终端画面时才聚焦并唤起软键盘
+
+// --- 终端多窗格聚焦与自动执行指令支持 ---
+const currentSession = computed(() => sessionStore.sessions.get(props.sessionId));
+const terminalManagerInstance = computed(() => currentSession.value?.terminalManager);
+
+// 监听窗格聚焦状态，当被外部切换选中时自动聚焦 xterm
+watch(() => props.isPaneFocused, (focused) => {
+  if (focused && props.isActive && terminal) {
+    terminal.focus();
+  }
+});
+
+// 监听 SSH 连接就绪状态并自动执行配置的指令
+const hasExecutedAutoCmd = ref(false);
+
+watch(() => terminalManagerInstance.value?.isSshConnected?.value, (connected) => {
+  if (connected && !hasExecutedAutoCmd.value && props.autoExecConfig) {
+    const targetConnId = String(currentSession.value?.connectionId || '');
+    const rawCmd = props.autoExecConfig.connectionCommands?.[targetConnId] ?? props.autoExecConfig.defaultCommand;
+    const cmdToExec = typeof rawCmd === 'string' ? rawCmd.trim() : '';
+
+    if (cmdToExec.length > 0) {
+      hasExecutedAutoCmd.value = true;
+      console.log(`[Terminal Pane ${props.paneId || 'default'}] 触发 SSH 连接自动执行指令: ${cmdToExec}`);
+      setTimeout(() => {
+        if (terminalManagerInstance.value && typeof terminalManagerInstance.value.sendData === 'function') {
+          terminal?.writeln(`\r\n\x1b[35m⚡ [自动执行指令]: ${cmdToExec}\x1b[0m\r\n`);
+          terminalManagerInstance.value.sendData(cmdToExec + '\r');
+        }
+      }, 350);
+    }
+  }
+  // 连接断开后重置标记，便于下次重连可以再次自动触发
+  if (!connected) {
+    hasExecutedAutoCmd.value = false;
+  }
+}, { immediate: true });
+
+
+// 用户主动点击终端画面时聚焦并通知布局管理器更新活动窗格
 const handleTerminalClick = () => {
-  if (isMobile.value && terminal) {
+  emit('focus');
+  if (terminal) {
     terminal.focus();
   }
 };

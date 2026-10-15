@@ -1077,7 +1077,11 @@
       "deviceMobile": "移动端",
       "markdownViewModePreview": "仅预览",
       "markdownViewModeSplit": "分屏预览",
-      "markdownViewModeEdit": "代码编辑"
+      "markdownViewModeEdit": "代码编辑",
+      "terminalSwitchPaneShortcutTitle": "分屏终端切换快捷键",
+      "terminalSwitchPaneShortcutDescription": "工作区布局存在多个终端窗格时，按此组合键快速轮流切换活动终端并呈现紫色高亮边框 (默认 Alt+`，例如可配置 Alt+`、Alt+W、Ctrl+Shift+T 等)",
+      "terminalSwitchPaneShortcutSuccess": "分屏终端切换快捷键已保存。",
+      "terminalSwitchPaneShortcutError": "保存分屏终端切换快捷键失败。"
     },
     "statusMonitorShowIp": {
       "title": "状态监视器显示IP地址",
@@ -1286,7 +1290,12 @@
     "addVerticalContainer": "添加垂直容器",
     "removeNode": "移除此节点",
     "dragHandle": "拖拽调整顺序或移动",
-    "dropHere": "将面板或容器拖拽到此处"
+    "dropHere": "将面板或容器拖拽到此处",
+    "configAutoExec": "配置 SSH 连接自启指令",
+    "autoExecTitle": "终端组件连接自启指令配置",
+    "autoExecSubtitle": "SSH 连接就绪后自动执行指令，可针对特定连接单独定制",
+    "defaultCommandLabel": "全局默认自启指令",
+    "customRulesLabel": "特定连接专属指令 (高优先级)"
   },
   "auditLog": {
     "title": "审计日志",

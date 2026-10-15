@@ -171,6 +171,43 @@
           </div>
         </div>
 
+        <!-- 分屏终端焦点切换快捷键 -->
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="flex items-center gap-1.5">
+              <label for="terminalSwitchShortcutInput" class="text-[15px] sm:text-base font-medium text-foreground cursor-pointer">
+                {{ $t('settings.workspace.terminalSwitchPaneShortcutTitle', '分屏终端切换快捷键') }}
+              </label>
+              <HelpTooltip :text="$t('settings.workspace.terminalSwitchPaneShortcutDescription', '工作区布局内存在多个终端时，按此组合键快速轮流切换活动终端并呈现紫色高亮边框 (默认 Alt+`，可配置 Alt+`、Alt+W、Ctrl+Shift+T 等)')" />
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="terminalSwitchPaneShortcutMessage" :class="terminalSwitchPaneShortcutSuccess ? 'text-xs text-emerald-400' : 'text-xs text-red-500'" class="flex items-center gap-1">
+              <i :class="terminalSwitchPaneShortcutSuccess ? 'fas fa-check' : 'fas fa-exclamation-circle'"></i>
+              {{ terminalSwitchPaneShortcutMessage }}
+            </span>
+            <div class="flex items-center gap-2">
+              <input
+                id="terminalSwitchShortcutInput"
+                type="text"
+                v-model="terminalSwitchPaneShortcutLocal"
+                placeholder="例如 Alt+`"
+                class="w-32 h-9 px-3 text-sm font-mono border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-purple-500 focus:border-purple-500 text-center"
+                @blur="handleUpdateTerminalSwitchPaneShortcut"
+                @keyup.enter="handleUpdateTerminalSwitchPaneShortcut"
+              />
+              <button
+                type="button"
+                @click="terminalSwitchPaneShortcutLocal = 'Alt+`'; handleUpdateTerminalSwitchPaneShortcut();"
+                title="重置为默认组合键 (Alt+`)"
+                class="px-2.5 h-9 text-xs border border-border rounded-lg hover:bg-hover text-text-secondary hover:text-foreground transition-colors cursor-pointer"
+              >
+                {{ $t('common.reset', '重置') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- 命令输入同步目标 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
@@ -682,6 +719,11 @@ const {
   terminalNoWrapLoading,
   terminalNoWrapMessage,
   terminalNoWrapSuccess,
+  terminalSwitchPaneShortcutLocal,
+  terminalSwitchPaneShortcutLoading,
+  terminalSwitchPaneShortcutMessage,
+  terminalSwitchPaneShortcutSuccess,
+  handleUpdateTerminalSwitchPaneShortcut,
   handleUpdateTerminalNoWrapSetting,
   showPopupFileManagerLocal,
   showPopupFileManagerMessage,

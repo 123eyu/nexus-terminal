@@ -75,6 +75,7 @@ interface SettingsState {
   markdownDefaultViewMode?: string; // 'preview' | 'split' | 'edit'
   markdownDefaultViewModeMobile?: string; // 'preview' | 'split' | 'edit'
   rememberLastRoute?: string; // 'true' or 'false' - 记住上次停留页面
+  terminalSwitchPaneShortcut?: string; // 终端多窗格焦点切换快捷键 (默认 'Alt+`')
   [key: string]: string | undefined;
 }
 
@@ -979,6 +980,14 @@ export const useSettingsStore = defineStore('settings', () => {
     await updateSetting('terminalContextMenuItems', JSON.stringify(items));
   };
 
+  const terminalSwitchPaneShortcutString = computed<string>(() => {
+    return settings.value.terminalSwitchPaneShortcut || 'Alt+`';
+  });
+
+  const updateTerminalSwitchPaneShortcut = async (shortcut: string) => {
+    await updateSetting('terminalSwitchPaneShortcut', shortcut);
+  };
+
   const terminalEnableRightClickPasteBoolean = computed(() => {
       return settings.value.terminalEnableRightClickPaste !== 'false'; // Default to true
   });
@@ -1128,5 +1137,7 @@ export const useSettingsStore = defineStore('settings', () => {
     statusMonitorShowIpBoolean, // 暴露状态监视器显示IP getter
     rememberLastRouteBoolean, // 暴露记住上次停留页面 getter
     setRememberLastRoute, // 暴露设置记住上次停留页面 action
+    terminalSwitchPaneShortcutString,
+    updateTerminalSwitchPaneShortcut,
   };
   });

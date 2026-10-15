@@ -26,6 +26,7 @@ export function useWorkspaceSettings() {
     statusMonitorShowIpBoolean,
     markdownDefaultViewModeString,
     markdownDefaultViewModeMobileString,
+    terminalSwitchPaneShortcutString,
   } = storeToRefs(settingsStore);
 
   // --- Markdown Default View Mode (Desktop) ---
@@ -363,6 +364,33 @@ export function useWorkspaceSettings() {
     }
   };
 
+  
+  // --- Terminal Switch Pane Shortcut ---
+  const terminalSwitchPaneShortcutLocal = ref('Alt+`');
+  const terminalSwitchPaneShortcutLoading = ref(false);
+  const terminalSwitchPaneShortcutMessage = ref('');
+  const terminalSwitchPaneShortcutSuccess = ref(false);
+
+  const handleUpdateTerminalSwitchPaneShortcut = async () => {
+    terminalSwitchPaneShortcutLoading.value = true;
+    terminalSwitchPaneShortcutMessage.value = '';
+    terminalSwitchPaneShortcutSuccess.value = false;
+    try {
+      const val = terminalSwitchPaneShortcutLocal.value.trim() || 'Alt+`';
+      terminalSwitchPaneShortcutLocal.value = val;
+      await settingsStore.updateTerminalSwitchPaneShortcut(val);
+      terminalSwitchPaneShortcutMessage.value = t('settings.workspace.terminalSwitchPaneShortcutSuccess', '分屏终端切换快捷键已保存。');
+      terminalSwitchPaneShortcutSuccess.value = true;
+      setTimeout(() => { terminalSwitchPaneShortcutMessage.value = ''; }, 3000);
+    } catch (error: any) {
+      console.error('更新分屏终端切换快捷键失败:', error);
+      terminalSwitchPaneShortcutMessage.value = error.message || t('settings.workspace.terminalSwitchPaneShortcutError', '保存分屏终端切换快捷键失败。');
+      terminalSwitchPaneShortcutSuccess.value = false;
+    } finally {
+      terminalSwitchPaneShortcutLoading.value = false;
+    }
+  };
+
   // --- Terminal Right Click Behavior ---
   const terminalRightClickBehaviorLocal = ref<TerminalRightClickBehavior>('contextMenu');
   const terminalRightClickBehaviorLoading = ref(false);
@@ -478,6 +506,7 @@ export function useWorkspaceSettings() {
   watch(terminalRightClickBehaviorString, (newValue) => { terminalRightClickBehaviorLocal.value = newValue; }, { immediate: true });
   watch(terminalContextMenuItemsObject, (newValue) => { terminalContextMenuItemsLocal.value = { ...newValue }; }, { immediate: true, deep: true });
   watch(terminalNoWrapBoolean, (newValue) => { terminalNoWrapLocal.value = newValue; }, { immediate: true });
+  watch(terminalSwitchPaneShortcutString, (newValue) => { terminalSwitchPaneShortcutLocal.value = newValue || 'Alt+`'; }, { immediate: true });
   watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
   watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
   watch(markdownDefaultViewModeString, (newValue) => { markdownDefaultViewModeLocal.value = newValue; }, { immediate: true });
@@ -564,6 +593,11 @@ export function useWorkspaceSettings() {
     terminalNoWrapLoading,
     terminalNoWrapMessage,
     terminalNoWrapSuccess,
+    terminalSwitchPaneShortcutLocal,
+    terminalSwitchPaneShortcutLoading,
+    terminalSwitchPaneShortcutMessage,
+    terminalSwitchPaneShortcutSuccess,
+    handleUpdateTerminalSwitchPaneShortcut,
     handleUpdateTerminalNoWrapSetting, 
 
     // Popup File Manager

@@ -1080,7 +1080,11 @@
       "deviceMobile": "Mobile",
       "markdownViewModePreview": "Preview Only",
       "markdownViewModeSplit": "Split View",
-      "markdownViewModeEdit": "Code Editor"
+      "markdownViewModeEdit": "Code Editor",
+      "terminalSwitchPaneShortcutTitle": "Split Terminal Switch Shortcut",
+      "terminalSwitchPaneShortcutDescription": "Quickly cycle through active terminal panes with a purple highlight border when multiple terminals exist in the layout (default Alt+`, customizable)",
+      "terminalSwitchPaneShortcutSuccess": "Split terminal switch shortcut saved.",
+      "terminalSwitchPaneShortcutError": "Failed to save split terminal switch shortcut."
     },
     "statusMonitorShowIp": {
       "title": "Status Monitor: Show IP Address",
@@ -1282,7 +1286,12 @@
     "addVerticalContainer": "Add Vertical Container",
     "removeNode": "Remove this node",
     "dragHandle": "Drag to reorder or move",
-    "dropHere": "Drop panes or containers here"
+    "dropHere": "Drop panes or containers here",
+    "configAutoExec": "Configure SSH Auto-exec Commands",
+    "autoExecTitle": "Terminal Auto-Exec Commands",
+    "autoExecSubtitle": "Automatically executes commands after SSH is ready. Can be customized per connection.",
+    "defaultCommandLabel": "Global Default Auto-exec Command",
+    "customRulesLabel": "Per-connection Commands (High Priority)"
   },
   "auditLog": {
     "title": "Audit Logs",

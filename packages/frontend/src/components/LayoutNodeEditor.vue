@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, type PropType } from 'vue';
+import { ref, computed, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import draggable from 'vuedraggable';
-import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
+import { useLayoutStore, type LayoutNode, type PaneName, type TerminalAutoExecConfig } from '../stores/layout.store';
+import TerminalAutoExecModal from './TerminalAutoExecModal.vue';
 
 // --- Props ---
 const props = defineProps({
@@ -30,6 +31,17 @@ const emit = defineEmits(['update:node', 'removeNode']);
 // --- Setup ---
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
+const showAutoExecModal = ref(false);
+
+const hasAutoExecConfig = computed(() => {
+  if (props.node.component !== 'terminal' || !props.node.terminalAutoExec) return false;
+  const cfg = props.node.terminalAutoExec;
+  return Boolean((cfg.defaultCommand && cfg.defaultCommand.trim()) || (cfg.connectionCommands && Object.keys(cfg.connectionCommands).length > 0));
+});
+
+const handleSaveAutoExec = (config: TerminalAutoExecConfig) => {
+  emit('update:node', { ...props.node, terminalAutoExec: config });
+};
 
 // 各面板专属图标与主题色映射
 const paneMetaMap: Record<string, { icon: string; iconColor: string; bgSoft: string; borderSoft: string }> = {
@@ -313,6 +325,18 @@ const getChildFlexStyle = (child: LayoutNode) => {
         </div>
 
         <div class="flex items-center gap-1 flex-shrink-0">
+          <!-- 终端连接自启指令配置按钮 (闪电图标) -->
+          <button
+            v-if="node.component === 'terminal'"
+            type="button"
+            @click.stop="showAutoExecModal = true"
+            :title="t('layoutNodeEditor.configAutoExec', '配置 SSH 连接自启指令')"
+            class="w-4 h-4 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
+            :class="hasAutoExecConfig ? 'text-purple-400 bg-purple-500/20' : 'text-text-secondary/60 hover:text-purple-400 hover:bg-purple-500/15'"
+          >
+            <i class="fas fa-bolt text-[9px]"></i>
+          </button>
+
           <!-- 尺寸占比 -->
           <span v-if="node.size && Math.round(node.size) !== 100" class="text-[8px] text-text-secondary/50 font-mono">
             {{ Math.round(node.size) }}%
@@ -393,6 +417,14 @@ const getChildFlexStyle = (child: LayoutNode) => {
 
       </div>
     </div>
+      <!-- 终端自启指令配置弹窗 -->
+    <TerminalAutoExecModal
+      v-if="node.component === 'terminal'"
+      :visible="showAutoExecModal"
+      :node="node"
+      @close="showAutoExecModal = false"
+      @save="handleSaveAutoExec"
+    />
   </div>
 </template>
 
