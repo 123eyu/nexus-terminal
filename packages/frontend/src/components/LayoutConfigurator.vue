@@ -133,9 +133,8 @@ watch(() => props.isVisible, (newValue) => {
     localSidebarPanes.value = initialSidebars;
     originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
 
-    const initialUsed = getAllLocalUsedPaneNames(localLayoutTree.value, localSidebarPanes.value);
-    // 终端作为多实例分屏核心组件，永远保留在可用面板列表中，支持多次拖入
-    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p === 'terminal' || !initialUsed.has(p));
+    // 组件物料库全量展示所有可用组件，支持无限次拖拽克隆至布局画布
+    localAvailablePanes.value = [...layoutStore.allPossiblePanes];
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -266,9 +265,7 @@ const resetToDefault = async () => {
     const defaultSidebarPanes = layoutStore.getSystemDefaultSidebarPanes();
     localSidebarPanes.value = JSON.parse(JSON.stringify(defaultSidebarPanes));
 
-    const defaultUsed = getAllLocalUsedPaneNames(localLayoutTree.value, localSidebarPanes.value);
-    // 终端支持多实例，永远可用
-    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => p === 'terminal' || !defaultUsed.has(p));
+    localAvailablePanes.value = [...layoutStore.allPossiblePanes];
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -343,13 +340,7 @@ const onDraggableChange = (event: any, side: 'left' | 'right') => {
 };
 
 const handleAvailablePaneDragEnd = (event: any) => {
-    if (event.to !== event.from) {
-        const paneName = event.oldIndex !== undefined ? localAvailablePanes.value[event.oldIndex] : null;
-        // 终端支持无限多次拉取分屏，不从可用列表中移除；其他单例面板拖入后移出可用列表
-        if (paneName && paneName !== 'terminal') {
-            removePaneFromAvailableList(paneName);
-        }
-    }
+    // 拖拽克隆完成，物料库始终保持全量组件就绪，供随时再次拖拽
 };
 </script>
 
