@@ -382,6 +382,16 @@ const getIconClasses = (paneName: PaneName): string[] => {
 };
 
 
+// --- 多终端分屏聚焦指示体系 (严格跟随系统界面主题色) ---
+const isCurrentTerminalFocused = computed<boolean>(() => {
+  return props.layoutNode.component === 'terminal' && layoutStore.activeTerminalPaneId === props.layoutNode.id;
+});
+
+// 是否存在多个终端分屏 (仅在多个终端时才展示聚焦指示线，单终端时不显示)
+const isMultiTerminalPanes = computed<boolean>(() => {
+  return (layoutStore.currentTerminalPaneIds?.length || 0) > 1;
+});
+
 // --- 终端尺寸与动态背景画布同步处理 ---
 let resizeDispatchTimer: number | null = null;
 const handleStabilizedTerminalResize = ({ sessionId, width, height, paneId }: { sessionId: string; width: number; height: number; paneId?: string }) => {
@@ -638,14 +648,21 @@ onBeforeUnmount(() => {
             <template v-else-if="layoutNode.type === 'pane'">
                 <!-- Terminal Pane: Render ALL SSH sessions, show only the active one -->
                <template v-if="layoutNode.component === 'terminal'">
-                   <div
-                       class="terminal-pane-container relative flex-grow overflow-hidden transition-all duration-200"
+                    <div
+                        class="terminal-pane-container relative flex-grow overflow-hidden transition-all duration-200"
                         :class="[
-                            { 'has-global-terminal-background': isTerminalPaneBackgroundActive, 'bg-background': !isTerminalPaneBackgroundActive },
-                            layoutStore.activeTerminalPaneId === layoutNode.id ? 'ring-2 ring-purple-500 ring-inset shadow-[0_0_15px_rgba(168,85,247,0.35)] z-10' : ''
+                            { 'has-global-terminal-background': isTerminalPaneBackgroundActive, 'bg-background': !isTerminalPaneBackgroundActive }
                         ]"
                         @mousedown="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
-                   >
+                    >
+                        <!-- 终端聚焦顶部指示线 (仅多终端分屏且当前处于聚焦态时显示，单终端时不显示) -->
+                        <div
+                            class="terminal-focus-top-line absolute top-0 left-0 right-0 pointer-events-none transition-opacity duration-150"
+                            :class="[
+                                (isCurrentTerminalFocused && isMultiTerminalPanes) ? 'opacity-100' : 'opacity-0'
+                            ]"
+                            style="z-index: 20;"
+                        ></div>
                        <!-- Shared Background Layers (窗格专属或全局多终端背景) -->
                        <div
                            v-if="isTerminalPaneBackgroundActive"
@@ -990,6 +1007,19 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
 }
 
+/* 终端聚焦顶部指示线：仅顶部高亮，置于 z-index: 20，继承系统界面主题色 var(--link-active-color) */
+.terminal-focus-top-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  pointer-events: none;
+  z-index: 20;
+  background-color: var(--link-active-color);
+  box-shadow: 0 1px 8px color-mix(in srgb, var(--link-active-color) 45%, transparent);
+  transition: opacity 0.15s ease-in-out;
+}
 
 </style>
 
