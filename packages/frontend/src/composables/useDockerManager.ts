@@ -3,7 +3,6 @@ import { useI18n } from 'vue-i18n';
 import { useSettingsStore } from '../stores/settings.store';
 import { storeToRefs } from 'pinia';
 import type { WebSocketMessage, MessagePayload } from '../types/websocket.types';
-import { useLayoutStore } from '../stores/layout.store';
 
 // --- Interfaces (Copied from DockerManager.vue) ---
 interface PortInfo {
@@ -87,17 +86,20 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
     // Request Docker status via WebSocket
     const requestDockerStatus = () => {
         if (!isConnected.value) {
-            // Reset state if disconnected? Or rely on watch(isConnected)?
-            // Let's reset here for immediate feedback if called manually while disconnected.
             containers.value = [];
             isLoading.value = false;
-            error.value = t('dockerManager.error.sshDisconnected'); // Use a generic disconnected message
+            error.value = t('dockerManager.error.sshDisconnected');
             isDockerAvailable.value = false;
             expandedContainerIds.value.clear();
             initialLoadDone.value = false;
             if (refreshInterval) clearInterval(refreshInterval);
             refreshInterval = null;
             return;
+        }
+
+        // 自愈保障：若 WebSocket 监听器丢失，自动补齐注册
+        if (wsUnsubscribeHooks.length === 0) {
+            setupWsListeners();
         }
 
         isLoading.value = true;
@@ -144,18 +146,12 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
                     containers.value = [];
                     error.value = null;
                     expandedContainerIds.value.clear();
-                    if (refreshInterval && !payload.available) {
-                        clearInterval(refreshInterval);
-                        refreshInterval = null;
-                    }
                 }
             } else {
                 isDockerAvailable.value = false;
                 containers.value = [];
                 error.value = t('dockerManager.error.invalidResponse');
                 expandedContainerIds.value.clear();
-                if (refreshInterval) clearInterval(refreshInterval);
-                refreshInterval = null;
             }
         });
 
@@ -163,12 +159,14 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
             if (message?.sessionId && message.sessionId !== sessionId) return;
             console.error(`[DockerManager ${sessionId}] Received docker:status:error`, payload);
             isLoading.value = false;
-            error.value = payload?.message || t('dockerManager.error.fetchFailed');
-            isDockerAvailable.value = false;
+            const errMsg = String(payload?.message || t('dockerManager.error.fetchFailed'));
+            error.value = errMsg;
+            // 只有当明确检测到系统无 Docker 或未运行时，才置为不可用
+            if (errMsg.includes('command not found') || errMsg.includes('Cannot connect to the Docker daemon') || errMsg.includes('permission denied')) {
+                isDockerAvailable.value = false;
+            }
             containers.value = [];
             expandedContainerIds.value.clear();
-            if (refreshInterval) clearInterval(refreshInterval);
-            refreshInterval = null;
         });
 
         const unsubCommandError = onMessage('docker:command:error', (payload, message) => {
@@ -235,30 +233,25 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
     };
 
     // Watch for connection changes to manage listeners and interval
-    watch(isConnected, (newIsConnected, oldIsConnected) => {
+    watch(isConnected, (newIsConnected) => {
         if (newIsConnected) {
-            // 只有当Docker管理器在布局中时才设置监听器和定时器
-            const layoutStore = useLayoutStore();
-            if (layoutStore.usedPanes.has('dockerManager')) {
-                // Connection established
-                setupWsListeners();
-                requestDockerStatus(); // Fetch initial status
+            console.log(`[DockerManager ${sessionId}] SSH/WS 连接已建立或重连成功，正在恢复 Docker 监听与探测...`);
+            error.value = null;
+            // 连接恢复时重置为初始状态，避免遗留断开时的不可用状态
+            isDockerAvailable.value = true;
+            setupWsListeners();
+            requestDockerStatus();
 
-                // Start refresh interval (consider if backend pushes updates reliably)
-                if (!refreshInterval) {
-                    // Keep a safety interval
-                    refreshInterval = setInterval(requestDockerStatus, 15000); // Check every 15s
-                }
-            } else {
+            if (!refreshInterval) {
+                refreshInterval = setInterval(requestDockerStatus, 15000);
             }
         } else {
             // Connection lost
             resetStateAndInterval();
-            // Set error state to indicate disconnection
             error.value = t('dockerManager.error.sshDisconnected');
-            isDockerAvailable.value = false; // Assume unavailable when disconnected
+            isDockerAvailable.value = false;
         }
-    }, { immediate: false }); // Don't run immediately, let initial connect trigger it
+    }, { immediate: false });
 
     // Cleanup function to be called when the session ends
     const cleanup = () => {
@@ -266,23 +259,15 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
     };
 
     // --- Initial Setup ---
-    // If already connected when this manager is created, set up listeners and fetch data.
-    // This handles cases where the manager is created after the WS connection is live.
     if (isConnected.value) {
-        // 只有当Docker管理器在布局中时才设置监听器和定时器
-        const layoutStore = useLayoutStore();
-        if (layoutStore.usedPanes.has('dockerManager')) {
-            setupWsListeners();
-            requestDockerStatus();
-            if (!refreshInterval) {
-                 refreshInterval = setInterval(requestDockerStatus, 15000);
-            }
-        } else {
+        setupWsListeners();
+        requestDockerStatus();
+        if (!refreshInterval) {
+            refreshInterval = setInterval(requestDockerStatus, 15000);
         }
     } else {
-         // Set initial state for disconnected status
-         error.value = t('dockerManager.error.sshDisconnected');
-         isDockerAvailable.value = false;
+        error.value = t('dockerManager.error.sshDisconnected');
+        isDockerAvailable.value = false;
     }
 
 

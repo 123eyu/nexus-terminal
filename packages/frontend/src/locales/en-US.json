@@ -721,7 +721,9 @@
     "networkUploadLabelUnit": "Upload ({unit})",
     "latestCpuValue": "{value}%",
     "latestMemoryValue": "{value} {unit}",
-    "latestNetworkValue": "↓ {download} ↑ {upload} {unit}"
+    "latestNetworkValue": "↓ {download} ↑ {upload} {unit}",
+    "copyIpHint": "Click to copy IP",
+    "copyIpError": "Failed to copy IP"
   },
   "tags": {
     "title": "Tag Management",
@@ -1252,6 +1254,7 @@
     "width": "Width",
     "height": "Height",
     "reconnect": "Reconnect",
+    "refresh": "Refresh",
     "retry": "Retry",
     "sortAscending": "Ascending",
     "sortDescending": "Descending",

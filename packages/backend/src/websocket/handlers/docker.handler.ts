@@ -8,48 +8,14 @@ const DEFAULT_DOCKER_STATUS_INTERVAL_SECONDS = 2;
 export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ available: boolean; containers: DockerContainer[] }> {
     if (!state || !state.sshClient) {
         console.warn(`[fetchRemoteDockerStatus] SSH client not available or not connected for session ${state?.ws?.sessionId}.`);
-        return { available: false, containers: [] };
+        throw new Error('SSH client not available or not connected');
     }
 
     let allContainers: DockerContainer[] = [];
     const statsMap = new Map<string, DockerStats>();
 
     try {
-        const versionCommand = "docker version --format '{{.Server.Version}}'";
-        const { stdout: versionStdout, stderr: versionStderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-            let stdout = '';
-            let stderr = '';
-            if (!state.sshClient) {
-                return reject(new Error('SSH client disconnected before command execution.'));
-            }
-            state.sshClient.exec(versionCommand, { pty: false }, (err, stream) => {
-                if (err) return reject(err);
-                stream.on('data', (data: Buffer) => { stdout += data.toString(); });
-                stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-                stream.on('close', () => resolve({ stdout, stderr }));
-                stream.on('error', (execErr: Error) => reject(execErr));
-            });
-        });
-
-        if (versionStderr.includes('command not found') ||
-            versionStderr.includes('permission denied') ||
-            versionStderr.includes('Cannot connect to the Docker daemon')) {
-            console.warn(`[fetchRemoteDockerStatus] Docker version check failed on session ${state.ws.sessionId}. Docker unavailable or inaccessible. Stderr: ${versionStderr.trim()}`);
-            return { available: false, containers: [] };
-        } else if (versionStderr) {
-            console.warn(`[fetchRemoteDockerStatus] Docker version command stderr on session ${state.ws.sessionId}: ${versionStderr.trim()}`);
-        }
-
-        if (!versionStdout.trim()) {
-            console.warn(`[fetchRemoteDockerStatus] Docker version check on session ${state.ws.sessionId} produced no output, assuming Docker unavailable.`);
-            return { available: false, containers: [] };
-        }
-    } catch (error: any) {
-        console.error(`[fetchRemoteDockerStatus] Error executing docker version for session ${state.ws.sessionId}:`, error.message);
-        return { available: false, containers: [] };
-    }
-
-    try {
+        // 直接执行 docker ps 命令，单次 exec 完成可用性探测与容器数据拉取，极大降低 SSH 通道占用与竞争
         const psCommand = "docker ps -a --no-trunc --format '{{json .}}'";
         const { stdout: psStdout, stderr: psStderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
             let stdout = '';
@@ -66,13 +32,18 @@ export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ ava
             });
         });
 
-        if (psStderr.includes('command not found') ||
+        const isExplicitlyUnavailable = 
+            psStderr.includes('command not found') ||
+            psStderr.includes('docker: not found') ||
             psStderr.includes('permission denied') ||
-            psStderr.includes('Cannot connect to the Docker daemon')) {
-            console.warn(`[fetchRemoteDockerStatus] Docker ps command failed unexpectedly after version check on session ${state.ws.sessionId}. Stderr: ${psStderr.trim()}`);
+            psStderr.includes('Cannot connect to the Docker daemon') ||
+            psStderr.includes('Is the docker daemon running');
+
+        if (isExplicitlyUnavailable) {
+            console.warn(`[fetchRemoteDockerStatus] Docker unavailable or inaccessible on session ${state.ws?.sessionId}. Stderr: ${psStderr.trim()}`);
             return { available: false, containers: [] };
         } else if (psStderr) {
-             console.warn(`[fetchRemoteDockerStatus] Docker ps command stderr on session ${state.ws.sessionId}: ${psStderr.trim()}`);
+            console.warn(`[fetchRemoteDockerStatus] Docker ps command stderr on session ${state.ws?.sessionId}: ${psStderr.trim()}`);
         }
 
         const lines = psStdout.trim() ? psStdout.trim().split('\n') : [];
@@ -101,8 +72,9 @@ export async function fetchRemoteDockerStatus(state: ClientState): Promise<{ ava
             })
             .filter((container): container is DockerContainer => container !== null);
     } catch (error: any) {
-        console.error(`[fetchRemoteDockerStatus] Error executing docker ps for session ${state.ws.sessionId}:`, error.message);
-        return { available: false, containers: [] };
+        console.warn(`[fetchRemoteDockerStatus] Error executing docker ps for session ${state.ws?.sessionId}:`, error.message);
+        // 如果是 SSH 通道占用或断开等基础设施瞬态错误，直接抛出，绝不向前端广播为 Docker 不可用
+        throw error;
     }
 
     const runningContainerIds = allContainers.filter(c => c.State === 'running').map(c => c.id);
@@ -170,16 +142,16 @@ export async function handleDockerGetStatus(ws: AuthenticatedWebSocket, sessionI
     }
     try {
         const statusPayload = await fetchRemoteDockerStatus(state);
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'docker:status:update', payload: statusPayload }));
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
     } catch (error: any) {
         console.error(`WebSocket: 手动执行远程 Docker 状态命令失败 for session ${sessionId}:`, error);
         const errorMessage = error.message || 'Unknown error fetching status';
         const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon');
         if (ws.readyState === WebSocket.OPEN) {
             if (isUnavailable) {
-                ws.send(JSON.stringify({ type: 'docker:status:update', payload: { available: false, containers: [] } }));
+                ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: { available: false, containers: [] } }));
             } else {
-                ws.send(JSON.stringify({ type: 'docker:status:error', payload: { message: `Failed to get remote Docker status: ${errorMessage}` } }));
+                ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Failed to get remote Docker status: ${errorMessage}` } }));
             }
         }
     }
@@ -354,14 +326,14 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
         try {
             const statusPayload = await fetchRemoteDockerStatus(currentState);
             if (currentState.ws.readyState === WebSocket.OPEN) { // Check again before sending
-                currentState.ws.send(JSON.stringify({ type: 'docker:status:update', payload: statusPayload }));
+                currentState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
             }
         } catch (error: any) {
             console.error(`[Docker Polling] Error fetching Docker status for session ${sessionId}:`, error.message);
             // Optionally send an error to the client if polling fails consistently,
             // but be mindful of flooding the client with errors.
             // if (currentState.ws.readyState === WebSocket.OPEN) {
-            //     currentState.ws.send(JSON.stringify({ type: 'docker:status:error', payload: { message: `Polling error: ${error.message}` } }));
+            //     currentState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Polling error: ${error.message}` } }));
             // }
         }
     }, dockerPollIntervalMs);
@@ -374,7 +346,7 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
         try {
             const statusPayload = await fetchRemoteDockerStatus(initialState);
             if (initialState.ws.readyState === WebSocket.OPEN) { // Check again
-                initialState.ws.send(JSON.stringify({ type: 'docker:status:update', payload: statusPayload }));
+                initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
             }
         } catch (error: any) {
             console.error(`[Docker Initial Fetch] Error fetching Docker status for session ${sessionId}:`, error.message);
@@ -382,9 +354,9 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
                  const errorMessage = error.message || 'Unknown error during initial fetch';
                  const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon');
                  if (isUnavailable) {
-                     initialState.ws.send(JSON.stringify({ type: 'docker:status:update', payload: { available: false, containers: [] } }));
+                     initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: { available: false, containers: [] } }));
                  } else {
-                     initialState.ws.send(JSON.stringify({ type: 'docker:status:error', payload: { message: `Initial Docker status fetch failed: ${errorMessage}` } }));
+                     initialState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Initial Docker status fetch failed: ${errorMessage}` } }));
                  }
             }
         }

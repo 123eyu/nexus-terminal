@@ -722,7 +722,9 @@
     "networkUploadLabelUnit": "上传 ({unit})",
     "latestCpuValue": "{value}%",
     "latestMemoryValue": "{value} {unit}",
-    "latestNetworkValue": "↓ {download} ↑ {upload} {unit}"
+    "latestNetworkValue": "↓ {download} ↑ {upload} {unit}",
+    "copyIpHint": "点击复制 IP",
+    "copyIpError": "复制 IP 失败"
   },
   "tags": {
     "title": "标签管理",
@@ -1249,6 +1251,7 @@
     "width": "宽度",
     "height": "高度",
     "reconnect": "重新连接",
+    "refresh": "刷新",
     "retry": "重试",
     "sortAscending": "升序",
     "sortDescending": "降序",

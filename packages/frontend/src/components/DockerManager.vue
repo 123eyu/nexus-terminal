@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useSessionStore } from '../stores/session.store';
 import { storeToRefs } from 'pinia';
@@ -99,6 +99,20 @@ const viewContainerLogs = (containerId: string) => {
     emitWorkspaceEvent('terminal:sendCommand', { command, sessionId: activeSession.value.sessionId });
   }
 };
+
+// 挂载时若连接已就绪但无数据，自动探测一次
+onMounted(() => {
+  if (sshConnectionStatus.value === 'connected' && (!containers.value || containers.value.length === 0)) {
+    refreshContainers();
+  }
+});
+
+// 会话连接重连恢复后，自动触发刷新探测
+watch(sshConnectionStatus, (newStatus) => {
+  if (newStatus === 'connected') {
+    refreshContainers();
+  }
+});
 </script>
 
 <template>
@@ -132,16 +146,34 @@ const viewContainerLogs = (containerId: string) => {
       <i class="fas fa-spinner fa-spin text-4xl mb-3"></i> {{ t('dockerManager.loading') }}
     </div>
     <!-- Case 6: Active session, SSH connected, Docker unavailable -->
-    <div v-else-if="!isDockerAvailable" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary p-4">
-      <i class="fab fa-docker text-4xl mb-3"></i>
-      <p class="mt-2 mb-1 font-medium">{{ t('dockerManager.notAvailable') }}</p>
+    <div v-else-if="!isDockerAvailable" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary p-4 space-y-2">
+      <i class="fab fa-docker text-4xl mb-2 text-text-secondary/70"></i>
+      <p class="mt-1 mb-0 font-medium text-foreground">{{ t('dockerManager.notAvailable') }}</p>
       <small class="text-xs max-w-[80%] text-text-disabled">{{ t('dockerManager.installHintRemote') }}</small>
+      <button
+        type="button"
+        @click="refreshContainers"
+        :disabled="isLoading"
+        class="mt-3 px-3 py-1.5 rounded-lg bg-header/60 hover:bg-header border border-border/70 text-xs text-foreground flex items-center gap-2 cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
+      >
+        <i :class="['fas fa-sync-alt text-xs', isLoading ? 'fa-spin text-primary' : '']"></i>
+        <span>{{ t('common.refresh', '重新检测') }}</span>
+      </button>
     </div>
     <!-- Case 7: Active session, SSH connected, Fetch error -->
-    <div v-else-if="error" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary p-4">
-      <i class="fas fa-exclamation-triangle text-3xl text-red-500 mb-2"></i>
-      <p class="mt-2 mb-1 font-medium">{{ t('dockerManager.error.fetchFailed') }}</p>
-      <small class="text-xs max-w-[80%]">{{ error }}</small>
+    <div v-else-if="error" class="flex flex-col justify-center items-center text-center flex-grow text-text-secondary p-4 space-y-2">
+      <i class="fas fa-exclamation-triangle text-3xl text-rose-500 mb-1"></i>
+      <p class="mt-1 mb-0 font-medium text-rose-500">{{ t('dockerManager.error.fetchFailed') }}</p>
+      <small class="text-xs max-w-[80%] text-text-secondary font-mono break-all">{{ error }}</small>
+      <button
+        type="button"
+        @click="refreshContainers"
+        :disabled="isLoading"
+        class="mt-3 px-3 py-1.5 rounded-lg bg-header/60 hover:bg-header border border-border/70 text-xs text-foreground flex items-center gap-2 cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
+      >
+        <i :class="['fas fa-sync-alt text-xs', isLoading ? 'fa-spin text-primary' : '']"></i>
+        <span>{{ t('common.refresh', '重试') }}</span>
+      </button>
     </div>
     <!-- Case 8: Active session, SSH connected, Docker available, show toolbar and list -->
     <div v-else class="flex flex-col h-full overflow-hidden">
