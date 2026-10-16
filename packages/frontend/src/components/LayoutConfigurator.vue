@@ -907,6 +907,189 @@ const handleAvailablePaneDragEnd = (event: any) => {
       </footer>
     </div>
   </div>
+
+    <!-- 另存为新预设弹窗 -->
+    <Teleport to="body">
+      <div v-if="showSaveAsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-[1100] p-4 select-none animate-fadeIn">
+        <div class="bg-background border border-border/80 rounded-2xl shadow-2xl p-5 w-full max-w-sm flex flex-col gap-4">
+          <div class="flex items-center justify-between pb-2 border-b border-border/50">
+            <h3 class="text-sm font-semibold text-foreground flex items-center gap-2 m-0">
+              <i class="fas fa-copy text-primary text-xs"></i>
+              <span>另存为新预设</span>
+            </h3>
+            <button @click="showSaveAsModal = false" class="text-text-secondary hover:text-foreground">
+              <i class="fas fa-xmark text-xs"></i>
+            </button>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">预设名称</label>
+            <input
+              v-model="newPresetName"
+              @keydown.enter="confirmSaveAs"
+              type="text"
+              class="w-full bg-background-alt border border-border/80 rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+              placeholder="请输入新预设名称"
+              autofocus
+            />
+          </div>
+          <div class="flex justify-end gap-2 pt-2 border-t border-border/50">
+            <button
+              type="button"
+              @click="showSaveAsModal = false"
+              class="px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:bg-hover border border-border/70 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              @click="confirmSaveAs"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-hover shadow-xs cursor-pointer"
+            >
+              确定另存为
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 重命名预设弹窗 -->
+    <Teleport to="body">
+      <div v-if="showRenameModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-[1100] p-4 select-none animate-fadeIn">
+        <div class="bg-background border border-border/80 rounded-2xl shadow-2xl p-5 w-full max-w-sm flex flex-col gap-4">
+          <div class="flex items-center justify-between pb-2 border-b border-border/50">
+            <h3 class="text-sm font-semibold text-foreground flex items-center gap-2 m-0">
+              <i class="fas fa-pen text-primary text-xs"></i>
+              <span>重命名预设</span>
+            </h3>
+            <button @click="showRenameModal = false" class="text-text-secondary hover:text-foreground">
+              <i class="fas fa-xmark text-xs"></i>
+            </button>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-text-secondary mb-1.5">预设名称</label>
+            <input
+              v-model="editingPresetName"
+              @keydown.enter="confirmRename"
+              type="text"
+              class="w-full bg-background-alt border border-border/80 rounded-lg px-3 py-2 text-xs text-foreground focus:outline-none focus:border-primary"
+              placeholder="请输入预设名称"
+              autofocus
+            />
+          </div>
+          <div class="flex justify-end gap-2 pt-2 border-t border-border/50">
+            <button
+              type="button"
+              @click="showRenameModal = false"
+              class="px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:bg-hover border border-border/70 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              @click="confirmRename"
+              class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-hover shadow-xs cursor-pointer"
+            >
+              确定修改
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 指定连接弹窗 -->
+    <Teleport to="body">
+      <div v-if="showBindConnectionsModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex justify-center items-center z-[1100] p-4 select-none animate-fadeIn">
+        <div class="bg-background border border-border/80 rounded-2xl shadow-2xl p-5 w-full max-w-md max-h-[80vh] flex flex-col gap-3">
+          <div class="flex items-center justify-between pb-2 border-b border-border/50 flex-shrink-0">
+            <h3 class="text-sm font-semibold text-foreground flex items-center gap-2 m-0">
+              <i class="fas fa-link text-primary text-xs"></i>
+              <span>指定绑定连接</span>
+              <span class="text-xs text-text-secondary font-normal truncate max-w-[180px]">
+                ({{ currentPreset?.name }})
+              </span>
+            </h3>
+            <button @click="showBindConnectionsModal = false" class="text-text-secondary hover:text-foreground">
+              <i class="fas fa-xmark text-xs"></i>
+            </button>
+          </div>
+
+          <!-- 搜索与全选工具栏 -->
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="relative flex-grow">
+              <i class="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary text-[10px]"></i>
+              <input
+                v-model="connectionSearchKeyword"
+                type="text"
+                placeholder="搜索连接名 / 主机..."
+                class="w-full bg-background-alt border border-border/70 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+            <button
+              type="button"
+              @click="toggleSelectAllConnections"
+              class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-hover text-text-secondary hover:text-foreground border border-border/70 whitespace-nowrap cursor-pointer"
+            >
+              {{ selectedConnectionIds.length === connectionsStore.connections.length ? '全部取消' : '全选' }}
+            </button>
+          </div>
+
+          <!-- 连接列表区域 -->
+          <div class="flex-grow overflow-y-auto max-h-[380px] custom-scroll flex flex-col gap-1.5 pr-1">
+            <div
+              v-for="conn in filteredConnections"
+              :key="conn.id"
+              @click="toggleConnectionSelection(conn.id)"
+              :class="[
+                'flex items-center justify-between p-2.5 rounded-xl border text-xs cursor-pointer transition-colors',
+                selectedConnectionIds.includes(conn.id)
+                  ? 'bg-primary/10 border-primary/40 text-primary'
+                  : 'bg-background-alt/50 border-border/60 hover:bg-hover text-foreground'
+              ]"
+            >
+              <div class="flex items-center gap-2.5 truncate">
+                <i :class="selectedConnectionIds.includes(conn.id) ? 'fas fa-check-square text-primary' : 'far fa-square text-text-secondary/70'" class="text-sm"></i>
+                <div class="truncate">
+                  <div class="font-medium truncate">{{ conn.name }}</div>
+                  <div class="text-[10px] text-text-secondary truncate font-mono">
+                    {{ (conn.username ? conn.username + '@' : '') + conn.host + ':' + (conn.port || 22) }}
+                  </div>
+                </div>
+              </div>
+              <span v-if="selectedConnectionIds.includes(conn.id)" class="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono">
+                已指定
+              </span>
+            </div>
+
+            <div v-if="filteredConnections.length === 0" class="py-8 text-center text-text-secondary text-xs">
+              暂无匹配的连接
+            </div>
+          </div>
+
+          <!-- 底部保存按钮 -->
+          <div class="flex items-center justify-between pt-3 border-t border-border/50 flex-shrink-0">
+            <span class="text-xs text-text-secondary">
+              已选 <strong class="text-primary font-mono">{{ selectedConnectionIds.length }}</strong> 个连接
+            </span>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                @click="showBindConnectionsModal = false"
+                class="px-3 py-1.5 rounded-lg text-xs font-medium text-text-secondary hover:bg-hover border border-border/70 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                @click="confirmBindConnections"
+                class="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary-hover shadow-xs cursor-pointer"
+              >
+                确定绑定
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 </template>
 
 <style scoped>

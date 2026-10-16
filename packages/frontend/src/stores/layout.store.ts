@@ -712,9 +712,58 @@ export const useLayoutStore = defineStore('layout', () => {
  // watch(layoutTree, ...); // REMOVE THIS
  // watch(sidebarPanes, ...); // REMOVE THIS
     // --- 预设与连接绑定管理 ---
-  const layoutPresets = ref<LayoutPreset[]>([]);
-  const defaultPresetId = ref<string>('preset-default');
-  const connectionLayoutMap = ref<Record<number, string>>({}); // connectionId -> presetId
+  function getInitialPresets(): LayoutPreset[] {
+    const systemDefaults = getSystemDefaultPresets();
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const raw = localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY);
+        if (raw) {
+          const parsed: LayoutPreset[] = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const userIds = new Set(parsed.map(p => p.id));
+            const merged = [...parsed];
+            for (const sys of systemDefaults) {
+              if (!userIds.has(sys.id)) {
+                merged.push(sys);
+              }
+            }
+            return merged;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return systemDefaults;
+  }
+
+  function getInitialDefaultPresetId(): string {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY);
+        if (saved) return saved;
+      } catch (e) {
+        // ignore
+      }
+    }
+    return 'preset-default';
+  }
+
+  function getInitialConnectionLayoutMap(): Record<number, string> {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return {};
+  }
+
+  const layoutPresets = ref<LayoutPreset[]>(getInitialPresets());
+  const defaultPresetId = ref<string>(getInitialDefaultPresetId());
+  const connectionLayoutMap = ref<Record<number, string>>(getInitialConnectionLayoutMap()); // connectionId -> presetId
   const activeEditingPresetId = ref<string>('preset-default'); // 当前正在配置器中编辑的预设 ID
 
   // 会话独立稳定布局树映射缓存 (sessionId -> LayoutNode)
@@ -1000,6 +1049,7 @@ export const useLayoutStore = defineStore('layout', () => {
   // --- 初始化 ---
   // Store 创建时自动初始化布局和侧栏
   initializeLayout();
+  initializePresets();
   // 单独加载 Header 可见性（如果需要与布局初始化分开）
   loadHeaderVisibility();
 
