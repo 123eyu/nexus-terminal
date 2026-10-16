@@ -57,7 +57,8 @@ let debounceTimer: number | null = null; // 用于防抖的计时器 ID
 let selectionListenerDisposable: IDisposable | null = null; // +++ 提升声明并添加类型 +++
 let lastResizeObserverWidth = 0;
 let lastResizeObserverHeight = 0;
-const RESIZE_THRESHOLD = 0.5; // px
+let resizeRafId: number | null = null;
+const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素抖动，消除Layout Thrashing振荡
 
 
 const { isMobile } = useDeviceDetection(); // 设备检测
@@ -501,48 +502,44 @@ onMounted(() => {
 
             const entry = entries[0];
             const { height: rectHeight, width: rectWidth } = entry.contentRect;
-            const offsetW = terminalRef.value.offsetWidth;
-            const offsetH = terminalRef.value.offsetHeight;
 
             // --- 阈值判断逻辑 ---
             const widthChangedSignificantly = Math.abs(rectWidth - lastResizeObserverWidth) >= RESIZE_THRESHOLD;
             const heightChangedSignificantly = Math.abs(rectHeight - lastResizeObserverHeight) >= RESIZE_THRESHOLD;
 
             if (!widthChangedSignificantly && !heightChangedSignificantly) {
-              console.log(`[TerminalResizeObserver sessionId=${props.sessionId}] Size change below threshold (${RESIZE_THRESHOLD}px). rectWidth: ${rectWidth.toFixed(2)}, rectHeight: ${rectHeight.toFixed(2)}, lastWidth: ${lastResizeObserverWidth.toFixed(2)}, lastHeight: ${lastResizeObserverHeight.toFixed(2)}. Skipping fit.`);
               return;
             }
-            
-            console.log(`[TerminalResizeObserver sessionId=${props.sessionId}] Size change AT or ABOVE threshold (${RESIZE_THRESHOLD}px). rectWidth: ${rectWidth.toFixed(2)}, rectHeight: ${rectHeight.toFixed(2)}, lastWidth: ${lastResizeObserverWidth.toFixed(2)}, lastHeight: ${lastResizeObserverHeight.toFixed(2)}. Proceeding with fit.`);
-            
+
             const roundedWidth = Math.round(rectWidth);
             const roundedHeight = Math.round(rectHeight);
 
-            // 更新 lastResizeObserverWidth/Height 为取整后的值
+            // 更新已记录的尺寸阈值
             lastResizeObserverWidth = roundedWidth;
             lastResizeObserverHeight = roundedHeight;
-            // --- 阈值判断逻辑结束 ---
 
-            console.log(`[TerminalResizeObserver sessionId=${props.sessionId}] Triggered. Observed contentRect: ${rectWidth.toFixed(2)}w x ${rectHeight.toFixed(2)}h (rounded to ${roundedWidth}x${roundedHeight}). terminalRef offset: ${offsetW}w x ${offsetH}h.`);
-            if (entry.target && terminalRef.value) {
-              const targetBoundingClientRect = entry.target.getBoundingClientRect();
-              const terminalRefBoundingClientRect = terminalRef.value.getBoundingClientRect();
-              console.log(`[TerminalResizeObserver sessionId=${props.sessionId}] target.getBoundingClientRect(): ${targetBoundingClientRect.width.toFixed(2)}w x ${targetBoundingClientRect.height.toFixed(2)}h, top: ${targetBoundingClientRect.top.toFixed(2)}, left: ${targetBoundingClientRect.left.toFixed(2)}`);
-              console.log(`[TerminalResizeObserver sessionId=${props.sessionId}] terminalRef.getBoundingClientRect(): ${terminalRefBoundingClientRect.width.toFixed(2)}w x ${terminalRefBoundingClientRect.height.toFixed(2)}h, top: ${terminalRefBoundingClientRect.top.toFixed(2)}, left: ${terminalRefBoundingClientRect.left.toFixed(2)}`);
+            if (rectHeight <= 0 || rectWidth <= 0) return;
+
+            // 使用 requestAnimationFrame 防抖批处理，彻底根除 Layout Thrashing 与每帧连续强制重排
+            if (resizeRafId !== null) {
+              cancelAnimationFrame(resizeRafId);
             }
-
-            if (rectHeight > 0 && rectWidth > 0) {
-                try {
-                  const dims = calculateTerminalDimensions(terminal);
+            resizeRafId = requestAnimationFrame(() => {
+              resizeRafId = null;
+              if (!props.isActive || !terminal || !terminalRef.value) return;
+              try {
+                const dims = calculateTerminalDimensions(terminal);
+                if (dims.cols !== terminal.cols || dims.rows !== terminal.rows) {
                   terminal.resize(dims.cols, dims.rows);
-                  debouncedEmitResize(terminal); // This will log the cols/rows after debouncing
-                  const viewportWidth = terminalOuterWrapperRef.value?.offsetWidth || roundedWidth;
-                  const viewportHeight = terminalOuterWrapperRef.value?.offsetHeight || roundedHeight;
-                  emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: viewportWidth, height: viewportHeight, paneId: props.paneId });
-                 } catch (e) {
-                    console.warn(`[TerminalResizeObserver sessionId=${props.sessionId}] Fit addon or debouncedEmitResize failed:`, e);
-                 }
-            }
+                  debouncedEmitResize(terminal);
+                }
+                const viewportWidth = roundedWidth;
+                const viewportHeight = roundedHeight;
+                emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: viewportWidth, height: viewportHeight, paneId: props.paneId });
+              } catch (e) {
+                console.warn(`[TerminalResizeObserver sessionId=${props.sessionId}] Fit addon or debouncedEmitResize failed:`, e);
+              }
+            });
         });
         // Observe only if initially active (or becomes active later)
         if (props.isActive) {
@@ -825,6 +822,10 @@ onMounted(() => {
 
 // 组件卸载前清理资源
 onBeforeUnmount(() => {
+  if (resizeRafId !== null) {
+    cancelAnimationFrame(resizeRafId);
+    resizeRafId = null;
+  }
   emitWorkspaceEvent('terminal:dispose', { sessionId: props.sessionId, paneId: props.paneId });
   // Ensure observer is cleaned up
   if (resizeObserver && observedElement) {

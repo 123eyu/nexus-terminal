@@ -84,7 +84,7 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
     };
 
     // Request Docker status via WebSocket
-    const requestDockerStatus = () => {
+    const requestDockerStatus = (force = false) => {
         if (!isConnected.value) {
             containers.value = [];
             isLoading.value = false;
@@ -94,6 +94,15 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
             initialLoadDone.value = false;
             if (refreshInterval) clearInterval(refreshInterval);
             refreshInterval = null;
+            return;
+        }
+
+        // 若已被判定为远程主机无 Docker，且非用户手动强制触发刷新，直接熔断跳过周期轮询
+        if (!force && isDockerAvailable.value === false) {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
             return;
         }
 
@@ -121,6 +130,13 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
 
             if (payload && typeof payload.available === 'boolean') {
                 isDockerAvailable.value = payload.available;
+                if (!payload.available) {
+                    // 主机明确无 Docker，停止前端无效周期轮询
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                        refreshInterval = null;
+                    }
+                }
                 if (payload.available && Array.isArray(payload.containers)) {
                     containers.value = payload.containers as DockerContainer[];
                     error.value = null;
@@ -149,6 +165,10 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
                 }
             } else {
                 isDockerAvailable.value = false;
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                }
                 containers.value = [];
                 error.value = t('dockerManager.error.invalidResponse');
                 expandedContainerIds.value.clear();
@@ -157,13 +177,17 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
 
         const unsubStatusError = onMessage('docker:status:error', (payload, message) => {
             if (message?.sessionId && message.sessionId !== sessionId) return;
-            console.error(`[DockerManager ${sessionId}] Received docker:status:error`, payload);
+            console.warn(`[DockerManager ${sessionId}] 收到 docker:status:error`, payload);
             isLoading.value = false;
             const errMsg = String(payload?.message || t('dockerManager.error.fetchFailed'));
             error.value = errMsg;
-            // 只有当明确检测到系统无 Docker 或未运行时，才置为不可用
+            // 只有当明确检测到系统无 Docker 或未运行时，才置为不可用并熔断停止轮询
             if (errMsg.includes('command not found') || errMsg.includes('Cannot connect to the Docker daemon') || errMsg.includes('permission denied')) {
                 isDockerAvailable.value = false;
+                if (refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                }
             }
             containers.value = [];
             expandedContainerIds.value.clear();

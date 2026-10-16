@@ -393,7 +393,6 @@ const isMultiTerminalPanes = computed<boolean>(() => {
 });
 
 // --- 终端尺寸与动态背景画布同步处理 ---
-let resizeDispatchTimer: number | null = null;
 const handleStabilizedTerminalResize = ({ sessionId, width, height, paneId }: { sessionId: string; width: number; height: number; paneId?: string }) => {
   if (paneId && paneId !== props.layoutNode.id) return;
   if (props.layoutNode.component === 'terminal' && sessionId === props.activeSessionId && customHtmlLayerRef.value) {
@@ -401,13 +400,8 @@ const handleStabilizedTerminalResize = ({ sessionId, width, height, paneId }: { 
     customHtmlLayerRef.value.style.width = '100%';
     customHtmlLayerRef.value.style.height = '100%';
 
-    // 触发全局 resize 广播（带防抖），以便动态背景内部的 Canvas/SVG 监听器重新适应当前分屏大小
-    if (resizeDispatchTimer) {
-      clearTimeout(resizeDispatchTimer);
-    }
-    resizeDispatchTimer = window.setTimeout(() => {
-      window.dispatchEvent(new Event('resize'));
-    }, 100);
+    // 仅在当前分屏容器上派发局部自定义事件，严禁派发全局 window.resize，彻底消除全应用级死循环
+    customHtmlLayerRef.value.dispatchEvent(new CustomEvent('pane-resize', { detail: { width, height } }));
   }
 };
 
@@ -516,24 +510,86 @@ const terminalBackgroundImageStyle = computed((): CSSProperties => {
   };
 });
 
-// 执行动态 HTML 脚本（带当前窗格作用域隔离沙箱）
+// --- 动态背景沙箱与生命周期控制器 ---
+let cleanupCurrentBackground: (() => void) | null = null;
+let backgroundIntersectionObserver: IntersectionObserver | null = null;
+
+const cleanupBackgroundResources = () => {
+  if (cleanupCurrentBackground) {
+    try {
+      cleanupCurrentBackground();
+    } catch (err) {
+      console.warn('[TerminalCustomHtml] 清理动态背景资源异常:', err);
+    }
+    cleanupCurrentBackground = null;
+  }
+  if (backgroundIntersectionObserver) {
+    backgroundIntersectionObserver.disconnect();
+    backgroundIntersectionObserver = null;
+  }
+};
+
+// 在终端分屏挂载或动态 HTML 变更时执行内嵌 script
 const executeScriptsInElement = (container: HTMLElement) => {
-  if (!container) return;
+  // 1. 先彻底清理旧背景占用的所有 RAF、定时器和事件监听器
+  cleanupBackgroundResources();
+
+  const scripts = Array.from(container.querySelectorAll('script'));
   const paneId = props.layoutNode.id;
-  const scripts = Array.from(container.getElementsByTagName('script'));
-  scripts.forEach((oldScript) => {
+  const timerIds = new Set<number>();
+  const intervalIds = new Set<number>();
+  const rafIds = new Set<number>();
+  const eventCleanups: Array<() => void> = [];
+  let isPaneVisible = true;
+
+  // 2. 挂载交集观察器（IntersectionObserver）与可见性感知：当分屏折叠或离开视口时自动暂停动画
+  backgroundIntersectionObserver = new IntersectionObserver((entries) => {
+    const entry = entries[0];
+    isPaneVisible = Boolean(entry && entry.isIntersecting && entry.intersectionRatio > 0.05);
+  }, { threshold: [0, 0.05, 0.2] });
+  backgroundIntersectionObserver.observe(container);
+
+  // 3. 构建沙箱清理闭包
+  cleanupCurrentBackground = () => {
+    rafIds.forEach(id => cancelAnimationFrame(id));
+    rafIds.clear();
+    intervalIds.forEach(id => clearInterval(id));
+    intervalIds.clear();
+    timerIds.forEach(id => clearTimeout(id));
+    timerIds.clear();
+    eventCleanups.forEach(fn => fn());
+    eventCleanups.length = 0;
+  };
+
+  // 4. 将沙箱注入到全局，提供给每个执行脚本使用
+  (window as any)[`__pane_sandbox_${paneId}__`] = {
+    registerRaf: (id: number) => rafIds.add(id),
+    unregisterRaf: (id: number) => rafIds.delete(id),
+    registerTimeout: (id: number) => timerIds.add(id),
+    unregisterTimeout: (id: number) => timerIds.delete(id),
+    registerInterval: (id: number) => intervalIds.add(id),
+    unregisterInterval: (id: number) => intervalIds.delete(id),
+    registerEventListener: (target: EventTarget, type: string, listener: EventListenerOrEventListenerObject, options?: any) => {
+      target.addEventListener(type, listener, options);
+      eventCleanups.push(() => target.removeEventListener(type, listener, options));
+    },
+    isVisible: () => isPaneVisible && (typeof document === 'undefined' || document.visibilityState === 'visible')
+  };
+
+  scripts.forEach(oldScript => {
     const newScript = document.createElement('script');
     Array.from(oldScript.attributes).forEach(attr => {
       newScript.setAttribute(attr.name, attr.value);
     });
     if (oldScript.textContent) {
-      // 在多终端分屏下，避免多个窗格具有同名 ID（如 #matrix-canvas）导致副终端取不到元素或被覆盖
-      // 包装局部 document 代理，优先在当前分屏容器内查找元素
       const originalCode = oldScript.textContent;
       const scopedScript = `
 (function(__paneContainer__) {
   if (!__paneContainer__) return;
   var __realDoc = window.document;
+  var __sandbox = window['__pane_sandbox_${paneId}__'] || {};
+
+  // 代理 document，约束元素查找在当前分屏容器内
   var document = new Proxy(__realDoc, {
     get: function(target, prop) {
       if (prop === 'getElementById') {
@@ -556,6 +612,82 @@ const executeScriptsInElement = (container: HTMLElement) => {
       return typeof member === 'function' ? member.bind(target) : member;
     }
   });
+
+  // 沙箱化 requestAnimationFrame：失焦/不可见自动节流休眠，销毁时自动回收
+  var requestAnimationFrame = function(cb) {
+    var id = window.requestAnimationFrame(function(time) {
+      if (__sandbox.unregisterRaf) __sandbox.unregisterRaf(id);
+      if (__sandbox.isVisible && !__sandbox.isVisible()) {
+        // 当分屏不可见或页面处于后台时，休眠降频到 1 FPS 探查，避免空转消耗 CPU
+        var sleepId = window.setTimeout(function() {
+          if (__sandbox.unregisterTimeout) __sandbox.unregisterTimeout(sleepId);
+          cb(performance.now());
+        }, 1000);
+        if (__sandbox.registerTimeout) __sandbox.registerTimeout(sleepId);
+        return;
+      }
+      cb(time);
+    });
+    if (__sandbox.registerRaf) __sandbox.registerRaf(id);
+    return id;
+  };
+
+  var cancelAnimationFrame = function(id) {
+    if (__sandbox.unregisterRaf) __sandbox.unregisterRaf(id);
+    window.cancelAnimationFrame(id);
+  };
+
+  var setTimeout = function(cb, delay) {
+    var id = window.setTimeout(function() {
+      if (__sandbox.unregisterTimeout) __sandbox.unregisterTimeout(id);
+      cb();
+    }, delay);
+    if (__sandbox.registerTimeout) __sandbox.registerTimeout(id);
+    return id;
+  };
+
+  var clearTimeout = function(id) {
+    if (__sandbox.unregisterTimeout) __sandbox.unregisterTimeout(id);
+    window.clearTimeout(id);
+  };
+
+  var setInterval = function(cb, delay) {
+    var id = window.setInterval(cb, delay);
+    if (__sandbox.registerInterval) __sandbox.registerInterval(id);
+    return id;
+  };
+
+  var clearInterval = function(id) {
+    if (__sandbox.unregisterInterval) __sandbox.unregisterInterval(id);
+    window.clearInterval(id);
+  };
+
+  // 代理 window：将 resize 监听同时对接局部 pane-resize，并自动登记清理钩子
+  var windowProxy = new Proxy(window, {
+    get: function(target, prop) {
+      if (prop === 'requestAnimationFrame') return requestAnimationFrame;
+      if (prop === 'cancelAnimationFrame') return cancelAnimationFrame;
+      if (prop === 'setTimeout') return setTimeout;
+      if (prop === 'clearTimeout') return clearTimeout;
+      if (prop === 'setInterval') return setInterval;
+      if (prop === 'clearInterval') return clearInterval;
+      if (prop === 'addEventListener') {
+        return function(type, listener, options) {
+          if (__sandbox.registerEventListener) {
+            __sandbox.registerEventListener(target, type, listener, options);
+            if (type === 'resize' && __paneContainer__) {
+              __sandbox.registerEventListener(__paneContainer__, 'pane-resize', listener, options);
+            }
+          } else {
+            target.addEventListener(type, listener, options);
+          }
+        };
+      }
+      var member = target[prop];
+      return typeof member === 'function' ? member.bind(target) : member;
+    }
+  });
+
   try {
     ${originalCode}
   } catch (err) {
@@ -584,14 +716,14 @@ watch(terminalCustomHTML, (newHtmlContent, oldHtmlContent) => {
     const container = customHtmlLayerRef.value;
     if (container && newHtmlContent && isTerminalPaneBackgroundActive.value) {
       executeScriptsInElement(container);
+    } else {
+      cleanupBackgroundResources();
     }
   });
 }, { immediate: true });
 
 onBeforeUnmount(() => {
-  if (resizeDispatchTimer) {
-    clearTimeout(resizeDispatchTimer);
-  }
+  cleanupBackgroundResources();
   unsubscribeFromWorkspaceEvent('terminal:stabilizedResize', handleStabilizedTerminalResize);
 });
 

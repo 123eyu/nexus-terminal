@@ -1661,11 +1661,15 @@ const checkAndPollCurrentDirectory = () => {
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
     return;
   }
-  // 2. 检查 SFTP 实例是否存在且连接就绪
+  // 2. 检查会话状态：仅对当前激活的会话执行前台轮询，后台会话不空转消耗资源
+  if (sessionStore.activeSessionId && sessionStore.activeSessionId !== props.sessionId) {
+    return;
+  }
+  // 3. 检查 SFTP 实例是否存在且连接就绪
   if (!currentSftpManager.value || !props.wsDeps.isConnected.value || !props.wsDeps.isSftpReady.value) {
     return;
   }
-  // 3. 用户正在交互操作（常规加载中、拖拽中、外部上传蒙版激活、调整列宽/树宽）时跳过该周期
+  // 4. 用户正在交互操作（常规加载中、拖拽中、外部上传蒙版激活、调整列宽/树宽）时跳过该周期
   if (
     currentSftpManager.value.isLoading.value ||
     isResizing.value ||
@@ -1676,7 +1680,7 @@ const checkAndPollCurrentDirectory = () => {
   ) {
     return;
   }
-  // 4. 发起静默增量比对刷新
+  // 5. 发起静默增量比对刷新
   currentSftpManager.value.silentRefreshCurrentDirectory();
 };
 

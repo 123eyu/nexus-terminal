@@ -329,12 +329,16 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
                 currentState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
             }
         } catch (error: any) {
-            console.error(`[Docker Polling] Error fetching Docker status for session ${sessionId}:`, error.message);
-            // Optionally send an error to the client if polling fails consistently,
-            // but be mindful of flooding the client with errors.
-            // if (currentState.ws.readyState === WebSocket.OPEN) {
-            //     currentState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Polling error: ${error.message}` } }));
-            // }
+            console.warn(`[Docker Polling] 探测 Docker 状态失败 (会话 ${sessionId}):`, error.message);
+            const errorMessage = error.message || '';
+            const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon') || errorMessage.includes('not recognized');
+            if (isUnavailable) {
+                console.log(`[Docker Polling] 判定远程主机无可用 Docker 守护进程，自动熔断停止周期轮询 (会话: ${sessionId})`);
+                clearInterval(dockerIntervalId);
+                if (currentState && currentState.dockerStatusIntervalId === dockerIntervalId) {
+                    delete currentState.dockerStatusIntervalId;
+                }
+            }
         }
     }, dockerPollIntervalMs);
     state.dockerStatusIntervalId = dockerIntervalId;
@@ -349,11 +353,16 @@ export async function startDockerStatusPolling(sessionId: string): Promise<void>
                 initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: statusPayload }));
             }
         } catch (error: any) {
-            console.error(`[Docker Initial Fetch] Error fetching Docker status for session ${sessionId}:`, error.message);
+            console.warn(`[Docker Initial Fetch] 首次获取 Docker 状态失败 for session ${sessionId}:`, error.message);
             if (initialState.ws.readyState === WebSocket.OPEN) {
                  const errorMessage = error.message || 'Unknown error during initial fetch';
-                 const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon');
+                 const isUnavailable = errorMessage.includes('command not found') || errorMessage.includes('Cannot connect to the Docker daemon') || errorMessage.includes('not recognized');
                  if (isUnavailable) {
+                     // 明确检测到无 Docker 进程，停止后续轮询以节约带宽与性能
+                     if (initialState.dockerStatusIntervalId) {
+                         clearInterval(initialState.dockerStatusIntervalId);
+                         delete initialState.dockerStatusIntervalId;
+                     }
                      initialState.ws.send(JSON.stringify({ type: 'docker:status:update', sessionId, payload: { available: false, containers: [] } }));
                  } else {
                      initialState.ws.send(JSON.stringify({ type: 'docker:status:error', sessionId, payload: { message: `Initial Docker status fetch failed: ${errorMessage}` } }));
