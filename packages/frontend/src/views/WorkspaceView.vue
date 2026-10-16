@@ -611,7 +611,8 @@ const handleFindNext = () => {
   if (manager && currentSearchTerm.value) {
     const mode = isMobile.value ? 'Mobile' : 'Desktop';
     console.log(`[WorkspaceView ${mode}] Calling findNext for term: "${currentSearchTerm.value}"`);
-    const found = manager.searchNext(currentSearchTerm.value, { incremental: true });
+    const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
+    const found = (manager as any).searchNext(currentSearchTerm.value, { incremental: true }, targetPaneId);
     console.log(`[WorkspaceView ${mode}] findNext returned: ${found}`);
     if (!found) {
       console.log(`[WorkspaceView ${mode}] findNext: No more results for "${currentSearchTerm.value}"`);
@@ -627,7 +628,8 @@ const handleFindPrevious = () => {
   if (manager && currentSearchTerm.value) {
     const mode = isMobile.value ? 'Mobile' : 'Desktop';
     console.log(`[WorkspaceView ${mode}] Calling findPrevious for term: "${currentSearchTerm.value}"`);
-    const found = manager.searchPrevious(currentSearchTerm.value, { incremental: true });
+    const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
+    const found = (manager as any).searchPrevious(currentSearchTerm.value, { incremental: true }, targetPaneId);
     console.log(`[WorkspaceView ${mode}] findPrevious returned: ${found}`);
     if (!found) {
       console.log(`[WorkspaceView ${mode}] findPrevious: No previous results for "${currentSearchTerm.value}"`);
@@ -644,7 +646,7 @@ const handleCloseSearch = () => {
   const manager = activeSession.value?.terminalManager;
   const mode = isMobile.value ? 'Mobile' : 'Desktop';
   if (manager) {
-    manager.clearTerminalSearch();
+    (manager as any).clearTerminalSearch(layoutStore.activeTerminalPaneId || undefined);
     console.log(`[WorkspaceView ${mode}] Search cleared.`);
   } else {
     console.warn(`[WorkspaceView ${mode}] Cannot clear search, no active session manager.`);
@@ -663,7 +665,12 @@ const handleClearTerminal = () => {
 
   if (terminalManager && terminalManager.terminalInstance?.value && typeof terminalManager.terminalInstance.value.clear === 'function') {
     console.log(`[WorkspaceView ${mode}] Clearing terminal for active session ${currentSession.sessionId}`);
-    terminalManager.terminalInstance.value.clear();
+    const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
+    if (typeof (terminalManager as any).clearTerminal === 'function') {
+      (terminalManager as any).clearTerminal(targetPaneId);
+    } else {
+      terminalManager.terminalInstance.value.clear();
+    }
     // 立即触发云端同步保存，保存清空后的空终端缓冲区 (200ms 防抖)
     workspaceSyncStore.triggerDebouncedSave(200);
   } else {
@@ -677,7 +684,12 @@ const handleScrollToBottomRequest = (payload: { sessionId: string }) => {
   const terminalManager = session?.terminalManager as (SshTerminalInstance | undefined);
   if (terminalManager?.terminalInstance?.value) {
     console.log(`[WorkspaceView] Scrolling to bottom for session ${payload.sessionId}`);
-    terminalManager.terminalInstance.value.scrollToBottom();
+    const targetPaneId = (payload as any).paneId || layoutStore.activeTerminalPaneId || undefined;
+    if (typeof (terminalManager as any).scrollToBottom === 'function') {
+      (terminalManager as any).scrollToBottom(targetPaneId);
+    } else {
+      terminalManager.terminalInstance.value.scrollToBottom();
+    }
   } else {
     console.warn(`[WorkspaceView] Cannot scroll to bottom for session ${payload.sessionId}, terminal instance not found.`);
   }

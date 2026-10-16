@@ -147,27 +147,35 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
                     customSuspendName: undefined, // 如果需要，可以从 state 或其他地方获取
                 };
                 
-                // 从 state 中“分离”SSH资源，防止后续意外关闭
+                // 从 state 中“分离”SSH资源与分屏Shell通道，防止后续意外关闭
                 const sshClientToPass = state.sshClient;
                 const channelToPass = state.sshShellStream;
+                const paneStreamsToPass = state.paneStreams;
                 state.sshClient = undefined as any; // 清除引用
                 state.sshShellStream = undefined; // 清除引用
+                state.paneStreams = undefined; // 清除引用，防止后续误清理
                 state.isSuspendedByService = true; // 标记为已被服务接管（即使是尝试接管）
 
                 const newSuspendId = await sshSuspendService.takeOverMarkedSession({
                     ...takeoverDetails,
                     sshClient: sshClientToPass, // 传递分离出来的实例
                     channel: channelToPass,     // 传递分离出来的实例
+                    paneStreams: paneStreamsToPass, // 传递分屏通道保活
                 });
 
                 if (newSuspendId) {
-                    console.log(`WebSocket: 会话 ${sessionId} 已成功移交给 SshSuspendService，新的挂起ID: ${newSuspendId}。SSH 连接将由服务管理。`);
+                    console.log(`WebSocket: 会话 ${sessionId} 已成功移交给 SshSuspendService，新的挂起ID: ${newSuspendId}。SSH 连接与 ${paneStreamsToPass?.size || 0} 个分屏将由服务管理。`);
                     // SSH 资源已移交，不需要在这里关闭它们
                 } else {
                     console.warn(`WebSocket: 会话 ${sessionId} 移交给 SshSuspendService 失败 (takeOverMarkedSession 返回 null)。可能 SSH 连接在标记后已断开。将执行常规清理。`);
                     // 移交失败，执行常规关闭
                     channelToPass?.end();
                     sshClientToPass?.end();
+                    if (paneStreamsToPass) {
+                        for (const [, p] of paneStreamsToPass.entries()) {
+                            try { p.stream?.end?.(); } catch (e) {}
+                        }
+                    }
                     state.isSuspendedByService = false; // 重置标记，因为接管失败
                 }
             } catch (error) {

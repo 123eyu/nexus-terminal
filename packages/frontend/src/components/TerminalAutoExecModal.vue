@@ -89,16 +89,24 @@ const handleSave = () => {
 </script>
 
 <template>
-  <div
-    v-if="visible"
-    class="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none"
-    @click.self="emit('close')"
-  >
+  <Teleport to="body">
     <div
-      class="w-full max-w-lg bg-[#14161f] border border-border/80 rounded-xl shadow-2xl flex flex-col overflow-hidden text-foreground animate-in fade-in zoom-in-95 duration-150"
+      v-if="visible"
+      class="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none"
+      @click.self="emit('close')"
+      @mousedown.stop
+      @mouseup.stop
+      @pointerdown.stop
     >
-      <!-- 弹窗标题 -->
-      <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/60 bg-header/70">
+      <div
+        class="w-full max-w-lg bg-[#14161f] border border-border/80 rounded-xl shadow-2xl flex flex-col overflow-hidden text-foreground animate-in fade-in zoom-in-95 duration-150"
+        @click.stop
+        @mousedown.stop
+        @mouseup.stop
+        @pointerdown.stop
+      >
+        <!-- 弹窗标题 -->
+        <div class="flex items-center justify-between px-5 py-3.5 border-b border-border/60 bg-header/70">
         <div class="flex items-center gap-2.5">
           <div class="w-6 h-6 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center text-xs">
             <i class="fas fa-bolt"></i>
@@ -237,4 +245,5 @@ const handleSave = () => {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>

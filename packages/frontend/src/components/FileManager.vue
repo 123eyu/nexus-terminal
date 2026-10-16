@@ -435,8 +435,9 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   }, 600);
 
   try {
-    targetSession.terminalManager.sendData(command);
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 已同步路径至终端: ${command.trim()}`);
+    const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
+    targetSession.terminalManager.sendData(command, targetPaneId);
+    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 已同步路径至终端 (paneId: ${targetPaneId || 'default'}): ${command.trim()}`);
   } catch (err) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 同步路径至终端失败:`, err);
   }
@@ -1706,9 +1707,14 @@ onMounted(() => {
   unregisterTerminalInputEvent = () => unsubscribeFromWorkspaceEvent('terminal:input', handleTerminalInputNotification);
 
   // 终端 -> 文件管理器：监听终端当前工作目录变更事件
-  const handleTerminalCwdChangedNotification = (payload: { sessionId: string; cwd: string }) => {
+  const handleTerminalCwdChangedNotification = (payload: { sessionId: string; cwd: string; paneId?: string }) => {
     // 1. 会话匹配检查：必须属于当前文件管理器绑定的会话
     if (payload.sessionId !== props.sessionId) {
+      return;
+    }
+
+    // 1.1 分屏聚焦匹配检查：若事件携带了 paneId，且当前存在聚焦终端，仅跟从当前聚焦的终端
+    if (payload.paneId && layoutStore.activeTerminalPaneId && payload.paneId !== layoutStore.activeTerminalPaneId) {
       return;
     }
 

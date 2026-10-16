@@ -123,15 +123,16 @@ const handleSubmit = async () => {
   isLoading.value = true;
   errorMessage.value = null;
   try {
+    const finalName = form.value.name.trim() || extractFolderNameFromPath(form.value.path.trim());
     if (isEditMode.value && form.value.id) {
       await favoritePathsStore.updateFavoritePath(form.value.id, {
-        path: form.value.path,
-        name: form.value.name || undefined,
+        path: form.value.path.trim(),
+        name: finalName,
       }, t);
     } else {
       await favoritePathsStore.addFavoritePath({
-        path: form.value.path,
-        name: form.value.name || undefined,
+        path: form.value.path.trim(),
+        name: finalName,
       }, t);
     }
     emit('saveSuccess');

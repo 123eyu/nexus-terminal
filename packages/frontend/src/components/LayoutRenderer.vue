@@ -382,14 +382,27 @@ const getIconClasses = (paneName: PaneName): string[] => {
 };
 
 
+// --- 终端尺寸与动态背景画布同步处理 ---
+let resizeDispatchTimer: number | null = null;
+const handleStabilizedTerminalResize = ({ sessionId, width, height, paneId }: { sessionId: string; width: number; height: number; paneId?: string }) => {
+  if (paneId && paneId !== props.layoutNode.id) return;
+  if (props.layoutNode.component === 'terminal' && sessionId === props.activeSessionId && customHtmlLayerRef.value) {
+    // 动态背景容器永远百分之百贴合当前分屏视口，严禁被终端超宽文本列展开尺寸拉伸变形
+    customHtmlLayerRef.value.style.width = '100%';
+    customHtmlLayerRef.value.style.height = '100%';
+
+    // 触发全局 resize 广播（带防抖），以便动态背景内部的 Canvas/SVG 监听器重新适应当前分屏大小
+    if (resizeDispatchTimer) {
+      clearTimeout(resizeDispatchTimer);
+    }
+    resizeDispatchTimer = window.setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 100);
+  }
+};
+
 // --- Sidebar Resize Logic ---
 onMounted(() => {
-  const handleStabilizedTerminalResize = ({ sessionId, width, height }: { sessionId: string; width: number; height: number }) => {
-    if (props.layoutNode.component === 'terminal' && sessionId === props.activeSessionId && customHtmlLayerRef.value) {
-      customHtmlLayerRef.value.style.width = `${width}px`;
-      customHtmlLayerRef.value.style.height = `${height}px`;
-    }
-  };
   subscribeToWorkspaceEvent('terminal:stabilizedResize', handleStabilizedTerminalResize);
 
 
@@ -423,27 +436,67 @@ onMounted(() => {
   });
 });
 
-// +++ Background Image Style +++
+// 计算当前终端窗格的背景启用状态（支持窗格专属配置或继承全局）
+const isTerminalPaneBackgroundActive = computed<boolean>(() => {
+  if (props.layoutNode.component !== 'terminal') return false;
+  const cfg = props.layoutNode.terminalBackground;
+  if (cfg?.mode === 'none') return false;
+  if (cfg?.mode === 'custom' && cfg.customImage) return true;
+  if (cfg?.mode === 'transparent') return true;
+  return isTerminalBackgroundEnabled.value;
+});
+
+// 计算当前终端窗格的暗色蒙版不透明度
+const terminalPaneOverlayOpacity = computed<number>(() => {
+  const cfg = props.layoutNode.terminalBackground;
+  if (cfg?.mode === 'custom' && typeof cfg.overlayOpacity === 'number') {
+    return cfg.overlayOpacity;
+  }
+  return currentTerminalBackgroundOverlayOpacity.value;
+});
+
+// 计算当前终端窗格的背景图样式 (支持无缝跨屏 fixed 与单个窗格 cover)
 const terminalBackgroundImageStyle = computed((): CSSProperties => {
-  if (isTerminalBackgroundEnabled.value && terminalBackgroundImage.value && props.layoutNode.component === 'terminal') {
-    const backendUrl = import.meta.env.VITE_API_BASE_URL || '';
-    const imagePath = terminalBackgroundImage.value;
-    const fullImageUrl = `${backendUrl}${imagePath}`;
+  if (props.layoutNode.component !== 'terminal' || !isTerminalPaneBackgroundActive.value) {
     return {
-      backgroundImage: `url(${fullImageUrl})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      backgroundRepeat: 'no-repeat',
+      backgroundImage: 'none',
       position: 'absolute',
       top: '0',
       left: '0',
       width: '100%',
       height: '100%',
-      zIndex: 0, // Base layer for background
+      zIndex: 0,
     };
   }
+
+  const backendUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const cfg = props.layoutNode.terminalBackground;
+  const rawImagePath = (cfg?.mode === 'custom' && cfg.customImage) 
+    ? cfg.customImage 
+    : terminalBackgroundImage.value;
+
+  if (!rawImagePath) {
+    return {
+      backgroundImage: 'none',
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      width: '100%',
+      height: '100%',
+      zIndex: 0,
+    };
+  }
+
+  const fullImageUrl = rawImagePath.startsWith('http') || rawImagePath.startsWith('data:') 
+    ? rawImagePath 
+    : `${backendUrl}${rawImagePath}`;
+
   return {
-    backgroundImage: 'none',
+    backgroundImage: `url(${fullImageUrl})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+    backgroundAttachment: 'fixed', // 全屏无缝贯穿，多分屏自然拼接整张壁纸
     position: 'absolute',
     top: '0',
     left: '0',
@@ -453,9 +506,10 @@ const terminalBackgroundImageStyle = computed((): CSSProperties => {
   };
 });
 
-// +++ Function to execute scripts (migrated from Terminal.vue) +++
+// 执行动态 HTML 脚本（带当前窗格作用域隔离沙箱）
 const executeScriptsInElement = (container: HTMLElement) => {
   if (!container) return;
+  const paneId = props.layoutNode.id;
   const scripts = Array.from(container.getElementsByTagName('script'));
   scripts.forEach((oldScript) => {
     const newScript = document.createElement('script');
@@ -463,45 +517,73 @@ const executeScriptsInElement = (container: HTMLElement) => {
       newScript.setAttribute(attr.name, attr.value);
     });
     if (oldScript.textContent) {
-      newScript.textContent = oldScript.textContent;
+      // 在多终端分屏下，避免多个窗格具有同名 ID（如 #matrix-canvas）导致副终端取不到元素或被覆盖
+      // 包装局部 document 代理，优先在当前分屏容器内查找元素
+      const originalCode = oldScript.textContent;
+      const scopedScript = `
+(function(__paneContainer__) {
+  if (!__paneContainer__) return;
+  var __realDoc = window.document;
+  var document = new Proxy(__realDoc, {
+    get: function(target, prop) {
+      if (prop === 'getElementById') {
+        return function(elementId) {
+          return __paneContainer__.querySelector('#' + CSS.escape(elementId)) || target.getElementById(elementId);
+        };
+      }
+      if (prop === 'querySelector') {
+        return function(selector) {
+          return __paneContainer__.querySelector(selector) || target.querySelector(selector);
+        };
+      }
+      if (prop === 'querySelectorAll') {
+        return function(selector) {
+          var localElements = __paneContainer__.querySelectorAll(selector);
+          return localElements.length > 0 ? localElements : target.querySelectorAll(selector);
+        };
+      }
+      var member = target[prop];
+      return typeof member === 'function' ? member.bind(target) : member;
+    }
+  });
+  try {
+    ${originalCode}
+  } catch (err) {
+    console.warn('[TerminalCustomHtml] 执行窗格 ${paneId} 动态脚本异常:', err);
+  }
+})(document.querySelector('[data-pane-html-container="${paneId}"]'));
+`;
+      newScript.textContent = scopedScript;
     }
     if (oldScript.parentNode) {
       oldScript.parentNode.replaceChild(newScript, oldScript);
     } else {
-       container.appendChild(newScript); // Fallback, though less likely if script was in container
+      container.appendChild(newScript);
     }
   });
 };
 
-// +++ Watch for changes in terminalCustomHTML and execute scripts (migrated) +++
+// 监听动态 HTML 内容变化并在 DOM 就绪后重新执行
 watch(terminalCustomHTML, (newHtmlContent, oldHtmlContent) => {
-  if (props.layoutNode.component !== 'terminal') return; // Only for terminal panes
+  if (props.layoutNode.component !== 'terminal') return;
 
   if (newHtmlContent === oldHtmlContent && oldHtmlContent !== undefined) {
     return;
   }
   nextTick(() => {
     const container = customHtmlLayerRef.value;
-    if (container) {
-      if (newHtmlContent) {
-        executeScriptsInElement(container);
-      }
+    if (container && newHtmlContent && isTerminalPaneBackgroundActive.value) {
+      executeScriptsInElement(container);
     }
   });
 }, { immediate: true });
 
-
 onBeforeUnmount(() => {
-  const handleStabilizedTerminalResizeHandler = ({ sessionId, width, height }: { sessionId: string; width: number; height: number }) => {
-    if (props.layoutNode.component === 'terminal' && sessionId === props.activeSessionId && customHtmlLayerRef.value) {
-      customHtmlLayerRef.value.style.width = `${width}px`;
-      customHtmlLayerRef.value.style.height = `${height}px`;
-    }
-  };
-  unsubscribeFromWorkspaceEvent('terminal:stabilizedResize', handleStabilizedTerminalResizeHandler); // Use the same handler reference if possible
+  if (resizeDispatchTimer) {
+    clearTimeout(resizeDispatchTimer);
+  }
+  unsubscribeFromWorkspaceEvent('terminal:stabilizedResize', handleStabilizedTerminalResize);
 });
-
-
 
 </script>
 
@@ -559,18 +641,18 @@ onBeforeUnmount(() => {
                    <div
                        class="terminal-pane-container relative flex-grow overflow-hidden transition-all duration-200"
                         :class="[
-                            { 'has-global-terminal-background': isTerminalBackgroundEnabled, 'bg-background': !isTerminalBackgroundEnabled },
+                            { 'has-global-terminal-background': isTerminalPaneBackgroundActive, 'bg-background': !isTerminalPaneBackgroundActive },
                             layoutStore.activeTerminalPaneId === layoutNode.id ? 'ring-2 ring-purple-500 ring-inset shadow-[0_0_15px_rgba(168,85,247,0.35)] z-10' : ''
                         ]"
                         @mousedown="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
                    >
-                       <!-- Shared Background Layers -->
+                       <!-- Shared Background Layers (窗格专属或全局多终端背景) -->
                        <div
-                           v-if="isTerminalBackgroundEnabled"
+                           v-if="isTerminalPaneBackgroundActive"
                            class="shared-terminal-background-layers"
                            style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0;"
                        >
-                           <!-- Background Image -->
+                           <!-- Background Image (支持跨分屏无缝连续固定背景) -->
                            <div
                                class="terminal-background-image-layer"
                                :style="terminalBackgroundImageStyle"
@@ -580,16 +662,17 @@ onBeforeUnmount(() => {
                                class="terminal-background-overlay-layer"
                                :style="{
                                    position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
-                                   backgroundColor: `rgba(0, 0, 0, ${currentTerminalBackgroundOverlayOpacity})`,
+                                   backgroundColor: `rgba(0, 0, 0, ${terminalPaneOverlayOpacity})`,
                                    zIndex: 1, pointerEvents: 'none'
                                }"
                            ></div>
-                           <!-- Custom HTML -->
+                           <!-- Custom HTML (带当前分屏作用域标记与独立沙箱) -->
                            <div
                                ref="customHtmlLayerRef"
-                               v-if="terminalCustomHTML"
+                               v-if="terminalCustomHTML && isTerminalPaneBackgroundActive"
+                               :data-pane-html-container="layoutNode.id"
                                class="terminal-custom-html-layer"
-                               style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2;"
+                               style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: hidden;"
                                v-html="terminalCustomHTML"
                            ></div>
                        </div>
@@ -607,7 +690,7 @@ onBeforeUnmount(() => {
                                         :is-active="sessionId === activeSessionId"
                                         :is-pane-focused="layoutStore.activeTerminalPaneId === layoutNode.id"
                                         @focus="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
-                                       :class="['terminal-instance-wrapper absolute inset-0 w-full h-full', { 'terminal-transparent': isTerminalBackgroundEnabled }]"
+                                       :class="['terminal-instance-wrapper absolute inset-0 w-full h-full', { 'terminal-transparent': isTerminalPaneBackgroundActive }]"
                                        :style="{ zIndex: 3 }"
                                        :options="{}"
                                    />
@@ -891,13 +974,20 @@ onBeforeUnmount(() => {
   background-color: var(--border-color) !important; /* Override hover effect */
 }
 
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent {
-  background-color: transparent !important; /* 使 Terminal.vue 的最外层容器背景透明 */
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent,
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-scroll-viewport,
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-inner-container,
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm,
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm-viewport,
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm-screen {
+  background-color: transparent !important;
 }
 
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-inner-container .xterm-viewport,
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-inner-container .xterm-screen {
-  background-color: transparent !important;
+.terminal-custom-html-layer {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
 }
 
 

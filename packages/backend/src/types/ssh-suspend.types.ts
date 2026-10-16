@@ -37,6 +37,8 @@ export interface SuspendSessionDetails {
   inMemoryBuffer?: string[];
   /** 挂起恢复过渡期间暂存的实时数据流队列 */
   pendingResumeBuffer?: Buffer[];
+  /** 多终端分屏独立 Shell 通道映射 (用于多终端保活) */
+  paneStreams?: Map<string, any>;
 }
 
 /**

@@ -52,6 +52,7 @@ export class SshSuspendService extends EventEmitter {
     logIdentifier: string;
     initialBuffer?: string;
     customSuspendName?: string;
+    paneStreams?: Map<string, any>;
   }): Promise<string | null> {
     const {
       userId,
@@ -63,6 +64,7 @@ export class SshSuspendService extends EventEmitter {
       logIdentifier,
       initialBuffer,
       customSuspendName,
+      paneStreams,
     } = details;
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Called for userId=${userId}, originalSessionId=${originalSessionId}`);
 
@@ -85,7 +87,16 @@ export class SshSuspendService extends EventEmitter {
     channel.removeAllListeners('exit');
 
     sshClient.removeAllListeners('error');
-    sshClient.removeAllListeners('end');
+    // 处理多分屏 Shell 通道：移除旧 WebSocket 绑定的监听器，并在挂起期间安全保活
+    if (paneStreams && paneStreams.size > 0) {
+      console.log(`[SshSuspendService INFO] 接管会话 ${originalSessionId} 的 ${paneStreams.size} 个分屏 Shell 通道以供断线/刷新保活`);
+      for (const [, pState] of paneStreams.entries()) {
+        if (pState && pState.stream) {
+          pState.stream.removeAllListeners('data');
+          pState.stream.removeAllListeners('error');
+        }
+      }
+    }
 
     const sessionDetails: SuspendSessionDetails = {
       sshClient,
@@ -100,6 +111,7 @@ export class SshSuspendService extends EventEmitter {
       userId,
       inMemoryBuffer: initialBuffer ? [initialBuffer] : [],
       pendingResumeBuffer: undefined,
+      paneStreams: paneStreams && paneStreams.size > 0 ? new Map(paneStreams) : undefined,
     };
 
     userSessions.set(suspendSessionId, sessionDetails);
@@ -230,6 +242,7 @@ export class SshSuspendService extends EventEmitter {
     logData: string;
     connectionName: string;
     originalConnectionId: string;
+    paneStreams?: Map<string, any>;
     getPendingResumeData?: () => Buffer[];
   } | null> {
     const userSessions = this.getUserSessions(userId);
@@ -264,7 +277,7 @@ export class SshSuspendService extends EventEmitter {
     this.removeChannelListeners(session.channel, session.sshClient);
     
     // 保存返回的会话关键信息与过渡期缓冲
-    const { sshClient, channel, connectionName, connectionId: originalConnectionId } = session;
+    const { sshClient, channel, connectionName, connectionId: originalConnectionId, paneStreams } = session;
     const pendingData = session.pendingResumeBuffer;
 
     userSessions.delete(suspendSessionId);
@@ -278,6 +291,7 @@ export class SshSuspendService extends EventEmitter {
       logData,
       connectionName,
       originalConnectionId,
+      paneStreams,
       getPendingResumeData: () => pendingData || [],
     };
   }
@@ -306,6 +320,17 @@ export class SshSuspendService extends EventEmitter {
     }
 
     this.removeChannelListeners(session.channel, session.sshClient);
+
+    // 销毁所有分屏 Shell 通道
+    if (session.paneStreams && session.paneStreams.size > 0) {
+      for (const [, pState] of session.paneStreams.entries()) {
+        try {
+          pState.stream?.destroy?.();
+          pState.stream?.end?.();
+        } catch (e) {}
+      }
+      session.paneStreams.clear();
+    }
 
     try {
       session.channel.close(); // 尝试优雅关闭

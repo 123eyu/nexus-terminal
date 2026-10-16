@@ -84,6 +84,13 @@ const {
 } = storeToRefs(appearanceStore);
  
 const isTerminalDomReady = ref(false); 
+const lastCwd = ref<string | null>(null);
+
+watch(() => props.isPaneFocused, (focused) => {
+  if (focused && lastCwd.value) {
+    emitWorkspaceEvent('terminal:cwdChanged', { sessionId: props.sessionId, cwd: lastCwd.value, paneId: props.paneId });
+  }
+}); 
  
 // --- Settings Store ---
 const settingsStore = useSettingsStore(); // +++ 实例化设置 store +++
@@ -145,8 +152,8 @@ const fitAndEmitResizeNow = (term: Terminal) => {
             term.resize(dims.cols, dims.rows);
             emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims, paneId: props.paneId });
             if (terminalRef.value) {
-              const stableWidth = terminalRef.value.offsetWidth;
-              const stableHeight = terminalRef.value.offsetHeight;
+              const stableWidth = terminalOuterWrapperRef.value?.offsetWidth || terminalRef.value.offsetWidth;
+              const stableHeight = terminalOuterWrapperRef.value?.offsetHeight || terminalRef.value.offsetHeight;
               emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight, paneId: props.paneId });
             }
         } else {
@@ -451,6 +458,15 @@ onMounted(() => {
     terminal.resize(initDims.cols, initDims.rows);
     emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows }, paneId: props.paneId }); // 触发初始 resize 事件
 
+    // 注册自定义按键处理器：拦截并放行分屏终端切换快捷键，防止被 xterm.js 吞噬
+    terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      const switchShortcut = settingsStore.terminalSwitchPaneShortcutString || 'Alt+`';
+      if (isShortcutMatched(event, switchShortcut)) {
+        return false; // 返回 false 让 xterm 忽略此按键，事件冒泡至 window 全局处理
+      }
+      return true;
+    });
+
     // 监听用户输入
     terminal.onData((data) => {
       emitWorkspaceEvent('terminal:input', { sessionId: props.sessionId, paneId: props.paneId, data });
@@ -466,8 +482,9 @@ onMounted(() => {
           path = urlStr ? decodeURIComponent(urlStr) : '/';
         }
         if (path && path.startsWith('/')) {
-          console.log(`[Terminal ${props.sessionId}] 捕获到 OSC 7 工作目录通告: ${path}`);
-          emitWorkspaceEvent('terminal:cwdChanged', { sessionId: props.sessionId, cwd: path });
+          lastCwd.value = path;
+          console.log(`[Terminal ${props.sessionId}][pane: ${props.paneId}] 捕获到 OSC 7 工作目录通告: ${path}`);
+          emitWorkspaceEvent('terminal:cwdChanged', { sessionId: props.sessionId, cwd: path, paneId: props.paneId });
         }
       } catch (err) {
         console.warn(`[Terminal ${props.sessionId}] 解析 OSC 7 序列失败:`, err, data);
@@ -476,9 +493,9 @@ onMounted(() => {
     });
 
     // 监听终端大小变化 (通过 ResizeObserver) - 主要处理浏览器窗口大小变化等
-    // ResizeObserver 观察内部容器 terminalRef
-    if (terminalRef.value) {
-        observedElement = terminalRef.value;
+    // ResizeObserver 优先观察外层视口容器 terminalOuterWrapperRef，防止不换行模式超宽展开破坏视口尺寸
+    if (terminalOuterWrapperRef.value || terminalRef.value) {
+        observedElement = (terminalOuterWrapperRef.value || terminalRef.value) as HTMLElement;
         resizeObserver = new ResizeObserver((entries) => {
             if (!props.isActive || !terminal || !terminalRef.value) return;
 
@@ -519,7 +536,9 @@ onMounted(() => {
                   const dims = calculateTerminalDimensions(terminal);
                   terminal.resize(dims.cols, dims.rows);
                   debouncedEmitResize(terminal); // This will log the cols/rows after debouncing
-                  emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: roundedWidth, height: roundedHeight, paneId: props.paneId });
+                  const viewportWidth = terminalOuterWrapperRef.value?.offsetWidth || roundedWidth;
+                  const viewportHeight = terminalOuterWrapperRef.value?.offsetHeight || roundedHeight;
+                  emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: viewportWidth, height: viewportHeight, paneId: props.paneId });
                  } catch (e) {
                     console.warn(`[TerminalResizeObserver sessionId=${props.sessionId}] Fit addon or debouncedEmitResize failed:`, e);
                  }
@@ -1009,12 +1028,32 @@ const handleTerminalDrop = (event: DragEvent) => {
 const currentSession = computed(() => sessionStore.sessions.get(props.sessionId));
 const terminalManagerInstance = computed(() => currentSession.value?.terminalManager);
 
-// 监听窗格聚焦状态，当被外部切换选中时自动聚焦 xterm
-watch(() => props.isPaneFocused, (focused) => {
-  if (focused && props.isActive && terminal) {
-    terminal.focus();
+// 辅助函数：匹配按键与自定义快捷键规则
+const isShortcutMatched = (e: KeyboardEvent, shortcutStr: string): boolean => {
+  if (!shortcutStr) return false;
+  const parts = shortcutStr.toLowerCase().split('+').map(p => p.trim());
+  const needsCtrl = parts.includes('ctrl') || parts.includes('control');
+  const needsAlt = parts.includes('alt');
+  const needsShift = parts.includes('shift');
+  const needsMeta = parts.includes('meta') || parts.includes('cmd') || parts.includes('win');
+
+  if (e.ctrlKey !== needsCtrl) return false;
+  if (e.altKey !== needsAlt) return false;
+  if (e.shiftKey !== needsShift) return false;
+  if (e.metaKey !== needsMeta) return false;
+
+  const keyPart = parts.find(p => !['ctrl', 'control', 'alt', 'shift', 'meta', 'cmd', 'win'].includes(p));
+  if (!keyPart) return true;
+
+  const eventKey = (e.key || '').toLowerCase();
+  const eventCode = (e.code || '').toLowerCase();
+
+  if (keyPart === '`' || keyPart === '~' || keyPart === 'backquote') {
+    return eventKey === '`' || eventKey === '~' || eventCode === 'backquote';
   }
-});
+
+  return eventKey === keyPart || eventCode === `key${keyPart}` || eventCode === keyPart;
+};
 
 // 监听 SSH 连接就绪状态并自动执行配置的指令
 const hasExecutedAutoCmd = ref(false);
@@ -1061,20 +1100,13 @@ watch(() => terminalManagerInstance.value?.terminalPanes?.value?.get(props.paneI
   }
 });
 
-
-// 用户主动点击终端画面时聚焦并通知布局管理器更新活动窗格
+// 用户主动点击终端画面时通知布局管理器更新活动窗格并聚焦
 const handleTerminalClick = () => {
   emit('focus');
   if (terminal) {
     terminal.focus();
   }
 };
-
-watch(() => props.isPaneFocused, (focused) => {
-  if (focused && terminal) {
-    terminal.focus();
-  }
-});
 </script>
 
 <template>
@@ -1140,6 +1172,7 @@ watch(() => props.isPaneFocused, (focused) => {
   height: 100%;
   overflow: hidden;
   position: relative;
+  background-color: transparent !important;
 }
 
 .terminal-scroll-viewport {
@@ -1147,22 +1180,26 @@ watch(() => props.isPaneFocused, (focused) => {
   height: 100%;
   overflow: hidden;
   position: relative;
+  background-color: transparent !important;
 }
 
 .terminal-scroll-viewport.no-wrap {
   overflow-x: auto !important;
   overflow-y: hidden !important;
   -webkit-overflow-scrolling: touch;
+  background-color: transparent !important;
 }
 
 .terminal-scroll-viewport.no-wrap .terminal-inner-container {
   width: max-content !important;
   min-width: 100% !important;
+  background-color: transparent !important;
 }
 
 .terminal-inner-container {
   width: 100%;
   height: 100%;
+  background-color: transparent !important;
   /* position: relative;  移除了 position relative */
   /* z-index 调整或移除，因为背景层不再在此组件内 */
 }

@@ -202,6 +202,7 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                         isShellReady: true, // 恢复后 Shell 立即可用
                                         recentOutputBuffer: [],
                                         recentOutputBytes: 0,
+                                        paneStreams: result.paneStreams ? new Map(result.paneStreams) : new Map(),
                                     };
                                     clientStates.set(newFrontendSessionId, newSessionState);
                                     ws.sessionId = newFrontendSessionId; // 将当前 ws 与新会话关联

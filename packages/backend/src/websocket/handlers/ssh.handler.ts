@@ -438,9 +438,73 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
 
     // 情况 A：SSH 已连接就绪，立即派生打开
     if (state && state.sshClient && state.isShellReady) {
-        // 如果该 paneId 已经成功打开且 stream 仍在活动，忽略重复打开
-        if (state.paneStreams?.get(paneId)?.isReady) {
-            console.log(`WebSocket: 会话 ${sessionId} 的分屏 ${paneId} 通道已处于活动就绪状态，跳过重复创建。`);
+        // 如果该 paneId 已经从挂起保活中恢复或 stream 仍在活动，重新绑定 WebSocket 并通知前端就绪，避免重新创建 Shell 导致重复登录
+        const existingPane = state.paneStreams?.get(paneId);
+        if (existingPane && existingPane.stream && existingPane.isReady) {
+            console.log(`WebSocket: 会话 ${sessionId} 的分屏 ${paneId} 存在保活活动 Shell 通道，复用现有通道并重定向数据流`);
+
+            existingPane.stream.removeAllListeners('data');
+            existingPane.stream.removeAllListeners('close');
+            existingPane.stream.removeAllListeners('error');
+
+            existingPane.stream.on('data', (data: Buffer) => {
+                const utf8Data = data.toString('utf8');
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'ssh:pane_output',
+                        sessionId,
+                        payload: {
+                            paneId,
+                            data: Buffer.from(utf8Data, 'utf8').toString('base64')
+                        },
+                        encoding: 'base64'
+                    }));
+                }
+            });
+
+            if (existingPane.stream.stderr) {
+                existingPane.stream.stderr.removeAllListeners('data');
+                existingPane.stream.stderr.on('data', (data: Buffer) => {
+                    const utf8ErrData = data.toString('utf8');
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'ssh:pane_output',
+                            sessionId,
+                            payload: {
+                                paneId,
+                                data: Buffer.from(utf8ErrData, 'utf8').toString('base64')
+                            },
+                            encoding: 'base64'
+                        }));
+                    }
+                });
+            }
+
+            existingPane.stream.on('close', () => {
+                console.log(`SSH: 会话 ${sessionId} 的分屏 Shell ${paneId} 已关闭。`);
+                state.paneStreams?.delete(paneId);
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'ssh:pane_closed',
+                        sessionId,
+                        payload: { paneId }
+                    }));
+                }
+            });
+
+            // 调整终端大小
+            if (typeof cols === 'number' && typeof rows === 'number' && cols > 0 && rows > 0) {
+                try { existingPane.stream.setWindow(rows, cols, 0, 0); } catch (e) {}
+            }
+
+            // 通知前端该分屏终端复用成功、通道就绪
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'ssh:pane_ready',
+                    sessionId,
+                    payload: { paneId }
+                }));
+            }
             return;
         }
         openPaneShell(ws, sessionId, state, paneId, cols, rows, term);

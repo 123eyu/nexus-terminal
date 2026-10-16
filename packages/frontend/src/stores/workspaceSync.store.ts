@@ -52,6 +52,8 @@ export interface SyncedSessionInfo {
   commandInputContent?: string;
   suspendSessionId?: string;
   terminalBuffer?: string;
+  terminalPanesBuffer?: Record<string, string>; // 多终端分屏各 paneId 独立序列化 buffer
+  primaryTerminalPaneId?: string; // 主终端对应的 paneId
   editorTabs?: SyncedFileTabInfo[]; // 每个会话自己独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
   activeEditorTabId?: string | null;
 }
@@ -364,6 +366,21 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         terminalBuffer = (s as any).lastTerminalBuffer;
       }
 
+      // 多终端分屏各 paneId 独立序列化 buffer
+      let terminalPanesBuffer: Record<string, string> | undefined = undefined;
+      if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
+        const panesBuf = (s.terminalManager as any).serializeAllPanes();
+        if (panesBuf && Object.keys(panesBuf).length > 0) {
+          terminalPanesBuffer = panesBuf;
+        }
+      }
+      if (!terminalPanesBuffer && (s as any).lastTerminalPanesBuffer) {
+        terminalPanesBuffer = (s as any).lastTerminalPanesBuffer;
+      }
+      if (terminalPanesBuffer) {
+        (s as any).lastTerminalPanesBuffer = terminalPanesBuffer;
+      }
+
       // 提取会话自身独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
       let sessionSpecificTabs: SyncedFileTabInfo[] | undefined = undefined;
       if (s.editorTabs?.value && Array.isArray(s.editorTabs.value) && s.editorTabs.value.length > 0) {
@@ -391,6 +408,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         commandInputContent: s.commandInputContent.value || '',
         suspendSessionId: (s as any).suspendSessionId,
         terminalBuffer: terminalBuffer !== undefined ? terminalBuffer : '',
+        terminalPanesBuffer,
+        primaryTerminalPaneId: (s as any).primaryTerminalPaneId || s.terminalManager?.primaryPaneId?.value || undefined,
         editorTabs: sessionSpecificTabs,
         activeEditorTabId: s.activeEditorTabId?.value || null,
       });
@@ -798,6 +817,43 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
                   }
                   sessionState.pendingOutput = [];
                   logSync(`为会话 ${targetSessionId} 同步清空终端屏幕视口`);
+                }
+              }
+
+              // 多终端分屏历史回放：保存至 sessionState.lastTerminalPanesBuffer，并向已挂载的副终端回放
+              if (s.terminalPanesBuffer) {
+                const sessionState = sessionStore.sessions.get(targetSessionId);
+                if (sessionState) {
+                  (sessionState as any).lastTerminalPanesBuffer = s.terminalPanesBuffer;
+                  const tm = sessionState.terminalManager as any;
+                  if (tm?.terminalPanes?.value && !isResumed) {
+                    const panesMap = tm.terminalPanes.value as Map<string, any>;
+                    Object.entries(s.terminalPanesBuffer).forEach(([pId, buf]) => {
+                      if (pId !== 'primary') {
+                        const paneEntry = panesMap.get(pId);
+                        if (paneEntry?.instance?.value && buf) {
+                          logSync(`为分屏终端 ${pId} (会话 ${targetSessionId}) 回放快照保存的屏幕历史 (字符数: ${buf.length})`);
+                          const cleaned = cleanTrailingPromptForReconnect(buf);
+                          const highlighted = highlightStore.highlight(cleaned) as string;
+                          paneEntry.instance.value.write(highlighted);
+                          try {
+                            paneEntry.instance.value.refresh(0, paneEntry.instance.value.rows - 1);
+                          } catch {}
+                        }
+                      }
+                    });
+                  }
+                }
+              }
+
+              // 恢复主终端 paneId 锁定映射，杜绝竞速乱序
+              if (s.primaryTerminalPaneId) {
+                const sessionState = sessionStore.sessions.get(targetSessionId);
+                if (sessionState) {
+                  (sessionState as any).primaryTerminalPaneId = s.primaryTerminalPaneId;
+                  if (sessionState.terminalManager?.primaryPaneId) {
+                    sessionState.terminalManager.primaryPaneId.value = s.primaryTerminalPaneId;
+                  }
                 }
               }
             }

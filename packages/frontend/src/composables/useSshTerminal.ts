@@ -8,6 +8,7 @@ import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { WebSocketMessage, MessagePayload } from '../types/websocket.types';
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
+import { useLayoutStore, getTerminalPaneIdsInLayout } from '../stores/layout.store';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -91,18 +92,36 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         };
         terminalPanes.value.set(effectivePaneId, entry);
 
-        // 如果尚未选定主终端，优先将当前终端视为主终端
+        const currentSessionState = globalSessionsRef.value.get(sessionId);
+
+        // 如果尚未锁定主终端，按布局树先序遍历或会话已有记录确定性锁定，杜绝挂载竞速乱序
         if (!primaryPaneId.value) {
-            primaryPaneId.value = effectivePaneId;
-            terminalInstance.value = term;
-            searchAddon.value = addon;
-            serializeAddon.value = sAddon || null;
+            let determinedPrimaryId = (currentSessionState as any)?.primaryTerminalPaneId;
+            if (!determinedPrimaryId) {
+                try {
+                    const layoutStore = useLayoutStore();
+                    const layoutTerminalIds = getTerminalPaneIdsInLayout(layoutStore.layoutTree);
+                    if (layoutTerminalIds.length > 0) {
+                        determinedPrimaryId = layoutTerminalIds[0];
+                    }
+                } catch (e) {
+                    // 忽略 store 异常
+                }
+            }
+            primaryPaneId.value = determinedPrimaryId || effectivePaneId;
+            if (currentSessionState) {
+                (currentSessionState as any).primaryTerminalPaneId = primaryPaneId.value;
+            }
+            console.log(`[会话 ${sessionId}][SSH终端模块] 确定主终端 primaryPaneId 为: ${primaryPaneId.value} (当前就绪终端: ${effectivePaneId})`);
         }
 
         // 如果是主终端，写入历史缓冲
         if (effectivePaneId === primaryPaneId.value) {
+            terminalInstance.value = term;
+            searchAddon.value = addon;
+            serializeAddon.value = sAddon || null;
+
             // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
-            const currentSessionState = globalSessionsRef.value.get(sessionId);
             if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
                 currentSessionState.pendingOutput.forEach(data => {
                     const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
@@ -122,8 +141,16 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 terminalOutputBuffer.value = []; // 清空内部缓冲区
             }
         } else {
-            // 如果是分屏副终端，向后端请求开辟独立的 Shell 通道！
-            console.log(`[会话 ${sessionId}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} 打开独立 Shell 通道...`);
+            // 如果是分屏副终端，检查是否从云端同步中缓存了历史屏幕缓冲
+            const cachedPaneBuffer = (currentSessionState as any)?.lastTerminalPanesBuffer?.[effectivePaneId];
+            if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
+                console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
+                const normalized = cachedPaneBuffer.replace(/\r?\n/g, '\r\n');
+                term.write(highlightStore.highlight(normalized));
+            }
+
+            // 向后端请求开辟/复用独立的 Shell 通道！
+            console.log(`[会话 ${sessionId}][SSH终端模块] 请求后端为分屏终端 ${effectivePaneId} 打开/复用独立 Shell 通道...`);
             sendMessage({
                 type: 'ssh:pane_open',
                 sessionId,
@@ -486,39 +513,90 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- 搜索相关方法 (移除计数逻辑) ---
 
-    // Removed countOccurrences helper function
-
-    const searchNext = (term: string, options?: ISearchOptions): boolean => {
-        if (searchAddon.value) {
-            console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchNext: "${term}"`);
-            const found = searchAddon.value.findNext(term, options);
-            // Removed manual count and state update
-            return found;
+    // 获取目标终端实例（支持分屏路由）
+    const getTargetPaneEntry = (targetPaneId?: string | null): PaneTerminalInstance | null => {
+        let pid = targetPaneId;
+        if (!pid) {
+            try {
+                const layoutStore = useLayoutStore();
+                pid = layoutStore.activeTerminalPaneId;
+            } catch {}
         }
-        console.warn(`[会话 ${sessionId}][SSH终端模块] searchNext 调用失败，searchAddon 不可用。`);
-        // Removed state reset on failure
+        if (!pid) {
+            pid = primaryPaneId.value;
+        }
+
+        if (pid && terminalPanes.value.has(pid)) {
+            return terminalPanes.value.get(pid)!;
+        }
+        if (primaryPaneId.value && terminalPanes.value.has(primaryPaneId.value)) {
+            return terminalPanes.value.get(primaryPaneId.value)!;
+        }
+        if (terminalPanes.value.size > 0) {
+            return Array.from(terminalPanes.value.values())[0];
+        }
+        return null;
+    };
+
+    const clearTerminal = (targetPaneId?: string | null): boolean => {
+        const entry = getTargetPaneEntry(targetPaneId);
+        if (entry?.terminal && typeof entry.terminal.clear === 'function') {
+            console.log(`[会话 ${sessionId}][SSH终端模块] 正在清空终端 (paneId: ${entry.paneId})`);
+            entry.terminal.clear();
+            return true;
+        }
+        if (terminalInstance.value && typeof terminalInstance.value.clear === 'function') {
+            terminalInstance.value.clear();
+            return true;
+        }
         return false;
     };
 
-    const searchPrevious = (term: string, options?: ISearchOptions): boolean => {
-        if (searchAddon.value) {
-             console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchPrevious: "${term}"`);
-            const found = searchAddon.value.findPrevious(term, options);
-            // Removed manual count and state update
-            return found;
+    const scrollToBottom = (targetPaneId?: string | null) => {
+        const entry = getTargetPaneEntry(targetPaneId);
+        if (entry?.terminal && typeof entry.terminal.scrollToBottom === 'function') {
+            entry.terminal.scrollToBottom();
+            return;
         }
-         console.warn(`[会话 ${sessionId}][SSH终端模块] searchPrevious 调用失败，searchAddon 不可用。`);
-         // Removed state reset on failure
+        terminalInstance.value?.scrollToBottom();
+    };
+
+    const searchNext = (term: string, options?: ISearchOptions, targetPaneId?: string | null): boolean => {
+        const entry = getTargetPaneEntry(targetPaneId);
+        const addon = entry?.searchAddon || searchAddon.value;
+        if (addon) {
+            console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchNext: "${term}" (paneId: ${entry?.paneId || 'default'})`);
+            return addon.findNext(term, options);
+        }
+        console.warn(`[会话 ${sessionId}][SSH终端模块] searchNext 调用失败，未找到有效 searchAddon。`);
         return false;
     };
 
-    const clearTerminalSearch = () => {
-        if (searchAddon.value) {
-            console.log(`[会话 ${sessionId}][SSH终端模块] 清除搜索高亮。`);
-            searchAddon.value.clearDecorations();
+    const searchPrevious = (term: string, options?: ISearchOptions, targetPaneId?: string | null): boolean => {
+        const entry = getTargetPaneEntry(targetPaneId);
+        const addon = entry?.searchAddon || searchAddon.value;
+        if (addon) {
+            console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchPrevious: "${term}" (paneId: ${entry?.paneId || 'default'})`);
+            return addon.findPrevious(term, options);
         }
-        // Removed state reset
-        console.log(`[会话 ${sessionId}][SSH终端模块] 搜索高亮已清除 (状态不再管理)。`);
+        console.warn(`[会话 ${sessionId}][SSH终端模块] searchPrevious 调用失败，未找到有效 searchAddon。`);
+        return false;
+    };
+
+    const clearTerminalSearch = (targetPaneId?: string | null) => {
+        if (targetPaneId) {
+            const entry = getTargetPaneEntry(targetPaneId);
+            if (entry?.searchAddon) {
+                entry.searchAddon.clearDecorations();
+            }
+        } else {
+            // 清理所有分屏终端的搜索高亮
+            terminalPanes.value.forEach(p => {
+                p.searchAddon?.clearDecorations();
+            });
+            searchAddon.value?.clearDecorations();
+        }
+        console.log(`[会话 ${sessionId}][SSH终端模块] 搜索高亮已清除。`);
     };
 
 
@@ -531,6 +609,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         handleTerminalDispose,
         sendData, // 允许外部直接发送数据
         cleanup,
+        // --- 清空与控制 ---
+        clearTerminal,
+        scrollToBottom,
+        getTargetPaneEntry,
         // --- 搜索方法 ---
         searchNext,
         searchPrevious,
@@ -545,6 +627,51 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
                 }
             }
             return null;
+        },
+        // --- 多终端分屏全量序列化字典 (paneId -> ANSI Buffer) ---
+        serializeAllPanes: (): Record<string, string> => {
+            const result: Record<string, string> = {};
+            for (const [pId, entry] of terminalPanes.value.entries()) {
+                if (entry.serializeAddon) {
+                    try {
+                        const s = entry.serializeAddon.serialize();
+                        if (typeof s === 'string' && s.length > 0) {
+                            result[pId] = s;
+                            continue;
+                        }
+                    } catch (e) {
+                        console.warn(`[会话 ${sessionId}][分屏终端 ${pId}] 序列化失败:`, e);
+                    }
+                }
+                // 降级使用 buffer 遍历
+                if (entry.terminal) {
+                    const buffer = entry.terminal.buffer.active;
+                    let lastNonEmpty = -1;
+                    for (let i = buffer.length - 1; i >= 0; i--) {
+                        const line = buffer.getLine(i);
+                        if (line && line.translateToString(true).trim() !== '') {
+                            lastNonEmpty = i;
+                            break;
+                        }
+                    }
+                    if (lastNonEmpty !== -1) {
+                        let text = '';
+                        for (let i = 0; i <= lastNonEmpty; i++) {
+                            const line = buffer.getLine(i);
+                            if (!line) continue;
+                            const next = i < lastNonEmpty ? buffer.getLine(i + 1) : null;
+                            if (next?.isWrapped) {
+                                text += line.translateToString(false);
+                            } else {
+                                text += line.translateToString(true);
+                                if (i < lastNonEmpty) text += '\r\n';
+                            }
+                        }
+                        if (text) result[pId] = text;
+                    }
+                }
+            }
+            return result;
         },
         serializeAddon,
         // --- 暴露状态与多终端 Map ---

@@ -12,13 +12,25 @@ export const createFavoritePath = async (req: Request, res: Response): Promise<v
         res.status(400).json({ message: '路径内容不能为空' });
         return;
     }
-    if (name !== null && typeof name !== 'string') {
-         res.status(400).json({ message: '名称必须是字符串或 null' });
-         return;
+
+    let finalName: string | null = null;
+    if (name !== undefined && name !== null) {
+        if (typeof name !== 'string') {
+            res.status(400).json({ message: '名称必须是字符串或 null' });
+            return;
+        }
+        finalName = name.trim().length > 0 ? name.trim() : null;
+    }
+
+    // 若未提供名称，自动提取路径最后一级目录名作为名称
+    if (!finalName) {
+        const cleanPath = path.trim().replace(/\/+$/, '');
+        const segments = cleanPath.split('/').filter(Boolean);
+        finalName = segments.length > 0 ? segments[segments.length - 1] : 'root';
     }
 
     try {
-        const newId = await FavoritePathsService.addFavoritePath(name, path);
+        const newId = await FavoritePathsService.addFavoritePath(finalName, path);
         const newFavoritePath = await FavoritePathsService.getFavoritePathById(newId);
         if (newFavoritePath) {
             res.status(201).json({ message: '收藏路径已添加', favoritePath: newFavoritePath });
@@ -89,13 +101,25 @@ export const updateFavoritePath = async (req: Request, res: Response): Promise<v
         res.status(400).json({ message: '路径内容不能为空' });
         return;
     }
-    if (name !== null && typeof name !== 'string') {
-         res.status(400).json({ message: '名称必须是字符串或 null' });
-         return;
+
+    let finalName: string | null = null;
+    if (name !== undefined && name !== null) {
+        if (typeof name !== 'string') {
+            res.status(400).json({ message: '名称必须是字符串或 null' });
+            return;
+        }
+        finalName = name.trim().length > 0 ? name.trim() : null;
+    }
+
+    // 若未提供名称，自动提取路径最后一级目录名作为名称
+    if (!finalName) {
+        const cleanPath = path.trim().replace(/\/+$/, '');
+        const segments = cleanPath.split('/').filter(Boolean);
+        finalName = segments.length > 0 ? segments[segments.length - 1] : 'root';
     }
 
     try {
-        const success = await FavoritePathsService.updateFavoritePath(id, name, path);
+        const success = await FavoritePathsService.updateFavoritePath(id, finalName, path);
         if (success) {
             const updatedFavoritePath = await FavoritePathsService.getFavoritePathById(id);
             if (updatedFavoritePath) {

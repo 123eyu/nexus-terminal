@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import draggable from 'vuedraggable';
 import { useLayoutStore, type LayoutNode, type PaneName, type TerminalAutoExecConfig } from '../stores/layout.store';
 import TerminalAutoExecModal from './TerminalAutoExecModal.vue';
+import TerminalBackgroundModal from './TerminalBackgroundModal.vue';
+import type { TerminalPaneBackgroundConfig } from '../stores/layout.store';
 
 // --- Props ---
 const props = defineProps({
@@ -32,6 +34,16 @@ const emit = defineEmits(['update:node', 'removeNode']);
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
 const showAutoExecModal = ref(false);
+const showBackgroundModal = ref(false);
+
+const hasBackgroundConfig = computed(() => {
+  if (props.node.component !== 'terminal' || !props.node.terminalBackground) return false;
+  return Boolean(props.node.terminalBackground.mode && props.node.terminalBackground.mode !== 'inherit');
+});
+
+const handleSaveBackground = (config: TerminalPaneBackgroundConfig) => {
+  emit('update:node', { ...props.node, terminalBackground: config });
+};
 
 const hasAutoExecConfig = computed(() => {
   if (props.node.component !== 'terminal' || !props.node.terminalAutoExec) return false;
@@ -371,6 +383,18 @@ const getChildFlexStyle = (child: LayoutNode) => {
             <i class="fas fa-bolt text-[9px]"></i>
           </button>
 
+          <!-- 终端窗格背景样式定制按钮 (图片图标) -->
+          <button
+            v-if="node.component === 'terminal'"
+            type="button"
+            @click.stop="showBackgroundModal = true"
+            :title="t('layoutNodeEditor.configBackground', '定制此窗格终端背景样式 (跟随全局/黑底/专属)')"
+            class="w-4 h-4 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
+            :class="hasBackgroundConfig ? 'text-amber-400 bg-amber-500/20' : 'text-text-secondary/60 hover:text-amber-400 hover:bg-amber-500/15'"
+          >
+            <i class="fas fa-image text-[9px]"></i>
+          </button>
+
           <!-- 终端快速分屏按钮：水平切分 / 垂直切分 -->
           <button
             v-if="node.component === 'terminal'"
@@ -478,6 +502,14 @@ const getChildFlexStyle = (child: LayoutNode) => {
       :node="node"
       @close="showAutoExecModal = false"
       @save="handleSaveAutoExec"
+    />
+    <!-- 终端窗格背景配置弹窗 -->
+    <TerminalBackgroundModal
+      v-if="node.component === 'terminal'"
+      :visible="showBackgroundModal"
+      :node="node"
+      @close="showBackgroundModal = false"
+      @save="handleSaveBackground"
     />
   </div>
 </template>

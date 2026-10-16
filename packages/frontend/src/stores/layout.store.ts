@@ -12,6 +12,13 @@ export interface TerminalAutoExecConfig {
   connectionCommands?: Record<string, string>; // 连接专属自动执行指令 (key: connectionId)
 }
 
+// 定义终端窗格专属背景配置接口
+export interface TerminalPaneBackgroundConfig {
+  mode?: 'inherit' | 'transparent' | 'none' | 'custom'; // inherit: 跟随全局(默认); transparent: 纯透明; none: 经典纯黑/无背景; custom: 专属壁纸
+  customImage?: string; // 专属壁纸路径或 URL
+  overlayOpacity?: number; // 专属暗色蒙版不透明度 (0-1)
+}
+
 // 定义布局节点接口
 export interface LayoutNode {
   id: string; // 唯一 ID
@@ -21,6 +28,7 @@ export interface LayoutNode {
   children?: LayoutNode[]; // 如果 type 是 'container'，包含子节点数组
   size?: number; // 节点在父容器中的大小比例 (例如 20, 50, 30)
   terminalAutoExec?: TerminalAutoExecConfig; // 终端自动执行指令配置
+  terminalBackground?: TerminalPaneBackgroundConfig; // 终端专属背景样式配置
 }
 
 // 本地存储的 Key
@@ -150,6 +158,24 @@ export function getAllActivePaneIds(node: LayoutNode | null): Set<string> {
   function traverse(currentNode: LayoutNode) {
     if (currentNode.id) {
       ids.add(currentNode.id);
+    }
+    if (currentNode.type === 'container' && currentNode.children) {
+      currentNode.children.forEach(traverse);
+    }
+  }
+
+  traverse(node);
+  return ids;
+}
+
+// 收集主布局中所有终端节点的 paneId 列表（按视觉先序深度优先遍历：从左到右、从上到下，顺序严格确定）
+export function getTerminalPaneIdsInLayout(node: LayoutNode | null): string[] {
+  const ids: string[] = [];
+  if (!node) return ids;
+
+  function traverse(currentNode: LayoutNode) {
+    if (currentNode.type === 'pane' && currentNode.component === 'terminal' && currentNode.id) {
+      ids.push(currentNode.id);
     }
     if (currentNode.type === 'container' && currentNode.children) {
       currentNode.children.forEach(traverse);
