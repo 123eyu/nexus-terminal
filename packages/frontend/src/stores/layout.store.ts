@@ -20,6 +20,20 @@ export interface TerminalPaneBackgroundConfig {
 }
 
 // 定义布局节点接口
+
+// 定义布局预设接口
+export interface LayoutPreset {
+  id: string; // 唯一 ID (如 "preset-default", "preset-single-terminal", 或自定义 uuid)
+  name: string; // 预设名称 (如 "默认工作区", "纯粹全屏终端", "双终端分屏")
+  isDefault?: boolean; // 是否为全局默认布局
+  isSystem?: boolean; // 是否为系统内置预设 (不可删除)
+  layoutTree: LayoutNode; // 主布局树
+  sidebarPanes: { left: PaneName[]; right: PaneName[] }; // 侧栏配置
+  connectionIds?: number[]; // 绑定使用此预设的连接 ID 列表
+  createdAt?: number;
+  updatedAt?: number;
+}
+
 export interface LayoutNode {
   id: string; // 唯一 ID
   type: 'pane' | 'container'; // 节点类型：面板或容器
@@ -33,7 +47,11 @@ export interface LayoutNode {
 
 // 本地存储的 Key
 const LAYOUT_STORAGE_KEY = 'nexus_terminal_layout_config';
-const SIDEBAR_STORAGE_KEY = 'nexus_terminal_sidebar_config'; // 新增侧栏配置 Key
+const SIDEBAR_STORAGE_KEY = 'nexus_terminal_sidebar_config';
+const LAYOUT_PRESETS_STORAGE_KEY = 'nexus_terminal_layout_presets';
+const DEFAULT_PRESET_ID_STORAGE_KEY = 'nexus_terminal_default_preset_id';
+const CONNECTION_LAYOUT_MAP_STORAGE_KEY = 'nexus_terminal_connection_layout_map';
+ // 新增侧栏配置 Key
 
 // 生成唯一 ID 的辅助函数
 function generateId(): string {
@@ -124,6 +142,95 @@ const getDefaultSidebarPanes = (): { left: PaneName[], right: PaneName[] } => ({
   ],
   "right": []
 });
+
+
+// 获取系统内置布局预设列表
+export const getSystemDefaultPresets = (): LayoutPreset[] => [
+  {
+    id: 'preset-default',
+    name: '默认工作区',
+    isDefault: true,
+    isSystem: true,
+    layoutTree: getDefaultLayout(),
+    sidebarPanes: getDefaultSidebarPanes(),
+    connectionIds: [],
+  },
+  {
+    id: 'preset-single-terminal',
+    name: '纯粹全屏终端',
+    isDefault: false,
+    isSystem: true,
+    layoutTree: {
+      id: generateId(),
+      type: "container",
+      direction: "horizontal",
+      children: [
+        {
+          id: generateId(),
+          type: "pane",
+          component: "terminal",
+          size: 100
+        }
+      ]
+    },
+    sidebarPanes: { left: ["connections"], right: [] },
+    connectionIds: [],
+  },
+  {
+    id: 'preset-dual-terminals',
+    name: '左右双终端分屏',
+    isDefault: false,
+    isSystem: true,
+    layoutTree: {
+      id: generateId(),
+      type: "container",
+      direction: "horizontal",
+      children: [
+        {
+          id: generateId(),
+          type: "pane",
+          component: "terminal",
+          size: 50
+        },
+        {
+          id: generateId(),
+          type: "pane",
+          component: "terminal",
+          size: 50
+        }
+      ]
+    },
+    sidebarPanes: { left: ["connections"], right: [] },
+    connectionIds: [],
+  },
+  {
+    id: 'preset-terminal-files',
+    name: '终端与文件树',
+    isDefault: false,
+    isSystem: true,
+    layoutTree: {
+      id: generateId(),
+      type: "container",
+      direction: "horizontal",
+      children: [
+        {
+          id: generateId(),
+          type: "pane",
+          component: "fileManager",
+          size: 28
+        },
+        {
+          id: generateId(),
+          type: "pane",
+          component: "terminal",
+          size: 72
+        }
+      ]
+    },
+    sidebarPanes: { left: ["connections", "dockerManager"], right: [] },
+    connectionIds: [],
+  }
+];
 
 // 递归查找主布局树中使用的面板
 function getMainLayoutUsedPaneNames(node: LayoutNode | null): Set<PaneName> {
@@ -604,6 +711,236 @@ export const useLayoutStore = defineStore('layout', () => {
  // --- REMOVE the old watchers that called persist ---
  // watch(layoutTree, ...); // REMOVE THIS
  // watch(sidebarPanes, ...); // REMOVE THIS
+    // --- 预设与连接绑定管理 ---
+  const layoutPresets = ref<LayoutPreset[]>([]);
+  const defaultPresetId = ref<string>('preset-default');
+  const connectionLayoutMap = ref<Record<number, string>>({}); // connectionId -> presetId
+  const activeEditingPresetId = ref<string>('preset-default'); // 当前正在配置器中编辑的预设 ID
+
+  // 会话独立稳定布局树映射缓存 (sessionId -> LayoutNode)
+  const sessionLayoutTreeMap = new Map<string, LayoutNode>();
+
+  // 深度克隆节点并赋以全新唯一 ID
+  function cloneLayoutTreeWithNewIds(node: LayoutNode): LayoutNode {
+    const cloned: LayoutNode = {
+      ...node,
+      id: generateId(),
+    };
+    if (node.children && Array.isArray(node.children)) {
+      cloned.children = node.children.map(child => cloneLayoutTreeWithNewIds(child));
+    }
+    return cloned;
+  }
+
+  // 初始化预设
+  function initializePresets() {
+    const systemDefaults = getSystemDefaultPresets();
+    try {
+      const rawPresets = typeof localStorage !== 'undefined' ? localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY) : null;
+      const rawDefaultId = typeof localStorage !== 'undefined' ? localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY) : null;
+      const rawMap = typeof localStorage !== 'undefined' ? localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY) : null;
+
+      if (rawDefaultId) {
+        defaultPresetId.value = rawDefaultId;
+      }
+      if (rawMap) {
+        connectionLayoutMap.value = JSON.parse(rawMap);
+      }
+
+      if (rawPresets) {
+        const parsed: LayoutPreset[] = JSON.parse(rawPresets);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const userIds = new Set(parsed.map(p => p.id));
+          const merged = [...parsed];
+          for (const sysPreset of systemDefaults) {
+            if (!userIds.has(sysPreset.id)) {
+              merged.push(sysPreset);
+            }
+          }
+          layoutPresets.value = merged;
+        } else {
+          layoutPresets.value = systemDefaults;
+        }
+      } else {
+        layoutPresets.value = systemDefaults;
+      }
+    } catch (err) {
+      console.warn('[Layout Store] 加载预设配置异常，使用系统默认:', err);
+      layoutPresets.value = systemDefaults;
+    }
+
+    if (!layoutPresets.value.some(p => p.id === defaultPresetId.value)) {
+      defaultPresetId.value = layoutPresets.value[0]?.id || 'preset-default';
+    }
+
+    layoutPresets.value.forEach(p => {
+      p.isDefault = (p.id === defaultPresetId.value);
+    });
+  }
+
+  // 持久化预设
+  async function persistPresets() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LAYOUT_PRESETS_STORAGE_KEY, JSON.stringify(layoutPresets.value));
+        localStorage.setItem(DEFAULT_PRESET_ID_STORAGE_KEY, defaultPresetId.value);
+        localStorage.setItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY, JSON.stringify(connectionLayoutMap.value));
+      }
+
+      // 同步到后端
+      await apiClient.put('/settings/layout-presets', {
+        presets: layoutPresets.value,
+        defaultPresetId: defaultPresetId.value,
+        connectionLayoutMap: connectionLayoutMap.value,
+      }).catch(err => {
+        // 后端若暂无路由则静默降级到 LocalStorage
+      });
+    } catch (err) {
+      console.error('[Layout Store] 保存预设配置失败:', err);
+    }
+  }
+
+  // 根据连接 ID 获取对应预设
+  function getPresetForConnection(connectionId?: number | string | null): LayoutPreset {
+    const numId = Number(connectionId);
+    if (!isNaN(numId) && connectionLayoutMap.value[numId]) {
+      const targetPresetId = connectionLayoutMap.value[numId];
+      const found = layoutPresets.value.find(p => p.id === targetPresetId);
+      if (found) return found;
+    }
+    if (!isNaN(numId)) {
+      const matched = layoutPresets.value.find(p => p.connectionIds?.includes(numId));
+      if (matched) return matched;
+    }
+    const defaultP = layoutPresets.value.find(p => p.id === defaultPresetId.value);
+    if (defaultP) return defaultP;
+    return layoutPresets.value[0] || getSystemDefaultPresets()[0];
+  }
+
+  // 为会话获取专属稳定布局树（0 毫秒秒切基石）
+  function getLayoutTreeForSession(sessionId?: string | null, connectionId?: number | string | null): LayoutNode {
+    if (!sessionId) {
+      return getPresetForConnection(connectionId).layoutTree;
+    }
+    if (sessionLayoutTreeMap.has(sessionId)) {
+      return sessionLayoutTreeMap.get(sessionId)!;
+    }
+    const preset = getPresetForConnection(connectionId);
+    const dedicatedTree = cloneLayoutTreeWithNewIds(preset.layoutTree);
+    sessionLayoutTreeMap.set(sessionId, dedicatedTree);
+    return dedicatedTree;
+  }
+
+  // 会话关闭时释放专属布局树
+  function clearSessionLayoutTree(sessionId: string) {
+    sessionLayoutTreeMap.delete(sessionId);
+  }
+
+  // 刷新某会话的布局树（当配置更新时触发）
+  function refreshSessionLayoutTree(sessionId: string, connectionId?: number | string | null) {
+    const preset = getPresetForConnection(connectionId);
+    const dedicatedTree = cloneLayoutTreeWithNewIds(preset.layoutTree);
+    sessionLayoutTreeMap.set(sessionId, dedicatedTree);
+  }
+
+  // 设为默认预设
+  function setDefaultPreset(presetId: string) {
+    defaultPresetId.value = presetId;
+    layoutPresets.value.forEach(p => {
+      p.isDefault = (p.id === presetId);
+    });
+    persistPresets();
+  }
+
+  // 绑定一组连接到特定预设
+  function bindConnectionsToPreset(presetId: string, connIds: number[]) {
+    const targetIds = new Set(connIds);
+    for (const preset of layoutPresets.value) {
+      if (preset.id === presetId) {
+        preset.connectionIds = Array.from(new Set([...(preset.connectionIds || []), ...connIds]));
+      } else if (preset.connectionIds) {
+        preset.connectionIds = preset.connectionIds.filter(id => !targetIds.has(id));
+      }
+    }
+    for (const id of connIds) {
+      connectionLayoutMap.value[id] = presetId;
+    }
+    persistPresets();
+  }
+
+  // 移除某个连接的预设绑定 (恢复使用默认预设)
+  function unbindConnection(connId: number) {
+    delete connectionLayoutMap.value[connId];
+    for (const preset of layoutPresets.value) {
+      if (preset.connectionIds) {
+        preset.connectionIds = preset.connectionIds.filter(id => id !== connId);
+      }
+    }
+    persistPresets();
+  }
+
+  // 创建/另存为新预设
+  function createPreset(name: string, tree: LayoutNode, sidebars: { left: PaneName[]; right: PaneName[] }, connIds: number[] = []): LayoutPreset {
+    const newPreset: LayoutPreset = {
+      id: `preset-user-${generateId()}`,
+      name: name.trim() || '自定义布局',
+      isDefault: false,
+      isSystem: false,
+      layoutTree: JSON.parse(JSON.stringify(tree)),
+      sidebarPanes: JSON.parse(JSON.stringify(sidebars)),
+      connectionIds: connIds,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    layoutPresets.value.push(newPreset);
+    activeEditingPresetId.value = newPreset.id;
+    if (connIds.length > 0) {
+      bindConnectionsToPreset(newPreset.id, connIds);
+    } else {
+      persistPresets();
+    }
+    return newPreset;
+  }
+
+  // 更新现有预设
+  function updatePreset(presetId: string, updates: Partial<LayoutPreset>) {
+    const idx = layoutPresets.value.findIndex(p => p.id === presetId);
+    if (idx === -1) return;
+    const existing = layoutPresets.value[idx];
+    layoutPresets.value[idx] = {
+      ...existing,
+      ...updates,
+      updatedAt: Date.now(),
+    };
+    if (updates.connectionIds) {
+      bindConnectionsToPreset(presetId, updates.connectionIds);
+    } else {
+      persistPresets();
+    }
+  }
+
+  // 删除预设 (系统内置预设受保护禁止删除)
+  function deletePreset(presetId: string): boolean {
+    const target = layoutPresets.value.find(p => p.id === presetId);
+    if (!target || target.isSystem) return false;
+    if (defaultPresetId.value === presetId) {
+      defaultPresetId.value = 'preset-default';
+      const sysDef = layoutPresets.value.find(p => p.id === 'preset-default');
+      if (sysDef) sysDef.isDefault = true;
+    }
+    if (target.connectionIds) {
+      target.connectionIds.forEach(id => {
+        delete connectionLayoutMap.value[id];
+      });
+    }
+    layoutPresets.value = layoutPresets.value.filter(p => p.id !== presetId);
+    if (activeEditingPresetId.value === presetId) {
+      activeEditingPresetId.value = defaultPresetId.value;
+    }
+    persistPresets();
+    return true;
+  }
+
   // --- 终端多窗格聚焦管理 (方案 A) ---
   const activeTerminalPaneId = ref<string | null>(null);
 
@@ -693,6 +1030,24 @@ export const useLayoutStore = defineStore('layout', () => {
    getSystemDefaultLayout,
    getSystemDefaultSidebarPanes, // <--- 暴露获取默认侧栏配置的方法
    setActiveTerminalPaneId,
+    // Presets & Connection Layout Mapping
+    layoutPresets,
+    defaultPresetId,
+    connectionLayoutMap,
+    activeEditingPresetId,
+    getSystemDefaultPresets,
+    getPresetForConnection,
+    getLayoutTreeForSession,
+    clearSessionLayoutTree,
+    refreshSessionLayoutTree,
+    setDefaultPreset,
+    bindConnectionsToPreset,
+    unbindConnection,
+    createPreset,
+    updatePreset,
+    deletePreset,
+    persistPresets,
+
    cycleTerminalFocus,
    // Persist actions (可选暴露，如果需要手动触发)
    // persistLayoutTree,

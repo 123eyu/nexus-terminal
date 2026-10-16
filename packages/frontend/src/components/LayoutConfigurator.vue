@@ -3,6 +3,8 @@ import { ref, computed, watch, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
 import { useSettingsStore } from '../stores/settings.store';
+import { useConnectionsStore } from '../stores/connections.store';
+import type { LayoutPreset } from '../stores/layout.store';
 import { storeToRefs } from 'pinia';
 import draggable from 'vuedraggable';
 import LayoutNodeEditor from './LayoutNodeEditor.vue';
@@ -29,6 +31,178 @@ const { showConfirmDialog } = useConfirmDialog();
 const { showAlertDialog } = useAlertDialog();
 
 // --- State ---
+
+// --- 预设与连接管理状态 ---
+const connectionsStore = useConnectionsStore();
+const selectedPresetId = ref<string>(layoutStore.activeEditingPresetId || layoutStore.defaultPresetId || 'preset-default');
+
+// 另存为预设弹窗状态
+const showSaveAsModal = ref(false);
+const newPresetName = ref('');
+
+// 指定连接弹窗状态
+const showBindConnectionsModal = ref(false);
+const selectedConnectionIds = ref<number[]>([]);
+const connectionSearchKeyword = ref('');
+
+// 重命名预设弹窗状态
+const showRenameModal = ref(false);
+const editingPresetName = ref('');
+
+// 当前选中的预设
+const currentPreset = computed<LayoutPreset | undefined>(() => {
+  return layoutStore.layoutPresets.find(p => p.id === selectedPresetId.value);
+});
+
+// 当前选中的预设是否为全局默认
+const isCurrentPresetDefault = computed<boolean>(() => {
+  return selectedPresetId.value === layoutStore.defaultPresetId;
+});
+
+// 过滤后的连接列表 (用于指定连接弹窗)
+const filteredConnections = computed(() => {
+  const kw = connectionSearchKeyword.value.trim().toLowerCase();
+  if (!kw) return connectionsStore.connections;
+  return connectionsStore.connections.filter(c => 
+    c.name.toLowerCase().includes(kw) || 
+    (c.host && c.host.toLowerCase().includes(kw)) ||
+    (c.username && c.username.toLowerCase().includes(kw))
+  );
+});
+
+// 加载指定预设到编辑画布
+function loadPresetIntoEditor(presetId: string) {
+  const target = layoutStore.layoutPresets.find(p => p.id === presetId) || layoutStore.getSystemDefaultPresets()[0];
+  selectedPresetId.value = target.id;
+  layoutStore.activeEditingPresetId = target.id;
+
+  const initialLayout = target.layoutTree ? JSON.parse(JSON.stringify(target.layoutTree)) : layoutStore.getSystemDefaultLayout();
+  localLayoutTree.value = initialLayout;
+  originalLayoutTree.value = JSON.parse(JSON.stringify(initialLayout));
+
+  const initialSidebars = target.sidebarPanes ? JSON.parse(JSON.stringify(target.sidebarPanes)) : layoutStore.getSystemDefaultSidebarPanes();
+  localSidebarPanes.value = initialSidebars;
+  originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
+
+  localAvailablePanes.value = [...layoutStore.allPossiblePanes];
+  localAvailablePanes.value.sort((a, b) =>
+    layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
+  );
+}
+
+// 切换预设
+async function handlePresetSelectChange(newPresetId: string) {
+  if (newPresetId === selectedPresetId.value) return;
+  if (isModified.value) {
+    const confirmed = await showConfirmDialog({
+      message: '当前预设有未保存的修改，切换预设将放弃修改，确定继续吗？'
+    });
+    if (!confirmed) return;
+  }
+  loadPresetIntoEditor(newPresetId);
+}
+
+// 设为默认预设
+async function handleSetAsDefault() {
+  if (isCurrentPresetDefault.value) return;
+  layoutStore.setDefaultPreset(selectedPresetId.value);
+  await showAlertDialog({
+    title: '设置成功',
+    message: `已将【${currentPreset.value?.name || '当前预设'}】设为全局默认布局。`
+  });
+}
+
+// 打开另存为弹窗
+function openSaveAsModal() {
+  newPresetName.value = `${currentPreset.value?.name || '自定义布局'} (副本)`;
+  showSaveAsModal.value = true;
+}
+
+// 确认另存为
+async function confirmSaveAs() {
+  const name = newPresetName.value.trim();
+  if (!name) return;
+  const created = layoutStore.createPreset(
+    name,
+    localLayoutTree.value || layoutStore.getSystemDefaultLayout(),
+    localSidebarPanes.value || layoutStore.getSystemDefaultSidebarPanes()
+  );
+  showSaveAsModal.value = false;
+  loadPresetIntoEditor(created.id);
+  await showAlertDialog({
+    title: '创建成功',
+    message: `已成功另存为新预设【${created.name}】并激活编辑。`
+  });
+}
+
+// 打开重命名弹窗
+function openRenameModal() {
+  if (currentPreset.value?.isSystem) return;
+  editingPresetName.value = currentPreset.value?.name || '';
+  showRenameModal.value = true;
+}
+
+// 确认重命名
+function confirmRename() {
+  const name = editingPresetName.value.trim();
+  if (!name || !currentPreset.value) return;
+  layoutStore.updatePreset(selectedPresetId.value, { name });
+  showRenameModal.value = false;
+}
+
+// 删除当前预设
+async function handleDeleteCurrentPreset() {
+  if (!currentPreset.value || currentPreset.value.isSystem) return;
+  const confirmed = await showConfirmDialog({
+    message: `确定要删除预设【${currentPreset.value.name}】吗？绑定的连接将自动恢复为默认布局。`
+  });
+  if (confirmed) {
+    const deletedName = currentPreset.value.name;
+    layoutStore.deletePreset(selectedPresetId.value);
+    loadPresetIntoEditor(layoutStore.defaultPresetId);
+    await showAlertDialog({
+      title: '删除成功',
+      message: `预设【${deletedName}】已删除。`
+    });
+  }
+}
+
+// 打开指定连接弹窗
+function openBindConnectionsModal() {
+  selectedConnectionIds.value = [...(currentPreset.value?.connectionIds || [])];
+  connectionSearchKeyword.value = '';
+  showBindConnectionsModal.value = true;
+}
+
+// 切换连接勾选状态
+function toggleConnectionSelection(connId: number) {
+  const idx = selectedConnectionIds.value.indexOf(connId);
+  if (idx > -1) {
+    selectedConnectionIds.value.splice(idx, 1);
+  } else {
+    selectedConnectionIds.value.push(connId);
+  }
+}
+
+// 全选或清空连接
+function toggleSelectAllConnections() {
+  if (selectedConnectionIds.value.length === connectionsStore.connections.length) {
+    selectedConnectionIds.value = [];
+  } else {
+    selectedConnectionIds.value = connectionsStore.connections.map(c => c.id);
+  }
+}
+
+// 确认指定连接
+async function confirmBindConnections() {
+  layoutStore.bindConnectionsToPreset(selectedPresetId.value, selectedConnectionIds.value);
+  showBindConnectionsModal.value = false;
+  await showAlertDialog({
+    title: '绑定成功',
+    message: `已成功将 ${selectedConnectionIds.value.length} 个连接绑定至【${currentPreset.value?.name || '当前预设'}】。`
+  });
+}
+
 const localLayoutTree: Ref<LayoutNode | null> = ref(null);
 const localSidebarPanes: Ref<{ left: PaneName[], right: PaneName[] }> = ref({ left: [], right: [] });
 const localAvailablePanes: Ref<PaneName[]> = ref([]);
@@ -405,6 +579,102 @@ const handleAvailablePaneDragEnd = (event: any) => {
           </button>
         </div>
       </header>
+      <!-- 预设与连接配置工具条 -->
+      <div class="px-6 py-2.5 bg-background-alt/60 border-b border-border/80 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+        <!-- 左侧：预设下拉选择器与切换 -->
+        <div class="flex items-center gap-2.5">
+          <span class="text-xs text-text-secondary font-medium flex items-center gap-1.5">
+            <i class="fas fa-shapes text-primary text-xs"></i>
+            <span>布局预设:</span>
+          </span>
+          
+          <div class="relative min-w-[200px]">
+            <select
+              :value="selectedPresetId"
+              @change="handlePresetSelectChange(($event.target as HTMLSelectElement).value)"
+              class="w-full bg-background border border-border/80 text-foreground text-xs rounded-lg px-2.5 py-1.5 appearance-none pr-8 font-medium focus:outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors shadow-xs"
+            >
+              <option
+                v-for="preset in layoutStore.layoutPresets"
+                :key="preset.id"
+                :value="preset.id"
+              >
+                {{ preset.name }} {{ preset.id === layoutStore.defaultPresetId ? '★ (默认)' : '' }} {{ preset.isSystem ? '· 内置' : '' }}
+              </option>
+            </select>
+            <i class="fas fa-chevron-down absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary pointer-events-none"></i>
+          </div>
+
+          <!-- 设为默认按钮/徽章 -->
+          <button
+            type="button"
+            @click="handleSetAsDefault"
+            :class="[
+              'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border shadow-xs',
+              isCurrentPresetDefault
+                ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 cursor-default'
+                : 'bg-background hover:bg-hover border-border/80 text-text-secondary hover:text-foreground cursor-pointer'
+            ]"
+            :title="isCurrentPresetDefault ? '当前已是全局默认布局' : '将当前预设设为全局默认布局'"
+          >
+            <i :class="isCurrentPresetDefault ? 'fas fa-star text-amber-400' : 'far fa-star text-text-secondary'"></i>
+            <span>{{ isCurrentPresetDefault ? '全局默认' : '设为默认' }}</span>
+          </button>
+        </div>
+
+        <!-- 右侧：指定连接、另存为、重命名、删除 -->
+        <div class="flex items-center gap-2">
+          <!-- 指定连接按钮 (显示当前已绑定的连接数量) -->
+          <button
+            type="button"
+            @click="openBindConnectionsModal"
+            class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-colors shadow-xs cursor-pointer"
+            title="指定哪些 SSH 连接使用该布局"
+          >
+            <i class="fas fa-link text-[11px]"></i>
+            <span>指定连接</span>
+            <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-primary/20 text-primary">
+              {{ currentPreset?.connectionIds?.length || 0 }}
+            </span>
+          </button>
+
+          <!-- 另存为新预设按钮 -->
+          <button
+            type="button"
+            @click="openSaveAsModal"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-background hover:bg-hover text-text-secondary hover:text-foreground border border-border/80 transition-colors shadow-xs cursor-pointer"
+            title="将当前布局另存为一个新的自定义预设"
+          >
+            <i class="fas fa-copy text-[11px]"></i>
+            <span>另存为...</span>
+          </button>
+
+          <!-- 重命名预设 (仅非内置预设) -->
+          <button
+            v-if="!currentPreset?.isSystem"
+            type="button"
+            @click="openRenameModal"
+            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-background hover:bg-hover text-text-secondary hover:text-foreground border border-border/80 transition-colors shadow-xs cursor-pointer"
+            title="重命名此预设"
+          >
+            <i class="fas fa-pen text-[10px]"></i>
+            <span>重命名</span>
+          </button>
+
+          <!-- 删除预设 (仅非内置预设) -->
+          <button
+            v-if="!currentPreset?.isSystem"
+            type="button"
+            @click="handleDeleteCurrentPreset"
+            class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors shadow-xs cursor-pointer"
+            title="删除此自定义预设"
+          >
+            <i class="fas fa-trash-can text-[10px]"></i>
+            <span>删除</span>
+          </button>
+        </div>
+      </div>
+
 
       <!-- 核心工作区网格 (紧凑双栏，剔除所有冗余提示文字) -->
       <main class="flex-grow p-4 overflow-hidden grid grid-cols-[230px_1fr] gap-4 min-h-0 bg-background/50">

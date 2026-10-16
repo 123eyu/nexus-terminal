@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
@@ -58,6 +59,23 @@ const handleCloseSessionsToLeft = (targetSessionId: string) => {
 const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
   emit('request-edit-connection', conn);
 };
+
+// 监听会话列表变化，关闭的会话及时从 layoutStore 缓存中释放
+watch(() => props.sessions, (newSessions, oldSessions) => {
+  if (!oldSessions) return;
+  const currentIds = new Set(newSessions.map(s => s.sessionId));
+  for (const old of oldSessions) {
+    if (!currentIds.has(old.sessionId)) {
+      layoutStore.clearSessionLayoutTree(old.sessionId);
+    }
+  }
+}, { deep: false });
+
+// 根据会话 ID 获取其绑定的专属稳定布局树 (实现零卡顿毫秒级秒切)
+const getSessionLayoutTree = (sessionId: string): LayoutNode => {
+  const session = sessionStore.sessions.get(sessionId);
+  return layoutStore.getLayoutTreeForSession(sessionId, session?.connectionId);
+};
 </script>
 
 <template>
@@ -76,18 +94,40 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
       @close-sessions-to-left="handleCloseSessionsToLeft"
     />
     <div class="main-content-area" :class="{ 'full-bleed': !isHeaderVisible }">
-      <LayoutRenderer
-        v-if="props.layoutTree"
-        :is-root-renderer="true"
-        :layout-node="props.layoutTree"
-        :active-session-id="props.activeSessionId"
-        :layout-locked="props.layoutLocked"
-        class="layout-renderer-wrapper"
-        :editor-tabs="props.editorTabs"
-        :active-editor-tab-id="props.activeEditorTabId"
-      />
-      <div v-else class="pane-placeholder">
-        {{ t('layout.loading', '加载布局中...') }}
+      <!-- 多会话独立布局沙箱：每个会话根据其绑定的预设独立常驻，切换会话使用纯 CSS v-show 实现 0 毫秒秒切！ -->
+      <template v-if="props.sessions.length > 0">
+        <div
+          v-for="sessionTab in props.sessions"
+          :key="`session-layout-box-${sessionTab.sessionId}`"
+          v-show="sessionTab.sessionId === props.activeSessionId"
+          class="layout-renderer-wrapper w-full h-full flex flex-col overflow-hidden"
+        >
+          <LayoutRenderer
+            :is-root-renderer="true"
+            :layout-node="getSessionLayoutTree(sessionTab.sessionId)"
+            :active-session-id="sessionTab.sessionId"
+            :layout-locked="props.layoutLocked"
+            class="flex-grow w-full h-full"
+            :editor-tabs="props.editorTabs"
+            :active-editor-tab-id="props.activeEditorTabId"
+          />
+        </div>
+      </template>
+      <!-- 无打开会话时的默认空闲/占位布局 -->
+      <div v-else class="layout-renderer-wrapper w-full h-full flex flex-col overflow-hidden">
+        <LayoutRenderer
+          v-if="props.layoutTree"
+          :is-root-renderer="true"
+          :layout-node="props.layoutTree"
+          :active-session-id="null"
+          :layout-locked="props.layoutLocked"
+          class="flex-grow w-full h-full"
+          :editor-tabs="props.editorTabs"
+          :active-editor-tab-id="props.activeEditorTabId"
+        />
+        <div v-else class="pane-placeholder">
+          {{ t('layout.loading', '加载布局中...') }}
+        </div>
       </div>
     </div>
   </div>
