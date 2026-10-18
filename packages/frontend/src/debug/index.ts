@@ -167,9 +167,13 @@ function flush() {
 export function registerTerminal(entry: Omit<TerminalEntry, 'createdAt'> & { createdAt?: number }): () => void {
   if (!isDebugEnabled() || !entry.term) return () => {};
   const record: TerminalEntry = { ...entry, createdAt: entry.createdAt ?? Date.now() };
-  terminals.set(entry.id, record);
+  // paneId 是"每个会话内部"稳定的（terminal-0 / terminal-1），多会话同时挂载时会重复。
+  // 只用 paneId 当 key 会互相覆盖，dumpTerminal() 读到的是"最后注册的那个会话"的屏幕 ——
+  // 排查"命令发到别的会话"时反而会被它误导，所以必须带上 sessionId。
+  const key = `${entry.sessionId ?? ''}::${entry.id}`;
+  terminals.set(key, record);
   return () => {
-    terminals.delete(entry.id);
+    terminals.delete(key);
   };
 }
 
@@ -190,14 +194,20 @@ function bufferLines(term: Terminal, maxLines = 120): string[] {
   }
 }
 
+function isTermVisible(t: TerminalEntry): boolean {
+  const el = t.term.element as HTMLElement | undefined;
+  return Boolean(el && el.offsetWidth > 0 && el.offsetHeight > 0);
+}
+
 function dumpTerminal(target?: string): unknown {
   if (!terminals.size) return { count: 0, note: '当前没有任何终端挂载（Terminal.vue 未注册或页面不在会话视图）' };
   const list = Array.from(terminals.values());
+  // 多会话时默认取"当前真正显示在屏幕上的那个"，而不是先注册的那个（可能是隐藏会话）
   const picked = target
     ? list.find((t) => t.id === target || t.sessionId === target) ??
       list[Number(target) as number]
-    : list[0];
-  if (!picked) return { count: list.length, ids: list.map((t) => t.id), note: '未匹配到目标终端' };
+    : list.find(isTermVisible) ?? list[0];
+  if (!picked) return { count: list.length, ids: list.map((t) => `${t.sessionId}:${t.id}`), note: '未匹配到目标终端' };
 
   const buf = picked.term.buffer?.active;
   const lines = bufferLines(picked.term, 200);
