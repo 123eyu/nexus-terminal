@@ -781,7 +781,7 @@ onBeforeUnmount(() => {
                 <!-- Terminal Pane: Render ALL SSH sessions, show only the active one -->
                <template v-if="layoutNode.component === 'terminal'">
                     <div
-                        class="terminal-pane-container relative flex-grow overflow-hidden transition-all duration-200"
+                        class="terminal-pane-container relative flex-grow overflow-hidden transition-colors duration-200"
                         :class="[
                             { 'has-global-terminal-background': isTerminalPaneBackgroundActive, 'bg-background': !isTerminalPaneBackgroundActive }
                         ]"
@@ -1117,6 +1117,21 @@ onBeforeUnmount(() => {
   border-color: var(--border-color) !important;
   height: 1px !important;
   z-index: 5 !important; /* Ensure z-index for horizontal splitters */
+}
+
+/* --- 关闭 splitpanes 自带的 pane 尺寸过渡 --- */
+/*
+ * splitpanes.css 里有一条 `.splitpanes--ready .splitpanes__pane { transition: width .2s, height .2s }`，
+ * 一旦 panes 就绪，任何宽度/高度变化（刷新恢复布局、切会话、快照回填比例）都会走 200ms 动画，
+ * 表现为"终端从左往右拉开"；而终端背景层是 `background-attachment: fixed` + 100%×100%，
+ * 按容器盒子裁剪 → 动画期间只露出左边一部分，看起来就是"背景样式只加载了一半"。
+ *
+ * 拖动分割条时 splitpanes 本来就会加 .splitpanes--dragging 临时关掉过渡，
+ * 所以这里直接全局禁用，尺寸变化一律即时生效。
+ */
+.splitpanes--ready .splitpanes__pane {
+  transition: none;
+  will-change: auto;
 }
 
 /* --- Styles for Locked Layout --- */

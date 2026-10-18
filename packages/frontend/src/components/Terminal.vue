@@ -1179,7 +1179,7 @@ const handleTerminalClick = () => {
 <template>
   <div
     ref="terminalOuterWrapperRef"
-    class="terminal-outer-wrapper transition-all duration-150 relative"
+    class="terminal-outer-wrapper transition-shadow duration-150 relative"
     :class="{
       'ring-2 ring-primary ring-inset': isDraggingOverTerminal,
       'is-mobile': isMobile,
