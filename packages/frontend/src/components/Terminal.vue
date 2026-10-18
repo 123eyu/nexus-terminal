@@ -72,6 +72,7 @@ let currentFontSizeOnPinchStart = 0;
 const appearanceStore = useAppearanceStore();
 const {
   effectiveTerminalTheme,
+  isTerminalBackgroundEnabled,
   currentTerminalFontFamily,
   currentTerminalFontSize,
   // --- 文字描边和阴影状态 ---
@@ -436,7 +437,13 @@ onMounted(() => {
       cursorBlink: true,
       fontSize: currentTerminalFontSize.value, 
       fontFamily: currentTerminalFontFamily.value, // 使用 store 中的字体设置
-      theme: effectiveTerminalTheme.value, // 使用 store 中的当前 xterm 主题 (now effectiveTerminalTheme)
+      theme: {
+        ...effectiveTerminalTheme.value,
+        // 启用终端背景图/透明时，把 xterm 自己的底色也设为透明。
+        // 否则 TUI（btop/vim 等）退出时的 `\e[2J` 会拿 theme.background 填满整屏，
+        // 背景图被一整块黑盖住 —— 用户看到的就是"退出 btop 后终端被黑色填充"。
+        ...(isTerminalBackgroundEnabled.value ? { background: 'rgba(0, 0, 0, 0)' } : {}),
+      }, // 使用 store 中的当前 xterm 主题 (now effectiveTerminalTheme)
       rows: 24, // 初始行数
       cols: 80, // 初始列数
       allowTransparency: true,
@@ -695,11 +702,13 @@ onMounted(() => {
       }
     });
 
-    watch(effectiveTerminalTheme, (newTheme) => { // Changed from currentTerminalTheme
+    watch([effectiveTerminalTheme, isTerminalBackgroundEnabled], ([newTheme]) => {
       if (terminal) {
         console.log(`[Terminal ${props.sessionId}] 应用新终端主题 (effective)。`);
-        // 直接修改 options 对象
-        terminal.options.theme = newTheme;
+        // 直接修改 options 对象（背景启用时保持透明底色，避免清屏后盖住背景图）
+        terminal.options.theme = isTerminalBackgroundEnabled.value
+          ? { ...newTheme, background: 'rgba(0, 0, 0, 0)' }
+          : newTheme;
         // 修改选项后需要刷新终端才能生效
         try {
             // 刷新整个视口

@@ -345,35 +345,40 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       if (!terminalBuffer && s.terminalManager?.terminalInstance?.value) {
         const term = s.terminalManager.terminalInstance.value;
         const buffer = term.buffer.active;
-        let lastNonEmptyLineIndex = -1;
-        for (let i = buffer.length - 1; i >= 0; i--) {
-          const line = buffer.getLine(i);
-          if (line && line.translateToString(true).trim() !== '') {
-            lastNonEmptyLineIndex = i;
-            break;
-          }
-        }
-        if (lastNonEmptyLineIndex !== -1) {
-          let result = '';
-          for (let i = 0; i <= lastNonEmptyLineIndex; i++) {
+        // 全屏 TUI（btop/vim/less）正在使用备用屏：界面文字没有保存价值，
+        // 存下来反而会让刷新后的终端变成一块静态 UI，退出 TUI 时还会留下一片黑。
+        if (buffer.type !== 'alternate') {
+          let lastNonEmptyLineIndex = -1;
+          for (let i = buffer.length - 1; i >= 0; i--) {
             const line = buffer.getLine(i);
-            if (!line) continue;
-            const nextLine = i < lastNonEmptyLineIndex ? buffer.getLine(i + 1) : null;
-            const isNextWrapped = nextLine ? nextLine.isWrapped : false;
-            if (isNextWrapped) {
-              result += line.translateToString(false);
-            } else {
-              result += line.translateToString(true);
-              if (i < lastNonEmptyLineIndex) {
-                result += '\r\n';
-              }
+            if (line && line.translateToString(true).trim() !== '') {
+              lastNonEmptyLineIndex = i;
+              break;
             }
           }
-          terminalBuffer = result;
+          if (lastNonEmptyLineIndex !== -1) {
+            let result = '';
+            for (let i = 0; i <= lastNonEmptyLineIndex; i++) {
+              const line = buffer.getLine(i);
+              if (!line) continue;
+              const nextLine = i < lastNonEmptyLineIndex ? buffer.getLine(i + 1) : null;
+              const isNextWrapped = nextLine ? nextLine.isWrapped : false;
+              if (isNextWrapped) {
+                result += line.translateToString(false);
+              } else {
+                result += line.translateToString(true);
+                if (i < lastNonEmptyLineIndex) {
+                  result += '\r\n';
+                }
+              }
+            }
+            terminalBuffer = result;
+          }
         }
       }
 
-      if (!terminalBuffer && (s as any).lastTerminalBuffer) {
+      if (!terminalBuffer && (s as any).lastTerminalBuffer
+          && s.terminalManager?.terminalInstance?.value?.buffer?.active?.type !== 'alternate') {
         terminalBuffer = (s as any).lastTerminalBuffer;
       }
 

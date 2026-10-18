@@ -92,6 +92,14 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         };
         terminalPanes.value.set(effectivePaneId, entry);
 
+        // 兜底：旧快照可能把"备用屏（TUI）"状态一起存了下来。
+        // 这里先强制切回主屏，避免刷新后 Ctrl+C 退出 TUI 时回到一个空的备用屏、整块变黑。
+        try {
+            term.write('\x1b[?1049l\x1b[0m');
+        } catch {
+            /* 忽略 */
+        }
+
         const currentSessionState = globalSessionsRef.value.get(sessionId);
 
         // --- 主终端锁定 ---
@@ -671,6 +679,13 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         clearTerminalSearch,
         // --- 序列化方法 (带完整 ANSI 样式) ---
         serializeTerminal: (): string | null => {
+            // 处于备用屏（btop / vim / less 等全屏 TUI）时不要序列化。
+            // 否则恢复出来的终端会停在备用屏里，用户退出 TUI（Ctrl+C）后回到空的正常屏，
+            // 整块区域被"当前 SGR 背景"填满 —— 表现为刷新后终端变成一块黑。
+            if (terminalInstance.value?.buffer?.active?.type === 'alternate') {
+                console.log(`[会话 ${sessionId}][SSH终端模块] 当前处于 TUI 备用屏，跳过屏幕内容序列化`);
+                return '';
+            }
             if (serializeAddon.value) {
                 try {
                     return serializeAddon.value.serialize();
@@ -684,6 +699,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         serializeAllPanes: (): Record<string, string> => {
             const result: Record<string, string> = {};
             for (const [pId, entry] of terminalPanes.value.entries()) {
+                // 同上：备用屏（TUI）不参与快照，避免刷新后停在备用屏
+                if (entry.terminal?.buffer?.active?.type === 'alternate') {
+                    console.log(`[会话 ${sessionId}][分屏终端 ${pId}] 处于 TUI 备用屏，跳过序列化`);
+                    continue;
+                }
                 if (entry.serializeAddon) {
                     try {
                         const s = entry.serializeAddon.serialize();
