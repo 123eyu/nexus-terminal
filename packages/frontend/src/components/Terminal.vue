@@ -1157,6 +1157,7 @@ const handleTerminalClick = () => {
     :class="{
       'ring-2 ring-primary ring-inset': isDraggingOverTerminal,
       'is-mobile': isMobile,
+      'gutter-scroll': !isMobile,
       'force-transparent-bg': isTerminalBackgroundEnabled
     }"
     @click="handleTerminalClick"
@@ -1177,18 +1178,31 @@ const handleTerminalClick = () => {
       </div>
     </div>
 
-    <!-- 内部横向滚动视口容器 (与右侧悬浮滚动条解耦，横向滑动时不漂移) -->
-    <div
-      class="terminal-scroll-viewport"
-      :class="{ 'no-wrap': terminalNoWrapBoolean }"
-    >
-      <!-- xterm 实际挂载点 -->
-      <div ref="terminalRef" class="terminal-inner-container"></div>
+    <!-- 内部横向滚动视口容器 (与右侧滚动条解耦，横向滑动时不漂移) -->
+    <div class="terminal-view-row">
+      <div
+        class="terminal-scroll-viewport"
+        :class="{ 'no-wrap': terminalNoWrapBoolean }"
+      >
+        <!-- xterm 实际挂载点 -->
+        <div ref="terminalRef" class="terminal-inner-container"></div>
+      </div>
+
+      <!-- 桌面端：滚动条占右侧独立一列，浮层压力归零（不再压住终端内容/背景图） -->
+      <MobileTerminalScrollbar
+        v-if="!isMobile"
+        variant="gutter"
+        :can-scroll="canScroll"
+        :scroll-progress="scrollProgress"
+        :thumb-height-ratio="thumbHeightRatio"
+        @scroll-progress="handleScrollProgressChange"
+      />
     </div>
 
     <!-- 移动端专属右侧悬浮滚动条 (独立解耦组件) -->
     <MobileTerminalScrollbar
       v-if="isMobile && canScroll"
+      variant="floating"
       :can-scroll="canScroll"
       :scroll-progress="scrollProgress"
       :thumb-height-ratio="thumbHeightRatio"
@@ -1234,6 +1248,31 @@ const handleTerminalClick = () => {
   overflow: hidden;
   position: relative;
   background-color: transparent !important;
+}
+
+/* 终端视口与滚动条同层并排：滚动条占独立一列，不再叠在终端上方 */
+.terminal-view-row {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+}
+
+.terminal-view-row > .terminal-scroll-viewport {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 桌面端隐藏 xterm 自带滚动条（它是绝对定位的浮层，会压住终端右边缘），改由旁列滚动条接管 */
+.terminal-outer-wrapper.gutter-scroll :deep(.xterm-viewport) {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.terminal-outer-wrapper.gutter-scroll :deep(.xterm-viewport::-webkit-scrollbar) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 .terminal-scroll-viewport.no-wrap {

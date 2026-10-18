@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 
-const props = defineProps<{
-  canScroll: boolean;
-  scrollProgress: number; // 0 到 1
-  thumbHeightRatio: number; // 0 到 1
-}>();
+const props = withDefaults(
+  defineProps<{
+    canScroll: boolean;
+    scrollProgress: number; // 0 到 1
+    thumbHeightRatio: number; // 0 到 1
+    /**
+     * floating：悬浮在终端上方（移动端，宽热区方便手指抓）
+     * gutter：占据右侧独立一列，不与终端内容重叠（桌面端）
+     */
+    variant?: 'floating' | 'gutter';
+  }>(),
+  { variant: 'floating' }
+);
 
 const emit = defineEmits<{
   (e: 'scroll-progress', progress: number): void;
@@ -14,8 +22,12 @@ const emit = defineEmits<{
 const trackRef = ref<HTMLDivElement | null>(null);
 const isDragging = ref(false);
 
+const isGutter = computed(() => props.variant === 'gutter');
+// 悬浮模式在没有滚动空间时整体隐藏；gutter 模式常驻（否则滚动条出现/消失会让终端宽度反复变化）
+const shouldRender = computed(() => (isGutter.value ? true : props.canScroll));
+
 const thumbHeightPercent = computed(() => {
-  return Math.round(props.thumbHeightRatio * 100);
+  return Math.round(Math.min(1, Math.max(0.04, props.thumbHeightRatio)) * 100);
 });
 
 const thumbTopPercent = computed(() => {
@@ -77,10 +89,16 @@ const handleMouseDown = (event: MouseEvent) => {
 
 <template>
   <div
-    v-if="props.canScroll"
+    v-if="shouldRender"
     ref="trackRef"
-    class="mobile-terminal-scrollbar-track"
-    :class="{ 'is-dragging': isDragging }"
+    class="terminal-scrollbar-track"
+    :class="[
+      isGutter ? 'is-gutter' : 'is-floating',
+      {
+        'is-dragging': isDragging,
+        'is-idle': !props.canScroll,
+      },
+    ]"
     @touchstart.stop.prevent="handleTouchStart"
     @touchmove.stop.prevent="handleTouchMove"
     @touchend.stop.prevent="handleTouchEnd"
@@ -88,7 +106,7 @@ const handleMouseDown = (event: MouseEvent) => {
     @mousedown.stop.prevent="handleMouseDown"
   >
     <div
-      class="mobile-terminal-scrollbar-thumb"
+      class="terminal-scrollbar-thumb"
       :style="{
         height: `${thumbHeightPercent}%`,
         top: `${thumbTopPercent}%`
@@ -100,23 +118,35 @@ const handleMouseDown = (event: MouseEvent) => {
 </template>
 
 <style scoped>
-/* 移动端专属终端悬浮滚动条样式 */
-.mobile-terminal-scrollbar-track {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  right: 2px;
-  width: 24px; /* 宽触摸热区，方便手指盲抓 */
-  z-index: 40;
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
+.terminal-scrollbar-track {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
 }
 
-.mobile-terminal-scrollbar-thumb {
+/* 移动端：悬浮在终端右侧，宽热区方便手指盲抓 */
+.terminal-scrollbar-track.is-floating {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 2px;
+  width: 24px;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+
+/* 桌面端：占右侧独立一列（在终端外面，不压内容） */
+.terminal-scrollbar-track.is-gutter {
+  position: relative;
+  flex: 0 0 10px;
+  width: 10px;
+  height: 100%;
+  z-index: 5;
+}
+
+.terminal-scrollbar-thumb {
   position: absolute;
   right: 2px;
   width: 14px;
@@ -139,11 +169,35 @@ const handleMouseDown = (event: MouseEvent) => {
 }
 
 /* 拖动激活态或触摸按下态 */
-.mobile-terminal-scrollbar-track.is-dragging .thumb-pill,
-.mobile-terminal-scrollbar-track:active .thumb-pill {
+.terminal-scrollbar-track.is-dragging .thumb-pill,
+.terminal-scrollbar-track:active .thumb-pill {
   width: 7px;
   opacity: 1;
   background-color: rgba(209, 213, 219, 0.8);
   box-shadow: 0 0 3px rgba(0, 0, 0, 0.45);
+}
+
+/* 桌面 gutter：窄一点，贴着终端右边缘，不遮挡任何字符 */
+.terminal-scrollbar-track.is-gutter .terminal-scrollbar-thumb {
+  right: 1px;
+  width: 8px;
+}
+
+.terminal-scrollbar-track.is-gutter .thumb-pill {
+  width: 4px;
+  background-color: rgba(156, 163, 175, 0.5);
+}
+
+.terminal-scrollbar-track.is-gutter.is-dragging .thumb-pill,
+.terminal-scrollbar-track.is-gutter:hover .thumb-pill,
+.terminal-scrollbar-track.is-gutter:active .thumb-pill {
+  width: 6px;
+  background-color: rgba(209, 213, 219, 0.85);
+}
+
+/* 没有可滚动内容时淡出，但保留列宽，避免终端宽度反复变化 */
+.terminal-scrollbar-track.is-gutter.is-idle {
+  opacity: 0;
+  pointer-events: none;
 }
 </style>
