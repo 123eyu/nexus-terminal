@@ -67,7 +67,7 @@ export const useSessionStore = defineStore('session', () => {
       existingSessionId,
       shouldActivate
     );
-  const activateSession = (sessionId: string) => sessionActions.activateSession(sessionId);
+  const activateSession = (sessionId: string, opts?: { silent?: boolean }) => sessionActions.activateSession(sessionId, opts);
   const closeSession = (sessionId: string) => sessionActions.closeSession(sessionId);
   const handleConnectRequest = (connection: ConnectionInfo) =>
     sessionActions.handleConnectRequest(connection, {

@@ -1,6 +1,6 @@
 
 import { v4 as uuidv4 } from 'uuid';
-import { sessions, suspendedSshSessions, isLoadingSuspendedSessions, activeSessionId } from '../state';
+import { sessions, suspendedSshSessions, isLoadingSuspendedSessions, activeSessionId, lastUserSwitchAt } from '../state';
 import type {
   MessagePayload,
   SshMarkForSuspendReqMessage,
@@ -649,7 +649,13 @@ const handleSshSuspendResumedNotif = async (payload: SshSuspendResumedNotifPaylo
       
       // 只有在未明确禁用激活（shouldActivateOnResume !== false）时才激活标签页与弹出通知
       if (sessionToUpdate.shouldActivateOnResume !== false) {
-        activateSessionAction(payload.newFrontendSessionId); // 激活标签页
+        // 多会话并行恢复时，谁先完成谁就抢焦点，会把用户手动切到的标签顶掉。
+        // 用户刚切过标签（20 秒内）就不动焦点，只发通知。
+        if (Date.now() - lastUserSwitchAt.value > 20000) {
+          activateSessionAction(payload.newFrontendSessionId); // 激活标签页
+        } else {
+          console.log(`[${t('term.sshSuspend')}] 用户刚手动切换过会话，恢复完成时不抢占焦点。`);
+        }
 
         let notificationName = t('sshSuspend.notifications.defaultSessionName'); // 使用 i18n 获取默认名
         if (suspendedSession) {

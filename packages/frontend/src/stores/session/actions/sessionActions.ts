@@ -4,7 +4,7 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useConnectionsStore, type ConnectionInfo } from '../../connections.store'; 
-import { sessions, activeSessionId, sessionOrder } from '../state';
+import { sessions, activeSessionId, sessionOrder, lastUserSwitchAt } from '../state';
 import { generateSessionId } from '../utils';
 import type { SessionState, SshTerminalInstance, StatusMonitorInstance, DockerManagerInstance, SftpManagerInstance, WsManagerInstance } from '../types';
 
@@ -226,8 +226,12 @@ export const openNewSession = (
   return newSessionId;
 };
 
-export const activateSession = (sessionId: string) => {
+export const activateSession = (sessionId: string, opts?: { silent?: boolean }) => {
   if (sessions.value.has(sessionId)) {
+    if (!opts?.silent) {
+      // 记录"用户主动切换"，让异步的云端恢复流程知道不要再抢焦点
+      lastUserSwitchAt.value = Date.now();
+    }
     if (activeSessionId.value !== sessionId) {
       activeSessionId.value = sessionId;
       console.log(`[SessionActions] 已激活会话: ${sessionId}`);

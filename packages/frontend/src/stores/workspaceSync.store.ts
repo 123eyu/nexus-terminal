@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../utils/apiClient';
 import { isDesktopApp } from '../utils/platform';
 import { useSessionStore } from './session.store';
+import { lastUserSwitchAt } from './session/state';
 import { useFileEditorStore, type FileTab } from './fileEditor.store';
 import { useConnectionsStore } from './connections.store';
 import { useUiNotificationsStore } from './uiNotifications.store';
@@ -637,6 +638,9 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     const layoutStore = useLayoutStore();
 
     isRestoring.value = true;
+    // 记录恢复起点：之后只要用户手动切过标签（lastUserSwitchAt > 这个值），
+    // 整个恢复流程就不再抢焦点。
+    const restoreStartedAt = Date.now();
     notifStore.setSilenced(true);
     logSync('开始从云端快照恢复工作区全量状态...', {
       sessionsCount: snapshot.sessions?.length || 0,
@@ -937,8 +941,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         const mappedActiveId = resolveSessionId(snapshot.activeSessionId, fallbackConnId);
         if (mappedActiveId) {
           if (sessionStore.activeSessionId !== mappedActiveId) {
-            sessionStore.activateSession(mappedActiveId);
-            logSync(`已对齐激活目标会话: ${mappedActiveId}`);
+            if (lastUserSwitchAt.value > restoreStartedAt) {
+              logSync('恢复过程中用户已手动切换会话，跳过激活对齐');
+            } else {
+              sessionStore.activateSession(mappedActiveId, { silent: true });
+              logSync(`已对齐激活目标会话: ${mappedActiveId}`);
+            }
           } else {
             logSync(`目标会话在启动时已先行聚焦激活: ${mappedActiveId}，无需重复切换`);
           }
@@ -1131,6 +1139,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       }
 
       // 7. 最终确保工作区精准切换到上次激活的会话（防止异步加载与渲染过程中被其它事件打断）
+      //    但如果用户在恢复期间已经手动点过标签，就必须尊重用户的选择，不能把他拽回去。
       if (snapshot.activeSessionId) {
         const activeSessionSnapshot = snapshot.sessions?.find(s => s.sessionId === snapshot.activeSessionId);
         const fallbackConnId = activeSessionSnapshot?.connectionId;
@@ -1138,8 +1147,12 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         if (finalActiveId) {
           await nextTick();
           if (sessionStore.activeSessionId !== finalActiveId) {
-            logSync(`恢复收尾，最终对齐激活会话至: ${finalActiveId}`);
-            sessionStore.activateSession(finalActiveId);
+            if (lastUserSwitchAt.value > restoreStartedAt) {
+              logSync('恢复收尾：检测到用户已手动切换会话，跳过最终激活对齐');
+            } else {
+              logSync(`恢复收尾，最终对齐激活会话至: ${finalActiveId}`);
+              sessionStore.activateSession(finalActiveId, { silent: true });
+            }
           }
         }
       }
