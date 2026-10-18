@@ -35,28 +35,46 @@ const thumbTopPercent = computed(() => {
   return Math.min(maxTop, Math.max(0, props.scrollProgress * maxTop));
 });
 
-const handleDragTo = (clientY: number) => {
-  if (!props.canScroll || !trackRef.value) return;
+// 拖动时"抓住哪就按哪"：记录按下滑块内部的位置偏移，
+// 之后滑块严格跟随鼠标位移（1:1），不会一按就跳到鼠标中心。
+let grabOffsetPx = 0;
 
-  const rect = trackRef.value.getBoundingClientRect();
+const getTrackMetrics = () => {
+  const track = trackRef.value;
+  if (!track) return null;
+  const rect = track.getBoundingClientRect();
   const trackHeight = rect.height;
-  if (trackHeight <= 0) return;
-
-  const thumbHeightPx = Math.max(28, props.thumbHeightRatio * trackHeight);
+  if (trackHeight <= 0) return null;
+  const thumbHeightPx = Math.min(trackHeight, Math.max(28, props.thumbHeightRatio * trackHeight));
   const maxTopPx = trackHeight - thumbHeightPx;
-  if (maxTopPx <= 0) return;
+  if (maxTopPx <= 0) return null;
+  return { rect, trackHeight, thumbHeightPx, maxTopPx };
+};
 
-  const relativeY = clientY - rect.top;
-  const targetTopPx = relativeY - thumbHeightPx / 2;
-  const progress = Math.min(1, Math.max(0, targetTopPx / maxTopPx));
+const handleDragTo = (clientY: number) => {
+  if (!props.canScroll) return;
+  const metrics = getTrackMetrics();
+  if (!metrics) return;
+  const y = clientY - metrics.rect.top;
+  const top = Math.min(metrics.maxTopPx, Math.max(0, y - grabOffsetPx));
+  emit('scroll-progress', top / metrics.maxTopPx);
+};
 
-  emit('scroll-progress', progress);
+/** 按下：判断是按在滑块上还是轨道空白处，后者先跳过去再以滑块中心继续拖 */
+const beginDrag = (clientY: number) => {
+  const metrics = getTrackMetrics();
+  if (!metrics) return;
+  const y = clientY - metrics.rect.top;
+  const thumbTop = props.scrollProgress * metrics.maxTopPx;
+  const onThumb = y >= thumbTop - 4 && y <= thumbTop + metrics.thumbHeightPx + 4;
+  grabOffsetPx = onThumb ? y - thumbTop : metrics.thumbHeightPx / 2;
+  if (!onThumb) handleDragTo(clientY);
 };
 
 const handleTouchStart = (event: TouchEvent) => {
   if (event.touches.length > 0) {
     isDragging.value = true;
-    handleDragTo(event.touches[0].clientY);
+    beginDrag(event.touches[0].clientY);
   }
 };
 
@@ -72,7 +90,7 @@ const handleTouchEnd = () => {
 
 const handleMouseDown = (event: MouseEvent) => {
   isDragging.value = true;
-  handleDragTo(event.clientY);
+  beginDrag(event.clientY);
 
   const onMouseMove = (moveEvent: MouseEvent) => {
     handleDragTo(moveEvent.clientY);

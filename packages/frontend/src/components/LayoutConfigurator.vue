@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onBeforeUnmount, type Ref } from 'vue';
+import { ref, computed, watch, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
 import { useSettingsStore } from '../stores/settings.store';
@@ -351,201 +351,6 @@ watch(() => props.isVisible, (newValue) => {
     localAvailablePanes.value = [];
   }
 });
-
-// --- 预览画布：自适应尺寸 + 以鼠标为锚点的缩放 ---
-// 画布是流式的（子节点按 size 百分比分配），组件一多就会被压到无法点击。
-// 这里按"保证每个面板可点击"反推画布所需最小尺寸，画布不再被压缩，
-// 超出视口时由视口自己出滚动条；缩放则整体 scale，不影响布局计算。
-const previewViewportRef = ref<HTMLDivElement | null>(null);
-const previewZoom = ref(1);
-const previewViewportSize = ref({ w: 0, h: 0 });
-
-const PREVIEW_MIN_PANE_W = 160;
-const PREVIEW_MIN_PANE_H = 100;
-const PREVIEW_NODE_CHROME = 20; // 每层容器的标题栏 + 内边距（px 估算）
-// 不同面板的"可用"下限不一样：命令条本来就该是细条，不能按面板尺寸要求
-const PREVIEW_PANE_MIN: Record<string, { w: number; h: number }> = {
-  terminal: { w: 200, h: 120 },
-  editor: { w: 200, h: 120 },
-  fileManager: { w: 160, h: 100 },
-  statusMonitor: { w: 160, h: 100 },
-  dockerManager: { w: 160, h: 100 },
-  connections: { w: 120, h: 100 },
-  suspendedSshSessions: { w: 120, h: 90 },
-  commandHistory: { w: 120, h: 76 },
-  quickCommands: { w: 120, h: 76 },
-  commandBar: { w: 140, h: 36 },
-  multiLineCommandInput: { w: 140, h: 44 },
-};
-// 画布增长的硬上限：避免某个 5% 的细条把整张画布撑到十几倍
-const PREVIEW_STAGE_MAX_VIEWPORT_RATIO = 2;
-const PREVIEW_STAGE_MAX_W = 1600;
-const PREVIEW_STAGE_MAX_H = 1200;
-
-function getPreviewPaneMin(component?: string) {
-  if (component && PREVIEW_PANE_MIN[component]) return PREVIEW_PANE_MIN[component];
-  return { w: PREVIEW_MIN_PANE_W, h: PREVIEW_MIN_PANE_H };
-}
-
-/**
- * 反推画布最小尺寸：
- * - fx / fy 是该节点相对画布的"可用比例"
- * - 叶子节点要拿到自身下限的可用空间，则画布至少需要 目标 / 比例
- * - 容器取所有子节点要求值的最大值（容器只会被最挤的那个子项限制）
- */
-function computeRequiredPreviewSize(
-  node: LayoutNode | null,
-  fx = 1,
-  fy = 1,
-  depth = 0,
-): { w: number; h: number } {
-  if (!node) return { w: 0, h: 0 };
-  const children = node.type === 'container' ? (node.children || []) : [];
-  if (children.length === 0) {
-    const min = getPreviewPaneMin(node.component);
-    const safeFx = Math.max(fx, 0.02);
-    const safeFy = Math.max(fy, 0.02);
-    return {
-      w: min.w / safeFx,
-      h: (min.h + depth * PREVIEW_NODE_CHROME) / safeFy,
-    };
-  }
-
-  const totalSize = children.reduce((sum, c) => sum + (c.size && c.size > 0 ? c.size : 50), 0) || 1;
-  const isRow = node.direction === 'horizontal';
-  let w = 0;
-  let h = 0;
-  for (const child of children) {
-    const share = (child.size && child.size > 0 ? child.size : 50) / totalSize;
-    const required = computeRequiredPreviewSize(
-      child,
-      isRow ? fx * share : fx,
-      isRow ? fy : fy * share,
-      depth + 1,
-    );
-    w = Math.max(w, required.w);
-    h = Math.max(h, required.h);
-  }
-  return { w, h };
-}
-
-const previewStageSize = computed(() => {
-  const required = computeRequiredPreviewSize(localLayoutTree.value);
-  const vw = previewViewportSize.value.w || 0;
-  const vh = previewViewportSize.value.h || 0;
-  const maxW = Math.min(PREVIEW_STAGE_MAX_W, Math.max(vw, vw * PREVIEW_STAGE_MAX_VIEWPORT_RATIO));
-  const maxH = Math.min(PREVIEW_STAGE_MAX_H, Math.max(vh, vh * PREVIEW_STAGE_MAX_VIEWPORT_RATIO));
-  return {
-    w: Math.max(1, Math.ceil(Math.min(Math.max(vw, required.w), maxW))),
-    h: Math.max(1, Math.ceil(Math.min(Math.max(vh, required.h), maxH))),
-  };
-});
-
-
-const previewStageStyle = computed(() => ({
-  width: `${previewStageSize.value.w}px`,
-  height: `${previewStageSize.value.h}px`,
-  transform: `scale(${previewZoom.value})`,
-  transformOrigin: '0 0',
-}));
-
-const previewHasOverflow = computed(
-  () =>
-    previewStageSize.value.w > previewViewportSize.value.w + 1 ||
-    previewStageSize.value.h > previewViewportSize.value.h + 1,
-);
-
-let previewResizeObserver: ResizeObserver | null = null;
-const measurePreviewViewport = () => {
-  const el = previewViewportRef.value;
-  if (!el) return;
-  previewViewportSize.value = { w: el.clientWidth, h: el.clientHeight };
-};
-
-const bindPreviewViewport = () => {
-  measurePreviewViewport();
-  if (previewResizeObserver || !previewViewportRef.value || typeof ResizeObserver === 'undefined') return;
-  previewResizeObserver = new ResizeObserver(() => measurePreviewViewport());
-  previewResizeObserver.observe(previewViewportRef.value);
-};
-
-watch(
-  () => props.isVisible,
-  (visible) => {
-    nextTick(() => {
-      if (visible) {
-        previewZoom.value = 1;
-        bindPreviewViewport();
-      } else if (previewResizeObserver) {
-        previewResizeObserver.disconnect();
-        previewResizeObserver = null;
-      }
-    });
-  },
-  { immediate: true },
-);
-
-onBeforeUnmount(() => {
-  previewResizeObserver?.disconnect();
-  previewResizeObserver = null;
-});
-
-/** 设置缩放，anchor 传入鼠标在视口内的相对坐标时以该点为锚（内容不漂移） */
-const applyPreviewZoom = (target: number, anchor?: { x: number; y: number }) => {
-  const el = previewViewportRef.value;
-  const nextZoom = Math.min(3, Math.max(0.2, Math.round(target * 100) / 100));
-  const oldZoom = previewZoom.value;
-  if (!el || Math.abs(nextZoom - oldZoom) < 0.0001) {
-    if (el) previewZoom.value = nextZoom;
-    return;
-  }
-
-  const ax = anchor?.x ?? el.clientWidth / 2;
-  const ay = anchor?.y ?? el.clientHeight / 2;
-  // 锚点在"画布坐标系"中的位置（未缩放）
-  const contentX = (el.scrollLeft + ax) / oldZoom;
-  const contentY = (el.scrollTop + ay) / oldZoom;
-
-  previewZoom.value = nextZoom;
-  nextTick(() => {
-    el.scrollLeft = contentX * nextZoom - ax;
-    el.scrollTop = contentY * nextZoom - ay;
-  });
-};
-
-const setPreviewZoom = (zoom: number) => applyPreviewZoom(zoom);
-const resetPreviewZoom = () => {
-  previewZoom.value = 1;
-  nextTick(() => {
-    const el = previewViewportRef.value;
-    if (!el) return;
-    el.scrollLeft = 0;
-    el.scrollTop = 0;
-  });
-};
-
-/** 整张画布缩到视口内（只看结构时用） */
-const fitPreviewZoom = () => {
-  const el = previewViewportRef.value;
-  if (!el) return;
-  const { w, h } = previewStageSize.value;
-  const zoom = Math.min(el.clientWidth / Math.max(w, 1), el.clientHeight / Math.max(h, 1));
-  applyPreviewZoom(Math.max(0.2, Math.min(1, zoom)), { x: 0, y: 0 });
-};
-
-const handlePreviewWheel = (event: WheelEvent) => {
-  // 普通滚轮保留滚动（组件多时可平移），Ctrl/⌘ + 滚轮（或触控板捏合）缩放
-  if (!(event.ctrlKey || event.metaKey)) return;
-  event.preventDefault();
-  const el = previewViewportRef.value;
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const step = event.deltaY < 0 ? 1.12 : 1 / 1.12;
-  applyPreviewZoom(previewZoom.value * step, {
-    x: event.clientX - rect.left - el.clientLeft,
-    y: event.clientY - rect.top - el.clientTop,
-  });
-};
 
 // --- Helper Functions ---
 function getMainLayoutUsedPaneNames(node: LayoutNode | null): Set<PaneName> {
@@ -997,74 +802,30 @@ const handleAvailablePaneDragEnd = (event: any) => {
           <!-- 1. 主布局预览 (Blueprint Viewport) -->
           <section class="flex flex-col flex-1 min-h-0 bg-background-alt/40 rounded-xl border border-border/80 p-3 overflow-hidden shadow-xs relative">
             <!-- 极简标题栏 -->
-            <div class="flex items-center justify-between mb-2 flex-shrink-0 gap-2">
-              <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center justify-between mb-2 flex-shrink-0">
+              <div class="flex items-center gap-2">
                 <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                <h3 class="text-xs font-semibold text-foreground m-0 flex items-center gap-1.5 whitespace-nowrap">
+                <h3 class="text-xs font-semibold text-foreground m-0 flex items-center gap-1.5">
                   <i class="fas fa-desktop text-primary text-xs"></i>
                   <span>主布局预览</span>
                 </h3>
-                <span class="text-[10px] text-text-secondary/50 truncate hidden xl:inline">
-                  Ctrl+滚轮缩放 · 滚轮平移
-                </span>
-              </div>
-              <!-- 缩放控制 -->
-              <div class="flex items-center gap-0.5 flex-shrink-0">
-                <button
-                  type="button"
-                  class="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
-                  title="缩小"
-                  @click="setPreviewZoom(previewZoom - 0.1)"
-                >
-                  <i class="fas fa-minus text-[9px]"></i>
-                </button>
-                <button
-                  type="button"
-                  class="min-w-[38px] h-5 px-1 rounded hover:bg-hover text-[10px] font-mono text-text-secondary hover:text-foreground transition-colors"
-                  title="点击恢复 100%"
-                  @click="resetPreviewZoom"
-                >
-                  {{ Math.round(previewZoom * 100) }}%
-                </button>
-                <button
-                  type="button"
-                  class="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
-                  title="放大"
-                  @click="setPreviewZoom(previewZoom + 0.1)"
-                >
-                  <i class="fas fa-plus text-[9px]"></i>
-                </button>
-                <button
-                  type="button"
-                  class="w-5 h-5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
-                  title="缩放到适应视口"
-                  @click="fitPreviewZoom"
-                >
-                  <i class="fas fa-expand text-[9px]"></i>
-                </button>
               </div>
             </div>
 
             <!-- 画布视口 -->
-            <div
-              ref="previewViewportRef"
-              class="blueprint-canvas-viewport flex-grow rounded-lg border border-primary/20 p-1.5 bg-[#0e1014] overflow-auto min-h-0 shadow-inner relative custom-scroll"
-              :class="{ 'is-overflowing': previewHasOverflow }"
-              @wheel="handlePreviewWheel"
-            >
-              <div v-if="localLayoutTree" class="blueprint-canvas-stage" :style="previewStageStyle">
-                <LayoutNodeEditor
-                  :node="localLayoutTree"
-                  :parent-node="null"
-                  :node-index="0"
-                  :pane-labels="paneLabels"
-                  @update:node="handleNodeUpdate"
-                  @removeNode="handleNodeRemove"
-                  :group="'layout-items'"
-                  class="w-full h-full"
-                />
-              </div>
-              <div v-else class="flex-grow h-full flex flex-col items-center justify-center p-6 text-center gap-2 text-text-secondary/60 text-xs">
+            <div class="blueprint-canvas-viewport flex-grow rounded-lg border border-primary/20 p-1.5 bg-[#0e1014] flex flex-col overflow-auto min-h-0 shadow-inner relative custom-scroll">
+              <LayoutNodeEditor
+                v-if="localLayoutTree"
+                :node="localLayoutTree"
+                :parent-node="null"
+                :node-index="0"
+                :pane-labels="paneLabels"
+                @update:node="handleNodeUpdate"
+                @removeNode="handleNodeRemove"
+                :group="'layout-items'"
+                class="flex-grow w-full h-full"
+              />
+              <div v-else class="flex-grow flex flex-col items-center justify-center p-6 text-center gap-2 text-text-secondary/60 text-xs">
                 <i class="fas fa-plus text-base text-primary/60"></i>
                 <span>暂无布局，请从左侧拖拽面板加入</span>
               </div>
@@ -1404,15 +1165,6 @@ const handleAvailablePaneDragEnd = (event: any) => {
 .blueprint-canvas-viewport {
   background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 14px 14px;
-  /* 缩放时出现横向/纵向滚动条（custom-scroll 里定了 4px 细条样式） */
-  overscroll-behavior: contain;
-}
-
-/* 画布舞台：尺寸由"保证每个面板可点击"反推得出，缩放只做视觉变换，不参与布局 */
-.blueprint-canvas-stage {
-  flex: none;
-  position: relative;
-  will-change: transform;
 }
 
 /* 优化精细滚动条 */
