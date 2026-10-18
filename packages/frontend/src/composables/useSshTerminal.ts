@@ -143,7 +143,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
                 currentSessionState.pendingOutput.forEach(data => {
                     const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
-                    term.write(highlightStore.highlight(normalizedData));
+                    term.write(sanitizeTuiTransition(highlightStore.highlight(normalizedData)));
                 });
                 currentSessionState.pendingOutput = []; // 清空
                 if (currentSessionState.isResuming) {
@@ -154,7 +154,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // 2. 将此管理器内部缓冲的输出 (terminalOutputBuffer, 来自 ssh:output) 写入终端
             if (terminalOutputBuffer.value.length > 0) {
                 terminalOutputBuffer.value.forEach(data => {
-                    term.write(highlightStore.highlight(data));
+                    term.write(sanitizeTuiTransition(highlightStore.highlight(data)));
                 });
                 terminalOutputBuffer.value = []; // 清空内部缓冲区
             }
@@ -181,7 +181,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
                 console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
                 const normalized = cachedPaneBuffer.replace(/\r?\n/g, '\r\n').replace(/(\r\n)+$/, '');
-                term.write(highlightStore.highlight(normalized));
+                term.write(sanitizeTuiTransition(highlightStore.highlight(normalized)));
                 // 消费掉这段缓存：workspaceSync 里还有一条"panes 已就绪时立即回放"的路径，
                 // 不清掉会写第二遍，表现为刷新后终端里多出好几个重复的提示符。
                 usedKeys.forEach((k) => {
@@ -277,6 +277,18 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
     // --- WebSocket 消息处理 ---
 
+    /**
+     * 退出全屏 TUI（备用屏）时，程序通常先设置背景色再清屏，
+     * `\e[2J` 就会用那块黑色填满整屏，背景图被一整块黑盖住。
+     *
+     * 这里在 `\e[?1049l` / `\e[?47l`（退出备用屏）之后立刻注入 SGR 重置，
+     * 保证紧接着的清屏用的是默认背景（配合 Terminal 里的透明 theme）。
+     */
+    const sanitizeTuiTransition = <T extends string | Uint8Array>(raw: T): T => {
+        if (typeof raw !== 'string' || !raw || raw.indexOf('\x1b[?') === -1) return raw;
+        return raw.replace(/\x1b\[\?(?:1049|47)l/g, (m) => `${m}\x1b[0m`) as T;
+    };
+
     const handleSshOutput = (payload: MessagePayload, message?: WebSocketMessage) => {
         // 检查消息是否属于此会话
         if (message?.sessionId && message.sessionId !== sessionId) {
@@ -322,7 +334,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // --------------------
 
         if (terminalInstance.value) {
-            terminalInstance.value.write(highlightStore.highlight(outputData));
+            terminalInstance.value.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
             // 终端数据输出写入后安排 1.5s 防抖同步至云端工作区
             scheduleTerminalSync(1500);
         } else {
@@ -339,6 +351,20 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         }
 
         isSshConnected.value = true; // 更新状态
+
+        // 刷新/重连后，服务端如果还停在 btop 这类全屏 TUI 里，
+        // 前端只会收到"增量"重绘数据，画面就是残缺的（缺面板、错位）。
+        // TUI 只在收到 SIGWINCH 时才会整屏重绘，这里制造一次尺寸抖动触发它。
+        setTimeout(() => {
+            const term = terminalInstance.value;
+            if (!term || term.buffer.active.type !== 'alternate') return;
+            const { cols, rows } = term;
+            if (cols < 3) return;
+            console.log(`[会话 ${sessionId}][SSH终端模块] 检测到全屏 TUI，触发一次尺寸抖动以强制整屏重绘`);
+            // 用 +1 而不是 -1：减一可能让 TUI 判定"终端太小"（btop 会直接报 width too small）
+            term.resize(cols + 1, rows);
+            setTimeout(() => term.resize(cols, rows), 150);
+        }, 800);
 
         // 主连接就绪，立刻为所有已挂载的分屏副终端打开独立 Shell 通道
         if (terminalPanes.value.size > 1) {
@@ -388,7 +414,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 清空可能存在的旧缓冲（虽然理论上此时应该已经 ready 了）
         if (terminalOutputBuffer.value.length > 0) {
              console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接时仍有缓冲数据，正在写入...`);
-             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(highlightStore.highlight(data)));
+             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(sanitizeTuiTransition(highlightStore.highlight(data))));
              terminalOutputBuffer.value = [];
         }
     };
@@ -482,7 +508,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             }
         }
 
-        paneEntry.terminal.write(highlightStore.highlight(outputData));
+        paneEntry.terminal.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
         scheduleTerminalSync(1500);
     };
 
