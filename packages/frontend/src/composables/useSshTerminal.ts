@@ -292,6 +292,34 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         return raw.replace(/\x1b\[\?(?:1049|47)l/g, (m) => `${m}\x1b[0m\x1b[2J\x1b[H`) as T;
     };
 
+    /**
+     * 让处于全屏 TUI 的终端整屏重绘。
+     *
+     * TUI（btop/vim）只在收到 SIGWINCH（PTY 尺寸变化）时才重绘；
+     * 刷新后前端只拿到增量数据，画面就会残缺。这里制造一次 cols+1 → cols 的尺寸抖动，
+     * 后端 pty 收到新尺寸后会给 TUI 发 SIGWINCH，它就会整屏重画。
+     */
+    const forceTuiRedraw = (term: Terminal | null | undefined, delay = 400) => {
+        if (!term) return;
+        const run = () => {
+            try {
+                if (term.buffer.active.type !== 'alternate') return;
+                const { cols, rows } = term;
+                if (cols < 3) return;
+                console.log(`[会话 ${sessionId}][SSH终端模块] 检测到全屏 TUI，触发尺寸抖动以强制整屏重绘`);
+                // 用 +1 而不是 -1：减一可能让 TUI 判定"终端太小"（btop 会直接报 width too small）
+                term.resize(cols + 1, rows);
+                setTimeout(() => {
+                    try { term.resize(cols, rows); } catch { /* noop */ }
+                }, 150);
+            } catch {
+                /* noop */
+            }
+        };
+        if (delay > 0) setTimeout(run, delay);
+        else run();
+    };
+
     const handleSshOutput = (payload: MessagePayload, message?: WebSocketMessage) => {
         // 检查消息是否属于此会话
         if (message?.sessionId && message.sessionId !== sessionId) {
@@ -358,15 +386,12 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 刷新/重连后，服务端如果还停在 btop 这类全屏 TUI 里，
         // 前端只会收到"增量"重绘数据，画面就是残缺的（缺面板、错位）。
         // TUI 只在收到 SIGWINCH 时才会整屏重绘，这里制造一次尺寸抖动触发它。
+        // 注意：要覆盖**所有** pane，不能只处理主终端 —— 用户反馈第一个终端能自动矫正、
+        // 其他终端不行，就是因为这里以前只拿了 terminalInstance（主终端）。
         setTimeout(() => {
-            const term = terminalInstance.value;
-            if (!term || term.buffer.active.type !== 'alternate') return;
-            const { cols, rows } = term;
-            if (cols < 3) return;
-            console.log(`[会话 ${sessionId}][SSH终端模块] 检测到全屏 TUI，触发一次尺寸抖动以强制整屏重绘`);
-            // 用 +1 而不是 -1：减一可能让 TUI 判定"终端太小"（btop 会直接报 width too small）
-            term.resize(cols + 1, rows);
-            setTimeout(() => term.resize(cols, rows), 150);
+            for (const [, entry] of terminalPanes.value.entries()) {
+                forceTuiRedraw(entry.terminal, 0);
+            }
         }, 800);
 
         // 主连接就绪，立刻为所有已挂载的分屏副终端打开独立 Shell 通道
@@ -523,6 +548,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const paneEntry = terminalPanes.value.get(paneId);
         if (paneEntry) {
             paneEntry.isReady = true;
+            // 副终端如果是复用后端保活的 Shell（刷新前在跑 btop），前端同样只收到增量数据，
+            // 画面会残缺。通道就绪后立刻抖动一次，让它整屏重绘。
+            forceTuiRedraw(paneEntry.terminal, 500);
             // 通道就绪，立即向后端同步一次实际尺寸，触发服务端 PTY 更新尺寸
             if (paneEntry.terminal && paneEntry.terminal.cols > 0 && paneEntry.terminal.rows > 0) {
                 sendMessage({

@@ -141,8 +141,10 @@ const debounce = (func: Function, delay: number) => {
 const debouncedEmitResize = debounce((term: Terminal) => {
     if (term && props.isActive) { // 仅当标签仍处于活动状态时才发送防抖后的 resize
         const dimensions = { cols: term.cols, rows: term.rows };
-        console.log(`[Terminal ${props.sessionId}] Debounced resize emit (from ResizeObserver):`, dimensions);
-        emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: dimensions });
+        console.log(`[Terminal ${props.sessionId}] Debounced resize emit (from ResizeObserver):`, dimensions, 'paneId:', props.paneId);
+        // 必须带上 paneId：拖动分割条走的就是这条路径，漏了它 resize 永远只发给主终端，
+        // 副终端的 PTY 尺寸不会更新 → TUI（btop）不重绘、排版错乱。
+        emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: dimensions, paneId: props.paneId });
         // *** 尝试在发送 resize 后强制刷新终端显示 ***
         try {
             term.refresh(0, term.rows - 1); // Refresh entire viewport
