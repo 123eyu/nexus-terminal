@@ -76,6 +76,22 @@ const getSessionLayoutTree = (sessionId: string): LayoutNode => {
   const session = sessionStore.sessions.get(sessionId);
   return layoutStore.getLayoutTreeForSession(sessionId, session?.connectionId);
 };
+
+/**
+ * 聚焦校正跟着"当前可见的会话树"走。
+ *
+ * 会话树的 pane ID 与主布局树不是同一套（getLayoutTreeForSession 会克隆并重编 ID），
+ * 若 activeTerminalPaneId 仍停在旧会话的 paneId 上，命令输入栏 / 快捷指令
+ * 会走 ssh:pane_input 发到不存在的分屏通道，后端静默丢弃 —— 表现为"新会话里命令发不出去，
+ * 手动点一下终端才恢复"。这里在会话切换（以及会话树被刷新）时重新校准。
+ */
+watch(
+  () => (props.activeSessionId ? getSessionLayoutTree(props.activeSessionId) : null),
+  (tree) => {
+    layoutStore.syncActiveTerminalPaneFromTree(tree);
+  },
+  { immediate: true }
+);
 </script>
 
 <template>

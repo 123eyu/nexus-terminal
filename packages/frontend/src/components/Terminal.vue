@@ -17,6 +17,7 @@ import TerminalContextMenu, { type TerminalMenuAction } from './TerminalContextM
 import { useFileEditorStore, type FileInfo } from '../stores/fileEditor.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
+import { registerTerminal as registerDebugTerminal } from '../debug';
 
 const highlightStore = useTerminalHighlightStore();
 
@@ -51,6 +52,7 @@ let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let searchAddon: SearchAddon | null = null; // *** 添加 searchAddon 变量 ***
 let serializeAddon: SerializeAddon | null = null; // 官方序列化插件，用于保存完整 ANSI 颜色与样式
+let unregisterDebugTerminal: (() => void) | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let observedElement: HTMLElement | null = null; // +++ Store the observed element +++
 let debounceTimer: number | null = null; // 用于防抖的计时器 ID
@@ -88,6 +90,21 @@ const isTerminalDomReady = ref(false);
 const lastCwd = ref<string | null>(null);
 
 watch(() => props.isPaneFocused, (focused) => {
+  if (focused) {
+    // 会话切换 / 新开终端后把键盘焦点交给 xterm，省掉"先点一下终端"这一步。
+    // 但如果用户正在输入框里打字（命令输入栏等），不要抢走焦点。
+    nextTick(() => {
+      const ae = document.activeElement as HTMLElement | null;
+      const userTypingElsewhere = !!ae && (
+        ae.tagName === 'INPUT' ||
+        ae.tagName === 'TEXTAREA' ||
+        ae.isContentEditable
+      );
+      if (!userTypingElsewhere && terminal) {
+        terminal.focus();
+      }
+    });
+  }
   if (focused && lastCwd.value) {
     emitWorkspaceEvent('terminal:cwdChanged', { sessionId: props.sessionId, cwd: lastCwd.value, paneId: props.paneId });
   }
@@ -450,6 +467,14 @@ onMounted(() => {
 
     // 将终端附加到 DOM
     terminal.open(terminalRef.value);
+    // 开发期：把 xterm 实例交给调试桥，AI 可直接读 buffer 判断"黑屏/断连/回显缺失"
+    unregisterDebugTerminal = registerDebugTerminal({
+      id: props.paneId || props.sessionId,
+      sessionId: props.sessionId,
+      label: props.paneId ? `${props.sessionId}@${props.paneId}` : props.sessionId,
+      term: terminal,
+      meta: { paneId: props.paneId, isActive: props.isActive, isMobile: isMobile.value },
+    });
     // terminal.open() 同步执行完毕后，可以认为 Xterm 已尝试附加到 DOM
     isTerminalDomReady.value = true; // +++ 直接在此处设置 DOM 准备就绪状态 +++
     console.log(`[Terminal ${props.sessionId}] Xterm open() called, considering DOM ready for initial style checks.`);
@@ -822,6 +847,10 @@ onMounted(() => {
 
 // 组件卸载前清理资源
 onBeforeUnmount(() => {
+  if (unregisterDebugTerminal) {
+    unregisterDebugTerminal();
+    unregisterDebugTerminal = null;
+  }
   if (resizeRafId !== null) {
     cancelAnimationFrame(resizeRafId);
     resizeRafId = null;

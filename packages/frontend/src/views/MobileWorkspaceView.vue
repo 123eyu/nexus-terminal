@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import CommandInputBar from '../components/CommandInputBar.vue';
 import VirtualKeyboard from '../components/VirtualKeyboard.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
 import { useSessionStore } from '../stores/session.store';
+import { useLayoutStore } from '../stores/layout.store';
 import type { LayoutNode } from '../stores/layout.store';
 import type { FileTab } from '../stores/fileEditor.store';
 import type { SessionTabInfoWithStatus, SshTerminalInstance } from '../stores/session/types';
@@ -33,6 +34,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const sessionStore = useSessionStore();
+const layoutStore = useLayoutStore();
 
 // 移动端专用单终端视口布局节点
 const mobileLayoutNodeForTerminal = computed((): LayoutNode | null => {
@@ -42,6 +44,12 @@ const mobileLayoutNodeForTerminal = computed((): LayoutNode | null => {
     component: 'terminal' as const,
     size: 100,
   };
+});
+
+// 移动端只有一个固定终端 pane，聚焦校正要指向它，
+// 否则命令输入栏会把 activeTerminalPaneId（来自主布局树）当成目标发到不存在的分屏。
+onMounted(() => {
+  layoutStore.syncActiveTerminalPaneFromTree(mobileLayoutNodeForTerminal.value);
 });
 
 // 虚拟键盘状态与手势

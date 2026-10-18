@@ -12,6 +12,7 @@ import '@fortawesome/fontawesome-free/css/all.min.css';
 import 'splitpanes/dist/splitpanes.css';
 import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
+import { installDebugBridge } from './debug';
 
 
 const pinia = createPinia(); // 创建 Pinia 实例
@@ -20,6 +21,9 @@ pinia.use(piniaPluginPersistedstate); // 使用持久化插件
 const app = createApp(App);
 
 app.use(pinia); // 使用配置好的 Pinia 实例
+// 开发期调试桥：捕获组件异常 / console 落盘 / 暴露 window.__NEXUS__（生产构建自动剔除）
+installDebugBridge(app);
+
 // 注意：在状态初始化完成前，暂时不 use(router)
 app.use(i18n); // 使用 i18n
 

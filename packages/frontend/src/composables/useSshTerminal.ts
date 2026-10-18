@@ -94,25 +94,35 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         const currentSessionState = globalSessionsRef.value.get(sessionId);
 
-        // 如果尚未锁定主终端，按布局树先序遍历或会话已有记录确定性锁定，杜绝挂载竞速乱序
+        // --- 主终端锁定 ---
+        // 必须用"当前实际渲染的树"（桌面端为活动会话的专属树）：
+        // 其 paneId 与主布局树不是同一套，用错树会锁定一个不存在于 terminalPanes 的
+        // paneId，导致 terminalInstance 永远不赋值、主通道判定失效。
+        let treeTerminalIds: string[] = [];
+        try {
+            const layoutStore = useLayoutStore();
+            treeTerminalIds = getTerminalPaneIdsInLayout(layoutStore.getActiveLayoutTree());
+        } catch {
+            // 忽略 store 异常
+        }
+
         if (!primaryPaneId.value) {
-            let determinedPrimaryId = (currentSessionState as any)?.primaryTerminalPaneId;
-            if (!determinedPrimaryId) {
-                try {
-                    const layoutStore = useLayoutStore();
-                    const layoutTerminalIds = getTerminalPaneIdsInLayout(layoutStore.layoutTree);
-                    if (layoutTerminalIds.length > 0) {
-                        determinedPrimaryId = layoutTerminalIds[0];
-                    }
-                } catch (e) {
-                    // 忽略 store 异常
-                }
-            }
-            primaryPaneId.value = determinedPrimaryId || effectivePaneId;
+            const recorded = (currentSessionState as any)?.primaryTerminalPaneId as string | undefined;
+            primaryPaneId.value = (recorded && treeTerminalIds.includes(recorded) ? recorded : undefined)
+                ?? treeTerminalIds[0]
+                ?? effectivePaneId;
             if (currentSessionState) {
                 (currentSessionState as any).primaryTerminalPaneId = primaryPaneId.value;
             }
             console.log(`[会话 ${sessionId}][SSH终端模块] 确定主终端 primaryPaneId 为: ${primaryPaneId.value} (当前就绪终端: ${effectivePaneId})`);
+        } else if (treeTerminalIds.length > 0 && !treeTerminalIds.includes(primaryPaneId.value)) {
+            // 已锁定的主终端在当前布局树里根本不存在了
+            // （会话从 localStorage/后端恢复后布局树会重新生成 ID，或用户改过布局）
+            console.warn(`[会话 ${sessionId}][SSH终端模块] 主终端 ${primaryPaneId.value} 已不在当前布局树中，重新选定为 ${effectivePaneId}`);
+            primaryPaneId.value = effectivePaneId;
+            if (currentSessionState) {
+                (currentSessionState as any).primaryTerminalPaneId = primaryPaneId.value;
+            }
         }
 
         // 如果是主终端，写入历史缓冲
@@ -164,8 +174,24 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         }
     };
 
+    /**
+     * 校验外部传入的 paneId 是否真的属于本会话。
+     *
+     * 命令输入栏 / 快捷指令传的是全局 layoutStore.activeTerminalPaneId，
+     * 会话切换瞬间它可能还停留在别的会话的 paneId 上。若原样发给后端，
+     * handleSshPaneInput 找不到 pane 会直接 return —— 数据静默丢失，
+     * 用户看到的就是"新会话里发不出命令，点一下终端才好"。
+     */
+    const resolvePaneIdForSession = (paneId?: string): string | undefined => {
+        if (paneId && !terminalPanes.value.has(paneId)) {
+            console.warn(`[会话 ${sessionId}][SSH终端模块] paneId ${paneId} 不属于本会话，回退到主终端 ${primaryPaneId.value ?? '(none)'}`);
+            return undefined;
+        }
+        return paneId;
+    };
+
     const handleTerminalData = (data: string, paneId?: string) => {
-        const targetPaneId = paneId || primaryPaneId.value;
+        const targetPaneId = resolvePaneIdForSession(paneId) || primaryPaneId.value;
         if (targetPaneId && targetPaneId !== primaryPaneId.value) {
             // 分屏副终端走专属通道输入
             sendMessage({ type: 'ssh:pane_input', sessionId, payload: { sessionId, paneId: targetPaneId, data } });
@@ -180,7 +206,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             console.log(`[SSH ${sessionId}] WebSocket not connected, skipping resize.`);
             return;
         }
-        const targetPaneId = paneId || primaryPaneId.value;
+        const targetPaneId = resolvePaneIdForSession(paneId) || primaryPaneId.value;
         if (targetPaneId && targetPaneId !== primaryPaneId.value) {
             sendMessage({ type: 'ssh:pane_resize', sessionId, payload: { sessionId, paneId: targetPaneId, cols: dimensions.cols, rows: dimensions.rows } });
         } else {

@@ -827,25 +827,32 @@ onBeforeUnmount(() => {
                        </div>
 
                        <!-- Terminal Instances -->
-                       <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="`${sessionId}-${layoutNode.id}`">
-                           <template v-if="sessionState.terminalManager">
-                               <keep-alive>
-                                   <component
-                                       :is="componentMap.terminal"
-                                       v-show="sessionId === activeSessionId"
-                                       :session-id="sessionId"
-                                       :pane-id="layoutNode.id"
-                                        :auto-exec-config="layoutNode.terminalAutoExec"
-                                        :is-active="sessionId === activeSessionId"
-                                        :is-pane-focused="layoutStore.activeTerminalPaneId === layoutNode.id"
-                                        @focus="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
-                                       :class="['terminal-instance-wrapper absolute inset-0 w-full h-full', { 'terminal-transparent': isTerminalPaneBackgroundActive }]"
-                                       :style="{ zIndex: 3 }"
-                                       :options="{}"
-                                   />
-                               </keep-alive>
-                           </template>
+                       <!--
+                         这里只渲染"本 LayoutRenderer 所属会话"的终端。
+                         历史实现是对 sessionStore.sessions 再做一层 v-for，
+                         那是"全局唯一渲染器"时代的写法：后来 DesktopWorkspaceView
+                         改成每个会话一个 LayoutRenderer + v-show，内层循环就变成了 N×N，
+                         并且每个会话的 Terminal 会被注册进"所有"会话的 terminalPanes，
+                         导致 pane 串味、primary 指向错误分屏、命令发到别的会话。
+                         保活由外层 LayoutRenderer 的 v-show 负责，无需内层循环。
+                       -->
+                       <template v-if="activeSessionId && sessionStore.sessions.get(activeSessionId)?.terminalManager">
+                           <keep-alive>
+                               <component
+                                   :is="componentMap.terminal"
+                                   :session-id="activeSessionId"
+                                   :pane-id="layoutNode.id"
+                                    :auto-exec-config="layoutNode.terminalAutoExec"
+                                    :is-active="true"
+                                    :is-pane-focused="layoutStore.activeTerminalPaneId === layoutNode.id"
+                                    @focus="layoutStore.setActiveTerminalPaneId(layoutNode.id)"
+                                   :class="['terminal-instance-wrapper absolute inset-0 w-full h-full', { 'terminal-transparent': isTerminalPaneBackgroundActive }]"
+                                   :style="{ zIndex: 3 }"
+                                   :options="{}"
+                               />
+                           </keep-alive>
                        </template>
+
                        <!-- Placeholder -->
                        <div v-if="!activeSessionId || !hasSshSessions"
                             class="absolute inset-0 flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4"

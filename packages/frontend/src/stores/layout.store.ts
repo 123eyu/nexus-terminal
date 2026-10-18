@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed, watch, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, watch, shallowRef, shallowReactive, type Ref, type ComputedRef } from 'vue';
 import apiClient from '../utils/apiClient';
 import { useComponentStateStore } from './componentState.store';
 
@@ -709,7 +709,9 @@ export const useLayoutStore = defineStore('layout', () => {
   const activeEditingPresetId = ref<string>('preset-default'); // 当前正在配置器中编辑的预设 ID
 
   // 会话独立稳定布局树映射缓存 (sessionId -> LayoutNode)
-  const sessionLayoutTreeMap = new Map<string, LayoutNode>();
+  // 用 shallowReactive(Map) 保证"整体替换某会话的树"能触发桌面端重渲染：
+  // 之前是裸 Map，刷新后模板读不到变化，表现为"保存布局没反应"。
+  const sessionLayoutTreeMap = shallowReactive(new Map<string, LayoutNode>());
 
   // 深度克隆节点并赋以全新唯一 ID
   function cloneLayoutTreeWithNewIds(node: LayoutNode): LayoutNode {
@@ -722,6 +724,44 @@ export const useLayoutStore = defineStore('layout', () => {
     }
     return cloned;
   }
+
+  /**
+   * 按"结构位置 + 同类型组件"把旧树里的 pane/container ID 迁移到新树上。
+   *
+   * 目的：布局管理器保存后需要把新结构应用到已打开的会话，
+   * 但如果无脑用 cloneLayoutTreeWithNewIds，所有 paneId 都会变，
+   * 已挂载的 xterm 会被重建（断连、丢滚动历史）。
+   * 这里尽量复用旧 ID，只有真正被删除/新增的节点才换新 ID。
+   */
+  function reconcileTreePreservingIds(oldNode: LayoutNode | null, newNode: LayoutNode): LayoutNode {
+    const sameKind = !!oldNode
+      && oldNode.type === newNode.type
+      && oldNode.component === newNode.component
+      && (newNode.type !== 'container' || oldNode.direction === newNode.direction);
+
+    const out: LayoutNode = { ...newNode };
+    if (sameKind && oldNode) out.id = oldNode.id;
+
+    if (newNode.children) {
+      const oldChildren = sameKind && oldNode?.children ? oldNode.children : [];
+      const used = new Set<number>();
+      out.children = newNode.children.map((child, index) => {
+        // 先按位置匹配，再按同类组件在旧兄弟中查找（应对"删除中间某个容器"导致的错位）
+        let candidate: LayoutNode | null = oldChildren[index] ?? null;
+        if (!candidate || candidate.type !== child.type || candidate.component !== child.component) {
+          candidate = oldChildren.find((c, i) =>
+            !used.has(i) && c.type === child.type && c.component === child.component) ?? null;
+        }
+        if (candidate) {
+          const ci = oldChildren.indexOf(candidate);
+          if (ci >= 0) used.add(ci);
+        }
+        return reconcileTreePreservingIds(candidate, child);
+      });
+    }
+    return out;
+  }
+
 
   // 初始化预设
   function initializePresets() {
@@ -842,10 +882,20 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
   // 刷新某会话的布局树（当配置更新时触发）
+  // 保留可复用节点的旧 ID，避免已挂载终端被无谓销毁重建
   function refreshSessionLayoutTree(sessionId: string, connectionId?: number | string | null) {
     const preset = getPresetForConnection(connectionId);
-    const dedicatedTree = cloneLayoutTreeWithNewIds(preset.layoutTree);
+    const oldTree = sessionLayoutTreeMap.get(sessionId);
+    const dedicatedTree = oldTree
+      ? reconcileTreePreservingIds(oldTree, preset.layoutTree)
+      : cloneLayoutTreeWithNewIds(preset.layoutTree);
     sessionLayoutTreeMap.set(sessionId, dedicatedTree);
+    return dedicatedTree;
+  }
+
+  /** 某连接（会话）当前是否在用指定预设 */
+  function isConnectionUsingPreset(connectionId: number | string | null | undefined, presetId: string): boolean {
+    return getPresetForConnection(connectionId).id === presetId;
   }
 
   // 设为默认预设
@@ -963,8 +1013,18 @@ export const useLayoutStore = defineStore('layout', () => {
     return ids;
   }
 
+  /**
+   * 当前"实际渲染"的布局树。
+   *
+   * 桌面端每个会话都有独立的会话树（pane ID 与主布局树不同），
+   * 如果聚焦校正仍然盯着 layoutTree，就会出现：
+   * 切到新会话后 activeTerminalPaneId 还停留在上一个会话的 paneId，
+   * 命令输入框把数据发到不存在的分屏通道 → 后端直接丢弃 → "发不出去"。
+   */
+  const activeLayoutTreeOverride = shallowRef<LayoutNode | null>(null);
+
   const currentTerminalPaneIds = computed(() => {
-    return collectTerminalPaneIds(layoutTree.value);
+    return collectTerminalPaneIds(activeLayoutTreeOverride.value ?? layoutTree.value);
   });
 
   // 监听布局树终端节点变化，若当前聚焦 ID 不存在则重置
@@ -975,6 +1035,26 @@ export const useLayoutStore = defineStore('layout', () => {
       activeTerminalPaneId.value = paneIds[0];
     }
   }, { immediate: true });
+
+  /**
+   * 把"当前可见的会话布局树"设为聚焦校正的依据。
+   * 传 null 表示回退到主布局树（无活动会话时）。
+   */
+  function syncActiveTerminalPaneFromTree(tree: LayoutNode | null) {
+    activeLayoutTreeOverride.value = tree;
+    const ids = collectTerminalPaneIds(tree ?? layoutTree.value);
+    if (ids.length === 0) {
+      activeTerminalPaneId.value = null;
+    } else if (!activeTerminalPaneId.value || !ids.includes(activeTerminalPaneId.value)) {
+      activeTerminalPaneId.value = ids[0];
+    }
+    return activeTerminalPaneId.value;
+  }
+
+  /** 当前实际渲染的布局树（桌面端为活动会话的专属树） */
+  function getActiveLayoutTree(): LayoutNode | null {
+    return activeLayoutTreeOverride.value ?? layoutTree.value;
+  }
 
   function setActiveTerminalPaneId(paneId: string | null) {
     activeTerminalPaneId.value = paneId;
@@ -1036,6 +1116,8 @@ export const useLayoutStore = defineStore('layout', () => {
    getSystemDefaultLayout,
    getSystemDefaultSidebarPanes, // <--- 暴露获取默认侧栏配置的方法
    setActiveTerminalPaneId,
+   syncActiveTerminalPaneFromTree,
+   getActiveLayoutTree,
     // Presets & Connection Layout Mapping
     layoutPresets,
     defaultPresetId,
@@ -1046,6 +1128,7 @@ export const useLayoutStore = defineStore('layout', () => {
     getLayoutTreeForSession,
     clearSessionLayoutTree,
     refreshSessionLayoutTree,
+    isConnectionUsingPreset,
     setDefaultPreset,
     bindConnectionsToPreset,
     unbindConnection,

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useConnectionsStore } from '../stores/connections.store';
+import { useSessionStore } from '../stores/session.store';
 import type { LayoutPreset } from '../stores/layout.store';
 import { storeToRefs } from 'pinia';
 import draggable from 'vuedraggable';
@@ -34,6 +35,7 @@ const { showAlertDialog } = useAlertDialog();
 
 // --- 预设与连接管理状态 ---
 const connectionsStore = useConnectionsStore();
+const sessionStore = useSessionStore();
 const selectedPresetId = ref<string>(layoutStore.activeEditingPresetId || layoutStore.defaultPresetId || 'preset-default');
 
 // 另存为预设弹窗状态
@@ -313,7 +315,22 @@ const getPaneMeta = (componentName?: string) => {
 // --- Watchers ---
 watch(() => props.isVisible, (newValue) => {
   if (newValue) {
-    const initialLayout = layoutStore.layoutTree ? JSON.parse(JSON.stringify(layoutStore.layoutTree)) : null;
+    // 打开时把选中预设对齐到"当前活动会话实际使用的预设"，
+    // 避免画布显示 A 预装的树、却把改动保存进 B 预设。
+    const activeSession = sessionStore.activeSessionId
+      ? sessionStore.sessions.get(sessionStore.activeSessionId)
+      : null;
+    if (activeSession) {
+      const effectivePreset = layoutStore.getPresetForConnection(activeSession.connectionId);
+      if (effectivePreset?.id) {
+        selectedPresetId.value = effectivePreset.id;
+        layoutStore.activeEditingPresetId = effectivePreset.id;
+      }
+    }
+    // 用"当前实际渲染的树"初始化编辑器（桌面端为活动会话的专属树），
+    // 否则用户看到的画布和工作区里的布局根本不是同一棵，改完自然"对不上"。
+    const activeTree = layoutStore.getActiveLayoutTree();
+    const initialLayout = activeTree ? JSON.parse(JSON.stringify(activeTree)) : null;
     localLayoutTree.value = initialLayout;
     originalLayoutTree.value = JSON.parse(JSON.stringify(initialLayout));
 
@@ -442,10 +459,32 @@ const saveLayout = async () => {
       sidebarPanes: sidebarConfigToSave,
     });
 
-    // 若当前编辑的预设恰好是当前默认预设或主布局为空，同步更新全局主布局
-    if (selectedPresetId.value === layoutStore.defaultPresetId || !layoutStore.layoutTree) {
+    /**
+     * 决定这次保存要不要落到"当前工作区"。
+     *
+     * 旧逻辑只在"编辑的是默认预设"时才同步主布局，
+     * 于是编辑按连接绑定的非默认预设时，保存后界面毫无变化（且没有任何提示）。
+     * 现在把"当前活动会话正在使用的预设"也算作生效：
+     * 用户点保存的意图就是让改动生效。
+     */
+    const activeSession = sessionStore.activeSessionId
+      ? sessionStore.sessions.get(sessionStore.activeSessionId)
+      : null;
+    const isDefaultPreset = selectedPresetId.value === layoutStore.defaultPresetId;
+    const isActiveSessionPreset = activeSession
+      ? layoutStore.isConnectionUsingPreset(activeSession.connectionId, selectedPresetId.value)
+      : false;
+
+    if (isDefaultPreset || isActiveSessionPreset || !layoutStore.layoutTree) {
       await layoutStore.updateLayoutTree(layoutTreeToSave);
       await layoutStore.updateSidebarPanes(sidebarConfigToSave);
+    }
+
+    // 刷新已打开会话的专属布局树（桌面端渲染的是这些树，不刷新就"保存了没反应"）
+    for (const [sid, s] of sessionStore.sessions) {
+      if (layoutStore.isConnectionUsingPreset(s.connectionId, selectedPresetId.value)) {
+        layoutStore.refreshSessionLayoutTree(sid, s.connectionId);
+      }
     }
 
     originalLayoutTree.value = JSON.parse(JSON.stringify(layoutTreeToSave));
@@ -456,6 +495,7 @@ const saveLayout = async () => {
     console.error('[LayoutConfigurator] Error saving layout:', error);
   }
 };
+
 
 const resetToDefault = async () => {
   const confirmed = await showConfirmDialog({

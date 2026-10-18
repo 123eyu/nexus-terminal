@@ -101,6 +101,7 @@ import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
 import syncV2Router from './sync/sync.v2.routes';
 import fileColorHighlightsRouter from './file-color-highlights/file-color-highlights.routes';
+import debugRouter from './debug/debug.routes';
 import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
@@ -312,6 +313,12 @@ const startServer = () => {
     app.use('/api/sync/v2', syncV2Router);
     app.use('/api/v1/connections/:connectionId/file-color-highlights', fileColorHighlightsRouter);
     app.use('/api/v1/file-color-highlights', fileColorHighlightsRouter);
+
+    // 开发期前端日志接收（生产环境不挂载，也不暴露任何调试面）
+    if (process.env.NODE_ENV !== 'production') {
+        app.use('/api/v1/debug', debugRouter);
+        console.log('[Index] 调试端点已启用: /api/v1/debug/log');
+    }
     
     // 状态检查接口
 
