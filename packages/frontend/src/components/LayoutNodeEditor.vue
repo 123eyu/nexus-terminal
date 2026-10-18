@@ -242,57 +242,57 @@ const getChildFlexStyle = (child: LayoutNode) => {
     <!-- 1. 容器节点类型 (Container Node) -->
     <div
       v-if="node.type === 'container'"
-      class="flex flex-col flex-grow w-full h-full min-h-0 rounded-lg border border-border/80 bg-[#12141a] transition-all overflow-hidden shadow-xs hover:border-primary/40"
+      class="group/ctr flex flex-col flex-grow w-full h-full min-h-0 rounded-md border border-border/80 bg-[#12141a] transition-all overflow-hidden shadow-xs hover:border-primary/40"
     >
-      <!-- 容器微型控制条 (保留“水平”与“垂直”完整文本) -->
-      <div class="flex items-center justify-between px-2 py-0.5 bg-header/90 border-b border-border/50 text-[10px] gap-1 flex-shrink-0">
+      <!-- 容器微型控制条：默认只显示方向与占比，操作按钮 hover 才出现，尽量不占空间 -->
+      <div class="flex items-center justify-between px-1.5 h-[16px] bg-header/90 border-b border-border/50 text-[9px] gap-1 flex-shrink-0">
         <div class="flex items-center gap-1 min-w-0">
           <span
-            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono font-medium text-[9px] whitespace-nowrap flex-shrink-0"
-            :class="node.direction === 'horizontal' ? 'bg-sky-500/15 text-sky-400 border border-sky-500/25' : 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/25'"
+            class="inline-flex items-center gap-0.5 font-mono font-medium text-[8px] whitespace-nowrap flex-shrink-0"
+            :class="node.direction === 'horizontal' ? 'text-sky-400/90' : 'text-indigo-400/90'"
           >
-            <i :class="node.direction === 'horizontal' ? 'fas fa-arrows-left-right text-[8px]' : 'fas fa-arrows-up-down text-[8px]'"></i>
+            <i :class="node.direction === 'horizontal' ? 'fas fa-arrows-left-right text-[7px]' : 'fas fa-arrows-up-down text-[7px]'"></i>
             <span>{{ node.direction === 'horizontal' ? '水平' : '垂直' }}</span>
           </span>
-          <span v-if="node.size && Math.round(node.size) !== 100" class="text-[9px] text-text-secondary/50 font-mono">
+          <span v-if="node.size && Math.round(node.size) !== 100" class="text-[8px] text-text-secondary/40 font-mono">
             {{ Math.round(node.size) }}%
           </span>
         </div>
 
-        <!-- 极简图标按钮组 -->
-        <div class="flex items-center gap-0.5 flex-shrink-0">
+        <!-- 极简图标按钮组（hover 显示） -->
+        <div class="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover/ctr:opacity-100 transition-opacity">
           <button
             type="button"
             @click.stop="toggleDirection"
             :title="t('layoutNodeEditor.toggleDirection', '切换方向')"
-            class="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
           >
-            <i class="fas fa-arrows-rotate text-[8px]"></i>
+            <i class="fas fa-arrows-rotate text-[7px]"></i>
           </button>
           <button
             type="button"
             @click.stop="addHorizontalContainer"
             :title="t('layoutNodeEditor.addHorizontalContainer', '新增水平分栏')"
-            class="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
           >
-            <i class="fas fa-table-columns text-[8px]"></i>
+            <i class="fas fa-table-columns text-[7px]"></i>
           </button>
           <button
             type="button"
             @click.stop="addVerticalContainer"
             :title="t('layoutNodeEditor.addVerticalContainer', '新增垂直分栏')"
-            class="w-4 h-4 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-hover text-text-secondary hover:text-foreground transition-colors"
           >
-            <i class="fas fa-bars text-[8px]"></i>
+            <i class="fas fa-bars text-[7px]"></i>
           </button>
           <button
             v-if="parentNode"
             type="button"
             @click.stop="removeSelf"
             :title="t('layoutNodeEditor.removeNode', '删除分栏')"
-            class="w-4 h-4 flex items-center justify-center rounded hover:bg-red-500/15 text-text-secondary hover:text-red-400 transition-colors"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-500/15 text-text-secondary hover:text-red-400 transition-colors"
           >
-            <i class="fas fa-trash-can text-[8px]"></i>
+            <i class="fas fa-trash-can text-[7px]"></i>
           </button>
         </div>
       </div>
@@ -303,7 +303,7 @@ const getChildFlexStyle = (child: LayoutNode) => {
         @update:list="childrenList = $event"
         @change="handleDraggableChange"
         tag="div"
-        class="flex-grow p-1.5 overflow-hidden flex gap-1.5 min-h-[44px] w-full h-full relative"
+        class="flex-grow p-1 overflow-hidden flex gap-1 min-h-[40px] w-full h-full relative"
         :class="node.direction === 'horizontal' ? 'flex-row' : 'flex-col'"
         item-key="id"
         :group="{ name: 'layout-items', pull: true, put: true }"
@@ -353,34 +353,37 @@ const getChildFlexStyle = (child: LayoutNode) => {
       class="solid-pane-tile flex flex-col flex-grow w-full h-full min-h-0 rounded-md border border-border/75 bg-[#171a22] hover:border-primary/60 transition-all shadow-xs overflow-hidden group/pane cursor-grab active:cursor-grabbing"
       :title="'按住可拖拽调整至其他容器或侧栏'"
     >
-      <!-- 极简窗口小标题栏 (高 22px) -->
-      <div class="flex items-center justify-between px-2 py-0.5 bg-header/80 border-b border-border/50 text-[10px] flex-shrink-0">
-        <div class="flex items-center gap-1.5 min-w-0">
+      <!-- 紧凑标题栏（18px）：图标 + 名称常驻，操作按钮 hover 才出现 -->
+      <div class="flex items-center justify-between px-1.5 h-[18px] bg-header/80 border-b border-border/50 text-[9px] flex-shrink-0">
+        <div class="flex items-center gap-1 min-w-0">
           <!-- 专属图标徽章 -->
           <div
-            class="w-4 h-4 rounded flex items-center justify-center text-[9px] flex-shrink-0 border"
+            class="w-3 h-3 rounded-[3px] flex items-center justify-center text-[7px] flex-shrink-0 border"
             :class="[getPaneMeta(node.component).bgSoft, getPaneMeta(node.component).borderSoft, getPaneMeta(node.component).iconColor]"
           >
             <i :class="getPaneMeta(node.component).icon"></i>
           </div>
 
           <!-- 面板名称 -->
-          <span class="font-medium text-foreground truncate text-[10px] leading-none">
+          <span class="font-medium text-foreground truncate text-[9px] leading-none">
             {{ props.paneLabels[node.component!] || node.component }}
           </span>
         </div>
 
-        <div class="flex items-center gap-1 flex-shrink-0">
+        <div
+          class="flex items-center gap-0.5 flex-shrink-0 transition-opacity"
+          :class="(hasAutoExecConfig || hasBackgroundConfig) ? 'opacity-100' : 'opacity-0 group-hover/pane:opacity-100'"
+        >
           <!-- 终端连接自启指令配置按钮 (闪电图标) -->
           <button
             v-if="node.component === 'terminal'"
             type="button"
             @click.stop="showAutoExecModal = true"
             :title="t('layoutNodeEditor.configAutoExec', '配置 SSH 连接自启指令')"
-            class="w-4 h-4 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
             :class="hasAutoExecConfig ? 'text-purple-400 bg-purple-500/20' : 'text-text-secondary/60 hover:text-purple-400 hover:bg-purple-500/15'"
           >
-            <i class="fas fa-bolt text-[9px]"></i>
+            <i class="fas fa-bolt text-[7px]"></i>
           </button>
 
           <!-- 终端窗格背景样式定制按钮 (图片图标) -->
@@ -389,10 +392,10 @@ const getChildFlexStyle = (child: LayoutNode) => {
             type="button"
             @click.stop="showBackgroundModal = true"
             :title="t('layoutNodeEditor.configBackground', '定制此窗格终端背景样式 (跟随全局/黑底/专属)')"
-            class="w-4 h-4 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
             :class="hasBackgroundConfig ? 'text-amber-400 bg-amber-500/20' : 'text-text-secondary/60 hover:text-amber-400 hover:bg-amber-500/15'"
           >
-            <i class="fas fa-image text-[9px]"></i>
+            <i class="fas fa-image text-[7px]"></i>
           </button>
 
           <!-- 终端快速分屏按钮：水平切分 / 垂直切分 -->
@@ -401,22 +404,22 @@ const getChildFlexStyle = (child: LayoutNode) => {
             type="button"
             @click.stop="splitPane('horizontal')"
             :title="t('layoutNodeEditor.splitHorizontal', '水平拆分：在此终端右侧添加新终端')"
-            class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/60 hover:text-sky-400 hover:bg-sky-500/15 transition-colors cursor-pointer pointer-events-auto"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded text-text-secondary/60 hover:text-sky-400 hover:bg-sky-500/15 transition-colors cursor-pointer pointer-events-auto"
           >
-            <i class="fas fa-columns text-[9px]"></i>
+            <i class="fas fa-columns text-[7px]"></i>
           </button>
           <button
             v-if="node.component === 'terminal'"
             type="button"
             @click.stop="splitPane('vertical')"
             :title="t('layoutNodeEditor.splitVertical', '垂直拆分：在此终端下方添加新终端')"
-            class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/60 hover:text-indigo-400 hover:bg-indigo-500/15 transition-colors cursor-pointer pointer-events-auto"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded text-text-secondary/60 hover:text-indigo-400 hover:bg-indigo-500/15 transition-colors cursor-pointer pointer-events-auto"
           >
-            <i class="fas fa-table-rows text-[9px]"></i>
+            <i class="fas fa-table-rows text-[7px]"></i>
           </button>
 
           <!-- 尺寸占比 -->
-          <span v-if="node.size && Math.round(node.size) !== 100" class="text-[8px] text-text-secondary/50 font-mono">
+          <span v-if="node.size && Math.round(node.size) !== 100" class="text-[8px] text-text-secondary/40 font-mono px-0.5">
             {{ Math.round(node.size) }}%
           </span>
 
@@ -425,15 +428,16 @@ const getChildFlexStyle = (child: LayoutNode) => {
             type="button"
             @click.stop="removeSelf"
             :title="t('layoutNodeEditor.removeNode', '从布局中移除')"
-            class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/40 hover:text-red-400 hover:bg-red-500/15 transition-colors opacity-0 group-hover/pane:opacity-100 cursor-pointer pointer-events-auto"
+            class="w-3.5 h-3.5 flex items-center justify-center rounded text-text-secondary/40 hover:text-red-400 hover:bg-red-500/15 transition-colors cursor-pointer pointer-events-auto"
           >
-            <i class="fas fa-xmark text-[9px]"></i>
+            <i class="fas fa-xmark text-[8px]"></i>
           </button>
         </div>
       </div>
 
-      <!-- 拟真微缩内容区 (鼠标事件穿透，确保点击卡片任意区域均可直接拖拽) -->
-      <div class="flex-grow p-1.5 flex flex-col justify-center items-center overflow-hidden min-h-0 bg-[#13151b]/80 relative select-none pointer-events-none">
+      <!-- 拟真微缩内容区 (鼠标事件穿透，确保点击卡片任意区域均可直接拖拽)
+           卡片太小时自动隐藏，只留标题行 —— 否则一堆组件全被挤成"内容糊成一团" -->
+      <div class="pane-preview flex-grow p-1 flex flex-col justify-center items-center overflow-hidden min-h-0 bg-[#13151b]/80 relative select-none pointer-events-none">
         
         <!-- 终端 (Terminal)：微缩控制台 -->
         <div v-if="node.component === 'terminal'" class="w-full h-full flex flex-col justify-start p-1.5 font-mono text-[9px] text-emerald-400/80 gap-1 overflow-hidden">
@@ -494,6 +498,11 @@ const getChildFlexStyle = (child: LayoutNode) => {
         </div>
 
       </div>
+
+      <!-- 小卡片模式：只显示一枚图标，不做微缩内容（由容器查询切换） -->
+      <div class="pane-mini-icon flex-grow items-center justify-center overflow-hidden min-h-0 bg-[#13151b]/60 pointer-events-none">
+        <i :class="[getPaneMeta(node.component).icon, getPaneMeta(node.component).iconColor]" class="text-sm opacity-50"></i>
+      </div>
     </div>
       <!-- 终端自启指令配置弹窗 -->
     <TerminalAutoExecModal
@@ -515,6 +524,36 @@ const getChildFlexStyle = (child: LayoutNode) => {
 </template>
 
 <style scoped>
+/* 卡片太窄/太矮时只留标题行：组件多的时候不再显示一堆挤变形的小窗口 */
+.solid-pane-tile {
+  container-type: size;
+}
+.pane-mini-icon {
+  display: none;
+}
+@container (max-width: 179px) {
+  .pane-preview {
+    display: none;
+  }
+  .pane-mini-icon {
+    display: flex;
+  }
+}
+@container (max-height: 96px) {
+  .pane-preview {
+    display: none;
+  }
+  .pane-mini-icon {
+    display: flex;
+  }
+}
+/* 特别矮的条状卡片（命令栏等）连图标也不放，只留标题 */
+@container (max-height: 44px) {
+  .pane-mini-icon {
+    display: none;
+  }
+}
+
 :deep(.sortable-ghost) {
   opacity: 0.75 !important;
   background-color: rgba(59, 130, 246, 0.2) !important;

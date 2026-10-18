@@ -386,6 +386,17 @@ const handleScrollProgressChange = (progress: number) => {
   updateScrollState();
 };
 
+// 滚轮/触控板滚动走的是 .xterm-viewport 原生 scroll，用 rAF 节流后同步滚动条
+let xtermViewportEl: HTMLElement | null = null;
+let viewportScrollRaf: number | null = null;
+const handleXtermViewportScroll = () => {
+  if (viewportScrollRaf !== null) return;
+  viewportScrollRaf = requestAnimationFrame(() => {
+    viewportScrollRaf = null;
+    updateScrollState();
+  });
+};
+
 // --- 移动端双指缩放字号 ---
 const getDistanceBetweenTouches = (touches: TouchList): number => {
   const touch1 = touches[0];
@@ -848,6 +859,13 @@ onMounted(() => {
       terminal.onResize(() => {
         updateScrollState();
       });
+      // ★ 鼠标滚轮滚的是 .xterm-viewport 的原生 scrollTop，xterm 这个版本不会为它发 onScroll，
+      //   只监听 onScroll 就会出现"滚轮滚了、右侧滚动条不动"。补一条原生 scroll 监听。
+      const viewportEl = (terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null) ?? null;
+      if (viewportEl) {
+        xtermViewportEl = viewportEl;
+        viewportEl.addEventListener('scroll', handleXtermViewportScroll, { passive: true });
+      }
       nextTick(() => {
         updateScrollState();
       });
@@ -865,6 +883,14 @@ onBeforeUnmount(() => {
   if (resizeRafId !== null) {
     cancelAnimationFrame(resizeRafId);
     resizeRafId = null;
+  }
+  if (viewportScrollRaf !== null) {
+    cancelAnimationFrame(viewportScrollRaf);
+    viewportScrollRaf = null;
+  }
+  if (xtermViewportEl) {
+    xtermViewportEl.removeEventListener('scroll', handleXtermViewportScroll);
+    xtermViewportEl = null;
   }
   emitWorkspaceEvent('terminal:dispose', { sessionId: props.sessionId, paneId: props.paneId });
   // Ensure observer is cleaned up

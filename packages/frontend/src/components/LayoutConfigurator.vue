@@ -360,27 +360,27 @@ const previewViewportRef = ref<HTMLDivElement | null>(null);
 const previewZoom = ref(1);
 const previewViewportSize = ref({ w: 0, h: 0 });
 
-const PREVIEW_MIN_PANE_W = 168;
-const PREVIEW_MIN_PANE_H = 116;
-const PREVIEW_NODE_CHROME = 26; // 每层容器的标题栏 + 内边距（px 估算）
+const PREVIEW_MIN_PANE_W = 160;
+const PREVIEW_MIN_PANE_H = 100;
+const PREVIEW_NODE_CHROME = 20; // 每层容器的标题栏 + 内边距（px 估算）
 // 不同面板的"可用"下限不一样：命令条本来就该是细条，不能按面板尺寸要求
 const PREVIEW_PANE_MIN: Record<string, { w: number; h: number }> = {
-  terminal: { w: 260, h: 160 },
-  editor: { w: 260, h: 160 },
-  fileManager: { w: 200, h: 140 },
-  statusMonitor: { w: 200, h: 130 },
-  dockerManager: { w: 200, h: 130 },
-  connections: { w: 180, h: 130 },
-  suspendedSshSessions: { w: 200, h: 110 },
-  commandHistory: { w: 180, h: 90 },
-  quickCommands: { w: 180, h: 90 },
-  commandBar: { w: 220, h: 46 },
-  multiLineCommandInput: { w: 220, h: 60 },
+  terminal: { w: 200, h: 120 },
+  editor: { w: 200, h: 120 },
+  fileManager: { w: 160, h: 100 },
+  statusMonitor: { w: 160, h: 100 },
+  dockerManager: { w: 160, h: 100 },
+  connections: { w: 120, h: 100 },
+  suspendedSshSessions: { w: 120, h: 90 },
+  commandHistory: { w: 120, h: 76 },
+  quickCommands: { w: 120, h: 76 },
+  commandBar: { w: 140, h: 36 },
+  multiLineCommandInput: { w: 140, h: 44 },
 };
 // 画布增长的硬上限：避免某个 5% 的细条把整张画布撑到十几倍
-const PREVIEW_STAGE_MAX_VIEWPORT_RATIO = 3;
-const PREVIEW_STAGE_MAX_W = 1800;
-const PREVIEW_STAGE_MAX_H = 1400;
+const PREVIEW_STAGE_MAX_VIEWPORT_RATIO = 2;
+const PREVIEW_STAGE_MAX_W = 1600;
+const PREVIEW_STAGE_MAX_H = 1200;
 
 function getPreviewPaneMin(component?: string) {
   if (component && PREVIEW_PANE_MIN[component]) return PREVIEW_PANE_MIN[component];
