@@ -286,7 +286,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
      */
     const sanitizeTuiTransition = <T extends string | Uint8Array>(raw: T): T => {
         if (typeof raw !== 'string' || !raw || raw.indexOf('\x1b[?') === -1) return raw;
-        return raw.replace(/\x1b\[\?(?:1049|47)l/g, (m) => `${m}\x1b[0m`) as T;
+        // 退出备用屏后：重置 SGR → 主动清屏 → 光标归位。
+        // 主动清屏是为了覆盖"TUI 先设黑色背景、再清屏、最后才发 1049l"这种顺序，
+        // 否则那块黑色会留在屏幕上（用户看到的"满屏黑"）。
+        return raw.replace(/\x1b\[\?(?:1049|47)l/g, (m) => `${m}\x1b[0m\x1b[2J\x1b[H`) as T;
     };
 
     const handleSshOutput = (payload: MessagePayload, message?: WebSocketMessage) => {

@@ -1154,7 +1154,8 @@ const handleTerminalClick = () => {
     class="terminal-outer-wrapper transition-all duration-150 relative"
     :class="{
       'ring-2 ring-primary ring-inset': isDraggingOverTerminal,
-      'is-mobile': isMobile
+      'is-mobile': isMobile,
+      'force-transparent-bg': isTerminalBackgroundEnabled
     }"
     @click="handleTerminalClick"
     @mousedown="handleTerminalClick"
@@ -1206,6 +1207,17 @@ const handleTerminalClick = () => {
 </template>
 
 <style scoped>
+/* 启用终端背景图时，强制 xterm 的各个渲染层透明。
+   这几层是 xterm 运行时创建的，没有 Vue 的 scope id，必须用 :deep()；
+   之前靠父组件（LayoutRenderer）的 scoped 规则根本选不中，
+   于是清屏/退出 TUI 后整块区域会露出不透明的黑底，把背景图盖住。 */
+.terminal-outer-wrapper.force-transparent-bg :deep(.xterm),
+.terminal-outer-wrapper.force-transparent-bg :deep(.xterm-viewport),
+.terminal-outer-wrapper.force-transparent-bg :deep(.xterm-screen),
+.terminal-outer-wrapper.force-transparent-bg :deep(.xterm-rows) {
+  background-color: transparent !important;
+}
+
 .terminal-outer-wrapper {
   width: 100%;
   height: 100%;

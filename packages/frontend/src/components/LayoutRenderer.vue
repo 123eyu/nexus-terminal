@@ -1130,12 +1130,16 @@ onBeforeUnmount(() => {
   background-color: var(--border-color) !important; /* Override hover effect */
 }
 
+/* 注意：.xterm / .xterm-viewport / .xterm-screen 是子组件（Terminal.vue）内部的元素，
+   scoped 样式默认匹配不到，必须用 :deep()，否则这几条透明规则从来没生效过
+   —— 表现就是"清屏/退出 TUI 后整块区域变成不透明的黑，背景图被盖住"。 */
 .terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent,
 .terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-scroll-viewport,
 .terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .terminal-inner-container,
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm,
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm-viewport,
-.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent .xterm-screen {
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent :deep(.xterm),
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent :deep(.xterm-viewport),
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent :deep(.xterm-screen),
+.terminal-pane-container.has-global-terminal-background .terminal-outer-wrapper.terminal-transparent :deep(.xterm-rows) {
   background-color: transparent !important;
 }
 
