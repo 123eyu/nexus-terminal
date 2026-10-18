@@ -144,90 +144,22 @@ const getDefaultSidebarPanes = (): { left: PaneName[], right: PaneName[] } => ({
 });
 
 
-// 获取系统内置布局预设列表
+// 已废弃的历史内置模板 ID 列表（用于自动清洗 localStorage 中的历史残留）
+export const LEGACY_TEMPLATE_IDS = new Set([
+  'preset-single-terminal',
+  'preset-dual-terminals',
+  'preset-terminal-files',
+]);
+
+// 获取系统基础初始预设列表 (仅保留纯粹默认工作区，不硬编码任何内置模板)
 export const getSystemDefaultPresets = (): LayoutPreset[] => [
   {
     id: 'preset-default',
-    name: '默认工作区',
+    name: '默认布局',
     isDefault: true,
     isSystem: true,
     layoutTree: getDefaultLayout(),
     sidebarPanes: getDefaultSidebarPanes(),
-    connectionIds: [],
-  },
-  {
-    id: 'preset-single-terminal',
-    name: '纯粹全屏终端',
-    isDefault: false,
-    isSystem: true,
-    layoutTree: {
-      id: generateId(),
-      type: "container",
-      direction: "horizontal",
-      children: [
-        {
-          id: generateId(),
-          type: "pane",
-          component: "terminal",
-          size: 100
-        }
-      ]
-    },
-    sidebarPanes: { left: ["connections"], right: [] },
-    connectionIds: [],
-  },
-  {
-    id: 'preset-dual-terminals',
-    name: '左右双终端分屏',
-    isDefault: false,
-    isSystem: true,
-    layoutTree: {
-      id: generateId(),
-      type: "container",
-      direction: "horizontal",
-      children: [
-        {
-          id: generateId(),
-          type: "pane",
-          component: "terminal",
-          size: 50
-        },
-        {
-          id: generateId(),
-          type: "pane",
-          component: "terminal",
-          size: 50
-        }
-      ]
-    },
-    sidebarPanes: { left: ["connections"], right: [] },
-    connectionIds: [],
-  },
-  {
-    id: 'preset-terminal-files',
-    name: '终端与文件树',
-    isDefault: false,
-    isSystem: true,
-    layoutTree: {
-      id: generateId(),
-      type: "container",
-      direction: "horizontal",
-      children: [
-        {
-          id: generateId(),
-          type: "pane",
-          component: "fileManager",
-          size: 28
-        },
-        {
-          id: generateId(),
-          type: "pane",
-          component: "terminal",
-          size: 72
-        }
-      ]
-    },
-    sidebarPanes: { left: ["connections", "dockerManager"], right: [] },
     connectionIds: [],
   }
 ];
@@ -718,8 +650,10 @@ export const useLayoutStore = defineStore('layout', () => {
       try {
         const raw = localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY);
         if (raw) {
-          const parsed: LayoutPreset[] = JSON.parse(raw);
+          let parsed: LayoutPreset[] = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            // 清理历史废弃的内置模板
+            parsed = parsed.filter(p => !LEGACY_TEMPLATE_IDS.has(p.id));
             const userIds = new Set(parsed.map(p => p.id));
             const merged = [...parsed];
             for (const sys of systemDefaults) {
@@ -727,7 +661,7 @@ export const useLayoutStore = defineStore('layout', () => {
                 merged.push(sys);
               }
             }
-            return merged;
+            return merged.length > 0 ? merged : systemDefaults;
           }
         }
       } catch (e) {
@@ -741,7 +675,7 @@ export const useLayoutStore = defineStore('layout', () => {
     if (typeof localStorage !== 'undefined') {
       try {
         const saved = localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY);
-        if (saved) return saved;
+        if (saved && !LEGACY_TEMPLATE_IDS.has(saved)) return saved;
       } catch (e) {
         // ignore
       }
@@ -753,7 +687,15 @@ export const useLayoutStore = defineStore('layout', () => {
     if (typeof localStorage !== 'undefined') {
       try {
         const saved = localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
+        if (saved) {
+          const map = JSON.parse(saved);
+          for (const key in map) {
+            if (LEGACY_TEMPLATE_IDS.has(map[key])) {
+              delete map[key];
+            }
+          }
+          return map;
+        }
       } catch (e) {
         // ignore
       }
@@ -789,16 +731,27 @@ export const useLayoutStore = defineStore('layout', () => {
       const rawDefaultId = typeof localStorage !== 'undefined' ? localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY) : null;
       const rawMap = typeof localStorage !== 'undefined' ? localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY) : null;
 
-      if (rawDefaultId) {
+      if (rawDefaultId && !LEGACY_TEMPLATE_IDS.has(rawDefaultId)) {
         defaultPresetId.value = rawDefaultId;
+      } else {
+        defaultPresetId.value = 'preset-default';
       }
+
       if (rawMap) {
-        connectionLayoutMap.value = JSON.parse(rawMap);
+        const parsedMap = JSON.parse(rawMap);
+        for (const connId in parsedMap) {
+          if (LEGACY_TEMPLATE_IDS.has(parsedMap[connId])) {
+            delete parsedMap[connId];
+          }
+        }
+        connectionLayoutMap.value = parsedMap;
       }
 
       if (rawPresets) {
-        const parsed: LayoutPreset[] = JSON.parse(rawPresets);
+        let parsed: LayoutPreset[] = JSON.parse(rawPresets);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          // 彻底过滤掉已废弃的旧内置模板
+          parsed = parsed.filter(p => !LEGACY_TEMPLATE_IDS.has(p.id));
           const userIds = new Set(parsed.map(p => p.id));
           const merged = [...parsed];
           for (const sysPreset of systemDefaults) {
@@ -806,13 +759,16 @@ export const useLayoutStore = defineStore('layout', () => {
               merged.push(sysPreset);
             }
           }
-          layoutPresets.value = merged;
+          layoutPresets.value = merged.length > 0 ? merged : systemDefaults;
         } else {
           layoutPresets.value = systemDefaults;
         }
       } else {
         layoutPresets.value = systemDefaults;
       }
+
+      // 清洗后立即持久化更新本地和后端
+      persistPresets();
     } catch (err) {
       console.warn('[Layout Store] 加载预设配置异常，使用系统默认:', err);
       layoutPresets.value = systemDefaults;

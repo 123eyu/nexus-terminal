@@ -137,7 +137,7 @@ async function confirmSaveAs() {
 
 // 打开重命名弹窗
 function openRenameModal() {
-  if (currentPreset.value?.isSystem) return;
+  if (!currentPreset.value) return;
   editingPresetName.value = currentPreset.value?.name || '';
   showRenameModal.value = true;
 }
@@ -152,7 +152,21 @@ function confirmRename() {
 
 // 删除当前预设
 async function handleDeleteCurrentPreset() {
-  if (!currentPreset.value || currentPreset.value.isSystem) return;
+  if (!currentPreset.value) return;
+  if (layoutStore.layoutPresets.length <= 1) {
+    await showAlertDialog({
+      title: '无法删除',
+      message: '系统至少需要保留一个布局预设。'
+    });
+    return;
+  }
+  if (isCurrentPresetDefault.value) {
+    await showAlertDialog({
+      title: '无法删除',
+      message: '当前预设为全局默认布局。若需删除，请先将其他预设设为默认。'
+    });
+    return;
+  }
   const confirmed = await showConfirmDialog({
     message: `确定要删除预设【${currentPreset.value.name}】吗？绑定的连接将自动恢复为默认布局。`
   });
@@ -419,9 +433,24 @@ const closeDialog = async () => {
 
 const saveLayout = async () => {
   try {
-    await layoutStore.updateLayoutTree(localLayoutTree.value);
+    const layoutTreeToSave = localLayoutTree.value ? JSON.parse(JSON.stringify(localLayoutTree.value)) : layoutStore.getSystemDefaultLayout();
     const sidebarConfigToSave = JSON.parse(JSON.stringify(localSidebarPanes.value));
-    await layoutStore.updateSidebarPanes(sidebarConfigToSave);
+
+    // 同步更新当前正在编辑的预设数据
+    layoutStore.updatePreset(selectedPresetId.value, {
+      layoutTree: layoutTreeToSave,
+      sidebarPanes: sidebarConfigToSave,
+    });
+
+    // 若当前编辑的预设恰好是当前默认预设或主布局为空，同步更新全局主布局
+    if (selectedPresetId.value === layoutStore.defaultPresetId || !layoutStore.layoutTree) {
+      await layoutStore.updateLayoutTree(layoutTreeToSave);
+      await layoutStore.updateSidebarPanes(sidebarConfigToSave);
+    }
+
+    originalLayoutTree.value = JSON.parse(JSON.stringify(layoutTreeToSave));
+    originalSidebarPanes.value = JSON.parse(JSON.stringify(sidebarConfigToSave));
+
     emit('close');
   } catch (error) {
     console.error('[LayoutConfigurator] Error saving layout:', error);
@@ -599,7 +628,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
                 :key="preset.id"
                 :value="preset.id"
               >
-                {{ preset.name }} {{ preset.id === layoutStore.defaultPresetId ? '★ (默认)' : '' }} {{ preset.isSystem ? '· 内置' : '' }}
+                {{ preset.name }} {{ preset.id === layoutStore.defaultPresetId ? '★ (默认)' : '' }}
               </option>
             </select>
             <i class="fas fa-chevron-down absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary pointer-events-none"></i>
@@ -649,9 +678,8 @@ const handleAvailablePaneDragEnd = (event: any) => {
             <span>另存为...</span>
           </button>
 
-          <!-- 重命名预设 (仅非内置预设) -->
+          <!-- 重命名预设 -->
           <button
-            v-if="!currentPreset?.isSystem"
             type="button"
             @click="openRenameModal"
             class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-background hover:bg-hover text-text-secondary hover:text-foreground border border-border/80 transition-colors shadow-xs cursor-pointer"
@@ -661,13 +689,13 @@ const handleAvailablePaneDragEnd = (event: any) => {
             <span>重命名</span>
           </button>
 
-          <!-- 删除预设 (仅非内置预设) -->
+          <!-- 删除预设 (仅非默认且多于1个预设) -->
           <button
-            v-if="!currentPreset?.isSystem"
+            v-if="layoutStore.layoutPresets.length > 1 && !isCurrentPresetDefault"
             type="button"
             @click="handleDeleteCurrentPreset"
             class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors shadow-xs cursor-pointer"
-            title="删除此自定义预设"
+            title="删除此预设"
           >
             <i class="fas fa-trash-can text-[10px]"></i>
             <span>删除</span>
