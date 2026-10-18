@@ -770,7 +770,15 @@ export function createSftpActionsManager(
         }
 
         // --- 就地差量更新引擎 (In-Place Diff Reconciler) ---
-        if (!targetNode.children) {
+        /**
+         * 只有"这个目录之前真的加载过"才做增量 diff。
+         *
+         * findNodeByPath 在往下找子路径时会把父节点的 children 占位成 `[]`（仍标记为未加载），
+         * 于是"返回到一个从没加载过的父目录"时会进 diff 分支：旧列表是空的，
+         * 每一项都被判成"新增"并打上 _justAdded → 整页条目闪绿。
+         * 首次加载一律整体赋值，不打任何新增高亮。
+         */
+        if (!targetNode.children || !targetNode.childrenLoaded) {
             targetNode.children = fileListPayload.map(item => reactive({
                 filename: item.filename,
                 longname: item.longname,
