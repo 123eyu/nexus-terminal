@@ -520,9 +520,13 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                         case 'workspace:save_state': {
                             const uId = ws.userId || 1;
                             if (payload && payload.clientId && payload.state) {
-                                await workspaceSyncService.saveState(uId, payload.clientId, payload.state);
+                                // 租约校验：非持有者的写入会被服务端拒绝，这里把结果回给调用方
+                                const saved = await workspaceSyncService.saveState(uId, payload.clientId, payload.state);
                                 if (ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ type: 'workspace:save_ack', payload: { success: true } }));
+                                    ws.send(JSON.stringify({
+                                        type: 'workspace:save_ack',
+                                        payload: { success: true, accepted: saved.accepted, activeClientId: saved.activeClientId }
+                                    }));
                                 }
                             }
                             break;

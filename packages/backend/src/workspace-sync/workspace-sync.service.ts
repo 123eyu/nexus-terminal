@@ -233,12 +233,35 @@ export class WorkspaceSyncService {
 
     /**
      * 保存工作区状态快照
+     *
+     * 【租约校验】只有持有租约的客户端才能写入。
+     *
+     * 以前这里无条件覆盖，而且会顺手把 active_client_id 改成调用方 —— 于是被接管的旧页面
+     * 只要触发一次"关标签 / 改布局"的自动保存，就能把已关闭的会话重新写回快照，
+     * 下次刷新又"复活"。现在非持有者的写入直接拒绝，并把当前持有者回传，
+     * 前端据此自己进入接管遮罩（不依赖 WebSocket 踢出消息，断线重连也不会失忆）。
      */
-    public async saveState(userId: number, clientId: string, state: WorkspaceSyncStatePayload): Promise<void> {
+    public async saveState(
+        userId: number,
+        clientId: string,
+        state: WorkspaceSyncStatePayload
+    ): Promise<{ accepted: boolean; activeClientId: string | null }> {
+        const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
+        const leaseOwner = record?.activeClientId || null;
+
+        if (leaseOwner && leaseOwner !== clientId) {
+            console.warn(
+                `[WorkspaceSyncService] 拒绝非租约持有者 ${clientId} 的快照写入（当前持有者: ${leaseOwner}），`
+                + `会话数 ${Array.isArray((state as any)?.sessions) ? (state as any).sessions.length : '?'}`
+            );
+            return { accepted: false, activeClientId: leaseOwner };
+        }
+
         const serialized = JSON.stringify(state);
         await workspaceSyncRepo.saveWorkspaceSyncRecord(userId, serialized, clientId);
         // 保存时确保持有租约，并确保其他端被遮罩
         this.notifyOtherClientsTakeover(userId, clientId);
+        return { accepted: true, activeClientId: clientId };
     }
 
     /**

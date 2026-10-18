@@ -19,6 +19,16 @@ const handleReclaim = async () => {
   if (isReclaiming.value) return;
   isReclaiming.value = true;
   try {
+    /**
+     * 0. 先锁住云端写入，再清空本地会话。
+     *
+     * cleanupAllSessions() 内部是一个个 closeSession，而 closeSession 会顺手
+     * "原子销毁云端快照里的会话 + 立即保存当前工作区"。如果此时还没进入恢复态，
+     * 就等于在接管的同时把云端快照清空（关掉最后一个会话时甚至直接写空列表），
+     * 随后再从云端恢复自然什么都恢复不出来。
+     */
+    workspaceSyncStore.isRestoring = true;
+
     // 1. 声明独占接管权（后端会将其余客户端的活动 SSH 会话自动挂起）
     const claimSuccess = await workspaceSyncStore.claimTakeover();
     if (!claimSuccess) {

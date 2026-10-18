@@ -68,12 +68,16 @@ export class WorkspaceSyncController {
         }
 
         try {
-            await workspaceSyncService.saveState(userId, clientId, state);
+            const result = await workspaceSyncService.saveState(userId, clientId, state);
             res.json({
                 success: true,
-                message: '工作区已保存',
+                message: result.accepted
+                    ? '工作区已保存'
+                    : '当前客户端不是工作区租约持有者，本次保存已忽略',
                 data: {
-                    updatedAt: Math.floor(Date.now() / 1000)
+                    updatedAt: Math.floor(Date.now() / 1000),
+                    accepted: result.accepted,
+                    activeClientId: result.activeClientId
                 }
             });
         } catch (error: any) {

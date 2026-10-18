@@ -15,6 +15,59 @@ import { workspaceEmitter } from '../composables/workspaceEvents';
 const SYNC_ENABLED_STORAGE_KEY = 'nexus_workspace_sync_enabled';
 const CLIENT_ID_SESSION_KEY = 'nexus_workspace_sync_client_id';
 
+/**
+ * "已关闭、但可能还没同步到云端" 的会话清单。
+ *
+ * 关掉一个会话后立刻刷新页面时，closeSession 发出的两个请求
+ * （DELETE /workspace-sync/sessions/:id、POST /workspace-sync/save）都还在路上，
+ * 页面的下一次 GET 会先读到"还带着这个会话"的旧快照 → 已关闭的会话又活过来了。
+ * 所以关闭的那一刻就同步写一份清单到 localStorage，加载快照时先把这些会话剔除掉。
+ */
+const PENDING_REMOVED_SESSIONS_KEY = 'nexus_pending_removed_sessions';
+const MAX_PENDING_REMOVED_SESSIONS = 50;
+
+const readPendingRemovedSessions = (): string[] => {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(PENDING_REMOVED_SESSIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id: unknown) => typeof id === 'string' && id) : [];
+  } catch {
+    return [];
+  }
+};
+
+/** 记录一个"已关闭待清理"的会话（同步写入，页面立刻刷新也不会丢） */
+export const markSessionRemovedPendingSync = (sessionId: string): void => {
+  if (!sessionId || typeof localStorage === 'undefined') return;
+  try {
+    const list = readPendingRemovedSessions().filter((id) => id !== sessionId);
+    list.push(sessionId);
+    localStorage.setItem(
+      PENDING_REMOVED_SESSIONS_KEY,
+      JSON.stringify(list.slice(-MAX_PENDING_REMOVED_SESSIONS))
+    );
+  } catch {
+    /* localStorage 不可用时忽略 */
+  }
+};
+
+/** 保存成功后，移除"本次保存之前就已记录"的条目（保存途中新关掉的会话不会被误清） */
+const removePendingRemovedSessions = (ids: string[]): void => {
+  if (!ids.length || typeof localStorage === 'undefined') return;
+  try {
+    const drop = new Set(ids);
+    const remain = readPendingRemovedSessions().filter((id) => !drop.has(id));
+    if (remain.length === 0) {
+      localStorage.removeItem(PENDING_REMOVED_SESSIONS_KEY);
+    } else {
+      localStorage.setItem(PENDING_REMOVED_SESSIONS_KEY, JSON.stringify(remain));
+    }
+  } catch {
+    /* ignore */
+  }
+};
+
 // 统一的高可视度控制台诊断日志
 const logSync = (message: string, ...args: any[]) => {
   console.log(`%c[WorkspaceSync] ${message}`, 'color: #10b981; font-weight: bold;', ...args);
@@ -540,6 +593,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
     try {
       const snapshot = collectCurrentWorkspaceState();
+      // 本次保存真正落地后，这一批"已关闭待清理"记录就没用了（只清本次保存之前记下的）
+      const pendingAtSaveStart = readPendingRemovedSessions();
       // 首屏/恢复前的"空会话"绝不允许覆盖云端已有的快照。
       // 否则页面刚加载、会话还没恢复完时，任意一次 watcher 触发都会把空列表写上去，
       // 下次刷新就"会话全没了"（这个问题以前随机出现，就是这个空窗期）。
@@ -562,7 +617,24 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       });
 
       if (res.data?.success) {
+        const payload = res.data.data as { accepted?: boolean; activeClientId?: string | null } | undefined;
+        if (payload && payload.accepted === false) {
+          /**
+           * 租约已被接管的客户端调用过 claim，本次写入被后端拒绝。
+           * 这里必须让本端立刻进入遮罩：否则被接管的旧页面还会继续用"旧状态"覆盖云端，
+           * 表现就是——在另一个页面关掉的会话，刷新后又回来了。
+           */
+          logSyncWarn(`本次保存被拒绝：工作区租约已归 ${payload.activeClientId || '其它客户端'}，当前端进入接管遮罩`);
+          isTakenOver.value = true;
+          takeoverByClientId.value = payload.activeClientId || null;
+          if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+          }
+          return false;
+        }
         lastSyncTime.value = Date.now();
+        removePendingRemovedSessions(pendingAtSaveStart);
         logSync('工作区快照已成功持久化至云端数据库！时间:', new Date().toLocaleTimeString());
         return true;
       }
@@ -650,6 +722,33 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   };
 
   // 恢复工作区状态快照到前端各个模块
+  /**
+   * 应用"已关闭待清理"清单：把快照里那些刚被关掉、但删除/保存请求还没到账的会话剔除。
+   *
+   * 用户关掉会话后立刻刷新时，云端 GET 往往还返回旧快照（带着那个会话），
+   * 直接恢复就等于"关掉的会话又回来了"。这里在恢复前先按本地记录剔除。
+   */
+  const consumePendingRemovedSessions = <T extends WorkspaceSnapshot>(snapshot: T): T => {
+    if (!snapshot || !Array.isArray(snapshot.sessions)) return snapshot;
+    const pending = readPendingRemovedSessions();
+    if (!pending.length) return snapshot;
+
+    const pendingSet = new Set(pending);
+    const sessions = snapshot.sessions.filter(s => !pendingSet.has(s.sessionId));
+    const removed = snapshot.sessions.length - sessions.length;
+    if (removed <= 0) return snapshot;
+
+    const sessionOrder = Array.isArray(snapshot.sessionOrder)
+      ? snapshot.sessionOrder.filter(id => !pendingSet.has(id))
+      : snapshot.sessionOrder;
+    const activeSessionId = snapshot.activeSessionId && pendingSet.has(snapshot.activeSessionId)
+      ? (sessions[sessions.length - 1]?.sessionId ?? null)
+      : snapshot.activeSessionId;
+
+    logSyncWarn(`云端快照里还留着 ${removed} 个刚关闭的会话（关闭后立即刷新导致），已在恢复前剔除`);
+    return { ...snapshot, sessions, sessionOrder, activeSessionId } as T;
+  };
+
   const restoreWorkspaceFromSnapshot = async (snapshot: WorkspaceSnapshot) => {
     if (!snapshot) return;
 
@@ -1205,16 +1304,22 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
       hasRestoredOnce = true;
       logSync('恭喜！工作区全量状态无缝恢复完成！');
-      // 恢复完成后及时防抖更新一次云端快照，确保新会话 ID 迅速沉淀入库
-      if (syncEnabled.value && !isTakenOver.value) {
-        triggerDebouncedSave(1000);
-      }
     } catch (err: any) {
       logSyncError('恢复工作区发生错误:', err);
     } finally {
       setTimeout(() => {
         isRestoring.value = false;
         notifStore.setSilenced(false);
+        /**
+         * 恢复收尾：把"新会话 ID"沉淀回云端快照。
+         *
+         * 必须放在 isRestoring 放开之后 —— 以前是在恢复结束时 schedule 一个 1000ms 的保存，
+         * 而 isRestoring 要到 1500ms 才放开，那次保存永远被自己拦掉，
+         * 快照里就一直留着上一轮的旧 sessionId（关闭会话时按 ID 剔除会因此对不上）。
+         */
+        if (syncEnabled.value && !isTakenOver.value) {
+          triggerDebouncedSave(300);
+        }
       }, 1500);
     }
   };
@@ -1258,7 +1363,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         await claimTakeover();
 
         if (cloudState && cloudState.syncEnabled) {
-          await restoreWorkspaceFromSnapshot(cloudState);
+          await restoreWorkspaceFromSnapshot(consumePendingRemovedSessions(cloudState));
         } else {
           logSync('云端快照未开启同步或为空，跳过状态恢复');
         }
@@ -1280,7 +1385,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       if (res.data?.success && res.data?.data) {
         const { state: cloudState } = res.data.data;
         if (cloudState && cloudState.syncEnabled) {
-          await restoreWorkspaceFromSnapshot(cloudState);
+          await restoreWorkspaceFromSnapshot(consumePendingRemovedSessions(cloudState));
           return true;
         }
       }

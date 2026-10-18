@@ -17,7 +17,7 @@ import { registerSshSuspendHandlers } from './sshSuspendActions';
 import { isRemoteDesktopSupported } from '../../../utils/platform';
 import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 import apiClient from '../../../utils/apiClient';
-import { useWorkspaceSyncStore } from '../../workspaceSync.store';
+import { useWorkspaceSyncStore, markSessionRemovedPendingSync } from '../../workspaceSync.store';
 
 
 // --- 辅助函数 (特定于此模块的 actions) ---
@@ -251,6 +251,29 @@ export const closeSession = (sessionId: string) => {
     return;
   }
 
+  // 0. 先判断本次关闭能不能碰云端。
+  //    接管遮罩里的 cleanupAllSessions() 会逐个走这里，那时候正在"准备从云端恢复"，
+  //    既不能删快照、也不能把会话记成"待清理"，否则接管回来一个会话都不剩。
+  let canTouchCloud = false;
+  try {
+    const workspaceSyncStore = useWorkspaceSyncStore();
+    canTouchCloud = Boolean(
+      workspaceSyncStore.syncEnabled
+      && !workspaceSyncStore.isRestoring
+      && !workspaceSyncStore.isTakenOver
+      && !workspaceSyncStore.isUnloading
+    );
+  } catch (syncErr) {
+    console.warn('[SessionActions] 读取工作区同步状态失败:', syncErr);
+  }
+
+  // 0.1 正常关闭时先同步记一笔到本地。
+  //     用户可能马上就刷新页面，此时下面 DELETE / 保存请求都还在路上，云端快照还是旧的那份；
+  //     下次加载会按这份清单把该会话剔除，否则"关掉的会话刷新后又回来了"。
+  if (canTouchCloud) {
+    markSessionRemovedPendingSync(sessionId);
+  }
+
   // 1. 调用实例上的清理和断开方法
   sessionToClose.wsManager.disconnect();
   console.log(`[SessionActions] 已为会话 ${sessionId} 调用 wsManager.disconnect()`);
@@ -301,20 +324,24 @@ export const closeSession = (sessionId: string) => {
   }
 
   // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘（仅针对该 sessionId）
-  apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
-    console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
-  }).catch((err) => {
-    console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
-  });
+  //
+  // 注意：接管/恢复/卸载期间不能动云端（canTouchCloud 在第 0 步已判定）。
+  if (canTouchCloud) {
+    apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
+      console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
+    }).catch((err) => {
+      console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
+    });
 
-  // 5. 立即同步当前剩余会话至云端快照
-  try {
-    const workspaceSyncStore = useWorkspaceSyncStore();
-    if (workspaceSyncStore.syncEnabled && !workspaceSyncStore.isRestoring && !workspaceSyncStore.isTakenOver) {
+    // 5. 立即同步当前剩余会话至云端快照
+    try {
+      const workspaceSyncStore = useWorkspaceSyncStore();
       workspaceSyncStore.saveWorkspaceToCloud();
+    } catch (syncErr) {
+      console.warn('[SessionActions] 关闭会话后触发工作区云端持久化异常:', syncErr);
     }
-  } catch (syncErr) {
-    console.warn('[SessionActions] 关闭会话后触发工作区云端持久化异常:', syncErr);
+  } else {
+    console.log(`[SessionActions] 会话 ${sessionId} 关闭时跳过云端同步（恢复/接管/卸载中）`);
   }
 };
 
