@@ -17,6 +17,7 @@
   },
   "folders": {
     "title": "文件夹",
+    "viewFolderOnly": "仅查看此文件夹",
     "all": "全部连接",
     "allCommands": "全部指令",
     "uncategorized": "未分类",
@@ -467,6 +468,19 @@
     }
   },
   "workspace": {
+    "status": {
+      "connectingWs": "正在连接 WebSocket ({url})...",
+      "wsConnected": "WebSocket 已连接，等待 SSH 握手...",
+      "connected": "已连接",
+      "disconnected": "连接已断开: {reason}",
+      "reconnecting": "正在重连（第 {attempt} 次，{delay} 秒后重试）...",
+      "reconnectFailed": "重连失败，请手动刷新页面",
+      "error": "连接出错: {message}",
+      "wsError": "WebSocket 连接出错",
+      "wsClosed": "WebSocket 已关闭 (代码: {code})",
+      "wsClosedWillRetry": "WebSocket 已关闭 (代码: {code})，正在重试...",
+      "markedForSuspendNoReconnect": "会话已标记为挂起保活，暂不自动重连"
+    },
     "terminal": {
       "reconnectingMsg": "正在尝试重新连接...",
       "reconnectedMsg": "会话已重新连接",
@@ -1438,9 +1452,13 @@
     "collapse": "收起",
     "send": "发送"
   },
+  "term": {
+    "sshSuspend": "SSH挂起"
+  },
   "layout": {
     "loading": "加载中...",
     "configure": "配置布局",
+    "configureButtonTooltip": "布局管理器",
     "pane": {
       "connections": "连接列表",
       "terminal": "终端",
@@ -1490,6 +1508,7 @@
   },
   "quickCommands": {
     "searchPlaceholder": "搜索名称或指令...",
+    "viewModePills": "药丸流式视图",
     "add": "添加",
     "sortByName": "名称",
     "sortByUsage": "使用频率",

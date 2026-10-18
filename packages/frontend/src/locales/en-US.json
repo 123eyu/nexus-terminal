@@ -17,6 +17,7 @@
   },
   "folders": {
     "title": "Folders",
+    "viewFolderOnly": "Only show this folder",
     "all": "All Connections",
     "allCommands": "All Commands",
     "uncategorized": "Uncategorized",
@@ -466,6 +467,19 @@
     }
   },
   "workspace": {
+    "status": {
+      "connectingWs": "Connecting WebSocket ({url})...",
+      "wsConnected": "WebSocket connected, waiting for SSH handshake...",
+      "connected": "Connected",
+      "disconnected": "Disconnected: {reason}",
+      "reconnecting": "Reconnecting (attempt {attempt}, retrying in {delay}s)...",
+      "reconnectFailed": "Reconnect failed, please refresh the page",
+      "error": "Connection error: {message}",
+      "wsError": "WebSocket connection error",
+      "wsClosed": "WebSocket closed (code: {code})",
+      "wsClosedWillRetry": "WebSocket closed (code: {code}), retrying...",
+      "markedForSuspendNoReconnect": "Session marked for suspend, auto-reconnect paused"
+    },
     "terminal": {
       "reconnectingMsg": "Attempting to reconnect...",
       "reconnectedMsg": "Session reconnected successfully",
@@ -1434,9 +1448,13 @@
     "collapse": "Collapse",
     "send": "Send"
   },
+  "term": {
+    "sshSuspend": "SSH Suspend"
+  },
   "layout": {
     "loading": "Loading...",
     "configure": "Configure Layout",
+    "configureButtonTooltip": "Layout Manager",
     "pane": {
       "connections": "Connections",
       "terminal": "Terminal",
@@ -1486,6 +1504,7 @@
   },
   "quickCommands": {
     "searchPlaceholder": "Search name or command...",
+    "viewModePills": "Pill flow view",
     "add": "Add",
     "sortByName": "Name",
     "sortByUsage": "Usage Frequency",

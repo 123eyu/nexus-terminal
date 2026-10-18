@@ -614,8 +614,27 @@
   "header": {
     "hide": "非表示"
   },
+  "term": {
+    "sshSuspend": "SSHサスペンド"
+  },
+  "workspace": {
+    "status": {
+      "connectingWs": "WebSocket に接続中 ({url})...",
+      "wsConnected": "WebSocket 接続済み、SSH ハンドシェイクを待機中...",
+      "connected": "接続済み",
+      "disconnected": "切断されました: {reason}",
+      "reconnecting": "再接続中（{attempt} 回目、{delay} 秒後に再試行）...",
+      "reconnectFailed": "再接続に失敗しました。ページを再読み込みしてください",
+      "error": "接続エラー: {message}",
+      "wsError": "WebSocket 接続エラー",
+      "wsClosed": "WebSocket が閉じられました (コード: {code})",
+      "wsClosedWillRetry": "WebSocket が閉じられました (コード: {code})、再試行中...",
+      "markedForSuspendNoReconnect": "セッションはサスペンド予約済みのため、自動再接続しません"
+    }
+  },
   "layout": {
     "configure": "レイアウトを設定",
+    "configureButtonTooltip": "レイアウトマネージャー",
     "loading": "ロード中...",
     "noActiveSession": {
       "fileManagerSidebar": "ファイルマネージャーにはアクティブなセッションが必要です",
@@ -787,6 +806,7 @@
   },
   "quickCommands": {
     "add": "追加",
+    "viewModePills": "ピル型フロー表示",
     "addFirst": "最初のクイックコマンドを追加",
     "confirmDelete": "クイックコマンド\"{name}\"を削除しますか？",
     "empty": "クイックコマンドはありません。'+'ボタンをクリックして作成してください！",
@@ -1861,6 +1881,7 @@
   },
   "folders": {
     "title": "フォルダー",
+    "viewFolderOnly": "このフォルダーのみ表示",
     "all": "すべての接続",
     "allCommands": "すべてのコマンド",
     "uncategorized": "未分類",
