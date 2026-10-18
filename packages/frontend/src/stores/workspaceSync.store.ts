@@ -25,6 +25,8 @@ const CLIENT_ID_SESSION_KEY = 'nexus_workspace_sync_client_id';
  */
 const PENDING_REMOVED_SESSIONS_KEY = 'nexus_pending_removed_sessions';
 const MAX_PENDING_REMOVED_SESSIONS = 50;
+// 刷新恢复后"新本地 ID -> 快照旧 ID"的别名表（关闭会话时要把旧 ID 一起剔除）
+const SESSION_ID_ALIAS_KEY = 'nexus_session_id_alias';
 
 const readPendingRemovedSessions = (): string[] => {
   if (typeof localStorage === 'undefined') return [];
@@ -43,12 +45,49 @@ export const markSessionRemovedPendingSync = (sessionId: string): void => {
   try {
     const list = readPendingRemovedSessions().filter((id) => id !== sessionId);
     list.push(sessionId);
+    // 刷新恢复出来的会话是**新 ID**，云端快照里还躺着它的旧 ID（快照要等 1.8s 才沉淀新 ID）。
+    // 关闭时如果只记新 ID，下次加载按 ID 剔除就对不上 → 会话又回来了。这里把旧 ID 一起记上。
+    const aliased = readSessionIdAliases()[sessionId];
+    if (aliased && aliased !== sessionId && !list.includes(aliased)) {
+      list.push(aliased);
+    }
     localStorage.setItem(
       PENDING_REMOVED_SESSIONS_KEY,
       JSON.stringify(list.slice(-MAX_PENDING_REMOVED_SESSIONS))
     );
   } catch {
     /* localStorage 不可用时忽略 */
+  }
+};
+
+/**
+ * 会话 ID 别名表：刷新后恢复出来的新本地 ID  ->  云端快照里的旧 sessionId。
+ * 关闭会话时用它把"快照里那份"也一起标记掉。
+ */
+const readSessionIdAliases = (): Record<string, string> => {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(SESSION_ID_ALIAS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const recordSessionIdAlias = (localId: string, snapshotId: string): void => {
+  if (!localId || !snapshotId || localId === snapshotId || typeof localStorage === 'undefined') return;
+  try {
+    const map = readSessionIdAliases();
+    map[localId] = snapshotId;
+    const keys = Object.keys(map);
+    // 只保留最近 100 条，避免无限增长
+    if (keys.length > 100) {
+      for (const k of keys.slice(0, keys.length - 100)) delete map[k];
+    }
+    localStorage.setItem(SESSION_ID_ALIAS_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
   }
 };
 
@@ -772,21 +811,11 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     });
 
     try {
-      // 0. 优先从云端快照恢复分屏布局与侧边栏配置
-      if (snapshot.layout) {
-        try {
-          if (snapshot.layout.layoutTree) {
-            logSync('从云端快照恢复工作区分屏布局配置...');
-            await layoutStore.updateLayoutTree(snapshot.layout.layoutTree);
-          }
-          if (snapshot.layout.sidebarPanes) {
-            logSync('从云端快照恢复侧边栏配置...');
-            await layoutStore.updateSidebarPanes(snapshot.layout.sidebarPanes);
-          }
-        } catch (layoutErr: any) {
-          logSyncWarn('恢复布局配置发生异常:', layoutErr.message);
-        }
-      }
+      // 0. 布局与侧栏不再从工作区快照恢复 —— 它们有自己的持久化（settings.layout / layoutPresets），
+      //    快照里的副本是"上一次保存时"的旧值（布局变更后快照要 1.5s 才落库）。
+      //    以前在这里 updateLayoutTree(snapshot.layout.layoutTree) 会用旧尺寸把刚调好的布局盖回去，
+      //    表现为"改完立刻刷新 → 先变回旧的，等 SSH 恢复后又跳回新的"。
+      //    现在布局只认 layout store 自己加载的 settings.layout，快照只负责会话/编辑器/文件管理器。
 
       // 1. 确保连接配置已加载
       if (!connectionsStore.connections || connectionsStore.connections.length === 0) {
@@ -913,6 +942,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
             if (targetSessionId) {
               sessionIdMap.set(s.sessionId, targetSessionId);
+              // 记下"新 ID -> 快照旧 ID"，关闭会话时才能把快照里那份旧记录一起剔除
+              recordSessionIdAlias(targetSessionId, s.sessionId);
               logSync(`建立会话 ID 映射: 旧 ${s.sessionId} -> 新 ${targetSessionId} (激活: ${shouldActivateThis})`);
 
               // 恢复单行命令输入框内容

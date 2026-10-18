@@ -405,6 +405,9 @@ watch(
 
 onBeforeUnmount(() => {
   console.log('[工作区视图] 组件即将卸载，清理所有会话...');
+  // 布局的"改完立刻刷新"必须落地：先把还压在防抖里的后端保存补发出去，
+  // 否则下次加载会读到后端旧布局，把刚拖好的尺寸又盖回去。
+  layoutStore.flushLayoutPersist();
   // 先禁止云端保存：下面 cleanupAllSessions 会清空会话列表，
   // 若此时 watcher 触发保存，会把空列表写进快照，下次刷新就"会话全没了"。
   workspaceSyncStore.markUnloading();
@@ -424,6 +427,8 @@ const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
 
 /** 页面卸载钩子：禁止把"卸载时清空会话"的状态写回云端快照 */
 const handlePageUnload = () => {
+  // 先把待发的布局保存用 keepalive 补发（页面一卸载普通请求就被取消了）
+  layoutStore.flushLayoutPersist();
   workspaceSyncStore.markUnloading();
 };
 

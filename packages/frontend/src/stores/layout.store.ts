@@ -530,13 +530,60 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
   // --- Helper for debounced persistence ---
-  // We still might want debounce if updates happen rapidly outside the configurator (e.g., pane resize)
+  // 拖分割条会连续产生大量尺寸更新。localStorage 必须每次都同步写：
+  // 旧实现整个持久化都塞进 1s 防抖里，用户"拖完立刻刷新"时定时器还没触发，
+  // 本地存的一直是旧尺寸 → 刚进页面先显示旧布局（要等会话恢复才跳成新的）。
+  // 只有后端 PUT 留防抖，避免拖动期间把请求打爆。
+  const persistLayoutTreeLocal = () => {
+      if (typeof localStorage === 'undefined') return;
+      try {
+          localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutTree.value));
+      } catch (error) {
+          console.warn('[Layout Store] 主布局写入 localStorage 失败:', error);
+      }
+  };
+
   let persistLayoutDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // 后端 PUT 还没发出去（还在防抖窗口里）—— 页面卸载时要立刻补发，
+  // 否则下次加载会拿到后端的旧布局，把刚同步好的 localStorage 覆盖回去。
+  let hasPendingBackendPersist = false;
   const debouncedPersistLayout = () => {
+      // 先同步落本地，刷新/关页都不会丢
+      persistLayoutTreeLocal();
+      hasPendingBackendPersist = true;
       if (persistLayoutDebounceTimer) clearTimeout(persistLayoutDebounceTimer);
       persistLayoutDebounceTimer = setTimeout(async () => { // Make async
+          hasPendingBackendPersist = false;
+          persistLayoutDebounceTimer = null;
           await persistLayoutTree(); // Await the async persist function
-      }, 1000);
+      }, 600);
+  };
+
+  /**
+   * 页面卸载前把"还没发出去的后端保存"补发出去。
+   *
+   * 必须用 `keepalive`：页面正在卸载时普通请求会被浏览器直接取消。
+   * 布局树只有 1KB 级别，远小于 keepalive 的 64KB 限制。
+   */
+  const flushLayoutPersist = () => {
+      if (!hasPendingBackendPersist) return;
+      hasPendingBackendPersist = false;
+      if (persistLayoutDebounceTimer) {
+          clearTimeout(persistLayoutDebounceTimer);
+          persistLayoutDebounceTimer = null;
+      }
+      persistLayoutTreeLocal();
+      try {
+          void fetch('/api/v1/settings/layout', {
+              method: 'PUT',
+              keepalive: true,
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(layoutTree.value),
+          }).catch(() => { /* 卸载过程中失败可忽略 */ });
+      } catch {
+          /* noop */
+      }
   };
 
   // 更新整个布局树（通常由配置器保存时调用）
@@ -662,8 +709,16 @@ export const useLayoutStore = defineStore('layout', () => {
     } else {
       layoutTree.value = nextTree;
       debouncedPersistLayout();
+
+      // 没有活动会话时改的是"主布局树"，但会话打开后渲染的是从**预设**克隆的会话树。
+      // 不同步写回默认预设的话，没会话时调好的尺寸一开会话就变回旧值。
+      const defaultPreset = getPresetForConnection(null);
+      if (defaultPreset?.layoutTree) {
+        const updatedDefaultTree = applySizesAtPath(defaultPreset.layoutTree, path, childrenSizes);
+        if (updatedDefaultTree) updatePreset(defaultPreset.id, { layoutTree: updatedDefaultTree });
+      }
     }
-    console.log(`[Layout Store] 节点 ${nodeId} 的尺寸已更新（${activeTree ? '会话树 + 预设' : '主布局树'}）`);
+    console.log(`[Layout Store] 节点 ${nodeId} 的尺寸已更新（${activeTree ? '会话树 + 预设' : '主布局树 + 默认预设'}）`);
   }
   // 切换布局（Header/Footer）的可见性
   function toggleLayoutVisibility() {
@@ -740,22 +795,15 @@ export const useLayoutStore = defineStore('layout', () => {
 
  // 将当前主布局树持久化到后端和 localStorage
  async function persistLayoutTree() { // Make async
-   // ... (existing try/catch logic for backend and localStorage) ...
-   // Ensure apiClient calls are awaited if they return promises
+   // 先同步写 localStorage，再发网络请求。
+   // 反过来的话，PUT 还没返回用户就刷新/关页 → 本地还是旧布局（"改完立刻刷新就回去了"）。
+   persistLayoutTreeLocal();
    try {
      console.log('[Layout Store] Attempting to save main layout to backend...');
      await apiClient.put('/settings/layout', layoutTree.value); // await
      console.log('[Layout Store] 主布局已成功保存到后端 (sent value):', layoutTree.value);
    } catch (error) {
      console.error('[Layout Store] 保存主布局到后端失败:', error);
-   }
-   // localStorage is synchronous
-   try {
-     const layoutToSave = JSON.stringify(layoutTree.value);
-     localStorage.setItem(LAYOUT_STORAGE_KEY, layoutToSave);
-     console.log('[Layout Store] 主布局已自动保存到 localStorage (saved value):', layoutToSave);
-   } catch (error) {
-     console.error('[Layout Store] 保存主布局到 localStorage 失败:', error);
    }
     // 布局保存后，检查并清理不存在的组件实例对应的持久化设置
     try {
@@ -1365,6 +1413,7 @@ export const useLayoutStore = defineStore('layout', () => {
    updateSidebarPanes, // <--- 暴露侧栏更新 action
    initializeLayout,
    updateNodeSizes,
+   flushLayoutPersist,
    generateId,
     getAllActivePaneIds: () => getAllActivePaneIds(layoutTree.value),
    toggleLayoutVisibility,

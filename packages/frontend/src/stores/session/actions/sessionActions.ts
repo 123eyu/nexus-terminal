@@ -243,7 +243,7 @@ export const activateSession = (sessionId: string, opts?: { silent?: boolean }) 
   }
 };
 
-export const closeSession = (sessionId: string) => {
+export const closeSession = (sessionId: string, options?: { recordRemoval?: boolean }) => {
   console.log(`[SessionActions] 请求关闭会话 ID: ${sessionId}`);
   const sessionToClose = sessions.value.get(sessionId);
   if (!sessionToClose) {
@@ -253,7 +253,7 @@ export const closeSession = (sessionId: string) => {
 
   // 0. 先判断本次关闭能不能碰云端。
   //    接管遮罩里的 cleanupAllSessions() 会逐个走这里，那时候正在"准备从云端恢复"，
-  //    既不能删快照、也不能把会话记成"待清理"，否则接管回来一个会话都不剩。
+  //    不能删快照、也不能保存（否则接管回来一个会话都不剩）。
   let canTouchCloud = false;
   try {
     const workspaceSyncStore = useWorkspaceSyncStore();
@@ -267,10 +267,12 @@ export const closeSession = (sessionId: string) => {
     console.warn('[SessionActions] 读取工作区同步状态失败:', syncErr);
   }
 
-  // 0.1 正常关闭时先同步记一笔到本地。
-  //     用户可能马上就刷新页面，此时下面 DELETE / 保存请求都还在路上，云端快照还是旧的那份；
-  //     下次加载会按这份清单把该会话剔除，否则"关掉的会话刷新后又回来了"。
-  if (canTouchCloud) {
+  // 0.1 用户主动关掉的会话，一律先同步记一笔到本地。
+  //     这是纯本地的"别再恢复它"标记，与能不能发网络请求无关：
+  //     恢复刚结束（isRestoring 仍为 true）时关掉会话，网络请求会被跳过，
+  //     若不记账，云端快照里还留着它，下次刷新就又打开了。
+  //     只有"整页批量拆解"（卸载 / 接管前清场）才传 recordRemoval: false。
+  if (options?.recordRemoval !== false) {
     markSessionRemovedPendingSync(sessionId);
   }
 
@@ -420,7 +422,9 @@ export const handleOpenNewSession = (
 export const cleanupAllSessions = () => {
   console.log('[SessionActions] 清理所有会话...');
   sessions.value.forEach((_session, sessionId) => {
-    closeSession(sessionId);
+    // 整页拆解（页面卸载 / 接管前清场）不是"用户关掉了这些会话"，
+    // 不能记进"待清理清单"——否则接管回来后它们会被当成已关闭而从快照里剔掉。
+    closeSession(sessionId, { recordRemoval: false });
   });
   // sessions.value.clear(); // closeSession 内部会逐个删除，这里不需要重复clear，但确认Map为空
   if (sessions.value.size > 0) { // 以防万一
