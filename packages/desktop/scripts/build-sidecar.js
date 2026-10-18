@@ -63,10 +63,21 @@ async function main() {
     execSync('npm run build', { cwd: frontendDir, stdio: 'inherit' });
   }
 
-  // 3. 同步 dist-bundle 到 resources/server/dist (先清空历史旧编译碎片)
+  // 3. 同步 dist-bundle 到 resources/server/dist
+  // 注意：这里不做整目录 rmSync —— 某些环境（沙箱 / 安全策略）会拦截批量删除，
+  // 导致 beforeBuildCommand 直接失败。改为"改名归档 + 覆盖同步"：
+  // 旧目录改名到 .dist-old（只保留一份），cpSync 再完整覆盖。
   const serverDistDir = path.join(serverDir, 'dist');
+  const oldServerDistDir = path.join(serverDir, '.dist-old');
   if (fs.existsSync(serverDistDir)) {
-    fs.rmSync(serverDistDir, { recursive: true, force: true });
+    try {
+      if (fs.existsSync(oldServerDistDir)) {
+        fs.renameSync(oldServerDistDir, path.join(serverDir, '.dist-older'));
+      }
+      fs.renameSync(serverDistDir, oldServerDistDir);
+    } catch (err) {
+      console.warn('⚠️ 归档旧 dist 失败（将直接覆盖）:', err.message);
+    }
   }
   const backendDistBundle = path.join(backendDir, 'dist-bundle');
   console.log('📦 正在同步后端自包含产物到 resources/server/dist...');

@@ -287,6 +287,46 @@ export const settingsController = {
     }
   },
 
+  /**
+   * 获取布局预设（多套预设 / 默认预设 / 连接绑定映射）
+   */
+  async getLayoutPresets(req: Request, res: Response): Promise<void> {
+    try {
+      const presetsJson = await settingsService.getLayoutPresets();
+      if (!presetsJson) {
+        res.json(null);
+        return;
+      }
+      try {
+        res.json(JSON.parse(presetsJson));
+      } catch (parseError) {
+        console.error('[控制器] 解析布局预设 JSON 失败:', parseError);
+        res.status(500).json({ message: '获取布局预设失败：存储的数据格式无效' });
+      }
+    } catch (error: any) {
+      console.error('[控制器] 获取布局预设时出错:', error);
+      res.status(500).json({ message: '获取布局预设失败', error: error.message });
+    }
+  },
+
+  /**
+   * 保存布局预设
+   */
+  async setLayoutPresets(req: Request, res: Response): Promise<void> {
+    try {
+      const payload = req.body;
+      if (!payload || typeof payload !== 'object' || !Array.isArray(payload.presets)) {
+        res.status(400).json({ message: '无效的请求体，应包含 presets 数组' });
+        return;
+      }
+      await settingsService.setLayoutPresets(JSON.stringify(payload));
+      res.status(200).json({ message: '布局预设已成功更新' });
+    } catch (error: any) {
+      console.error('[控制器] 保存布局预设时出错:', error);
+      res.status(500).json({ message: '保存布局预设失败', error: error.message });
+    }
+  },
+
  /**
   * 获取 IP 黑名单列表 (分页)
    */

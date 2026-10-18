@@ -38,6 +38,11 @@ router.get('/layout', settingsController.getLayoutTree);
 // PUT /api/v1/settings/layout - 更新布局树
 router.put('/layout', settingsController.setLayoutTree);
 
+// GET /api/v1/settings/layout-presets - 获取布局预设（多套预设 / 默认预设 / 连接绑定）
+router.get('/layout-presets', settingsController.getLayoutPresets);
+// PUT /api/v1/settings/layout-presets - 保存布局预设
+router.put('/layout-presets', settingsController.setLayoutPresets);
+
 // --- IP 黑名单管理路由 ---
 // GET /api/v1/settings/ip-blacklist - 获取 IP 黑名单列表 (需要认证)
 router.get('/ip-blacklist', settingsController.getIpBlacklist);

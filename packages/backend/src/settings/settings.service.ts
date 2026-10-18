@@ -29,6 +29,7 @@ const NAV_BAR_VISIBLE_KEY = 'navBarVisible'; // 导航栏可见性设置键 (通
 const NAV_BAR_VISIBLE_DESKTOP_KEY = 'navBarVisible_desktop'; // 桌面端独立设置键
 const NAV_BAR_VISIBLE_MOBILE_KEY = 'navBarVisible_mobile'; // 移动端独立设置键
 const LAYOUT_TREE_KEY = 'layoutTree'; // 布局树设置键
+const LAYOUT_PRESETS_KEY = 'layoutPresets'; // 布局预设（含默认预设、连接绑定映射）设置键
 const AUTO_COPY_ON_SELECT_KEY = 'autoCopyOnSelect'; // 终端选中自动复制设置键
 const STATUS_MONITOR_INTERVAL_SECONDS_KEY = 'statusMonitorIntervalSeconds'; // 状态监控间隔设置键
 const DEFAULT_STATUS_MONITOR_INTERVAL_SECONDS = 3; // 默认状态监控间隔
@@ -294,6 +295,38 @@ export const settingsService = {
      throw new Error('Failed to save layout tree setting.');
    }
  }, 
+
+ /**
+  * 获取布局预设（多套预设 + 默认预设 id + 连接绑定映射）
+  * @returns JSON 字符串或 null
+  */
+ async getLayoutPresets(): Promise<string | null> {
+   try {
+     return await settingsRepository.getSetting(LAYOUT_PRESETS_KEY);
+   } catch (error) {
+     console.error(`[Service] Error getting layout presets (key: ${LAYOUT_PRESETS_KEY}):`, error);
+     return null;
+   }
+ },
+
+ /**
+  * 保存布局预设
+  * @param presetsJson 预设数据的 JSON 字符串
+  */
+ async setLayoutPresets(presetsJson: string): Promise<void> {
+   try {
+     JSON.parse(presetsJson);
+   } catch (e) {
+     console.error('[Service] Invalid JSON format provided for layout presets:', e);
+     throw new Error('Invalid layout presets JSON format.');
+   }
+   try {
+     await settingsRepository.setSetting(LAYOUT_PRESETS_KEY, presetsJson);
+   } catch (error) {
+     console.error(`[Service] Error calling settingsRepository.setSetting for key ${LAYOUT_PRESETS_KEY}:`, error);
+     throw new Error('Failed to save layout presets setting.');
+   }
+ },
 
  /**
   * 获取终端选中自动复制设置

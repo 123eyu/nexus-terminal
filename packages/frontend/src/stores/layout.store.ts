@@ -859,11 +859,35 @@ export const useLayoutStore = defineStore('layout', () => {
 
   // 初始化预设
   function initializePresets() {
+    void initializePresetsAsync();
+  }
+
+  /**
+   * 预设加载：后端（跨端同步）> localStorage > 系统默认。
+   *
+   * 以前只读 localStorage，后端也没有 /settings/layout-presets 路由，
+   * persistPresets 的 PUT 一直 404 被静默吞掉 —— 表现就是"桌面端和 Web 端预设互不同步"。
+   */
+  async function initializePresetsAsync() {
     const systemDefaults = getSystemDefaultPresets();
+    let remote: { presets?: LayoutPreset[]; defaultPresetId?: string; connectionLayoutMap?: Record<string, string> } | null = null;
     try {
-      const rawPresets = typeof localStorage !== 'undefined' ? localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY) : null;
-      const rawDefaultId = typeof localStorage !== 'undefined' ? localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY) : null;
-      const rawMap = typeof localStorage !== 'undefined' ? localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY) : null;
+      const res = await apiClient.get('/settings/layout-presets');
+      const data = res?.data as any;
+      if (data && Array.isArray(data.presets) && data.presets.length > 0) remote = data;
+    } catch {
+      /* 首次部署 / 后端暂无数据 */
+    }
+
+    try {
+      const rawPresets = remote
+        ? JSON.stringify(remote.presets)
+        : (typeof localStorage !== 'undefined' ? localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY) : null);
+      const rawDefaultId = remote?.defaultPresetId
+        || (typeof localStorage !== 'undefined' ? localStorage.getItem(DEFAULT_PRESET_ID_STORAGE_KEY) : null);
+      const rawMap = remote?.connectionLayoutMap
+        ? JSON.stringify(remote.connectionLayoutMap)
+        : (typeof localStorage !== 'undefined' ? localStorage.getItem(CONNECTION_LAYOUT_MAP_STORAGE_KEY) : null);
 
       if (rawDefaultId && !LEGACY_TEMPLATE_IDS.has(rawDefaultId)) {
         defaultPresetId.value = rawDefaultId;
