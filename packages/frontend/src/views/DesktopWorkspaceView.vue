@@ -88,7 +88,9 @@ const getSessionLayoutTree = (sessionId: string): LayoutNode => {
 watch(
   () => (props.activeSessionId ? getSessionLayoutTree(props.activeSessionId) : null),
   (tree) => {
-    layoutStore.syncActiveTerminalPaneFromTree(tree);
+    const sid = props.activeSessionId;
+    const connId = sid ? sessionStore.sessions.get(sid)?.connectionId : null;
+    layoutStore.syncActiveTerminalPaneFromTree(tree, sid ?? null, connId ?? null);
   },
   { immediate: true }
 );

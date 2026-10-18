@@ -366,12 +366,21 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         terminalBuffer = (s as any).lastTerminalBuffer;
       }
 
-      // 多终端分屏各 paneId 独立序列化 buffer
+      // 多终端分屏各 pane 独立序列化 buffer
       let terminalPanesBuffer: Record<string, string> | undefined = undefined;
       if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
         const panesBuf = (s.terminalManager as any).serializeAllPanes();
         if (panesBuf && Object.keys(panesBuf).length > 0) {
-          terminalPanesBuffer = panesBuf;
+          // 会话树的 paneId 每次刷新都会重新生成（cloneLayoutTreeWithNewIds），
+          // 直接拿 paneId 当 key，恢复时必然全部 miss —— 表现就是"刷新后终端内容对不上"。
+          // 这里统一改写成跨刷新稳定的先序序号键：pane#0 / pane#1 ……
+          const order = layoutStore.getSessionTerminalPaneOrder(sId);
+          const normalized: Record<string, string> = {};
+          for (const [pid, buf] of Object.entries(panesBuf)) {
+            const idx = order.indexOf(pid);
+            normalized[idx >= 0 ? `pane#${idx}` : pid] = buf as string;
+          }
+          terminalPanesBuffer = normalized;
         }
       }
       if (!terminalPanesBuffer && (s as any).lastTerminalPanesBuffer) {
@@ -625,6 +634,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     const connectionsStore = useConnectionsStore();
     const notifStore = useUiNotificationsStore();
     const highlightStore = useTerminalHighlightStore();
+    const layoutStore = useLayoutStore();
 
     isRestoring.value = true;
     notifStore.setSilenced(true);
@@ -639,7 +649,6 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       // 0. 优先从云端快照恢复分屏布局与侧边栏配置
       if (snapshot.layout) {
         try {
-          const layoutStore = useLayoutStore();
           if (snapshot.layout.layoutTree) {
             logSync('从云端快照恢复工作区分屏布局配置...');
             await layoutStore.updateLayoutTree(snapshot.layout.layoutTree);
@@ -828,32 +837,34 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
                   const tm = sessionState.terminalManager as any;
                   if (tm?.terminalPanes?.value && !isResumed) {
                     const panesMap = tm.terminalPanes.value as Map<string, any>;
-                    Object.entries(s.terminalPanesBuffer).forEach(([pId, buf]) => {
-                      if (pId !== 'primary') {
-                        const paneEntry = panesMap.get(pId);
-                        if (paneEntry?.instance?.value && buf) {
-                          logSync(`为分屏终端 ${pId} (会话 ${targetSessionId}) 回放快照保存的屏幕历史 (字符数: ${buf.length})`);
-                          const cleaned = cleanTrailingPromptForReconnect(buf);
-                          const highlighted = highlightStore.highlight(cleaned) as string;
-                          paneEntry.instance.value.write(highlighted);
-                          try {
-                            paneEntry.instance.value.refresh(0, paneEntry.instance.value.rows - 1);
-                          } catch {}
-                        }
+                    // 快照里存的是 pane#0/pane#1 这样的稳定序号，需要换算成当前这棵会话树的真实 paneId
+                    const order = layoutStore.getSessionTerminalPaneOrder(targetSessionId);
+                    Object.entries(s.terminalPanesBuffer).forEach(([key, buf]) => {
+                      const pId = key.startsWith('pane#') ? order[Number(key.slice(5))] : key;
+                      if (!pId || pId === 'primary') return;
+                      const paneEntry = panesMap.get(pId);
+                      if (paneEntry?.instance?.value && buf) {
+                        logSync(`为分屏终端 ${pId} (会话 ${targetSessionId}) 回放快照保存的屏幕历史 (字符数: ${buf.length})`);
+                        const cleaned = cleanTrailingPromptForReconnect(buf);
+                        const highlighted = highlightStore.highlight(cleaned) as string;
+                        paneEntry.instance.value.write(highlighted);
+                        try {
+                          paneEntry.instance.value.refresh(0, paneEntry.instance.value.rows - 1);
+                        } catch {}
                       }
                     });
                   }
                 }
               }
 
-              // 恢复主终端 paneId 锁定映射，杜绝竞速乱序
+              // 恢复主终端记录（只留作参考，不要直接写进 manager）
+              // 会话树每次刷新都会重新生成 paneId，把旧 paneId 写进 primaryPaneId
+              // 会锁定一个并不存在的分屏通道，导致命令发不出去。
+              // manager 会在终端就绪时按"当前布局树的先序第一个终端"自行确定。
               if (s.primaryTerminalPaneId) {
                 const sessionState = sessionStore.sessions.get(targetSessionId);
                 if (sessionState) {
                   (sessionState as any).primaryTerminalPaneId = s.primaryTerminalPaneId;
-                  if (sessionState.terminalManager?.primaryPaneId) {
-                    sessionState.terminalManager.primaryPaneId.value = s.primaryTerminalPaneId;
-                  }
                 }
               }
             }

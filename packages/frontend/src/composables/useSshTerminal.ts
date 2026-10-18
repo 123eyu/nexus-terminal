@@ -152,11 +152,37 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             }
         } else {
             // 如果是分屏副终端，检查是否从云端同步中缓存了历史屏幕缓冲
-            const cachedPaneBuffer = (currentSessionState as any)?.lastTerminalPanesBuffer?.[effectivePaneId];
+            // 快照里存的是 pane#0/pane#1 这类稳定序号键（会话树每次刷新都会重编 paneId），
+            // 先按序号换算，再退回按 paneId 直接取。
+            const paneBufMap = (currentSessionState as any)?.lastTerminalPanesBuffer;
+            let cachedPaneBuffer = paneBufMap?.[effectivePaneId];
+            const usedKeys: string[] = cachedPaneBuffer ? [effectivePaneId] : [];
+            if (!cachedPaneBuffer && paneBufMap) {
+                try {
+                    const layoutStore = useLayoutStore();
+                    const order = layoutStore.getSessionTerminalPaneOrder(sessionId);
+                    const idx = order.indexOf(effectivePaneId);
+                    if (idx >= 0) {
+                        cachedPaneBuffer = paneBufMap[`pane#${idx}`];
+                        if (cachedPaneBuffer) usedKeys.push(`pane#${idx}`);
+                    }
+                } catch {
+                    /* 忽略 store 异常 */
+                }
+            }
             if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
                 console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
-                const normalized = cachedPaneBuffer.replace(/\r?\n/g, '\r\n');
+                const normalized = cachedPaneBuffer.replace(/\r?\n/g, '\r\n').replace(/(\r\n)+$/, '');
                 term.write(highlightStore.highlight(normalized));
+                // 消费掉这段缓存：workspaceSync 里还有一条"panes 已就绪时立即回放"的路径，
+                // 不清掉会写第二遍，表现为刷新后终端里多出好几个重复的提示符。
+                usedKeys.forEach((k) => {
+                    try {
+                        delete paneBufMap[k];
+                    } catch {
+                        /* noop */
+                    }
+                });
             }
 
             // 向后端请求开辟/复用独立的 Shell 通道！

@@ -474,44 +474,93 @@ export const useLayoutStore = defineStore('layout', () => {
         // 可选：抛出错误或通知用户
     }
   }
-  // 递归查找并更新节点大小
-  function findAndUpdateNodeSize(node: LayoutNode | null, nodeId: string, childrenSizes: { index: number; size: number }[]): LayoutNode | null {
-    if (!node) return null;
-    if (node.id === nodeId && node.type === 'container' && node.children) {
-      const updatedChildren = [...node.children];
-      childrenSizes.forEach(({ index, size }) => {
-        if (updatedChildren[index]) {
-          updatedChildren[index] = { ...updatedChildren[index], size: size };
-        }
-      });
-      return { ...node, children: updatedChildren };
-    }
 
-    if (node.type === 'container' && node.children) {
-      const updatedChildren = node.children.map(child => findAndUpdateNodeSize(child, nodeId, childrenSizes));
-      // 检查是否有子节点被更新
-      if (updatedChildren.some((child, index) => child !== node.children![index])) {
-        return { ...node, children: updatedChildren.filter(Boolean) as LayoutNode[] };
+  /** 找出节点在树里的索引路径（跨"主树 / 会话树 / 预设树"定位同一结构位置） */
+  function findNodePath(node: LayoutNode | null, id: string, path: number[] = []): number[] | null {
+    if (!node) return null;
+    if (node.id === id) return path;
+    if (node.children) {
+      for (let i = 0; i < node.children.length; i++) {
+        const found = findNodePath(node.children[i], id, [...path, i]);
+        if (found) return found;
       }
     }
-    return node; // 未找到或未更新，返回原节点
+    return null;
   }
 
+  /** 按索引路径把子节点尺寸写到目标树（结构与来源树一致时才生效） */
+  function applySizesAtPath(node: LayoutNode | null, path: number[], sizes: { index: number; size: number }[]): LayoutNode | null {
+    if (!node) return null;
+    if (path.length === 0) {
+      if (node.type !== 'container' || !node.children) return node;
+      const children = node.children.map((child, index) => {
+        const hit = sizes.find((s) => s.index === index);
+        return hit ? { ...child, size: hit.size } : child;
+      });
+      return { ...node, children };
+    }
+    const [head, ...rest] = path;
+    if (!node.children || !node.children[head]) return node;
+    const children = [...node.children];
+    const updated = applySizesAtPath(children[head], rest, sizes);
+    if (!updated) return node;
+    children[head] = updated;
+    return { ...node, children };
+  }
 
   // 更新特定容器节点的子节点大小
   function updateNodeSizes(nodeId: string, childrenSizes: { index: number; size: number }[]) {
-    console.log(`[Layout Store] 请求更新节点 ${nodeId} 的子节点大小:`, childrenSizes);
-    const originalJson = JSON.stringify(layoutTree.value); // Store original state
-    const updatedTree = findAndUpdateNodeSize(layoutTree.value, nodeId, childrenSizes);
+    // 关键：桌面端渲染的是"会话专属树"，其 paneId 与主布局树不是同一套。
+    // 旧实现只拿 nodeId 去主树里找，必然找不到 → 拖动分割条完全不生效，
+    // 刷新后按预设重建又回到原尺寸（用户看到的就是"调整没保存"）。
+    const activeTree = activeLayoutTreeOverride.value;
+    const target = activeTree ?? layoutTree.value;
+    const path = findNodePath(target, nodeId);
 
-    if (updatedTree && JSON.stringify(updatedTree) !== originalJson) { // Compare with original JSON
-       layoutTree.value = updatedTree;
-       console.log(`[Layout Store] 节点 ${nodeId} 的子节点大小已更新，触发防抖保存。`);
-       // --- Use debounced persist for resize ---
-       debouncedPersistLayout();
-    } else {
-       console.log(`[Layout Store] 未找到节点 ${nodeId} 或大小未改变。`);
+    if (!path) {
+      const mainPath = findNodePath(layoutTree.value, nodeId);
+      if (!mainPath || !layoutTree.value) {
+        console.log(`[Layout Store] 未找到节点 ${nodeId}，忽略尺寸更新。`);
+        return;
+      }
+      layoutTree.value = applySizesAtPath(layoutTree.value, mainPath, childrenSizes);
+      debouncedPersistLayout();
+      return;
     }
+
+    const nextTree = applySizesAtPath(target, path, childrenSizes);
+    if (!nextTree || JSON.stringify(nextTree) === JSON.stringify(target)) return;
+
+    if (activeTree) {
+      const sessionId = activeLayoutSessionId.value;
+      if (sessionId) {
+        // shallowReactive 的 Map：整体替换才会触发桌面端重渲染
+        sessionLayoutTreeMap.set(sessionId, nextTree);
+      }
+      activeLayoutTreeOverride.value = nextTree;
+
+      // 同时写回该会话使用的预设 —— 会话树是每次刷新从预设克隆出来的，
+      // 不写回预设的话，刷新后尺寸又回到旧值。
+      const preset = getPresetForConnection(activeLayoutConnectionId.value);
+      if (preset?.layoutTree) {
+        const updatedPresetTree = applySizesAtPath(preset.layoutTree, path, childrenSizes);
+        if (updatedPresetTree) updatePreset(preset.id, { layoutTree: updatedPresetTree });
+      }
+
+      // 首帧渲染用的是主布局树（来自 localStorage）。不同步的话，
+      // 刷新时就会"先闪一下默认预设的尺寸，再跳到真实尺寸"。
+      if (layoutTree.value) {
+        const syncedMainTree = applySizesAtPath(layoutTree.value, path, childrenSizes);
+        if (syncedMainTree) {
+          layoutTree.value = syncedMainTree;
+          debouncedPersistLayout();
+        }
+      }
+    } else {
+      layoutTree.value = nextTree;
+      debouncedPersistLayout();
+    }
+    console.log(`[Layout Store] 节点 ${nodeId} 的尺寸已更新（${activeTree ? '会话树 + 预设' : '主布局树'}）`);
   }
   // 切换布局（Header/Footer）的可见性
   function toggleLayoutVisibility() {
@@ -713,6 +762,25 @@ export const useLayoutStore = defineStore('layout', () => {
   // 之前是裸 Map，刷新后模板读不到变化，表现为"保存布局没反应"。
   const sessionLayoutTreeMap = shallowReactive(new Map<string, LayoutNode>());
 
+  /**
+   * 每个会话树里终端 pane 的先序 ID 顺序。
+   *
+   * 会话树的 paneId 每次刷新都会重新生成，而云端同步快照是按 paneId 存终端屏幕内容的，
+   * 直接对 key 会全部 miss（表现为"刷新后终端内容对不上/每次都不一样"）。
+   * 这里用"先序序号"作为跨刷新稳定的逻辑键：pane#0、pane#1 ……
+   */
+  const sessionPaneOrderMap = new Map<string, string[]>();
+
+  function recordSessionPaneOrder(sessionId: string, tree: LayoutNode) {
+    sessionPaneOrderMap.set(sessionId, collectTerminalPaneIds(tree));
+  }
+
+  /** 取某会话终端 pane 的先序顺序（跨刷新稳定） */
+  function getSessionTerminalPaneOrder(sessionId: string): string[] {
+    return sessionPaneOrderMap.get(sessionId) ?? [];
+  }
+
+
   // 深度克隆节点并赋以全新唯一 ID
   function cloneLayoutTreeWithNewIds(node: LayoutNode): LayoutNode {
     const cloned: LayoutNode = {
@@ -723,6 +791,31 @@ export const useLayoutStore = defineStore('layout', () => {
       cloned.children = node.children.map(child => cloneLayoutTreeWithNewIds(child));
     }
     return cloned;
+  }
+
+  /**
+   * 克隆并赋"结构序号"ID：第 0 个终端叫 terminal-0、第 1 个叫 terminal-1……
+   *
+   * 重要：paneId 会被发给后端当作 `paneStreams` 的 key。以前用随机 ID，
+   * 每次刷新都换一套 key，后端找不到旧通道 → 重新开 shell → 每个副终端
+   * 都重新打印一遍登录 banner。改成序号后，刷新时能命中同一个通道并复用。
+   */
+  function cloneLayoutTreeWithStableIds(node: LayoutNode): LayoutNode {
+    const counter = { pane: 0, terminal: 0, container: 0 };
+    const walk = (n: LayoutNode): LayoutNode => {
+      let id: string;
+      if (n.type === 'pane') {
+        id = n.component === 'terminal' ? `terminal-${counter.terminal++}` : `pane-${counter.pane++}`;
+      } else {
+        id = `container-${counter.container++}`;
+      }
+      const out: LayoutNode = { ...n, id };
+      if (n.children && Array.isArray(n.children)) {
+        out.children = n.children.map(walk);
+      }
+      return out;
+    };
+    return walk(node);
   }
 
   /**
@@ -871,14 +964,16 @@ export const useLayoutStore = defineStore('layout', () => {
       return sessionLayoutTreeMap.get(sessionId)!;
     }
     const preset = getPresetForConnection(connectionId);
-    const dedicatedTree = cloneLayoutTreeWithNewIds(preset.layoutTree);
+    const dedicatedTree = cloneLayoutTreeWithStableIds(preset.layoutTree);
     sessionLayoutTreeMap.set(sessionId, dedicatedTree);
+    recordSessionPaneOrder(sessionId, dedicatedTree);
     return dedicatedTree;
   }
 
   // 会话关闭时释放专属布局树
   function clearSessionLayoutTree(sessionId: string) {
     sessionLayoutTreeMap.delete(sessionId);
+    sessionPaneOrderMap.delete(sessionId);
   }
 
   // 刷新某会话的布局树（当配置更新时触发）
@@ -888,8 +983,9 @@ export const useLayoutStore = defineStore('layout', () => {
     const oldTree = sessionLayoutTreeMap.get(sessionId);
     const dedicatedTree = oldTree
       ? reconcileTreePreservingIds(oldTree, preset.layoutTree)
-      : cloneLayoutTreeWithNewIds(preset.layoutTree);
+      : cloneLayoutTreeWithStableIds(preset.layoutTree);
     sessionLayoutTreeMap.set(sessionId, dedicatedTree);
+    recordSessionPaneOrder(sessionId, dedicatedTree);
     return dedicatedTree;
   }
 
@@ -1022,6 +1118,10 @@ export const useLayoutStore = defineStore('layout', () => {
    * 命令输入框把数据发到不存在的分屏通道 → 后端直接丢弃 → "发不出去"。
    */
   const activeLayoutTreeOverride = shallowRef<LayoutNode | null>(null);
+  /** override 对应的会话（用于把"拖动分屏/改尺寸"写回正确的会话树） */
+  const activeLayoutSessionId = ref<string | null>(null);
+  /** override 对应的连接（用于把尺寸写回该会话使用的预设，否则刷新会回到旧尺寸） */
+  const activeLayoutConnectionId = ref<number | string | null>(null);
 
   const currentTerminalPaneIds = computed(() => {
     return collectTerminalPaneIds(activeLayoutTreeOverride.value ?? layoutTree.value);
@@ -1040,8 +1140,14 @@ export const useLayoutStore = defineStore('layout', () => {
    * 把"当前可见的会话布局树"设为聚焦校正的依据。
    * 传 null 表示回退到主布局树（无活动会话时）。
    */
-  function syncActiveTerminalPaneFromTree(tree: LayoutNode | null) {
+  function syncActiveTerminalPaneFromTree(
+    tree: LayoutNode | null,
+    sessionId: string | null = null,
+    connectionId: number | string | null = null
+  ) {
     activeLayoutTreeOverride.value = tree;
+    activeLayoutSessionId.value = sessionId;
+    activeLayoutConnectionId.value = connectionId;
     const ids = collectTerminalPaneIds(tree ?? layoutTree.value);
     if (ids.length === 0) {
       activeTerminalPaneId.value = null;
@@ -1128,6 +1234,7 @@ export const useLayoutStore = defineStore('layout', () => {
     getLayoutTreeForSession,
     clearSessionLayoutTree,
     refreshSessionLayoutTree,
+    getSessionTerminalPaneOrder,
     isConnectionUsingPreset,
     setDefaultPreset,
     bindConnectionsToPreset,

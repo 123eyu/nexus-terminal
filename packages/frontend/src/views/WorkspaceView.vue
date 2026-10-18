@@ -323,53 +323,53 @@ onMounted(() => {
   tagsStore.fetchTags().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
 
   // +++ 订阅工作区事件 +++
-  subscribeToWorkspaceEvents('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId, payload.paneId));
-  subscribeToWorkspaceEvents('terminal:input', handleTerminalInput);
-  subscribeToWorkspaceEvents('terminal:resize', handleTerminalResize);
-  subscribeToWorkspaceEvents('terminal:ready', handleTerminalReady);
-  subscribeToWorkspaceEvents('terminal:dispose', handleTerminalDispose);
-  subscribeToWorkspaceEvents('terminal:clear', handleClearTerminal);
-  subscribeToWorkspaceEvents('terminal:scrollToBottomRequest', handleScrollToBottomRequest);
+  onWs('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId, payload.paneId));
+  onWs('terminal:input', handleTerminalInput);
+  onWs('terminal:resize', handleTerminalResize);
+  onWs('terminal:ready', handleTerminalReady);
+  onWs('terminal:dispose', handleTerminalDispose);
+  onWs('terminal:clear', handleClearTerminal);
+  onWs('terminal:scrollToBottomRequest', handleScrollToBottomRequest);
 
-  subscribeToWorkspaceEvents('editor:closeTab', (payload) => handleCloseEditorTab(payload.tabId));
-  subscribeToWorkspaceEvents('editor:activateTab', (payload) => handleActivateEditorTab(payload.tabId));
-  subscribeToWorkspaceEvents('editor:updateContent', handleUpdateEditorContent);
-  subscribeToWorkspaceEvents('editor:saveTab', (payload) => handleSaveEditorTab(payload.tabId));
-  subscribeToWorkspaceEvents('editor:changeEncoding', handleChangeEncoding);
-  subscribeToWorkspaceEvents('editor:closeOtherTabs', (payload) => handleCloseOtherEditorTabs(payload.tabId));
-  subscribeToWorkspaceEvents('editor:closeTabsToRight', (payload) => handleCloseEditorTabsToRight(payload.tabId));
-  subscribeToWorkspaceEvents('editor:closeTabsToLeft', (payload) => handleCloseEditorTabsToLeft(payload.tabId));
-  subscribeToWorkspaceEvents('editor:updateScrollPosition', handleEditorScrollPositionUpdate); // +++ 订阅滚动位置更新事件 +++
+  onWs('editor:closeTab', (payload) => handleCloseEditorTab(payload.tabId));
+  onWs('editor:activateTab', (payload) => handleActivateEditorTab(payload.tabId));
+  onWs('editor:updateContent', handleUpdateEditorContent);
+  onWs('editor:saveTab', (payload) => handleSaveEditorTab(payload.tabId));
+  onWs('editor:changeEncoding', handleChangeEncoding);
+  onWs('editor:closeOtherTabs', (payload) => handleCloseOtherEditorTabs(payload.tabId));
+  onWs('editor:closeTabsToRight', (payload) => handleCloseEditorTabsToRight(payload.tabId));
+  onWs('editor:closeTabsToLeft', (payload) => handleCloseEditorTabsToLeft(payload.tabId));
+  onWs('editor:updateScrollPosition', handleEditorScrollPositionUpdate); // +++ 订阅滚动位置更新事件 +++
  
   // 移除对 connection:connect 事件的监听，以避免重复创建会话
   // subscribeToWorkspaceEvents('connection:connect', (payload) => handleConnectRequest(payload.connectionId));
-  subscribeToWorkspaceEvents('connection:openNewSession', (payload) => handleOpenNewSession(payload.connectionId));
-  subscribeToWorkspaceEvents('connection:requestAdd', handleRequestAddConnection);
-  subscribeToWorkspaceEvents('connection:requestEdit', (payload) => handleRequestEditConnection(payload.connectionInfo));
+  onWs('connection:openNewSession', (payload) => handleOpenNewSession(payload.connectionId));
+  onWs('connection:requestAdd', handleRequestAddConnection);
+  onWs('connection:requestEdit', (payload) => handleRequestEditConnection(payload.connectionInfo));
 
-  subscribeToWorkspaceEvents('search:start', (payload) => handleSearch(payload.term));
-  subscribeToWorkspaceEvents('search:findNext', handleFindNext);
-  subscribeToWorkspaceEvents('search:findPrevious', handleFindPrevious);
-  subscribeToWorkspaceEvents('search:close', handleCloseSearch);
+  onWs('search:start', (payload) => handleSearch(payload.term));
+  onWs('search:findNext', handleFindNext);
+  onWs('search:findPrevious', handleFindPrevious);
+  onWs('search:close', handleCloseSearch);
 
   // 来自 TerminalTabBar 的事件
-  subscribeToWorkspaceEvents('session:activate', (payload) => sessionStore.activateSession(payload.sessionId));
-  subscribeToWorkspaceEvents('session:close', (payload) => sessionStore.closeSession(payload.sessionId));
-  subscribeToWorkspaceEvents('session:closeOthers', (payload) => handleCloseOtherSessions(payload.targetSessionId));
-  subscribeToWorkspaceEvents('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
-  subscribeToWorkspaceEvents('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
-  subscribeToWorkspaceEvents('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
-  subscribeToWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
-  subscribeToWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
-  subscribeToWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
-  subscribeToWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
+  onWs('session:activate', (payload) => sessionStore.activateSession(payload.sessionId));
+  onWs('session:close', (payload) => sessionStore.closeSession(payload.sessionId));
+  onWs('session:closeOthers', (payload) => handleCloseOtherSessions(payload.targetSessionId));
+  onWs('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
+  onWs('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
+  onWs('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
+  onWs('ui:openTransferProgressModal', handleOpenTransferProgressModal);
+  onWs('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
+  onWs('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
+  onWs('quickCommand:requestAdd', handleRequestAddQuickCommand);
 
   // 初始化工作区实时云端同步与多端互斥租约
   workspaceSyncStore.initSync();
-  subscribeToWorkspaceEvents('workspace:takeoverKickout', (payload) => {
+  onWs('workspace:takeoverKickout', (payload) => {
     workspaceSyncStore.handleTakeoverKickout(payload.activeClientId);
   });
-  subscribeToWorkspaceEvents('workspace:requestStateSave', () => {
+  onWs('workspace:requestStateSave', () => {
     workspaceSyncStore.triggerDebouncedSave();
   });
 });
@@ -405,56 +405,39 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeyDown);
   sessionStore.cleanupAllSessions();
 
-  // +++ 取消订阅工作区事件 +++
-  unsubscribeFromWorkspaceEvents('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId));
-  unsubscribeFromWorkspaceEvents('terminal:input', handleTerminalInput);
-  unsubscribeFromWorkspaceEvents('terminal:resize', handleTerminalResize);
-  unsubscribeFromWorkspaceEvents('terminal:ready', handleTerminalReady);
-  unsubscribeFromWorkspaceEvents('terminal:dispose', handleTerminalDispose);
-  unsubscribeFromWorkspaceEvents('terminal:clear', handleClearTerminal);
-  unsubscribeFromWorkspaceEvents('terminal:scrollToBottomRequest', handleScrollToBottomRequest);
-
-  unsubscribeFromWorkspaceEvents('editor:closeTab', (payload) => handleCloseEditorTab(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:activateTab', (payload) => handleActivateEditorTab(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:updateContent', handleUpdateEditorContent);
-  unsubscribeFromWorkspaceEvents('editor:saveTab', (payload) => handleSaveEditorTab(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:changeEncoding', handleChangeEncoding);
-  unsubscribeFromWorkspaceEvents('editor:closeOtherTabs', (payload) => handleCloseOtherEditorTabs(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:closeTabsToRight', (payload) => handleCloseEditorTabsToRight(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:closeTabsToLeft', (payload) => handleCloseEditorTabsToLeft(payload.tabId));
-  unsubscribeFromWorkspaceEvents('editor:updateScrollPosition', handleEditorScrollPositionUpdate); // +++ 取消订阅滚动位置更新事件 +++
- 
-  // 移除对 connection:connect 事件的监听，以避免重复创建会话
-  // unsubscribeFromWorkspaceEvents('connection:connect', (payload) => handleConnectRequest(payload.connectionId));
-  unsubscribeFromWorkspaceEvents('connection:openNewSession', (payload) => handleOpenNewSession(payload.connectionId));
-  unsubscribeFromWorkspaceEvents('connection:requestAdd', handleRequestAddConnection);
-  unsubscribeFromWorkspaceEvents('connection:requestEdit', (payload) => handleRequestEditConnection(payload.connectionInfo));
-
-  unsubscribeFromWorkspaceEvents('search:start', (payload) => handleSearch(payload.term));
-  unsubscribeFromWorkspaceEvents('search:findNext', handleFindNext);
-  unsubscribeFromWorkspaceEvents('search:findPrevious', handleFindPrevious);
-  unsubscribeFromWorkspaceEvents('search:close', handleCloseSearch);
-
-  unsubscribeFromWorkspaceEvents('session:activate', (payload) => sessionStore.activateSession(payload.sessionId));
-  unsubscribeFromWorkspaceEvents('session:close', (payload) => sessionStore.closeSession(payload.sessionId));
-  unsubscribeFromWorkspaceEvents('session:closeOthers', (payload) => handleCloseOtherSessions(payload.targetSessionId));
-  unsubscribeFromWorkspaceEvents('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
-  unsubscribeFromWorkspaceEvents('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
-  unsubscribeFromWorkspaceEvents('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
-  unsubscribeFromWorkspaceEvents('ui:openTransferProgressModal', handleOpenTransferProgressModal);
-  unsubscribeFromWorkspaceEvents('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 取消订阅文件管理器打开请求 +++
-  unsubscribeFromWorkspaceEvents('quickCommand:executeProcessed', handleQuickCommandExecuteProcessed);
-  unsubscribeFromWorkspaceEvents('quickCommand:requestAdd', handleRequestAddQuickCommand);
-  unsubscribeFromWorkspaceEvents('workspace:takeoverKickout', (payload) => {
-    workspaceSyncStore.handleTakeoverKickout(payload.activeClientId);
-  });
-  unsubscribeFromWorkspaceEvents('workspace:requestStateSave', () => {
-    workspaceSyncStore.triggerDebouncedSave();
-  });
+  // +++ 取消订阅工作区事件（按登记表精确移除，见下方 onWs） +++
+  offAllWs();
 });
+
 
 const subscribeToWorkspaceEvents = useWorkspaceEventSubscriber(); // +++ 定义订阅和取消订阅函数 +++
 const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
+
+/**
+ * 登记式订阅。
+ *
+ * mitt.off(type, handler) 要求 handler 是同一个引用才生效，而这里大量订阅用的是
+ * 内联箭头函数 —— 以前 onBeforeUnmount 里再写一个内联函数，压根取消不掉。
+ * 后果：每次 HMR / 组件重新挂载都叠加一层监听，同一条命令被发 10+ 次
+ * （实测一条 `echo` 打出 18 个 ssh:input 帧），恢复流程也会重复执行，
+ * 表现就是"刷新后终端内容每次都不同"。
+ */
+type WsHandler = (payload: any) => void;
+const _wsSubscriptions: Array<[keyof WorkspaceEventPayloads, WsHandler]> = [];
+const onWs = <K extends keyof WorkspaceEventPayloads>(
+  type: K,
+  handler: (payload: WorkspaceEventPayloads[K]) => void
+) => {
+  const h = handler as WsHandler;
+  _wsSubscriptions.push([type, h]);
+  subscribeToWorkspaceEvents(type as any, h as any);
+};
+const offAllWs = () => {
+  _wsSubscriptions.forEach(([type, handler]) => {
+    unsubscribeFromWorkspaceEvents(type as any, handler as any);
+  });
+  _wsSubscriptions.length = 0;
+};
 
  // --- 本地方法 (仅处理 UI 状态) ---
  const handleRequestAddConnection = () => {
