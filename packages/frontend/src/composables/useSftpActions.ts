@@ -102,6 +102,16 @@ export function createSftpActionsManager(
     const isSilentRefreshing = ref<boolean>(false); // 静默增量更新标记
     const loadingRequestId = ref<string | null>(null); // 跟踪当前常规加载请求 ID
     const silentRequestIds = new Set<string>(); // 跟踪当前静默探测请求 ID
+
+    /**
+     * 后端回报 "SSH 会话未就绪" 后的静默冷却截止时间。
+     *
+     * 后端已经和这个会话脱钩（常见于后端重启、会话被别处销毁）时，
+     * 定时轮询和事件重入会不断重发 readdir，几秒内就能把日志刷爆、吃满 CPU。
+     * 这里只冻结"静默刷新"，用户主动切目录仍会照常请求；任意一次读取成功即刻解除。
+     */
+    let sftpUnavailableUntil = 0;
+    const SFTP_UNAVAILABLE_COOLDOWN_MS = 8000;
     // const error = ref<string | null>(null); // 不再使用本地 error ref
     const instanceSessionId = sessionId; // 保存会话 ID 用于日志
     const uiNotificationsStore = useUiNotificationsStore(); // 初始化 UI 通知 store
@@ -238,6 +248,7 @@ export function createSftpActionsManager(
 
     const silentRefreshCurrentDirectory = () => {
         if (!isSftpReady.value) return;
+        if (Date.now() < sftpUnavailableUntil) return; // 后端刚回报"会话未就绪"，暂停静默探测
         const current = currentPathRef.value;
         if (!current) return;
         // 如果当前有常规加载正在执行，跳过静默刷新
@@ -268,6 +279,7 @@ export function createSftpActionsManager(
 
         // 静默探测分支：不改变 isLoading 遮罩，不重置 childrenLoaded 状态，防止列表闪屏
         if (silent) {
+            if (Date.now() < sftpUnavailableUntil) return; // 后端会话未就绪，暂不静默探测
             if (isLoading.value || silentRequestIds.size > 0) {
                 return; // 常规加载中或上一轮静默请求仍在执行，跳过本次
             }
@@ -719,6 +731,9 @@ export function createSftpActionsManager(
         const fileListPayload = (payload as FileListItem[]) || [];
         const path = message.path; // e.g., /root
 
+        // 目录读取恢复正常，解除"后端未就绪"的静默冷却
+        sftpUnavailableUntil = 0;
+
         const isSilent = Boolean(message.requestId && silentRequestIds.has(message.requestId));
         if (message.requestId && silentRequestIds.has(message.requestId)) {
             silentRequestIds.delete(message.requestId);
@@ -857,6 +872,17 @@ export function createSftpActionsManager(
     const onSftpReaddirError = (payload: MessagePayload, message: WebSocketMessage) => {
         const errorPayload = payload as string;
         const errorPath = message.path;
+
+        /**
+         * 后端明确回报"SSH 会话未就绪"时进入静默冷却。
+         *
+         * 这种状态下上层（定时轮询 / 事件重入）会不停重发 readdir，
+         * 实测能在几分钟内刷出 20 万行 "SSH 客户端未就绪" 日志（≈500 req/s）。
+         * 冷却只拦静默刷新，用户主动切目录照常放行；任何一次读取成功都会立刻解除。
+         */
+        if (typeof errorPayload === 'string' && /未就绪/.test(errorPayload)) {
+            sftpUnavailableUntil = Date.now() + SFTP_UNAVAILABLE_COOLDOWN_MS;
+        }
 
         const isSilent = Boolean(message.requestId && silentRequestIds.has(message.requestId));
         if (message.requestId && silentRequestIds.has(message.requestId)) {
