@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import CommandInputBar from '../components/CommandInputBar.vue';
@@ -49,7 +49,12 @@ const mobileLayoutNodeForTerminal = computed((): LayoutNode | null => {
 // 移动端只有一个固定终端 pane，聚焦校正要指向它，
 // 否则命令输入栏会把 activeTerminalPaneId（来自主布局树）当成目标发到不存在的分屏。
 onMounted(() => {
-  layoutStore.syncActiveTerminalPaneFromTree(mobileLayoutNodeForTerminal.value);
+  layoutStore.syncActiveTerminalPaneFromTree(mobileLayoutNodeForTerminal.value, props.activeSessionId, null);
+});
+
+// 切换会话时同步一次，保证 activeLayoutSessionId 指向当前会话（聚焦记录才能写对地方）
+watch(() => props.activeSessionId, (sid) => {
+  layoutStore.syncActiveTerminalPaneFromTree(mobileLayoutNodeForTerminal.value, sid, null);
 });
 
 // 虚拟键盘状态与手势

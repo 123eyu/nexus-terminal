@@ -323,6 +323,10 @@ onMounted(() => {
   tagsStore.fetchTags().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
 
   // +++ 订阅工作区事件 +++
+  // 浏览器刷新/关标签时 Vue 不一定会走 onBeforeUnmount，这里兜一层，
+  // 避免卸载瞬间把空会话列表写进云端快照。
+  window.addEventListener('beforeunload', handlePageUnload);
+  window.addEventListener('pagehide', handlePageUnload);
   onWs('terminal:sendCommand', (payload) => handleSendCommand(payload.command, payload.sessionId, payload.paneId));
   onWs('terminal:input', handleTerminalInput);
   onWs('terminal:resize', handleTerminalResize);
@@ -401,8 +405,13 @@ watch(
 
 onBeforeUnmount(() => {
   console.log('[工作区视图] 组件即将卸载，清理所有会话...');
+  // 先禁止云端保存：下面 cleanupAllSessions 会清空会话列表，
+  // 若此时 watcher 触发保存，会把空列表写进快照，下次刷新就"会话全没了"。
+  workspaceSyncStore.markUnloading();
   // 移除键盘事件监听器
   window.removeEventListener('keydown', handleGlobalKeyDown);
+  window.removeEventListener('beforeunload', handlePageUnload);
+  window.removeEventListener('pagehide', handlePageUnload);
   sessionStore.cleanupAllSessions();
 
   // +++ 取消订阅工作区事件（按登记表精确移除，见下方 onWs） +++
@@ -412,6 +421,11 @@ onBeforeUnmount(() => {
 
 const subscribeToWorkspaceEvents = useWorkspaceEventSubscriber(); // +++ 定义订阅和取消订阅函数 +++
 const unsubscribeFromWorkspaceEvents = useWorkspaceEventOff();
+
+/** 页面卸载钩子：禁止把"卸载时清空会话"的状态写回云端快照 */
+const handlePageUnload = () => {
+  workspaceSyncStore.markUnloading();
+};
 
 /**
  * 登记式订阅。

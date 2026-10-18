@@ -55,6 +55,7 @@ export interface SyncedSessionInfo {
   terminalBuffer?: string;
   terminalPanesBuffer?: Record<string, string>; // 多终端分屏各 paneId 独立序列化 buffer
   primaryTerminalPaneId?: string; // 主终端对应的 paneId
+  focusedTerminalPaneId?: string; // 该会话最后聚焦的终端 paneId（多终端分屏时恢复焦点用）
   editorTabs?: SyncedFileTabInfo[]; // 每个会话自己独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
   activeEditorTabId?: string | null;
 }
@@ -153,6 +154,15 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const isInitialized = ref<boolean>(false);
   const isSyncing = ref<boolean>(false);
   const isRestoring = ref<boolean>(false);
+  /**
+   * 页面正在卸载（刷新/关闭标签）。
+   *
+   * 卸载时 `cleanupAllSessions()` 会清空会话列表，如果这期间的 watcher 又触发了一次
+   * "保存工作区"，就会把**空的会话列表**写进云端快照 —— 刷新后会话全没了。
+   */
+  const isUnloading = ref<boolean>(false);
+  /** 是否已经成功从云端恢复过一次（用于阻止"恢复前空会话覆盖快照"） */
+  let hasRestoredOnce = false;
   const lastSyncTime = ref<number | null>(null);
 
   // 5. 文件管理器当前状态缓存（全局兼容层）
@@ -420,6 +430,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         terminalBuffer: terminalBuffer !== undefined ? terminalBuffer : '',
         terminalPanesBuffer,
         primaryTerminalPaneId: (s as any).primaryTerminalPaneId || s.terminalManager?.primaryPaneId?.value || undefined,
+        focusedTerminalPaneId: s.focusedTerminalPaneId || undefined,
         editorTabs: sessionSpecificTabs,
         activeEditorTabId: s.activeEditorTabId?.value || null,
       });
@@ -504,7 +515,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   const triggerDebouncedSave = (delayMs: number = 800) => {
-    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value) return;
+    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return;
 
     if (saveTimer) {
       clearTimeout(saveTimer);
@@ -517,13 +528,20 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
   // 保存工作区到云端 (仅 Web 端有效)
   const saveWorkspaceToCloud = async (): Promise<boolean> => {
-    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value) return false;
+    if (isDesktopApp() || !syncEnabled.value || !isInitialized.value || isRestoring.value || isTakenOver.value || isUnloading.value) return false;
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
     }
     try {
       const snapshot = collectCurrentWorkspaceState();
+      // 首屏/恢复前的"空会话"绝不允许覆盖云端已有的快照。
+      // 否则页面刚加载、会话还没恢复完时，任意一次 watcher 触发都会把空列表写上去，
+      // 下次刷新就"会话全没了"（这个问题以前随机出现，就是这个空窗期）。
+      if (snapshot.sessions.length === 0 && !hasRestoredOnce) {
+        logSync('跳过空快照保存：尚未完成首次恢复');
+        return false;
+      }
       isSyncing.value = true;
       logSync('正在将工作区快照保存至云端...', {
         sessionsCount: snapshot.sessions.length,
@@ -871,6 +889,19 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
                   (sessionState as any).primaryTerminalPaneId = s.primaryTerminalPaneId;
                 }
               }
+
+              // 恢复"该会话上次聚焦的终端"，多终端分屏时切回来能直接落在正确的那一屏
+              if (s.focusedTerminalPaneId) {
+                const sessionState = sessionStore.sessions.get(targetSessionId);
+                if (sessionState) {
+                  sessionState.focusedTerminalPaneId = s.focusedTerminalPaneId;
+                  // 布局树的焦点同步发生在会话挂载时（早于这里），所以补一次，
+                  // 否则 activeTerminalPaneId 会停在默认的第一个终端上。
+                  if (sessionStore.activeSessionId === targetSessionId) {
+                    layoutStore.setActiveTerminalPaneId(s.focusedTerminalPaneId);
+                  }
+                }
+              }
             }
           })
         );
@@ -1167,6 +1198,7 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         logSync('从云端快照恢复弹窗编辑器为关闭状态');
       }
 
+      hasRestoredOnce = true;
       logSync('恭喜！工作区全量状态无缝恢复完成！');
       // 恢复完成后及时防抖更新一次云端快照，确保新会话 ID 迅速沉淀入库
       if (syncEnabled.value && !isTakenOver.value) {
@@ -1261,6 +1293,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     takeoverByClientId,
     isSyncing,
     isRestoring,
+    isUnloading,
+    markUnloading: () => {
+      isUnloading.value = true;
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+    },
     lastSyncTime,
     fileManagerState,
     fileManagerInstances,

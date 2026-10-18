@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed, watch, shallowRef, shallowReactive, type Ref, type ComputedRef } from 'vue';
 import apiClient from '../utils/apiClient';
 import { useComponentStateStore } from './componentState.store';
+import { sessions as sessionStateMap, activeSessionId as activeSessionIdRef } from './session/state';
 
 // 定义所有可用面板的名称
 export type PaneName = 'connections' | 'terminal' | 'commandBar' | 'fileManager' | 'editor' | 'statusMonitor' | 'commandHistory' | 'quickCommands' | 'dockerManager' | 'suspendedSshSessions' | 'multiLineCommandInput';
@@ -1149,8 +1150,16 @@ export const useLayoutStore = defineStore('layout', () => {
     activeLayoutSessionId.value = sessionId;
     activeLayoutConnectionId.value = connectionId;
     const ids = collectTerminalPaneIds(tree ?? layoutTree.value);
+
+    // 优先恢复"这个会话上次聚焦的终端"（多终端分屏场景），而不是默认第一个
+    const preferred = sessionId
+      ? sessionStateMap.value.get(sessionId)?.focusedTerminalPaneId
+      : undefined;
+
     if (ids.length === 0) {
       activeTerminalPaneId.value = null;
+    } else if (preferred && ids.includes(preferred)) {
+      activeTerminalPaneId.value = preferred;
     } else if (!activeTerminalPaneId.value || !ids.includes(activeTerminalPaneId.value)) {
       activeTerminalPaneId.value = ids[0];
     }
@@ -1164,6 +1173,16 @@ export const useLayoutStore = defineStore('layout', () => {
 
   function setActiveTerminalPaneId(paneId: string | null) {
     activeTerminalPaneId.value = paneId;
+    // 记住"这个会话聚焦的是哪个终端"：切回会话 / 云端恢复时直接聚焦到它。
+    // 用 activeSessionId 而不是 activeLayoutSessionId —— 后者由 DesktopWorkspaceView 的
+    // watch 异步写入，切会话瞬间点终端可能还没更新到新会话。
+    const sessionId = activeSessionIdRef.value || activeLayoutSessionId.value;
+    if (sessionId && paneId) {
+      const session = sessionStateMap.value.get(sessionId);
+      if (session && session.focusedTerminalPaneId !== paneId) {
+        session.focusedTerminalPaneId = paneId;
+      }
+    }
   }
 
   // 循环切换终端焦点 (默认 Alt+` 触发)
