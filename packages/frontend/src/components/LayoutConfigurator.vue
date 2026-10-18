@@ -74,7 +74,9 @@ const filteredConnections = computed(() => {
 
 // 加载指定预设到编辑画布
 function loadPresetIntoEditor(presetId: string) {
-  const target = layoutStore.layoutPresets.find(p => p.id === presetId) || layoutStore.getSystemDefaultPresets()[0];
+  const target = layoutStore.layoutPresets.find(p => p.id === presetId)
+    || layoutStore.layoutPresets[0]
+    || layoutStore.getSystemDefaultPresets()[0];
   selectedPresetId.value = target.id;
   layoutStore.activeEditingPresetId = target.id;
 
@@ -668,7 +670,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
                 :key="preset.id"
                 :value="preset.id"
               >
-                {{ preset.name }} {{ preset.id === layoutStore.defaultPresetId ? '★ (默认)' : '' }}
+                {{ preset.name }}
               </option>
             </select>
             <i class="fas fa-chevron-down absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary pointer-events-none"></i>

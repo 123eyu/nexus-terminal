@@ -152,11 +152,113 @@ export const LEGACY_TEMPLATE_IDS = new Set([
   'preset-terminal-files',
 ]);
 
-// 获取系统基础初始预设列表 (仅保留纯粹默认工作区，不硬编码任何内置模板)
+// 全局默认预设的固定 ID 与出厂名称
+const DEFAULT_PRESET_ID = 'preset-default';
+const DEFAULT_PRESET_NAME = '默认布局';
+
+// 深拷贝（切断与主布局树的引用，避免编辑预设时污染当前工作区）
+function cloneTree<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * 布局结构签名：忽略节点 ID，只比较 类型/组件/方向/尺寸/层级。
+ * 用来判断某个预设的布局是否仍是"未编辑过的出厂默认"。
+ */
+function layoutShapeSignature(node: LayoutNode | null | undefined): string {
+  if (!node) return '';
+  const strip = (n: LayoutNode): unknown => {
+    const out: Record<string, unknown> = { t: n.type };
+    if (n.component) out.c = n.component;
+    if (n.direction) out.d = n.direction;
+    if (typeof n.size === 'number') out.s = Math.round(n.size * 1000) / 1000;
+    if (n.children) out.k = n.children.map(strip);
+    return out;
+  };
+  try {
+    return JSON.stringify(strip(node));
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * 用"用户当前正在使用的布局"生成全局默认预设。
+ *
+ * 升级兼容的核心：旧版本没有预设概念，用户攒下来的工作区布局只存在
+ * settings.layout / localStorage 里。如果直接塞一个硬编码的内置默认，
+ * 用户升级后看到的布局就被我们预设的默认布局覆盖掉了。
+ */
+function buildDefaultPresetFrom(
+  tree: LayoutNode | null | undefined,
+  sidebars: { left: PaneName[]; right: PaneName[] } | null | undefined
+): LayoutPreset {
+  return {
+    id: DEFAULT_PRESET_ID,
+    name: DEFAULT_PRESET_NAME,
+    isDefault: true,
+    isSystem: true,
+    layoutTree: tree ? cloneTree(tree) : getDefaultLayout(),
+    sidebarPanes: sidebars ? cloneTree(sidebars) : getDefaultSidebarPanes(),
+    connectionIds: [],
+  };
+}
+
+// 默认预设名称清洗：不再带星标（历史数据里可能残留 "⭐ 默认布局"）
+function sanitizeDefaultPresetName(name: string | undefined): string {
+  const cleaned = (name || '').replace(/^[\s★☆⭐]+/, '').trim();
+  return cleaned || DEFAULT_PRESET_NAME;
+}
+
+/**
+ * 把"存储里的预设列表"与系统默认预设对齐：
+ * 1. 过滤掉已废弃的内置模板；
+ * 2. 缺 preset-default 时用 seedPreset（用户当前布局）补齐，而不是内置默认；
+ * 3. 已存在但仍是"未编辑过的出厂种子"时，同样换成 seedPreset ——
+ *    修复早前升级时默认布局已经盖掉用户布局的用户。
+ */
+function reconcilePresets(stored: LayoutPreset[], seedPreset: LayoutPreset): LayoutPreset[] {
+  const list = (Array.isArray(stored) ? stored : [])
+    .filter(p => p && typeof p.id === 'string' && !LEGACY_TEMPLATE_IDS.has(p.id));
+
+  const idx = list.findIndex(p => p.id === DEFAULT_PRESET_ID);
+  if (idx === -1) {
+    list.unshift(seedPreset);
+    return list;
+  }
+
+  const existing = list[idx];
+  if (existing.id === DEFAULT_PRESET_ID) {
+    existing.name = sanitizeDefaultPresetName(existing.name);
+    existing.isSystem = true;
+  }
+
+  const builtinSignature = layoutShapeSignature(getDefaultLayout());
+  const isPristineSeed =
+    existing.name === DEFAULT_PRESET_NAME &&
+    !!existing.layoutTree &&
+    layoutShapeSignature(existing.layoutTree) === builtinSignature;
+  const userHasOwnLayout = layoutShapeSignature(seedPreset.layoutTree) !== builtinSignature;
+
+  // 只有"预设还是出厂种子 + 用户现有布局确实是自己攒的"才接管，
+  // 避免覆盖用户手动恢复成出厂默认之后的状态。
+  if (isPristineSeed && userHasOwnLayout) {
+    list[idx] = {
+      ...existing,
+      layoutTree: cloneTree(seedPreset.layoutTree),
+      sidebarPanes: cloneTree(seedPreset.sidebarPanes),
+      updatedAt: Date.now(),
+    };
+  }
+
+  return list;
+}
+
+// 获取系统基础初始预设列表（出厂内置默认，仅作为最后兜底，不硬编码任何内置模板）
 export const getSystemDefaultPresets = (): LayoutPreset[] => [
   {
-    id: 'preset-default',
-    name: '默认布局',
+    id: DEFAULT_PRESET_ID,
+    name: DEFAULT_PRESET_NAME,
     isDefault: true,
     isSystem: true,
     layoutTree: getDefaultLayout(),
@@ -694,31 +796,29 @@ export const useLayoutStore = defineStore('layout', () => {
  // watch(layoutTree, ...); // REMOVE THIS
  // watch(sidebarPanes, ...); // REMOVE THIS
     // --- 预设与连接绑定管理 ---
+  /**
+   * 初始预设（同步，供首屏渲染与会话树创建立刻使用）。
+   *
+   * 关键：localStorage 里没有预设数据时，默认预设直接继承"用户当前正在使用的布局"
+   * （layoutTree / sidebarPanes 的初始值也是同步从 localStorage 读出来的），
+   * 而不是内置默认 —— 否则旧用户升级后，原有布局会被我们预设的默认布局覆盖。
+   */
   function getInitialPresets(): LayoutPreset[] {
-    const systemDefaults = getSystemDefaultPresets();
+    const seedPreset = buildDefaultPresetFrom(layoutTree.value, sidebarPanes.value);
     if (typeof localStorage !== 'undefined') {
       try {
         const raw = localStorage.getItem(LAYOUT_PRESETS_STORAGE_KEY);
         if (raw) {
-          let parsed: LayoutPreset[] = JSON.parse(raw);
+          const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            // 清理历史废弃的内置模板
-            parsed = parsed.filter(p => !LEGACY_TEMPLATE_IDS.has(p.id));
-            const userIds = new Set(parsed.map(p => p.id));
-            const merged = [...parsed];
-            for (const sys of systemDefaults) {
-              if (!userIds.has(sys.id)) {
-                merged.push(sys);
-              }
-            }
-            return merged.length > 0 ? merged : systemDefaults;
+            return reconcilePresets(parsed, seedPreset);
           }
         }
       } catch (e) {
         // ignore
       }
     }
-    return systemDefaults;
+    return [seedPreset];
   }
 
   function getInitialDefaultPresetId(): string {
@@ -857,9 +957,9 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
 
-  // 初始化预设
-  function initializePresets() {
-    void initializePresetsAsync();
+  // 初始化预设（layoutReady：主布局加载完成信号，见文件末尾的初始化顺序）
+  function initializePresets(layoutReady?: Promise<unknown>) {
+    void initializePresetsAsync(layoutReady);
   }
 
   /**
@@ -867,9 +967,22 @@ export const useLayoutStore = defineStore('layout', () => {
    *
    * 以前只读 localStorage，后端也没有 /settings/layout-presets 路由，
    * persistPresets 的 PUT 一直 404 被静默吞掉 —— 表现就是"桌面端和 Web 端预设互不同步"。
+   *
+   * 升级兼容：老用户没有预设数据时，默认预设取"他们当时正在用的布局"（settings.layout），
+   * 绝不能用内置默认把它盖掉，所以这里必须先等主布局加载完成。
    */
-  async function initializePresetsAsync() {
-    const systemDefaults = getSystemDefaultPresets();
+  async function initializePresetsAsync(layoutReady?: Promise<unknown>) {
+    if (layoutReady) {
+      try {
+        await layoutReady;
+      } catch {
+        /* 布局加载失败时退回本地缓存 */
+      }
+    }
+
+    // 种子 = 用户当前布局（此时 layoutTree 已是最新：后端优先，其次 localStorage）
+    const seedPreset = buildDefaultPresetFrom(layoutTree.value, sidebarPanes.value);
+
     let remote: { presets?: LayoutPreset[]; defaultPresetId?: string; connectionLayoutMap?: Record<string, string> } | null = null;
     try {
       const res = await apiClient.get('/settings/layout-presets');
@@ -892,7 +1005,7 @@ export const useLayoutStore = defineStore('layout', () => {
       if (rawDefaultId && !LEGACY_TEMPLATE_IDS.has(rawDefaultId)) {
         defaultPresetId.value = rawDefaultId;
       } else {
-        defaultPresetId.value = 'preset-default';
+        defaultPresetId.value = DEFAULT_PRESET_ID;
       }
 
       if (rawMap) {
@@ -906,34 +1019,27 @@ export const useLayoutStore = defineStore('layout', () => {
       }
 
       if (rawPresets) {
-        let parsed: LayoutPreset[] = JSON.parse(rawPresets);
+        const parsed = JSON.parse(rawPresets);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // 彻底过滤掉已废弃的旧内置模板
-          parsed = parsed.filter(p => !LEGACY_TEMPLATE_IDS.has(p.id));
-          const userIds = new Set(parsed.map(p => p.id));
-          const merged = [...parsed];
-          for (const sysPreset of systemDefaults) {
-            if (!userIds.has(sysPreset.id)) {
-              merged.push(sysPreset);
-            }
-          }
-          layoutPresets.value = merged.length > 0 ? merged : systemDefaults;
+          // 过滤废弃模板 + 用当前布局补齐/修复默认预设
+          layoutPresets.value = reconcilePresets(parsed, seedPreset);
         } else {
-          layoutPresets.value = systemDefaults;
+          layoutPresets.value = [seedPreset];
         }
       } else {
-        layoutPresets.value = systemDefaults;
+        // 老用户升级上来（后端与本地都没有预设数据）：把当前布局直接变成默认布局
+        layoutPresets.value = [seedPreset];
       }
 
       // 清洗后立即持久化更新本地和后端
       persistPresets();
     } catch (err) {
-      console.warn('[Layout Store] 加载预设配置异常，使用系统默认:', err);
-      layoutPresets.value = systemDefaults;
+      console.warn('[Layout Store] 加载预设配置异常，使用当前布局作为默认预设:', err);
+      layoutPresets.value = [seedPreset];
     }
 
     if (!layoutPresets.value.some(p => p.id === defaultPresetId.value)) {
-      defaultPresetId.value = layoutPresets.value[0]?.id || 'preset-default';
+      defaultPresetId.value = layoutPresets.value[0]?.id || DEFAULT_PRESET_ID;
     }
 
     layoutPresets.value.forEach(p => {
@@ -1232,9 +1338,11 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
   // --- 初始化 ---
-  // Store 创建时自动初始化布局和侧栏
-  initializeLayout();
-  initializePresets();
+  // Store 创建时自动初始化布局和侧栏。
+  // 顺序有讲究：预设必须等主布局（后端 settings.layout）加载完再决定"默认布局"取谁的内容，
+  // 否则老用户升级上来会先被我们内置的默认布局覆盖一次。
+  const layoutInitPromise = initializeLayout();
+  initializePresets(layoutInitPromise);
   // 单独加载 Header 可见性（如果需要与布局初始化分开）
   loadHeaderVisibility();
 
