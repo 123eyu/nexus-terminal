@@ -18,6 +18,9 @@ import { useFileEditorStore, type FileInfo } from '../stores/fileEditor.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 import { registerTerminal as registerDebugTerminal } from '../debug';
+import { useTerminalContextMenu } from '../composables/terminal/useTerminalContextMenu';
+import { useTerminalScrollbar } from '../composables/terminal/useTerminalScrollbar';
+import { useTerminalPinchZoom } from '../composables/terminal/useTerminalPinchZoom';
 
 const highlightStore = useTerminalHighlightStore();
 
@@ -64,9 +67,6 @@ const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素
 
 
 const { isMobile } = useDeviceDetection(); // 设备检测
-
-let initialPinchDistance = 0;
-let currentFontSizeOnPinchStart = 0;
 
 // --- Appearance Store ---
 const appearanceStore = useAppearanceStore();
@@ -209,238 +209,41 @@ const getScrollbackValue = (limit: number): number => {
   return Math.max(0, limit); // Ensure non-negative, return the number otherwise
 };
 
-// --- 终端右键交互与上下文菜单 ---
-const showContextMenu = ref(false);
-const contextMenuPosition = ref({ x: 0, y: 0 });
-const contextMenuSelectedText = ref('');
+// --- 右键菜单（实现见 composables/terminal/useTerminalContextMenu.ts）---
+const {
+  showContextMenu,
+  contextMenuPosition,
+  contextMenuSelectedText,
+  handleContextMenuAction,
+  addContextMenuListener,
+  removeContextMenuListener,
+} = useTerminalContextMenu({
+  getTerminal: () => terminal,
+  getSessionId: () => props.sessionId,
+  containerRef: terminalRef,
+});
 
-const executePaste = async () => {
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text && terminal) {
-      terminal.focus();
-      terminal.paste(text);
-    }
-  } catch (err) {
-    console.error('[Terminal] Failed to paste:', err);
-  }
-};
+// --- 右侧悬浮滚动条（实现见 composables/terminal/useTerminalScrollbar.ts）---
+const {
+  canScroll,
+  scrollProgress,
+  thumbHeightRatio,
+  updateScrollState,
+  handleScrollProgressChange,
+  attachViewport,
+  detachViewport,
+} = useTerminalScrollbar({ getTerminal: () => terminal });
 
-const executeCopy = async (text: string) => {
-  try {
-    if (text) {
-      await navigator.clipboard.writeText(text);
-    }
-  } catch (err) {
-    console.error('[Terminal] Failed to copy:', err);
-  }
-};
-
-const executeOpenPath = (pathText: string) => {
-  const cleanPath = pathText.trim().replace(/^['"]|['"]$/g, '');
-  if (!cleanPath) return;
-  emitWorkspaceEvent('fileManager:navigateToPath', {
-    path: cleanPath,
-    sessionId: props.sessionId,
-  });
-};
-
-const executeOpenFile = (filePathText: string) => {
-  const cleanPath = filePathText.trim().replace(/^['"]|['"]$/g, '');
-  if (!cleanPath) return;
-  const fileName = cleanPath.substring(cleanPath.lastIndexOf('/') + 1) || cleanPath;
-  const fileInfo: FileInfo = { name: fileName, fullPath: cleanPath };
-
-  if (settingsStore.showPopupFileEditorBoolean) {
-    fileEditorStore.triggerPopup(cleanPath, props.sessionId);
-  }
-
-  if (settingsStore.shareFileEditorTabsBoolean) {
-    fileEditorStore.openFile(cleanPath, props.sessionId, 'terminal');
-  } else {
-    sessionStore.openFileInSession(props.sessionId, fileInfo);
-  }
-};
-
-const executeSaveQuickCommand = (cmdText: string) => {
-  const cleanCmd = cmdText.trim();
-  if (!cleanCmd) return;
-  emitWorkspaceEvent('quickCommand:requestAdd', {
-    initialCommand: cleanCmd,
-  });
-};
-
-const handleContextMenu = async (event: MouseEvent) => {
-  const behavior = terminalRightClickBehaviorString.value;
-  if (behavior === 'none') {
-    event.preventDefault();
-    return;
-  }
-
-  event.preventDefault();
-  const selection = terminal?.getSelection()?.trim() || '';
-
-  if (behavior === 'paste') {
-    await executePaste();
-    return;
-  }
-  if (behavior === 'copy') {
-    if (selection) await executeCopy(selection);
-    return;
-  }
-  if (behavior === 'openPath') {
-    if (selection) executeOpenPath(selection);
-    return;
-  }
-  if (behavior === 'openFile') {
-    if (selection) executeOpenFile(selection);
-    return;
-  }
-  if (behavior === 'saveQuickCommand') {
-    if (selection) executeSaveQuickCommand(selection);
-    return;
-  }
-
-  // 默认模式：behavior === 'contextMenu'
-  // 核心铁律：未选中文本直接粘贴；选中文本弹出右键菜单
-  if (!selection) {
-    await executePaste();
-  } else {
-    contextMenuSelectedText.value = selection;
-    contextMenuPosition.value = { x: event.clientX, y: event.clientY };
-    showContextMenu.value = true;
-  }
-};
-
-const handleContextMenuAction = async (action: TerminalMenuAction) => {
-  const selection = contextMenuSelectedText.value || terminal?.getSelection()?.trim() || '';
-  switch (action) {
-    case 'copy':
-      if (selection) await executeCopy(selection);
-      if (terminal) terminal.focus();
-      break;
-    case 'paste':
-      await executePaste();
-      break;
-    case 'openPath':
-      if (selection) executeOpenPath(selection);
-      break;
-    case 'openFile':
-      if (selection) executeOpenFile(selection);
-      break;
-    case 'saveQuickCommand':
-      if (selection) executeSaveQuickCommand(selection);
-      break;
-  }
-  showContextMenu.value = false;
-};
-
-const addContextMenuListener = () => {
-  if (terminalRef.value) {
-    terminalRef.value.addEventListener('contextmenu', handleContextMenu);
-  }
-};
-
-const removeContextMenuListener = () => {
-  if (terminalRef.value) {
-    terminalRef.value.removeEventListener('contextmenu', handleContextMenu);
-  }
-};
-
-
-// --- 移动端模式下触摸控制与右侧悬浮滚动条 ---
-const canScroll = ref(false);
-const scrollProgress = ref(1); // 0 (顶部历史) 到 1 (底部最新输出)
-const thumbHeightRatio = ref(0.2);
-
-// 计算当前文本是否超出视口并刷新进度
-const updateScrollState = () => {
-  if (!terminal) {
-    canScroll.value = false;
-    return;
-  }
-  const buffer = terminal.buffer.active;
-  const baseY = buffer.baseY;
-  const rows = terminal.rows;
-
-  // 当 baseY > 0 说明存在历史回滚行，即文本超出了当前终端视口
-  if (baseY > 0) {
-    canScroll.value = true;
-    const viewportY = buffer.viewportY;
-    scrollProgress.value = Math.min(1, Math.max(0, viewportY / baseY));
-    const totalLines = baseY + rows;
-    thumbHeightRatio.value = Math.min(1, Math.max(0.08, rows / totalLines));
-  } else {
-    canScroll.value = false;
-    scrollProgress.value = 1;
-    thumbHeightRatio.value = 1;
-  }
-};
-
-// 移动端悬浮滚动条拖拽滚动进度变更
-const handleScrollProgressChange = (progress: number) => {
-  if (!terminal) return;
-  const baseY = terminal.buffer.active.baseY;
-  const targetLine = Math.round(progress * baseY);
-  terminal.scrollToLine(targetLine);
-  updateScrollState();
-};
-
-// 滚轮/触控板滚动走的是 .xterm-viewport 原生 scroll，用 rAF 节流后同步滚动条
-let xtermViewportEl: HTMLElement | null = null;
-let viewportScrollRaf: number | null = null;
-const handleXtermViewportScroll = () => {
-  if (viewportScrollRaf !== null) return;
-  viewportScrollRaf = requestAnimationFrame(() => {
-    viewportScrollRaf = null;
-    updateScrollState();
-  });
-};
-
-// --- 移动端双指缩放字号 ---
-const getDistanceBetweenTouches = (touches: TouchList): number => {
-  const touch1 = touches[0];
-  const touch2 = touches[1];
-  return Math.sqrt(
-    Math.pow(touch2.clientX - touch1.clientX, 2) +
-    Math.pow(touch2.clientY - touch1.clientY, 2)
-  );
-};
-
-const handleTouchStart = (event: TouchEvent) => {
-  if (event.touches.length === 2 && terminal) {
-    // 双指捏合：准备缩放字号
-    event.preventDefault(); 
-    initialPinchDistance = getDistanceBetweenTouches(event.touches);
-    currentFontSizeOnPinchStart = terminal.options.fontSize || currentTerminalFontSize.value;
-  }
-};
-
-const handleTouchMove = (event: TouchEvent) => {
-  if (event.touches.length === 2 && terminal && initialPinchDistance > 0) {
-    // 双指缩放
-    event.preventDefault();
-    const currentDistance = getDistanceBetweenTouches(event.touches);
-    if (currentDistance > 0) {
-      const scale = currentDistance / initialPinchDistance;
-      let newSize = Math.round(currentFontSizeOnPinchStart * scale);
-      newSize = Math.max(8, Math.min(newSize, 72)); 
-
-      const currentTerminalOptFontSize = terminal.options.fontSize ?? currentTerminalFontSize.value;
-      if (newSize !== currentTerminalOptFontSize) {
-        terminal.options.fontSize = newSize;
-        fitAndEmitResizeNow(terminal);
-        debouncedSaveFontSize(newSize);
-      }
-    }
-  }
-};
-
-const handleTouchEnd = (event: TouchEvent) => {
-  if (event.touches.length < 2) {
-    initialPinchDistance = 0;
-  }
-};
+// --- 移动端双指缩放（实现见 composables/terminal/useTerminalPinchZoom.ts）---
+const { handleTouchStart, handleTouchMove, handleTouchEnd } = useTerminalPinchZoom({
+  getTerminal: () => terminal,
+  getCurrentFontSize: () => currentTerminalFontSize.value,
+  applyFontSize: (size: number) => {
+    const term = terminal;
+    if (term) fitAndEmitResizeNow(term);
+    debouncedSaveFontSize(size);
+  },
+});
 
 // 初始化终端
 onMounted(() => {
@@ -863,8 +666,7 @@ onMounted(() => {
       //   只监听 onScroll 就会出现"滚轮滚了、右侧滚动条不动"。补一条原生 scroll 监听。
       const viewportEl = (terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null) ?? null;
       if (viewportEl) {
-        xtermViewportEl = viewportEl;
-        viewportEl.addEventListener('scroll', handleXtermViewportScroll, { passive: true });
+        attachViewport(viewportEl);
       }
       nextTick(() => {
         updateScrollState();
@@ -884,14 +686,7 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(resizeRafId);
     resizeRafId = null;
   }
-  if (viewportScrollRaf !== null) {
-    cancelAnimationFrame(viewportScrollRaf);
-    viewportScrollRaf = null;
-  }
-  if (xtermViewportEl) {
-    xtermViewportEl.removeEventListener('scroll', handleXtermViewportScroll);
-    xtermViewportEl = null;
-  }
+  detachViewport();
   emitWorkspaceEvent('terminal:dispose', { sessionId: props.sessionId, paneId: props.paneId });
   // Ensure observer is cleaned up
   if (resizeObserver && observedElement) {
