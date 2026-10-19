@@ -419,7 +419,6 @@ const getBarButtonClass = (isActive: boolean = false) => [
           <!-- 大小写 / 整词 / 正则：改完立即重搜 -->
           <button
             @click="searchCaseSensitive = !searchCaseSensitive"
-            style="width: 1.75rem;"
             :class="getBarButtonClass(searchCaseSensitive)"
             :title="t('commandInputBar.matchCase', '区分大小写')"
           >
@@ -427,7 +426,6 @@ const getBarButtonClass = (isActive: boolean = false) => [
           </button>
           <button
             @click="searchWholeWord = !searchWholeWord"
-            style="width: 1.75rem;"
             :class="getBarButtonClass(searchWholeWord)"
             :title="t('commandInputBar.matchWholeWord', '全词匹配')"
           >
@@ -435,7 +433,6 @@ const getBarButtonClass = (isActive: boolean = false) => [
           </button>
           <button
             @click="searchRegex = !searchRegex"
-            style="width: 1.75rem;"
             :class="getBarButtonClass(searchRegex)"
             :title="t('commandInputBar.useRegex', '使用正则表达式')"
           >
