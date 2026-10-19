@@ -141,7 +141,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div ref="modalRootRef" class="fixed inset-0 z-[1000] bg-black/40 flex items-center justify-center p-3 md:p-6 select-none" @click.self="closeCustomizer">
+  <div ref="modalRootRef" class="fixed inset-0 z-[1000] flex items-center justify-center p-3 md:p-6 select-none" @click.self="closeCustomizer">
     <div
       ref="dialogContentRef"
       class="bg-background text-foreground border border-border/80 rounded-2xl shadow-2xl w-full md:w-[94%] md:max-w-[920px] h-[92vh] md:h-[84vh] md:max-h-[720px] flex flex-col overflow-hidden"

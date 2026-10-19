@@ -36,6 +36,8 @@ export interface MobileBottomSheetProps {
   keepAlive?: boolean;
   /** 是否启用背景遮罩模糊滤镜，默认 true */
   backdropBlur?: boolean;
+  /** 是否去掉背后的黑色遮罩（需要看清底下的界面时用），默认 false */
+  transparentBackdrop?: boolean;
 }
 
 const props = withDefaults(defineProps<MobileBottomSheetProps>(), {
@@ -54,6 +56,7 @@ const props = withDefaults(defineProps<MobileBottomSheetProps>(), {
   safeAreaBottom: true,
   keepAlive: false,
   backdropBlur: true,
+  transparentBackdrop: false,
 });
 
 const emit = defineEmits<{
@@ -124,8 +127,8 @@ onBeforeUnmount(() => {
       <div
         v-if="props.keepAlive || props.visible"
         v-show="props.visible"
-        class="bottom-sheet-overlay fixed inset-0 flex flex-col justify-end bg-black/60 select-none"
-        :class="props.backdropBlur ? 'backdrop-blur-xs' : ''"
+        class="bottom-sheet-overlay fixed inset-0 flex flex-col justify-end select-none"
+        :class="[props.transparentBackdrop ? 'bg-transparent' : 'bg-black/60', props.backdropBlur ? 'backdrop-blur-xs' : '']"
         :style="{ zIndex: props.zIndex } as StyleValue"
         @click.self="props.closeOnClickOverlay && handleClose()"
       >
