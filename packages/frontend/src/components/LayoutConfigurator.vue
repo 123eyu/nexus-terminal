@@ -61,6 +61,29 @@ const isCurrentPresetDefault = computed<boolean>(() => {
   return selectedPresetId.value === layoutStore.defaultPresetId;
 });
 
+/**
+ * 当前预设绑定的连接数量（按 uuid 实际匹配本机连接）。
+ *
+ * 预设是跨端同步的，里面的 connectionIds 是"创建它的那台设备"的自增 id，
+ * 直接用它数个数会出现"显示已指定 1 个，但列表里一个都没勾上"的错位。
+ */
+const currentPresetBoundCount = computed<number>(() => {
+  const preset = currentPreset.value;
+  if (!preset) return 0;
+  const uuids = preset.connectionUuids || [];
+  if (uuids.length > 0) {
+    const localUuids = new Set(
+      (connectionsStore.connections || [])
+        .map(c => c.uuid)
+        .filter((uuid): uuid is string => !!uuid)
+    );
+    if (localUuids.size === 0) return uuids.length; // 连接列表还没加载
+    const matched = uuids.filter(uuid => localUuids.has(uuid)).length;
+    return matched > 0 ? matched : uuids.length;
+  }
+  return preset.connectionIds?.length || 0;
+});
+
 // 过滤后的连接列表 (用于指定连接弹窗)
 const filteredConnections = computed(() => {
   const kw = connectionSearchKeyword.value.trim().toLowerCase();
@@ -187,7 +210,28 @@ async function handleDeleteCurrentPreset() {
 
 // 打开指定连接弹窗
 function openBindConnectionsModal() {
-  selectedConnectionIds.value = [...(currentPreset.value?.connectionIds || [])];
+  // 老缓存里的连接可能没有 uuid，重新拉一次，保证回填/保存都走跨端稳定的 uuid
+  void connectionsStore.fetchConnections().catch(() => {});
+
+  const preset = currentPreset.value;
+  const list = connectionsStore.connections || [];
+  const uuids = (preset?.connectionUuids || []).filter(Boolean);
+
+  if (uuids.length > 0) {
+    // 以 uuid 为准回填勾选：本地 id 是另一台设备的编号，不能直接用
+    const uuidSet = new Set(uuids);
+    selectedConnectionIds.value = list
+      .filter(conn => !!conn.uuid && uuidSet.has(conn.uuid))
+      .map(conn => conn.id);
+  } else {
+    // 老数据（只存了本地 id，且就是本机写的）才按 id 回填
+    const localIds = new Set(list.map(conn => conn.id));
+    const legacyIds = (preset?.connectionIds || []);
+    selectedConnectionIds.value = localIds.size > 0
+      ? legacyIds.filter(id => localIds.has(id))
+      : [...legacyIds];
+  }
+
   connectionSearchKeyword.value = '';
   showBindConnectionsModal.value = true;
 }
@@ -315,8 +359,16 @@ const getPaneMeta = (componentName?: string) => {
 };
 
 // --- Watchers ---
-watch(() => props.isVisible, (newValue) => {
+watch(() => props.isVisible, async (newValue) => {
   if (newValue) {
+    // 先把后端的预设/绑定拉一遍：桌面端刚新建的布局、刚指定的连接，
+    // 不能要求用户刷新整页才看得见（WS 断线时这一步就是兜底）。
+    try {
+      await layoutStore.reloadPresetsFromServer();
+    } catch (reloadErr) {
+      console.warn('[LayoutConfigurator] 重载布局预设失败:', reloadErr);
+    }
+
     // 打开时把选中预设对齐到"当前活动会话实际使用的预设"，
     // 避免画布显示 A 预装的树、却把改动保存进 B 预设。
     const activeSession = sessionStore.activeSessionId
@@ -328,6 +380,10 @@ watch(() => props.isVisible, (newValue) => {
         selectedPresetId.value = effectivePreset.id;
         layoutStore.activeEditingPresetId = effectivePreset.id;
       }
+    }
+    // 预设可能在别处被删掉了，回退到默认预设，避免下拉框空选
+    if (!layoutStore.layoutPresets.some(p => p.id === selectedPresetId.value)) {
+      selectedPresetId.value = layoutStore.defaultPresetId || layoutStore.layoutPresets[0]?.id || 'preset-default';
     }
     // 用"当前实际渲染的树"初始化编辑器（桌面端为活动会话的专属树），
     // 否则用户看到的画布和工作区里的布局根本不是同一棵，改完自然"对不上"。
@@ -705,7 +761,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
             <i class="fas fa-link text-[11px]"></i>
             <span>指定连接</span>
             <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-primary/20 text-primary">
-              {{ currentPreset?.connectionIds?.length || 0 }}
+              {{ currentPresetBoundCount }}
             </span>
           </button>
 

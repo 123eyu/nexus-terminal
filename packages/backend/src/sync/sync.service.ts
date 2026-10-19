@@ -268,15 +268,60 @@ export const syncService = {
       const settingsRows = await allDb<any>(
         db,
         `SELECT uuid, key, value, updated_hlc, updated_at FROM settings 
-         WHERE updated_at > ? 
+         WHERE (updated_at > ? OR key = 'layoutPresets')
            AND key NOT IN ('desktop_sync_config', 'syncApiKey') 
            AND key NOT LIKE 'desktop_%'`,
         [sinceTimestamp]
       );
+
+      // 布局预设里的 connectionIds 是「本机自增 id」，对端 SQLite 的 id 完全不同。
+      // 导出时附上一张 "本机 id -> uuid" 的翻译表，由接收端在落库前完成转换。
+      // （不要在发送端直接改写数据：如果发送端本身是"汇聚端"，它的 id 同样是外来的，
+      //  按本机连接翻译会把绑定指到错误的连接上。）
+      // layoutPresets 每次同步都全量带一份（很小），保证升级后老数据也能被自动纠正一次。
+      let connectionIdToUuid: Map<string, string> | null = null;
+      const attachOriginConnectionMap = (raw: string): string => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || !Array.isArray(parsed.presets)) return raw;
+
+          const referencedIds = new Set<string>();
+          for (const preset of parsed.presets) {
+            if (!preset || typeof preset !== 'object') continue;
+            const ids: unknown[] = Array.isArray(preset.connectionIds) ? preset.connectionIds : [];
+            ids.forEach(id => referencedIds.add(String(id)));
+          }
+          if (parsed.connectionLayoutMap && typeof parsed.connectionLayoutMap === 'object') {
+            Object.keys(parsed.connectionLayoutMap)
+              .filter(key => /^\d+$/.test(key))
+              .forEach(key => referencedIds.add(key));
+          }
+          if (referencedIds.size === 0) return raw;
+
+          const originMap: Record<string, string> = {};
+          for (const id of referencedIds) {
+            const uuid = connectionIdToUuid?.get(id);
+            if (uuid) originMap[id] = uuid;
+          }
+          parsed._originConnectionMap = originMap;
+          return JSON.stringify(parsed);
+        } catch {
+          return raw;
+        }
+      };
+
+      if (settingsRows.some(r => r.key === 'layoutPresets')) {
+        const rows = await allDb<{ id: number; uuid: string }>(db, `SELECT id, uuid FROM connections WHERE uuid IS NOT NULL`);
+        connectionIdToUuid = new Map(rows.map(r => [String(r.id), r.uuid]));
+      }
+
       settings = settingsRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at || Math.floor(Date.now() / 1000),
-        data: { key: r.key, value: r.value }
+        data: {
+          key: r.key,
+          value: r.key === 'layoutPresets' ? attachOriginConnectionMap(r.value) : r.value
+        }
       }));
     }
 
@@ -874,12 +919,69 @@ export const syncService = {
     // --- 步骤 6.5: 合并 Settings (系统设置项整库覆盖与增量同步) ---
     if (syncLayout && entities.settings && entities.settings.length > 0) {
       const nowSec = Math.floor(Date.now() / 1000);
+
+      /**
+       * 布局预设落库前，把对方设备的"本地连接 id"翻译成跨端稳定的 uuid。
+       * 导出端会附带 `_originConnectionMap`（id -> uuid），这里用它做转换，
+       * 然后丢掉对本机毫无意义的 connectionIds。
+       */
+      const normalizeIncomingLayoutPresets = (raw: string): string => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || !Array.isArray(parsed.presets)) return raw;
+          const originMap: Record<string, string> | null =
+            parsed._originConnectionMap && typeof parsed._originConnectionMap === 'object'
+              ? parsed._originConnectionMap
+              : null;
+
+          for (const preset of parsed.presets) {
+            if (!preset || typeof preset !== 'object') continue;
+            const uuids = new Set<string>(
+              Array.isArray(preset.connectionUuids)
+                ? preset.connectionUuids.filter((u: unknown) => typeof u === 'string' && u.length > 0)
+                : []
+            );
+            if (originMap) {
+              const ids: unknown[] = Array.isArray(preset.connectionIds) ? preset.connectionIds : [];
+              for (const id of ids) {
+                const uuid = originMap[String(id)];
+                if (uuid) uuids.add(uuid);
+              }
+            }
+            if (uuids.size > 0) {
+              preset.connectionUuids = Array.from(uuids);
+              // 对方的自增 id 在本机没有任何意义，清掉避免以后被误用
+              delete preset.connectionIds;
+            }
+          }
+
+          if (parsed.connectionLayoutMap && typeof parsed.connectionLayoutMap === 'object') {
+            const nextMap: Record<string, string> = {};
+            for (const key of Object.keys(parsed.connectionLayoutMap)) {
+              const presetId = parsed.connectionLayoutMap[key];
+              const uuid = originMap?.[key] || (/^\d+$/.test(key) ? null : key);
+              // 数字 key 且翻译不出 uuid（老版本发送端）：保留原样，走兼容路径
+              nextMap[uuid || key] = presetId;
+            }
+            parsed.connectionLayoutMap = nextMap;
+          }
+
+          delete parsed._originConnectionMap;
+          return JSON.stringify(parsed);
+        } catch {
+          return raw;
+        }
+      };
+
       for (const item of entities.settings) {
         const settingKey = item.data.key;
         if (settingKey === 'desktop_sync_config' || settingKey === 'syncApiKey' || (typeof settingKey === 'string' && settingKey.startsWith('desktop_'))) {
           continue; // 保护本地私有配置
         }
-        const settingVal = typeof item.data.value === 'string' ? item.data.value : String(item.data.value || '');
+        const rawSettingVal = typeof item.data.value === 'string' ? item.data.value : String(item.data.value || '');
+        const settingVal = settingKey === 'layoutPresets'
+          ? normalizeIncomingLayoutPresets(rawSettingVal)
+          : rawSettingVal;
         const local = await getDb<{ updated_at: number }>(
           db,
           `SELECT updated_at FROM settings WHERE key = ?`,

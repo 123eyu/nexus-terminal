@@ -326,6 +326,13 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         const settingsStore = useSettingsStore();
         await settingsStore.loadInitialSettings();
       })());
+      // 预设（含"指定连接"绑定）是独立的 settings 键，settings store 不会重建它，
+      // 不显式重载的话，另一台设备新建的布局要刷新整页才出现。
+      refreshTasks.push((async () => {
+        const { useLayoutStore } = await import('./layout.store');
+        const layoutStore = useLayoutStore();
+        await layoutStore.reloadPresetsFromServer();
+      })());
     }
 
     if (active.includes('commandHistory')) {
