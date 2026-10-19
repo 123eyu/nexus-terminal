@@ -25,6 +25,7 @@ import { collectWorkspaceSnapshot } from './workspaceSync/collectSnapshot';
 import { logSync, logSyncError, logSyncWarn } from './workspaceSync/log';
 import { restoreEditorsFromSnapshot } from './workspaceSync/restoreEditors';
 import { restoreFileManagersFromSnapshot } from './workspaceSync/restoreFileManagers';
+import { cleanTrailingPromptForReconnect } from './workspaceSync/terminalBuffer';
 
 // 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
 export type {
@@ -80,25 +81,6 @@ const removePendingRemovedSessions = (ids: string[]): void => {
 };
 
 // 诊断日志统一格式见 stores/workspaceSync/log.ts
-
-/**
- * 清理快照终端文本末尾悬空的 Shell 提示符行（用于新建立 SSH 连接时，防止旧 Prompt 与新 Shell 登录 Prompt 重复叠加）
- */
-const cleanTrailingPromptForReconnect = (text: string): string => {
-  if (!text) return '';
-  const normalized = text.replace(/\r?\n/g, '\r\n');
-  const lines = normalized.split('\r\n');
-  if (lines.length > 0) {
-    const lastLine = lines[lines.length - 1];
-    // 剥离 ANSI 转义序列后判断是否为悬空的 shell 提示符（例如 root@localhost:~# 或 user@host:~$ ）
-    const plainLastLine = lastLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trimEnd();
-    if (plainLastLine && /[#$%>]\s*$/.test(plainLastLine)) {
-      lines.pop(); // 裁剪掉末尾尚未执行命令的旧提示符行，留给新连接的远程 Shell 真实输出
-      return lines.join('\r\n') + (lines.length > 0 ? '\r\n' : '');
-    }
-  }
-  return normalized;
-};
 
 export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const sessionStore = useSessionStore();
