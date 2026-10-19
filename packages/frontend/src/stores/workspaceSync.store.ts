@@ -11,6 +11,7 @@ import { useUiNotificationsStore } from './uiNotifications.store';
 import { useTerminalHighlightStore } from './terminal-highlight.store';
 import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
+import { filterRemovedSessions, resolveSnapshotSessionId } from '../utils/workspaceSnapshot';
 
 const SYNC_ENABLED_STORAGE_KEY = 'nexus_workspace_sync_enabled';
 const CLIENT_ID_SESSION_KEY = 'nexus_workspace_sync_client_id';
@@ -27,6 +28,7 @@ const PENDING_REMOVED_SESSIONS_KEY = 'nexus_pending_removed_sessions';
 const MAX_PENDING_REMOVED_SESSIONS = 50;
 // 刷新恢复后"新本地 ID -> 快照旧 ID"的别名表（关闭会话时要把旧 ID 一起剔除）
 const SESSION_ID_ALIAS_KEY = 'nexus_session_id_alias';
+
 
 const readPendingRemovedSessions = (): string[] => {
   if (typeof localStorage === 'undefined') return [];
@@ -47,8 +49,8 @@ export const markSessionRemovedPendingSync = (sessionId: string): void => {
     list.push(sessionId);
     // 刷新恢复出来的会话是**新 ID**，云端快照里还躺着它的旧 ID（快照要等 1.8s 才沉淀新 ID）。
     // 关闭时如果只记新 ID，下次加载按 ID 剔除就对不上 → 会话又回来了。这里把旧 ID 一起记上。
-    const aliased = readSessionIdAliases()[sessionId];
-    if (aliased && aliased !== sessionId && !list.includes(aliased)) {
+    const aliased = resolveSnapshotSessionId(sessionId, readSessionIdAliases());
+    if (aliased && !list.includes(aliased)) {
       list.push(aliased);
     }
     localStorage.setItem(
@@ -768,24 +770,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
    * 直接恢复就等于"关掉的会话又回来了"。这里在恢复前先按本地记录剔除。
    */
   const consumePendingRemovedSessions = <T extends WorkspaceSnapshot>(snapshot: T): T => {
-    if (!snapshot || !Array.isArray(snapshot.sessions)) return snapshot;
     const pending = readPendingRemovedSessions();
     if (!pending.length) return snapshot;
 
-    const pendingSet = new Set(pending);
-    const sessions = snapshot.sessions.filter(s => !pendingSet.has(s.sessionId));
-    const removed = snapshot.sessions.length - sessions.length;
-    if (removed <= 0) return snapshot;
-
-    const sessionOrder = Array.isArray(snapshot.sessionOrder)
-      ? snapshot.sessionOrder.filter(id => !pendingSet.has(id))
-      : snapshot.sessionOrder;
-    const activeSessionId = snapshot.activeSessionId && pendingSet.has(snapshot.activeSessionId)
-      ? (sessions[sessions.length - 1]?.sessionId ?? null)
-      : snapshot.activeSessionId;
-
-    logSyncWarn(`云端快照里还留着 ${removed} 个刚关闭的会话（关闭后立即刷新导致），已在恢复前剔除`);
-    return { ...snapshot, sessions, sessionOrder, activeSessionId } as T;
+    const { snapshot: filtered, removedCount } = filterRemovedSessions(snapshot, pending);
+    if (removedCount > 0) {
+      logSyncWarn(`云端快照里还留着 ${removedCount} 个刚关闭的会话（关闭后立即刷新导致），已在恢复前剔除`);
+    }
+    return filtered;
   };
 
   const restoreWorkspaceFromSnapshot = async (snapshot: WorkspaceSnapshot) => {
