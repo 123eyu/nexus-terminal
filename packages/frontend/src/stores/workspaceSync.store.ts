@@ -13,6 +13,26 @@ import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
 import { filterRemovedSessions, resolveSnapshotSessionId } from '../utils/workspaceSnapshot';
 import {
+  isValidFileManagerSyncPath,
+  type SyncedFileManagerInfo,
+  type SyncedFileManagerInstanceState,
+  type SyncedFileTabInfo,
+  type SyncedMultiLineCommandInfo,
+  type SyncedSessionInfo,
+  type WorkspaceSnapshot,
+} from './workspaceSync/types';
+import { collectWorkspaceSnapshot } from './workspaceSync/collectSnapshot';
+
+// 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
+export type {
+  SyncedFileManagerInfo,
+  SyncedFileManagerInstanceState,
+  SyncedFileTabInfo,
+  SyncedMultiLineCommandInfo,
+  SyncedSessionInfo,
+  WorkspaceSnapshot,
+} from './workspaceSync/types';
+import {
   getLocalStorageSafe,
   markSessionRemovedPendingSync as markSessionRemovedPendingSyncIn,
   readPendingRemovedSessions as readPendingRemovedSessionsIn,
@@ -85,80 +105,6 @@ const cleanTrailingPromptForReconnect = (text: string): string => {
   }
   return normalized;
 };
-
-export interface SyncedSessionInfo {
-  sessionId: string;
-  connectionId: number | string;
-  connectionName: string;
-  connectionUuid?: string;
-  commandInputContent?: string;
-  suspendSessionId?: string;
-  terminalBuffer?: string;
-  terminalPanesBuffer?: Record<string, string>; // 多终端分屏各 paneId 独立序列化 buffer
-  primaryTerminalPaneId?: string; // 主终端对应的 paneId
-  focusedTerminalPaneId?: string; // 该会话最后聚焦的终端 paneId（多终端分屏时恢复焦点用）
-  editorTabs?: SyncedFileTabInfo[]; // 每个会话自己独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
-  activeEditorTabId?: string | null;
-}
-
-export interface SyncedFileTabInfo {
-  id: string;
-  sessionId: string;
-  filePath: string;
-  filename: string;
-  content: string;
-  rawContentBase64?: string | null;
-  isModified: boolean;
-  language: string;
-  selectedEncoding: string;
-  scrollTop?: number;
-  scrollLeft?: number;
-}
-
-export interface SyncedFileManagerInfo {
-  currentPath: string;
-  isSearchActive: boolean;
-  searchQuery: string;
-  scrollTop?: number;
-  scrollRatio?: number;
-}
-
-export interface SyncedFileManagerInstanceState {
-  instanceId: string;
-  sessionId: string;
-  currentPath: string;
-  isSearchActive: boolean;
-  searchQuery: string;
-  scrollTop?: number;
-  scrollRatio?: number;
-}
-
-export interface SyncedMultiLineCommandInfo {
-  currentContent: string;
-  sessionDrafts: Record<string, string>;
-}
-
-export interface SyncedLayoutInfo {
-  layoutTree: LayoutNode | null;
-  sidebarPanes?: { left: PaneName[]; right: PaneName[] };
-}
-
-export interface WorkspaceSnapshot {
-  syncEnabled: boolean;
-  activeSessionId: string | null;
-  sessions: SyncedSessionInfo[];
-  sessionOrder?: string[]; // 会话标签栏排布顺序
-  layout?: SyncedLayoutInfo; // 分屏布局与侧边栏配置
-  fileEditor: {
-    isOpen?: boolean; // 弹窗编辑器是否处于打开状态
-    activeTabId: string | null;
-    tabs: SyncedFileTabInfo[];
-  };
-  fileManager: SyncedFileManagerInfo; // 兼容单实例旧快照
-  fileManagers?: Record<string, SyncedFileManagerInstanceState>; // 精准适配多实例 (key: `${sessionId}:${instanceId}`)
-  multiLineCommandInput: SyncedMultiLineCommandInfo;
-  updatedAt: number;
-}
 
 export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const sessionStore = useSessionStore();
@@ -254,13 +200,6 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     return null;
   };
 
-  // 辅助函数：判断文件管理器路径是否为有效同步路径（必须为绝对路径，杜绝相对路径如 . 或 ./.gemini）
-  const isValidFileManagerSyncPath = (p?: string | null): boolean => {
-    if (!p) return false;
-    const s = p.trim();
-    return s.startsWith('/') && s !== '';
-  };
-
   // 获取特定会话与实例的有效保存路径（仅对有快照保存记录的会话有效，新会话严格返回 null）
   const getSavedFileManagerPath = (sessionId: string, instanceId: string): string | null => {
     const inst = getSavedFileManagerInstanceState(sessionId, instanceId);
@@ -354,208 +293,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   };
 
   // 收集当前整个工作区完整快照
-  const collectCurrentWorkspaceState = (): WorkspaceSnapshot => {
-    const sessionStore = useSessionStore();
-    const fileEditorStore = useFileEditorStore();
-    const layoutStore = useLayoutStore();
-    const connectionsStore = useConnectionsStore();
-
-    // 1. 收集会话信息（严格按照当前标签栏真实的排布顺序收集！）
-    const orderedTabs = sessionStore.sessionTabsWithStatus || [];
-    const orderedSessionIds = orderedTabs.map(t => t.sessionId);
-    const allSessionIds = Array.from(sessionStore.sessions.keys());
-    const sortedSessionIds = [
-      ...orderedSessionIds.filter(id => allSessionIds.includes(id)),
-      ...allSessionIds.filter(id => !orderedSessionIds.includes(id)),
-    ];
-
-    const sessionsList: SyncedSessionInfo[] = [];
-    sortedSessionIds.forEach((sId) => {
-      const s = sessionStore.sessions.get(sId);
-      if (!s) return;
-      // 提取终端屏幕缓冲区 (优先使用官方 SerializeAddon 提取带完整 ANSI 转义序列、RGB真色彩与格式的数据)
-      let terminalBuffer = '';
-      if (s.terminalManager && typeof (s.terminalManager as any).serializeTerminal === 'function') {
-        const serialized = (s.terminalManager as any).serializeTerminal();
-        if (typeof serialized === 'string') {
-          terminalBuffer = serialized;
-        }
-      }
-
-      // 若 SerializeAddon 未激活或未输出，降级使用文本缓冲区提取算法保底
-      if (!terminalBuffer && s.terminalManager?.terminalInstance?.value) {
-        const term = s.terminalManager.terminalInstance.value;
-        const buffer = term.buffer.active;
-        // 全屏 TUI（btop/vim/less）正在使用备用屏：界面文字没有保存价值，
-        // 存下来反而会让刷新后的终端变成一块静态 UI，退出 TUI 时还会留下一片黑。
-        if (buffer.type !== 'alternate') {
-          let lastNonEmptyLineIndex = -1;
-          for (let i = buffer.length - 1; i >= 0; i--) {
-            const line = buffer.getLine(i);
-            if (line && line.translateToString(true).trim() !== '') {
-              lastNonEmptyLineIndex = i;
-              break;
-            }
-          }
-          if (lastNonEmptyLineIndex !== -1) {
-            let result = '';
-            for (let i = 0; i <= lastNonEmptyLineIndex; i++) {
-              const line = buffer.getLine(i);
-              if (!line) continue;
-              const nextLine = i < lastNonEmptyLineIndex ? buffer.getLine(i + 1) : null;
-              const isNextWrapped = nextLine ? nextLine.isWrapped : false;
-              if (isNextWrapped) {
-                result += line.translateToString(false);
-              } else {
-                result += line.translateToString(true);
-                if (i < lastNonEmptyLineIndex) {
-                  result += '\r\n';
-                }
-              }
-            }
-            terminalBuffer = result;
-          }
-        }
-      }
-
-      if (!terminalBuffer && (s as any).lastTerminalBuffer
-          && s.terminalManager?.terminalInstance?.value?.buffer?.active?.type !== 'alternate') {
-        terminalBuffer = (s as any).lastTerminalBuffer;
-      }
-
-      // 多终端分屏各 pane 独立序列化 buffer
-      let terminalPanesBuffer: Record<string, string> | undefined = undefined;
-      if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
-        const panesBuf = (s.terminalManager as any).serializeAllPanes();
-        if (panesBuf && Object.keys(panesBuf).length > 0) {
-          // 会话树的 paneId 每次刷新都会重新生成（cloneLayoutTreeWithNewIds），
-          // 直接拿 paneId 当 key，恢复时必然全部 miss —— 表现就是"刷新后终端内容对不上"。
-          // 这里统一改写成跨刷新稳定的先序序号键：pane#0 / pane#1 ……
-          const order = layoutStore.getSessionTerminalPaneOrder(sId);
-          const normalized: Record<string, string> = {};
-          for (const [pid, buf] of Object.entries(panesBuf)) {
-            const idx = order.indexOf(pid);
-            normalized[idx >= 0 ? `pane#${idx}` : pid] = buf as string;
-          }
-          terminalPanesBuffer = normalized;
-        }
-      }
-      if (!terminalPanesBuffer && (s as any).lastTerminalPanesBuffer) {
-        terminalPanesBuffer = (s as any).lastTerminalPanesBuffer;
-      }
-      if (terminalPanesBuffer) {
-        (s as any).lastTerminalPanesBuffer = terminalPanesBuffer;
-      }
-
-      // 提取会话自身独立的编辑器标签页 (当 shareFileEditorTabs=false 时)
-      let sessionSpecificTabs: SyncedFileTabInfo[] | undefined = undefined;
-      if (s.editorTabs?.value && Array.isArray(s.editorTabs.value) && s.editorTabs.value.length > 0) {
-        sessionSpecificTabs = s.editorTabs.value.map(tab => ({
-          id: tab.id,
-          sessionId: tab.sessionId || sId,
-          filePath: tab.filePath,
-          filename: tab.filename,
-          content: tab.content,
-          rawContentBase64: tab.rawContentBase64 || null,
-          isModified: tab.isModified,
-          language: tab.language,
-          selectedEncoding: tab.selectedEncoding,
-          scrollTop: tab.scrollTop || 0,
-          scrollLeft: tab.scrollLeft || 0,
-        }));
-      }
-
-      const matchedConn = connectionsStore.connections.find(c => String(c.id) === String(s.connectionId));
-      sessionsList.push({
-        sessionId: sId,
-        connectionId: s.connectionId,
-        connectionName: s.connectionName,
-        connectionUuid: matchedConn?.uuid,
-        commandInputContent: s.commandInputContent.value || '',
-        suspendSessionId: (s as any).suspendSessionId,
-        terminalBuffer: terminalBuffer !== undefined ? terminalBuffer : '',
-        terminalPanesBuffer,
-        primaryTerminalPaneId: (s as any).primaryTerminalPaneId || s.terminalManager?.primaryPaneId?.value || undefined,
-        focusedTerminalPaneId: s.focusedTerminalPaneId || undefined,
-        editorTabs: sessionSpecificTabs,
-        activeEditorTabId: s.activeEditorTabId?.value || null,
-      });
-    });
-
-    // 2. 收集全局编辑器标签（共享模式及全局数据池）
-    const editorTabsList: SyncedFileTabInfo[] = fileEditorStore.orderedTabs.map(tab => ({
-      id: tab.id,
-      sessionId: tab.sessionId,
-      filePath: tab.filePath,
-      filename: tab.filename,
-      content: tab.content,
-      rawContentBase64: tab.rawContentBase64 || null,
-      isModified: tab.isModified,
-      language: tab.language,
-      selectedEncoding: tab.selectedEncoding,
-      scrollTop: tab.scrollTop || 0,
-      scrollLeft: tab.scrollLeft || 0,
-    }));
-
-    // 3. 收集所有会话的所有文件管理器实例
-    const allFileManagers: Record<string, SyncedFileManagerInstanceState> = {};
-    sessionStore.sessions.forEach((s, sId) => {
-      if (s.sftpManagers) {
-        s.sftpManagers.forEach((mgr, instId) => {
-          const key = `${sId}:${instId}`;
-          const cached = fileManagerInstances.value[key] || {};
-          const realPath = (mgr.currentPath?.value && isValidFileManagerSyncPath(mgr.currentPath.value))
-            ? mgr.currentPath.value
-            : (cached.currentPath && isValidFileManagerSyncPath(cached.currentPath) ? cached.currentPath : '');
-          allFileManagers[key] = {
-            sessionId: sId,
-            instanceId: instId,
-            currentPath: realPath,
-            isSearchActive: cached.isSearchActive || false,
-            searchQuery: cached.searchQuery || '',
-            scrollTop: cached.scrollTop || 0,
-            scrollRatio: typeof cached.scrollRatio === 'number' ? cached.scrollRatio : 0,
-          };
-        });
-      }
-    });
-
-    // 确定主文件管理器兼容路径
-    let realFmPath = fileManagerState.value.currentPath;
-    const currentActiveSession = sessionStore.activeSessionId ? sessionStore.sessions.get(sessionStore.activeSessionId) : null;
-    if (currentActiveSession?.sftpManagers) {
-      for (const mgr of currentActiveSession.sftpManagers.values()) {
-        const p = mgr.currentPath?.value;
-        if (p && isValidFileManagerSyncPath(p)) {
-          realFmPath = p;
-          break;
-        }
-      }
-    }
-
-    return {
+  // 采集实现见 stores/workspaceSync/collectSnapshot.ts（204 行）
+  const collectCurrentWorkspaceState = (): WorkspaceSnapshot =>
+    collectWorkspaceSnapshot({
       syncEnabled: syncEnabled.value,
-      activeSessionId: sessionStore.activeSessionId,
-      sessions: sessionsList,
-      sessionOrder: sortedSessionIds,
-      layout: {
-        layoutTree: layoutStore.layoutTree ? JSON.parse(JSON.stringify(layoutStore.layoutTree)) : null,
-        sidebarPanes: layoutStore.sidebarPanes ? JSON.parse(JSON.stringify(layoutStore.sidebarPanes)) : undefined,
-      },
-      fileEditor: {
-        isOpen: fileEditorStore.isPopupOpen,
-        activeTabId: fileEditorStore.activeTabId,
-        tabs: editorTabsList,
-      },
-      fileManager: {
-        ...fileManagerState.value,
-        currentPath: realFmPath,
-      },
-      fileManagers: allFileManagers,
-      multiLineCommandInput: { ...multiLineCommandState.value },
-      updatedAt: Math.floor(Date.now() / 1000),
-    };
-  };
+      fileManagerState: fileManagerState.value,
+      fileManagerInstances: fileManagerInstances.value,
+      multiLineCommandState: multiLineCommandState.value,
+    });
 
   // 防抖计时器
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
