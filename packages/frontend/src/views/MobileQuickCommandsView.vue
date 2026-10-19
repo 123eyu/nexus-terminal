@@ -734,6 +734,7 @@ import { useI18n } from 'vue-i18n';
 import { copyToClipboard } from '../utils/clipboard';
 import { resolveFolderColor, resolveCommandFolderColor, countCommandsInFolder } from '../utils/quickCommandDisplay';
 import { useQuickCommandExecution } from '../composables/quickCommands/useQuickCommandExecution';
+import { useQuickCommandFolderEditing } from '../composables/quickCommands/useQuickCommandFolderEditing';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
@@ -826,8 +827,6 @@ const searchInputRef = ref<HTMLInputElement | null>(null); // +++ Ref for the se
 let unregisterFocus: (() => void) | null = null; // +++ 保存注销函数 +++
 
 // +++ State for inline tag editing +++
-const editingTagId = ref<number | null | 'untagged'>(null);
-const editedTagName = ref('');
 const tagInputRefs = ref(new Map<string | number, HTMLInputElement | null>());
 
 // +++ 移动端专属快捷指令动作抽屉 (Action Sheet) 状态 +++
@@ -857,6 +856,18 @@ watch(searchTerm, (newVal) => {
 });
 
 const { selectedIndex: storeSelectedIndex, flatVisibleCommands, expandedGroups } = storeToRefs(quickCommandsStore);
+
+// --- 文件夹改名 / 新建（实现见 composables/quickCommands/useQuickCommandFolderEditing.ts）---
+const {
+  editingTagId,
+  editedTagName,
+  startEditingTag,
+  cancelEditingTag,
+  finishEditingTag,
+} = useQuickCommandFolderEditing({
+  groupedCommands: filteredAndGroupedCommands,
+  expandedGroups,
+});
 const {
   showQuickCommandTagsBoolean,
   quickCommandRowSizeMultiplierNumber: qcRowSizeMultiplierFromStore,
@@ -1214,108 +1225,11 @@ const setTagInputRef = (el: any, id: string | number) => {
   }
 };
 
-const startEditingTag = (tagId: number | null, currentName: string) => {
-  editingTagId.value = tagId === null ? 'untagged' : tagId;
-  editedTagName.value = tagId === null ? '' : currentName; // Clear input for "Untagged"
-  // Focus logic is handled by the watcher
-};
 
-const finishEditingTag = async () => {
-  const currentEditingId = editingTagId.value;
-  const newName = editedTagName.value.trim();
-  const originalGroup = filteredAndGroupedCommands.value.find(g => g.tagId === currentEditingId); // Find original group data
 
-  // Basic validation
-  if (newName === '' && currentEditingId !== 'untagged') {
-    cancelEditingTag();
-    return;
-  }
-   if (newName === '' && currentEditingId === 'untagged') {
-     cancelEditingTag();
-     return;
-   }
 
-  let operationSuccess = false;
 
-  try {
-    if (currentEditingId === 'untagged') {
-      // --- Create new tag and assign commands ---
-      console.log(`[QuickCmdView] Creating new tag: ${newName}`);
-      const newTag = await quickCommandTagsStore.addTag(newName);
-      if (newTag) {
-        operationSuccess = true;
-        uiNotificationsStore.showSuccess(t('quickCommands.tags.createSuccess')); // Use specific translation key
-        const untaggedGroup = filteredAndGroupedCommands.value.find(g => g.tagId === null);
-        const commandIdsToAssign = untaggedGroup ? untaggedGroup.commands.map(c => c.id) : [];
 
-        if (commandIdsToAssign.length > 0) {
-          console.log(`[QuickCmdView] Assigning ${commandIdsToAssign.length} commands to new tag ID: ${newTag.id}`);
-          console.log(`[QuickCmdView] Command IDs to assign: ${JSON.stringify(commandIdsToAssign)}`); 
-          // Call the store action to assign commands to the new tag
-          const assignSuccess = await quickCommandsStore.assignCommandsToTagAction(commandIdsToAssign, newTag.id);
-          if (assignSuccess) {
-            // Success/Error Notifications and list refresh are handled within the store action
-            console.log(`[QuickCmdView] assignCommandsToTagAction reported success.`);
-          } else {
-             console.error(`[QuickCmdView] assignCommandsToTagAction reported failure.`);
-             // Optionally show a specific error here if the store action doesn't cover all cases
-          }
-          // Remove TODO and temporary warning/refresh
-          // console.warn("TODO: Implement assignCommandsToTagAction in quickCommands.store and backend");
-          // uiNotificationsStore.showWarning("标签已创建，但指令分配功能尚未实现");
-          // await quickCommandsStore.fetchQuickCommands(); // Store action handles refresh
-        } else {
-          uiNotificationsStore.showInfo(t('quickCommands.tags.noCommandsToAssign'));
-        }
-
-        // Update expanded group state
-        const untaggedGroupName = t('quickCommands.untagged', '未标记');
-        if (expandedGroups.value[untaggedGroupName] !== undefined) {
-          const currentState = expandedGroups.value[untaggedGroupName];
-          delete expandedGroups.value[untaggedGroupName]; // Remove old key
-          expandedGroups.value[newName] = currentState; // Add new key
-        }
-      }
-      // addTag failure handled in store
-    } else if (typeof currentEditingId === 'number') {
-      // --- Update existing tag ---
-      const originalTagName = originalGroup?.groupName;
-      if (!originalTagName) {
-         console.error(`[QuickCmdView] Cannot find original group name for tag ID ${currentEditingId}`);
-         cancelEditingTag();
-         return;
-      }
-      if (originalTagName === newName) {
-        operationSuccess = true; // No change needed
-      } else {
-        console.log(`[QuickCmdView] Updating tag ID ${currentEditingId} from "${originalTagName}" to "${newName}"`);
-        const updateResult = await quickCommandTagsStore.updateTag(currentEditingId, newName);
-        if (updateResult) {
-          operationSuccess = true;
-          // uiNotificationsStore.showSuccess(t('quickCommands.tags.updateSuccess'));
-          // Update expanded group state
-          if (expandedGroups.value[originalTagName] !== undefined) {
-            const currentState = expandedGroups.value[originalTagName];
-            delete expandedGroups.value[originalTagName];
-            expandedGroups.value[newName] = currentState;
-          }
-           // Refresh commands to reflect potential grouping changes if names clashed etc.
-           await quickCommandsStore.fetchQuickCommands();
-        }
-        // updateTag failure handled in store
-      }
-    }
-  } catch (error: any) {
-    console.error("[QuickCmdView] Error during finishEditingTag:", error);
-    uiNotificationsStore.showError(t('common.unexpectedError'));
-  } finally {
-    editingTagId.value = null; // Exit edit mode regardless of success
-  }
-};
-
-const cancelEditingTag = () => {
-  editingTagId.value = null;
-};
 
 // --- 移动端快捷指令专用操作抽屉控制 ---
 const openCommandActionSheet = (command: QuickCommandFE) => {
