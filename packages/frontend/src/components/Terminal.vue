@@ -12,7 +12,7 @@ import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import 'xterm/css/xterm.css';
-import MobileTerminalScrollbar from './MobileTerminalScrollbar.vue';
+import TerminalScrollbar from './TerminalScrollbar.vue';
 import TerminalContextMenu, { type TerminalMenuAction } from './TerminalContextMenu.vue';
 import { useFileEditorStore, type FileInfo } from '../stores/fileEditor.store';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents'; // +++ Import subscriber and off
@@ -1054,7 +1054,7 @@ const handleTerminalClick = () => {
       </div>
 
       <!-- 桌面端：滚动条占右侧独立一列，浮层压力归零（不再压住终端内容/背景图） -->
-      <MobileTerminalScrollbar
+      <TerminalScrollbar
         v-if="!isMobile"
         variant="gutter"
         :can-scroll="canScroll"
@@ -1066,7 +1066,7 @@ const handleTerminalClick = () => {
     </div>
 
     <!-- 移动端专属右侧悬浮滚动条 (独立解耦组件) -->
-    <MobileTerminalScrollbar
+    <TerminalScrollbar
       v-if="isMobile && canScroll"
       variant="floating"
       :can-scroll="canScroll"

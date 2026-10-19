@@ -9,7 +9,7 @@ import type { Terminal } from 'xterm';
  * 所以这里额外挂了原生 scroll 监听，并用 rAF 节流（scroll 每帧可能触发多次）。
  *
  * 另一个坑：`canScroll=false` 时**只能淡出、不能 v-if 移除**，
- * 否则列宽变化会让终端反复 resize（见 MobileTerminalScrollbar 的注释）。
+ * 否则列宽变化会让终端反复 resize（见 TerminalScrollbar 的注释）。
  */
 export function useTerminalScrollbar(deps: { getTerminal: () => Terminal | null }) {
   const canScroll = ref(false);

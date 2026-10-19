@@ -1,3 +1,12 @@
+<!--
+  终端右侧滚动条（桌面 / 移动共用）。
+
+  - 桌面：variant="gutter"，占据右侧独立一列，绝不与终端内容重叠
+  - 移动：variant="floating"，悬浮在终端上方，宽热区方便手指抓
+
+  历史上的名字是 MobileTerminalScrollbar（最早只给移动端用），
+  后来桌面端也切到同一实现，名字会误导，已改为 TerminalScrollbar。
+-->
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import type { TerminalSearchMarker } from '../utils/terminalSearch';
