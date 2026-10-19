@@ -16,6 +16,7 @@ import { useFileManagerKeyboardNavigation } from '../composables/file-manager/us
 import { useFileManagerVirtualScroll } from '../composables/file-manager/useFileManagerVirtualScroll';
 import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
+import { useFileManagerWorkspaceBridge } from '../composables/file-manager/useFileManagerWorkspaceBridge';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
@@ -80,9 +81,12 @@ const favoritePathsStore = useFavoritePathsStore(); // 实例化 FavoritePaths S
 
 // --- 会话与实例级路径同步标记 ---
 let isInitialPathLoaded = false;
-let lastSyncedPath = '';
-let isInternalPathSyncing = false;
-let syncLockTimer: ReturnType<typeof setTimeout> | null = null;
+/** 路径同步回环锁（与 useFileManagerWorkspaceBridge 共享，必须可写） */
+const pathSync: {
+  internal: boolean;
+  lastSyncedPath: string;
+  lockTimer: ReturnType<typeof setTimeout> | null;
+} = { internal: false, lastSyncedPath: '', lockTimer: null };
 
 // --- 获取并存储 SFTP 管理器实例 ---
 // 使用 shallowRef 存储管理器实例，以便在 sessionId 变化时切换
@@ -90,7 +94,7 @@ const currentSftpManager = shallowRef<SftpManagerInstance | null>(null);
 
 const initializeSftpManager = (sessionId: string, instanceId: string) => {
     isInitialPathLoaded = false;
-    lastSyncedPath = '';
+    pathSync.lastSyncedPath = '';
     const manager = sessionStore.getOrCreateSftpManager(sessionId, instanceId);
     if (!manager) {
         // 抛出错误或显示错误消息，阻止组件进一步渲染
@@ -407,7 +411,7 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   if (!props.wsDeps.isConnected.value) return;
 
   const normTarget = normalizePath(path);
-  if (!isManual && lastSyncedPath && lastSyncedPath === normTarget) {
+  if (!isManual && pathSync.lastSyncedPath && pathSync.lastSyncedPath === normTarget) {
     return;
   }
 
@@ -428,11 +432,11 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
   const escapedPath = path.replace(/([\\"\$`])/g, '\\$1');
   const command = `cd -- "${escapedPath}"\n`;
 
-  isInternalPathSyncing = true;
-  lastSyncedPath = normTarget;
-  if (syncLockTimer) clearTimeout(syncLockTimer);
-  syncLockTimer = setTimeout(() => {
-    isInternalPathSyncing = false;
+  pathSync.internal = true;
+  pathSync.lastSyncedPath = normTarget;
+  if (pathSync.lockTimer) clearTimeout(pathSync.lockTimer);
+  pathSync.lockTimer = setTimeout(() => {
+    pathSync.internal = false;
   }, 600);
 
   try {
@@ -617,13 +621,13 @@ watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
     // 核心安全守卫：首次加载路径（如刚打开会话/SFTP连接建立后载入初始工作目录），或旧路径尚未确立时
     // 坚决不向终端发送 cd 指令，避免每次打开会话都多执行一次无谓的 cd
     if (!isInitialPathLoaded || !oldPath || !oldPath.trim().startsWith('/')) {
-      lastSyncedPath = normNew;
+      pathSync.lastSyncedPath = normNew;
       isInitialPathLoaded = true;
       return;
     }
 
     // 仅当用户在文件管理器中主动切换了不同目录（且非内部回环）时，且处于同步模式时，才安全触发终端跟随
-    if (normNew !== normOld && !isInternalPathSyncing && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
+    if (normNew !== normOld && !pathSync.internal && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
       syncPathToTerminal(newPath, false);
     }
   }
@@ -1643,252 +1647,38 @@ watch(() => props.sessionId, (newSessionId, oldSessionId) => {
 }, { immediate: false });
 
 // +++ 注册/注销自定义聚焦动作与跨会话联动事件 +++
-let unregisterSearchFocusAction: (() => void) | null = null;
-let unregisterPathFocusAction: (() => void) | null = null;
-
-let unregisterItemsMovedEvent: (() => void) | null = null;
-let unregisterNavigateToPathEvent: (() => void) | null = null;
-let unregisterSetDirectoryTreeVisibleEvent: (() => void) | null = null;
-let unregisterSetDirectoryTreeWidthEvent: (() => void) | null = null;
-let unregisterSetViewModeEvent: (() => void) | null = null;
-let unregisterTerminalInputEvent: (() => void) | null = null;
-let unregisterTerminalCwdChangedEvent: (() => void) | null = null;
-let directoryPollTimer: ReturnType<typeof setInterval> | null = null;
-let terminalDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-// --- 目录实时变更感知：自适应静默增量探查 ---
-const checkAndPollCurrentDirectory = () => {
-  // 1. 窗口处于后台休眠时跳过探查，节约带宽与性能
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    return;
-  }
-  // 2. 检查会话状态：仅对当前激活的会话执行前台轮询，后台会话不空转消耗资源
-  if (sessionStore.activeSessionId && sessionStore.activeSessionId !== props.sessionId) {
-    return;
-  }
-  // 3. 检查 SFTP 实例是否存在且连接就绪
-  if (!currentSftpManager.value || !props.wsDeps.isConnected.value || !props.wsDeps.isSftpReady.value) {
-    return;
-  }
-  // 4. 用户正在交互操作（常规加载中、拖拽中、外部上传蒙版激活、调整列宽/树宽）时跳过该周期
-  if (
-    currentSftpManager.value.isLoading.value ||
-    isResizing.value ||
-    isResizingTree.value ||
-    isDraggingColumn.value ||
-    isContainerDropTarget.value ||
-    showExternalDropOverlay.value
-  ) {
-    return;
-  }
-  // 5. 发起静默增量比对刷新
-  currentSftpManager.value.silentRefreshCurrentDirectory();
-};
-
-const handleVisibilityChange = () => {
-  if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-    // 用户从其他标签页切回 Nexus Terminal 时，立即执行一次增量探查
-    checkAndPollCurrentDirectory();
-  }
-};
-
-onMounted(() => {
-  // 启动自适应静默增量探查（每 2.8 秒一次）
-  directoryPollTimer = setInterval(checkAndPollCurrentDirectory, 2800);
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-  }
-
-  // 监听当前会话的终端输入事件：若用户敲击回车命令，防抖 600ms 静默刷新目录
-  const handleTerminalInputNotification = (payload: { sessionId: string; data: string }) => {
-    if (payload.sessionId === props.sessionId && (payload.data.includes('\r') || payload.data.includes('\n'))) {
-      if (terminalDebounceTimer) clearTimeout(terminalDebounceTimer);
-      terminalDebounceTimer = setTimeout(() => {
-        checkAndPollCurrentDirectory();
-      }, 600);
-    }
-  };
-  subscribeToWorkspaceEvent('terminal:input', handleTerminalInputNotification);
-  unregisterTerminalInputEvent = () => unsubscribeFromWorkspaceEvent('terminal:input', handleTerminalInputNotification);
-
-  // 终端 -> 文件管理器：监听终端当前工作目录变更事件
-  const handleTerminalCwdChangedNotification = (payload: { sessionId: string; cwd: string; paneId?: string }) => {
-    // 1. 会话匹配检查：必须属于当前文件管理器绑定的会话
-    if (payload.sessionId !== props.sessionId) {
-      return;
-    }
-
-    // 1.1 分屏聚焦匹配检查：若事件携带了 paneId，且当前存在聚焦终端，仅跟从当前聚焦的终端
-    if (payload.paneId && layoutStore.activeTerminalPaneId && payload.paneId !== layoutStore.activeTerminalPaneId) {
-      return;
-    }
-
-    // 2. 同步模式检查：必须为双向同步或终端同步到这
-    if (terminalSyncMode.value !== 'bidirectional' && terminalSyncMode.value !== 'from_terminal') {
-      return;
-    }
-
-    // 3. 内部回环锁判定：若当前是由文件管理器引发的终端 cd，则忽略终端回显的 OSC 7，避免死循环
-    if (isInternalPathSyncing) {
-      return;
-    }
-
-    const newCwd = payload.cwd;
-    if (!newCwd || !newCwd.startsWith('/')) {
-      return;
-    }
-
-    const normNew = normalizePath(newCwd);
-    const normCur = normalizePath(currentSftpManager.value?.currentPath.value);
-
-    if (normNew === normCur) {
-      return;
-    }
-
-    // 启用防回环锁，防止文件管理器 loadDirectory 后再次反向触发向终端 cd
-    isInternalPathSyncing = true;
-    lastSyncedPath = normNew;
-    if (syncLockTimer) clearTimeout(syncLockTimer);
-    syncLockTimer = setTimeout(() => {
-      isInternalPathSyncing = false;
-    }, 600);
-
-    console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 响应终端目录变更，自动切换文件管理器路径: ${normNew}`);
-    currentSftpManager.value?.loadDirectory(normNew);
-  };
-  subscribeToWorkspaceEvent('terminal:cwdChanged', handleTerminalCwdChangedNotification);
-  unregisterTerminalCwdChangedEvent = () => unsubscribeFromWorkspaceEvent('terminal:cwdChanged', handleTerminalCwdChangedNotification);
-
-  // 同组件实例跨会话目录树显隐联动
-  const handleSetDirectoryTreeVisibleNotification = (payload: { instanceId: string; show: boolean }) => {
-    if (payload.instanceId === effectiveInstanceId.value && showDirectoryTree.value !== payload.show) {
-      showDirectoryTree.value = payload.show;
-    }
-  };
-  subscribeToWorkspaceEvent('fileManager:setDirectoryTreeVisible', handleSetDirectoryTreeVisibleNotification);
-  unregisterSetDirectoryTreeVisibleEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setDirectoryTreeVisible', handleSetDirectoryTreeVisibleNotification);
-
-  // 同组件实例跨会话目录树宽度联动
-  const handleSetDirectoryTreeWidthNotification = (payload: { instanceId: string; width: number }) => {
-    if (payload.instanceId === effectiveInstanceId.value && directoryTreeWidth.value !== payload.width) {
-      directoryTreeWidth.value = payload.width;
-    }
-  };
-  subscribeToWorkspaceEvent('fileManager:setDirectoryTreeWidth', handleSetDirectoryTreeWidthNotification);
-  unregisterSetDirectoryTreeWidthEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setDirectoryTreeWidth', handleSetDirectoryTreeWidthNotification);
-
-  // 同组件实例跨会话视图模式联动
-  const handleSetViewModeNotification = (payload: { instanceId: string; viewMode: 'list' | 'tile' }) => {
-    if (payload.instanceId === effectiveInstanceId.value && viewMode.value !== payload.viewMode) {
-      viewMode.value = payload.viewMode;
-    }
-  };
-  subscribeToWorkspaceEvent('fileManager:setViewMode', handleSetViewModeNotification);
-  unregisterSetViewModeEvent = () => unsubscribeFromWorkspaceEvent('fileManager:setViewMode', handleSetViewModeNotification);
-
-  const handleItemsMovedNotification = (payload: { sessionId: string; sourceDir: string; targetDir: string }) => {
-    if (payload.sessionId === props.sessionId) {
-      const current = currentSftpManager.value?.currentPath.value;
-      if (current && (current === payload.sourceDir || current === payload.targetDir)) {
-        console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到移动文件广播，自动静默刷新当前目录: ${current}`);
-        currentSftpManager.value?.loadDirectory(current, true);
-      }
-    }
-  };
-  subscribeToWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
-  unregisterItemsMovedEvent = () => unsubscribeFromWorkspaceEvent('fileManager:itemsMoved', handleItemsMovedNotification);
-
-  const handleNavigateToPathNotification = (payload: { path: string; sessionId?: string; instanceId?: string }) => {
-    // 如果指定了 sessionId，必须与当前实例的 sessionId 匹配
-    if (payload.sessionId && payload.sessionId !== props.sessionId) {
-      return;
-    }
-    // 如果指定了 instanceId，必须与当前组件的 instanceId 匹配（避免多分屏实例互串）
-    if (payload.instanceId && payload.instanceId !== props.instanceId) {
-      return;
-    }
-    if (payload.path && currentSftpManager.value) {
-      console.log(`[FileManager ${props.sessionId}-${props.instanceId}] 收到路径跳转通知: ${payload.path}`);
-      currentSftpManager.value.loadDirectory(payload.path);
-      currentSftpManager.value.setInitialLoadDone(true);
-    }
-  };
-  subscribeToWorkspaceEvent('fileManager:navigateToPath', handleNavigateToPathNotification);
-  unregisterNavigateToPathEvent = () => unsubscribeFromWorkspaceEvent('fileManager:navigateToPath', handleNavigateToPathNotification);
-
-  const focusSearchActionWrapper = async (): Promise<boolean | undefined> => {
-    if (props.sessionId === sessionStore.activeSessionId) {
-      return focusSearchInput();
-    }
-    return undefined;
-  };
-  unregisterSearchFocusAction = focusSwitcherStore.registerFocusAction('fileManagerSearch', focusSearchActionWrapper);
-
-  const focusPathActionWrapper = async (): Promise<boolean | undefined> => {
-     if (props.sessionId === sessionStore.activeSessionId) {
-       startPathEdit();
-       return true;
-     }
-     return undefined;
-  };
-  unregisterPathFocusAction = focusSwitcherStore.registerFocusAction('fileManagerPathInput', focusPathActionWrapper);
+// --- 工作区/终端事件桥（订阅与清理见 composables/file-manager/useFileManagerWorkspaceBridge.ts）---
+// 以前这里有 270 行：目录轮询 + 6 组 workspace 事件订阅 + 2 个焦点动作 + 逐条手动注销。
+// 漏注销会让"切面板再打开"叠一层监听（目录刷新频率翻倍、cd 事件被响应多次）。
+useFileManagerWorkspaceBridge({
+  sessionId: props.sessionId,
+  instanceId: props.instanceId,
+  effectiveInstanceId,
+  isConnected: props.wsDeps.isConnected,
+  isSftpReady: props.wsDeps.isSftpReady,
+  currentSftpManager,
+  activeSessionId: () => sessionStore.activeSessionId ?? null,
+  activeTerminalPaneId: () => layoutStore.activeTerminalPaneId ?? null,
+  terminalSyncMode,
+  pathSync,
+  normalizePath,
+  isBusy: () =>
+    Boolean(
+      isResizing.value ||
+        isResizingTree.value ||
+        isDraggingColumn.value ||
+        isContainerDropTarget.value ||
+        showExternalDropOverlay.value
+    ),
+  showDirectoryTree,
+  directoryTreeWidth,
+  viewMode,
+  focusSearchInput: () => focusSearchInput(),
+  startPathEdit: () => startPathEdit(),
+  registerFocusAction: (name, handler) => focusSwitcherStore.registerFocusAction(name, handler),
 });
 
 onBeforeUnmount(() => {
-  if (directoryPollTimer) {
-    clearInterval(directoryPollTimer);
-    directoryPollTimer = null;
-  }
-  if (terminalDebounceTimer) {
-    clearTimeout(terminalDebounceTimer);
-    terminalDebounceTimer = null;
-  }
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }
-  if (unregisterTerminalInputEvent) {
-    unregisterTerminalInputEvent();
-    unregisterTerminalInputEvent = null;
-  }
-  if (unregisterTerminalCwdChangedEvent) {
-    unregisterTerminalCwdChangedEvent();
-    unregisterTerminalCwdChangedEvent = null;
-  }
-  if (syncLockTimer) {
-    clearTimeout(syncLockTimer);
-    syncLockTimer = null;
-  }
-
-  if (unregisterSetDirectoryTreeVisibleEvent) {
-    unregisterSetDirectoryTreeVisibleEvent();
-    unregisterSetDirectoryTreeVisibleEvent = null;
-  }
-  if (unregisterSetDirectoryTreeWidthEvent) {
-    unregisterSetDirectoryTreeWidthEvent();
-    unregisterSetDirectoryTreeWidthEvent = null;
-  }
-  if (unregisterSetViewModeEvent) {
-    unregisterSetViewModeEvent();
-    unregisterSetViewModeEvent = null;
-  }
-  if (unregisterItemsMovedEvent) {
-    unregisterItemsMovedEvent();
-    unregisterItemsMovedEvent = null;
-  }
-  if (unregisterNavigateToPathEvent) {
-    unregisterNavigateToPathEvent();
-    unregisterNavigateToPathEvent = null;
-  }
-  if (unregisterSearchFocusAction) {
-    unregisterSearchFocusAction();
-  }
-  unregisterSearchFocusAction = null;
-
-  if (unregisterPathFocusAction) {
-    unregisterPathFocusAction();
-  }
-  unregisterPathFocusAction = null;
-
   /**
    * 注意：这里**不要**销毁 SFTP manager。
    *
@@ -1900,8 +1690,6 @@ onBeforeUnmount(() => {
    * manager 的生命周期现在跟着**会话**走（closeSession 里会统一 cleanup + clear），
    * 组件卸载后 WS 处理器仍然挂着，顺带还能让缓存里的目录保持最新。
    */
-  // 曾经的写法（每次重开侧栏都会丢缓存、先转一圈 loading）：
-  // sessionStore.removeSftpManager(props.sessionId, props.instanceId);
 
   // 当检测不到该文件管理器组件存在于布局中时，移除该存储项（独立实例垃圾回收）
   const instance = props.instanceId;
@@ -1945,7 +1733,7 @@ const handleGoParent = () => {
 
 // --- 发送 CD 命令到终端的方法 ---
 const sendCdCommandToTerminal = () => {
-  lastSyncedPath = ''; // 手动点击时强制同步
+  pathSync.lastSyncedPath = ''; // 手动点击时强制同步
   syncPathToTerminal(undefined, true);
 };
 
