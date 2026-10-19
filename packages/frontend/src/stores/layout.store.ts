@@ -15,13 +15,21 @@ import type {
 import {
   applySizesAtPath,
   cloneLayoutTreeWithStableIds,
-  cloneTree,
   ensureNodeIds,
   findNodePath,
   layoutShapeSignature,
   randomId,
   reconcileTreePreservingIds,
 } from '../utils/layoutTree';
+import {
+  DEFAULT_PRESET_ID,
+  DEFAULT_PRESET_NAME,
+  buildDefaultPresetFrom as buildDefaultPresetFromBase,
+  reconcilePresets as reconcilePresetsBase,
+} from '../utils/layoutPreset';
+import { LEGACY_TEMPLATE_IDS } from '../utils/layoutPreset';
+
+export { LEGACY_TEMPLATE_IDS } from '../utils/layoutPreset';
 
 // 布局领域类型集中在 types/layout.ts 定义；这里重新导出，既有 import 路径保持不变。
 export type {
@@ -129,87 +137,22 @@ const getDefaultSidebarPanes = (): { left: PaneName[], right: PaneName[] } => ({
 });
 
 
-// 已废弃的历史内置模板 ID 列表（用于自动清洗 localStorage 中的历史残留）
-export const LEGACY_TEMPLATE_IDS = new Set([
-  'preset-single-terminal',
-  'preset-dual-terminals',
-  'preset-terminal-files',
-]);
+// 预设相关的纯逻辑（命名清洗、默认预设构造、与出厂预置对齐）下沉到 utils/layoutPreset.ts
 
-// 全局默认预设的固定 ID 与出厂名称
-const DEFAULT_PRESET_ID = 'preset-default';
-const DEFAULT_PRESET_NAME = '默认布局';
-
-/**
- * 用"用户当前正在使用的布局"生成全局默认预设。
- *
- * 升级兼容的核心：旧版本没有预设概念，用户攒下来的工作区布局只存在
- * settings.layout / localStorage 里。如果直接塞一个硬编码的内置默认，
- * 用户升级后看到的布局就被我们预设的默认布局覆盖掉了。
- */
+/** 用"当前工作区布局"作为兜底构造默认预设（store 内版本，自动带上出厂布局） */
 function buildDefaultPresetFrom(
   tree: LayoutNode | null | undefined,
   sidebars: { left: PaneName[]; right: PaneName[] } | null | undefined
 ): LayoutPreset {
-  return {
-    id: DEFAULT_PRESET_ID,
-    name: DEFAULT_PRESET_NAME,
-    isDefault: true,
-    isSystem: true,
-    layoutTree: tree ? cloneTree(tree) : getDefaultLayout(),
-    sidebarPanes: sidebars ? cloneTree(sidebars) : getDefaultSidebarPanes(),
-    connectionIds: [],
-  };
+  return buildDefaultPresetFromBase(tree, sidebars, {
+    tree: getDefaultLayout(),
+    sidebars: getDefaultSidebarPanes(),
+  });
 }
 
-// 默认预设名称清洗：不再带星标（历史数据里可能残留 "⭐ 默认布局"）
-function sanitizeDefaultPresetName(name: string | undefined): string {
-  const cleaned = (name || '').replace(/^[\s★☆⭐]+/, '').trim();
-  return cleaned || DEFAULT_PRESET_NAME;
-}
-
-/**
- * 把"存储里的预设列表"与系统默认预设对齐：
- * 1. 过滤掉已废弃的内置模板；
- * 2. 缺 preset-default 时用 seedPreset（用户当前布局）补齐，而不是内置默认；
- * 3. 已存在但仍是"未编辑过的出厂种子"时，同样换成 seedPreset ——
- *    修复早前升级时默认布局已经盖掉用户布局的用户。
- */
+/** store 内版本：用出厂布局判断"预设是否还是未编辑过的种子" */
 function reconcilePresets(stored: LayoutPreset[], seedPreset: LayoutPreset): LayoutPreset[] {
-  const list = (Array.isArray(stored) ? stored : [])
-    .filter(p => p && typeof p.id === 'string' && !LEGACY_TEMPLATE_IDS.has(p.id));
-
-  const idx = list.findIndex(p => p.id === DEFAULT_PRESET_ID);
-  if (idx === -1) {
-    list.unshift(seedPreset);
-    return list;
-  }
-
-  const existing = list[idx];
-  if (existing.id === DEFAULT_PRESET_ID) {
-    existing.name = sanitizeDefaultPresetName(existing.name);
-    existing.isSystem = true;
-  }
-
-  const builtinSignature = layoutShapeSignature(getDefaultLayout());
-  const isPristineSeed =
-    existing.name === DEFAULT_PRESET_NAME &&
-    !!existing.layoutTree &&
-    layoutShapeSignature(existing.layoutTree) === builtinSignature;
-  const userHasOwnLayout = layoutShapeSignature(seedPreset.layoutTree) !== builtinSignature;
-
-  // 只有"预设还是出厂种子 + 用户现有布局确实是自己攒的"才接管，
-  // 避免覆盖用户手动恢复成出厂默认之后的状态。
-  if (isPristineSeed && userHasOwnLayout) {
-    list[idx] = {
-      ...existing,
-      layoutTree: cloneTree(seedPreset.layoutTree),
-      sidebarPanes: cloneTree(seedPreset.sidebarPanes),
-      updatedAt: Date.now(),
-    };
-  }
-
-  return list;
+  return reconcilePresetsBase(stored, seedPreset, getDefaultLayout(), layoutShapeSignature);
 }
 
 // 获取系统基础初始预设列表（出厂内置默认，仅作为最后兜底，不硬编码任何内置模板）
