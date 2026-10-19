@@ -1128,16 +1128,16 @@ export const useLayoutStore = defineStore('layout', () => {
     // 它必须等于"全局默认预设"。否则：编辑过某个按连接绑定的预设后，
     // 关掉会话会看到那个预设的布局，刷新也还是它（数据已经写进 settings.layout 了）。
     // 这里做一次对齐，顺带把历史上被写脏的老数据自愈回来。
+    //
+    // ⚠️ 只对齐 layoutTree，不要动 sidebarPanes：
+    // 侧栏是用户随时用左侧图标开关的"实时配置"（settings.sidebar），
+    // 预设里的 sidebarPanes 只是它的快照，强行回写会把用户刚加进去的面板抹掉。
     const idlePreset = layoutPresets.value.find(p => p.id === defaultPresetId.value);
     if (idlePreset) {
       try {
         if (idlePreset.layoutTree
             && JSON.stringify(idlePreset.layoutTree) !== JSON.stringify(layoutTree.value)) {
           await updateLayoutTree(JSON.parse(JSON.stringify(idlePreset.layoutTree)));
-        }
-        if (idlePreset.sidebarPanes
-            && JSON.stringify(idlePreset.sidebarPanes) !== JSON.stringify(sidebarPanes.value)) {
-          await updateSidebarPanes(JSON.parse(JSON.stringify(idlePreset.sidebarPanes)));
         }
       } catch (idleSyncErr) {
         console.warn('[Layout Store] 对齐空闲工作区布局失败:', idleSyncErr);

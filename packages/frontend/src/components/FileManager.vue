@@ -1887,7 +1887,20 @@ onBeforeUnmount(() => {
     unregisterPathFocusAction();
   }
   unregisterPathFocusAction = null;
-  sessionStore.removeSftpManager(props.sessionId, props.instanceId);
+
+  /**
+   * 注意：这里**不要**销毁 SFTP manager。
+   *
+   * 侧栏的文件管理器是 `v-if` 分支渲染的：切到别的面板 / 收起侧栏时组件会卸载，
+   * 再次打开会重新挂载。以前在卸载时 `removeSftpManager()`，导致每次重新打开都要
+   * 新建 manager（文件树缓存、currentPath、initialLoadDone 全丢）→ 必然先转一圈
+   * "正在加载文件列表..." 再去 realpath + readdir。
+   *
+   * manager 的生命周期现在跟着**会话**走（closeSession 里会统一 cleanup + clear），
+   * 组件卸载后 WS 处理器仍然挂着，顺带还能让缓存里的目录保持最新。
+   */
+  // 曾经的写法（每次重开侧栏都会丢缓存、先转一圈 loading）：
+  // sessionStore.removeSftpManager(props.sessionId, props.instanceId);
 
   // 当检测不到该文件管理器组件存在于布局中时，移除该存储项（独立实例垃圾回收）
   const instance = props.instanceId;
