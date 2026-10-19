@@ -20,6 +20,10 @@ export interface QuickCommandFolderEditingDeps {
   groupedCommands: Ref<GroupedQuickCommands[]>;
   /** 分组展开状态，key 是分组名（不是 tagId） */
   expandedGroups: Ref<Record<string, boolean>>;
+  /** 新建成功后的附加动作（桌面侧栏需要切到新文件夹） */
+  onFolderCreated?: (folderId: number) => void;
+  /** 删除成功后的附加动作（桌面侧栏需要把选中项回退到 'all'） */
+  onFolderDeleted?: (folderId: number) => void;
 }
 
 export function useQuickCommandFolderEditing(deps: QuickCommandFolderEditingDeps) {
@@ -30,6 +34,15 @@ export function useQuickCommandFolderEditing(deps: QuickCommandFolderEditingDeps
 
   const editingTagId = ref<number | null | 'untagged'>(null);
   const editedTagName = ref('');
+
+  // 新建文件夹
+  const isCreatingFolderModal = ref(false);
+  const newQuickCommandFolderName = ref('');
+
+  // 删除文件夹
+  const showDeleteFolderModal = ref(false);
+  const folderToDelete = ref<{ id: number; name: string } | null>(null);
+  const isDeletingFolder = ref(false);
 
   const startEditingTag = (tagId: number | null, currentName: string) => {
     editingTagId.value = tagId === null ? 'untagged' : tagId;
@@ -110,11 +123,68 @@ export function useQuickCommandFolderEditing(deps: QuickCommandFolderEditingDeps
     }
   }
 
+  /** 新建文件夹（来自输入框弹窗） */
+  async function confirmCreateFolder() {
+    const name = newQuickCommandFolderName.value.trim();
+    if (!name) return;
+    try {
+      const created = await quickCommandTagsStore.createFolder(name);
+      if (created) {
+        uiNotificationsStore.showSuccess(t('folders.folderCreated', '文件夹已创建'));
+        await quickCommandTagsStore.fetchTags();
+        await quickCommandsStore.fetchQuickCommands();
+        deps.onFolderCreated?.(created.id);
+        isCreatingFolderModal.value = false;
+        newQuickCommandFolderName.value = '';
+      }
+    } catch (error: any) {
+      uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
+    }
+  }
+
+  /** 打开删除确认弹窗 */
+  function handleDeleteFolder(folderId: number, folderName: string, event?: Event) {
+    if (event) event.stopPropagation();
+    folderToDelete.value = { id: folderId, name: folderName };
+    showDeleteFolderModal.value = true;
+  }
+
+  /** 确认删除（deleteCommands 决定里面的命令是删掉还是移到未标记） */
+  async function confirmDeleteFolder(deleteCommands: boolean) {
+    if (!folderToDelete.value) return;
+    const fid = folderToDelete.value.id;
+    isDeletingFolder.value = true;
+    try {
+      const success = await quickCommandTagsStore.deleteFolder(fid, deleteCommands);
+      if (success) {
+        showDeleteFolderModal.value = false;
+        folderToDelete.value = null;
+        deps.onFolderDeleted?.(fid);
+        await Promise.all([
+          quickCommandTagsStore.fetchTags(),
+          quickCommandsStore.fetchQuickCommands(),
+        ]);
+      }
+    } catch (error: any) {
+      uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
+    } finally {
+      isDeletingFolder.value = false;
+    }
+  }
+
   return {
     editingTagId,
     editedTagName,
     startEditingTag,
     cancelEditingTag,
     finishEditingTag,
+    isCreatingFolderModal,
+    newQuickCommandFolderName,
+    showDeleteFolderModal,
+    folderToDelete,
+    isDeletingFolder,
+    confirmCreateFolder,
+    handleDeleteFolder,
+    confirmDeleteFolder,
   };
 }

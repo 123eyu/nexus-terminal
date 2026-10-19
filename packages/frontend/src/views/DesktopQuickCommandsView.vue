@@ -1170,8 +1170,6 @@ const handleMoveSubMenuLeave = () => {
 };
 
 // +++ 文件夹弹窗状态 +++
-const isCreatingFolderModal = ref(false);
-const newQuickCommandFolderName = ref('');
 
 const localSearchTerm = ref(quickCommandsStore.searchTerm);
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1198,10 +1196,33 @@ const {
   startEditingTag,
   cancelEditingTag,
   finishEditingTag,
+  isCreatingFolderModal,
+  newQuickCommandFolderName,
+  showDeleteFolderModal,
+  folderToDelete,
+  isDeletingFolder,
+  confirmCreateFolder,
+  handleDeleteFolder,
+  confirmDeleteFolder,
 } = useQuickCommandFolderEditing({
   groupedCommands: filteredAndGroupedCommands,
   expandedGroups,
+  // 桌面侧栏：新建后切过去；删掉当前选中项时回退到全部
+  onFolderCreated: (folderId) => {
+    if (folderLayoutMode.value === 'sidebar') {
+      sidebarActiveFolderId.value = folderId;
+    }
+  },
+  onFolderDeleted: (folderId) => {
+    if (sidebarActiveFolderId.value === folderId) {
+      sidebarActiveFolderId.value = 'all';
+    }
+  },
 });
+
+// 模板沿用旧名字，避免大面积改模板
+const confirmCreateQuickCommandFolder = confirmCreateFolder;
+const handleConfirmDeleteFolder = confirmDeleteFolder;
 const {
   showQuickCommandTagsBoolean,
   quickCommandRowSizeMultiplierNumber: qcRowSizeMultiplierFromStore,
@@ -1916,59 +1937,12 @@ const openCreateFolderDialog = () => {
   isCreatingFolderModal.value = true;
 };
 
-const confirmCreateQuickCommandFolder = async () => {
-  const name = newQuickCommandFolderName.value.trim();
-  if (!name) return;
-  try {
-    const created = await quickCommandTagsStore.createFolder(name);
-    if (created) {
-      uiNotificationsStore.showSuccess(t('folders.folderCreated', '文件夹已创建'));
-      await quickCommandTagsStore.fetchTags();
-      await quickCommandsStore.fetchQuickCommands();
-      if (folderLayoutMode.value === 'sidebar') {
-        sidebarActiveFolderId.value = created.id;
-      }
-      isCreatingFolderModal.value = false;
-      newQuickCommandFolderName.value = '';
-    }
-  } catch (error: any) {
-    uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
-  }
-};
 
-const showDeleteFolderModal = ref(false);
-const folderToDelete = ref<{ id: number; name: string } | null>(null);
-const isDeletingFolder = ref(false);
 
-const handleDeleteFolder = (folderId: number, folderName: string, event?: Event) => {
-  if (event) event.stopPropagation();
-  folderToDelete.value = { id: folderId, name: folderName };
-  showDeleteFolderModal.value = true;
-};
 
-const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
-  if (!folderToDelete.value) return;
-  const fid = folderToDelete.value.id;
-  isDeletingFolder.value = true;
-  try {
-    const success = await quickCommandTagsStore.deleteFolder(fid, deleteCommands);
-    if (success) {
-      showDeleteFolderModal.value = false;
-      folderToDelete.value = null;
-      if (sidebarActiveFolderId.value === fid) {
-        sidebarActiveFolderId.value = 'all';
-      }
-      await Promise.all([
-        quickCommandTagsStore.fetchTags(),
-        quickCommandsStore.fetchQuickCommands()
-      ]);
-    }
-  } catch (error: any) {
-    uiNotificationsStore.showError(error?.message || t('common.unexpectedError'));
-  } finally {
-    isDeletingFolder.value = false;
-  }
-};
+
+
+
 
 const handleMoveCommandToFolder = async (command: QuickCommandFE, folderId: number | null) => {
   try {
