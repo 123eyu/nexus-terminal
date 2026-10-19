@@ -62,9 +62,13 @@ const searchOptions = computed(() => ({
 }));
 
 /** 显示成 "3/57"；没有匹配时显示 "0/0"，而不是空白让人以为功能没生效 */
-const searchCountLabel = computed(() =>
-  searchTotalCount.value > 0 ? `${searchCurrentIndex.value + 1}/${searchTotalCount.value}` : '0/0'
-);
+const searchCountLabel = computed(() => {
+  if (searchTotalCount.value <= 0) return '0/0';
+  // 命中数超过 addon 的 highlightLimit 时 resultIndex 会变成 -1（它不知道当前是第几个），
+  // 这时用 "—/3001" 表示"总数已知、当前序号未知"，比显示 0/3001 诚实。
+  const current = searchCurrentIndex.value >= 0 ? `${searchCurrentIndex.value + 1}` : '—';
+  return `${current}/${searchTotalCount.value}`;
+});
 
 // 计算属性：当前活动会话的命令输入
 const currentSessionCommandInput = computed({
@@ -114,9 +118,10 @@ const performSearch = () => {
   });
 };
 
-// 140ms 防抖：连续键入时只对最后一段词做全量搜索 + 标记扫描，
-// 长 scrollback（十万行级）下这是"输入不卡"的关键。
-const SEARCH_DEBOUNCE_MS = 140;
+// 220ms 防抖：addon 在"搜索词变化"时必须全量扫一遍 buffer（5000 行约 200ms），
+// 这个成本无法绕过（它不暴露增量 API）。把防抖设到正常打字间隔之上，
+// 保证打字过程中一次都不触发，只在停手后扫一次。
+const SEARCH_DEBOUNCE_MS = 220;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const findNext = () => {

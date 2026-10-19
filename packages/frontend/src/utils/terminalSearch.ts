@@ -21,6 +21,15 @@ export interface TerminalSearchOptions {
   caseSensitive?: boolean;
 }
 
+export interface TerminalSearchMatch {
+  /** buffer 绝对行号（0 = scrollback 第一行） */
+  row: number;
+  /** 起始列（字符索引，xterm 的 select/decoration 都按列算） */
+  col: number;
+  /** 匹配长度（字符数，宽字符已由 translateToString 折算） */
+  length: number;
+}
+
 export interface TerminalSearchMarker {
   /** 距轨道顶部比例 0~1 */
   top: number;
@@ -167,37 +176,56 @@ export async function scanSearchBuffer(
   term: string,
   options: TerminalSearchOptions = {},
   isCancelled: () => boolean = () => false,
-  chunkSize = 4000
-): Promise<{ matchLines: number[]; totalLines: number }> {
+  chunkSize = 800
+): Promise<{ matches: TerminalSearchMatch[]; matchLines: number[]; totalLines: number }> {
+  const totalLines = Math.max(1, buffer?.baseY ?? 1);
   if (!term || !buffer || buffer.length <= 0) {
-    return { matchLines: [], totalLines: Math.max(1, buffer?.baseY ?? 1) };
+    return { matches: [], matchLines: [], totalLines };
   }
 
+  const pattern = buildSearchRegExp(term, options);
+  if (!pattern) return { matches: [], matchLines: [], totalLines };
+
   const total = buffer.length;
+  const matches: TerminalSearchMatch[] = [];
   const matchLines: number[] = [];
 
+  // 字面量预筛：非正则模式下先用 includes 过滤整行，只有疑似命中的行才跑正则。
+  // 3000 行里命中 10 行时，这一步能把耗时砍掉一个数量级。
+  const useLiteralPrefilter = !options.regex;
+  const needle = options.caseSensitive ? term : term.toLowerCase();
+
   for (let offset = 0; offset < total; offset += chunkSize) {
-    if (isCancelled()) return { matchLines: [], totalLines: Math.max(1, buffer.baseY) };
+    if (isCancelled()) return { matches: [], matchLines: [], totalLines };
 
     const end = Math.min(total, offset + chunkSize);
-    const lines: string[] = new Array(end - offset);
     for (let i = offset; i < end; i++) {
-      lines[i - offset] = buffer.getLine(i)?.translateToString(true) ?? '';
-    }
+      const line = buffer.getLine(i)?.translateToString(true) ?? '';
+      if (!line) continue;
 
-    const hits = collectMatchLines(lines, term, options);
-    for (let h = 0; h < hits.length; h++) {
-      matchLines.push(offset + hits[h]);
+      if (useLiteralPrefilter) {
+        const haystack = options.caseSensitive ? line : line.toLowerCase();
+        if (haystack.indexOf(needle) === -1) continue;
+      }
+
+      const ranges = findMatchRangesInLine(line, pattern, options.wholeWord);
+      for (let r = 0; r < ranges.length; r++) {
+        const [start, endCol] = ranges[r];
+        matches.push({ row: i, col: start, length: endCol - start });
+        // 一行多次命中要重复计数：滚动条标记的 active 段用"匹配序号"定位，
+        // 少算会让"当前第几个"和标记对不上。
+        matchLines.push(i);
+      }
     }
 
     if (end < total) {
-      // 让出主线程，下一片继续（setTimeout 0 在浏览器里是下一个宏任务）
+      // 每片最多 ~800 行（约 15ms）：让出主线程，用户输入不会被整段扫描顶住
       await new Promise<void>((resolve) => setTimeout(resolve, 0));
     }
   }
 
-  if (isCancelled()) return { matchLines: [], totalLines: Math.max(1, buffer.baseY) };
-  return { matchLines, totalLines: Math.max(1, buffer.baseY) };
+  if (isCancelled()) return { matches: [], matchLines: [], totalLines };
+  return { matches, matchLines, totalLines };
 }
 
 /**

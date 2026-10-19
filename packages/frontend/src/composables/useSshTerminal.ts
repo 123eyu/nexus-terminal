@@ -11,8 +11,8 @@ import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useLayoutStore, getTerminalPaneIdsInLayout } from '../stores/layout.store';
 import { useWorkspaceEventEmitter } from './workspaceEvents';
 import {
-    DEFAULT_SEARCH_DECORATIONS,
     scanSearchBuffer,
+    type TerminalSearchMatch,
     type TerminalSearchOptions,
 } from '../utils/terminalSearch';
 
@@ -618,6 +618,8 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             terminalSyncTimer = null;
         }
         unregisterAllSshHandlers();
+        // 释放所有 pane 的搜索状态（装饰 / viewport 监听 / 定时器）
+        Array.from(searchStates.keys()).forEach((paneId) => disposeSearchState(paneId));
         // terminalInstance.value?.dispose(); // 终端实例的销毁由 TerminalComponent 负责
         terminalInstance.value = null;
         terminalPanes.value.clear();
@@ -680,143 +682,322 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         terminalInstance.value?.scrollToBottom();
     };
 
-    // --- 搜索相关方法 ---
+    // --- 搜索相关方法（自研高亮） ---
     //
-    // 分工：
-    // - 高亮与"当前匹配"由 @xterm/addon-search 的 decorations 负责（它处理宽字符/一行多处命中/增量搜索）
-    // - 结果计数由 Terminal 组件订阅 addon.onDidChangeResults 后广播
-    // - 滚动条标记需要 buffer 行号，addon 不暴露，所以这里自己扫一遍（分片 + 防抖，见 utils/terminalSearch.ts）
+    // 为什么不用 @xterm/addon-search 做高亮：
+    // 它每次搜索词变化都要全量扫 buffer（3000 行实测 235ms，稀疏命中时最慢），
+    // 而且不暴露命中行号 —— 滚动条标记还得再扫一遍，等于双倍开销。
+    // 这里改成"扫一次 → 自己建 decoration"：扫描分片可取消，装饰只覆盖可视区附近，
+    // 翻页直接用已有的 matches，不再触发任何扫描。
 
     const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
-    const SEARCH_SCAN_DEBOUNCE_MS = 120;
-    let searchScanTimer: ReturnType<typeof setTimeout> | null = null;
-    let searchScanToken = 0;
+    /** 搜索词变化后的扫描防抖：正常打字间隔 100~200ms，200ms 保证"打字过程中不扫" */
+    const SEARCH_DEBOUNCE_MS = 200;
+    /*
+     * xterm 的 decoration 只接受 `#RRGGBB`（DOM renderer 会把 rgba 的 alpha 直接丢掉，
+     * 渲染成不透明纯色，实测黄色会刺眼到看不清字），所以这里用中等亮度的暗色：
+     * 深色主题下白字可读，浅色主题下黑字也能辨认。
+     */
+    const SEARCH_MATCH_BG = '#8a6d1f';
+    const SEARCH_ACTIVE_BG = '#b91c1c';
 
-    /** 调用方没显式给 decorations 时补上默认配色（黄=全部，橙=当前） */
-    const withSearchDecorations = (options?: ISearchOptions): ISearchOptions => ({
-        ...options,
-        decorations: options?.decorations ?? DEFAULT_SEARCH_DECORATIONS,
-    });
+    interface PaneSearchState {
+        terminal: PaneTerminalInstance['terminal'];
+        term: string;
+        options: TerminalSearchOptions;
+        matches: TerminalSearchMatch[];
+        matchLines: number[];
+        totalLines: number;
+        index: number;
+        token: number;
+        decorations: Array<{ dispose: () => void }>;
+        viewport: HTMLElement | null;
+        viewportListener: (() => void) | null;
+        rebuildTimer: ReturnType<typeof setTimeout> | null;
+        scanTimer: ReturnType<typeof setTimeout> | null;
+    }
 
-    /** 每个 pane 上次的"区分大小写"取值，用来识别选项切换 */
-    const lastCaseSensitiveByPane = new Map<string, boolean>();
+    const searchStates = new Map<string, PaneSearchState>();
 
     /**
-     * addon 内部的 didOptionsChange 只比较 regex 和 wholeWord，**漏了 caseSensitive**。
-     * 所以切到"区分大小写"时它不会重算高亮：计数会变成 0/31，黄色高亮还挂在旧结果上。
-     * 这里在切换瞬间清掉它的缓存词，逼它走完整的重新搜索。
+     * 清掉装饰并强制重绘一屏。
+     *
+     * 只 dispose 装饰不够：xterm 的 DOM renderer 把 decoration 背景色直接写在字符 span 上，
+     * 元素移除后这些 span 的底色要等下一次重绘才会恢复。终端没有新输出时不会重绘，
+     * 表现就是"关闭搜索后黄色还留着"（实测复现）。
      */
-    const forceRehighlightOnCaseChange = (
-        addon: SearchAddon,
-        paneId: string,
-        options?: ISearchOptions
-    ) => {
-        const next = Boolean(options?.caseSensitive);
-        const prev = lastCaseSensitiveByPane.get(paneId);
-        if (prev !== undefined && prev !== next) {
-            // 不能用 addon 的私有 _state.clearCachedTerm()：打包后字段不可靠，实测无效。
-            // 改用公开 API：先清装饰，再用一个必然不命中的哨兵词把内部 cachedSearchTerm 顶掉，
-            // 这样紧接着的 findNext(term) 会判定"词变了"，触发完整重算。
-            addon.clearDecorations();
-            addon.findNext('\u0000', { decorations: DEFAULT_SEARCH_DECORATIONS });
+    const disposeSearchDecorations = (state: PaneSearchState, term?: PaneTerminalInstance['terminal']) => {
+        state.decorations.forEach((d) => {
+            try {
+                d.dispose();
+            } catch {}
+        });
+        state.decorations = [];
+        if (term) {
+            /*
+             * 只 dispose 我们持有的引用不够：xterm 的 DOM renderer 在 refresh 时会
+             * 从 DecorationService 里重新把 decoration 渲染出来（实测关闭搜索后高亮复活）。
+             * 直接 reset 整个装饰服务：我们就是唯一的 decoration 使用者（addon 已不用），
+             * 这样字符 span 上的底色也能随重绘一起恢复。
+             */
+            try {
+                (term as any)?._core?._decorationService?.reset?.();
+            } catch {}
+            try {
+                term.refresh(0, term.rows - 1);
+            } catch {}
         }
-        lastCaseSensitiveByPane.set(paneId, next);
     };
 
     /**
-     * 搜索结束后扫描 buffer，把命中行号广播给终端组件画滚动条标记。
-     *
-     * 120ms 防抖的意义：搜索框每键入一个字符都会触发 findNext，
-     * 但标记只需要"停手之后的最终结果"，否则每次按键都全量扫一遍 buffer。
+     * 只给"可视区上下各一屏"的命中建装饰。
+     * 全 buffer 建（几百上千个）正是 addon 慢的原因，而用户能看到的只有当前屏。
      */
-    const scheduleSearchMarkerScan = (
-        pane: PaneTerminalInstance | null,
-        term: string,
-        options?: ISearchOptions
-    ) => {
-        if (!pane) return;
-        if (searchScanTimer) clearTimeout(searchScanTimer);
-        const token = ++searchScanToken;
+    const applySearchDecorations = (pane: PaneTerminalInstance, state: PaneSearchState) => {
+        disposeSearchDecorations(state, pane.terminal);
+        const term = pane.terminal;
+        const buffer = term.buffer.active;
+        // 备用屏（vim / less / btop）坐标体系不同，不画；退出 TUI 后靠滚动/再搜索重建
+        if (buffer.type === 'alternate' || !state.matches.length) return;
 
-        searchScanTimer = setTimeout(() => {
-            searchScanTimer = null;
-            void (async () => {
-                const buffer = pane.terminal?.buffer?.active;
-                if (!buffer) return;
-                const result = await scanSearchBuffer(
-                    buffer,
-                    term,
-                    {
-                        regex: options?.regex,
-                        wholeWord: options?.wholeWord,
-                        caseSensitive: options?.caseSensitive,
-                    } satisfies TerminalSearchOptions,
-                    () => token !== searchScanToken
-                );
-                if (token !== searchScanToken) return; // 已被更新的搜索取代
-                emitWorkspaceEvent('search:markers', {
-                    sessionId,
-                    paneId: pane.paneId,
-                    matchLines: result.matchLines,
-                    totalLines: result.totalLines,
-                });
-            })();
-        }, SEARCH_SCAN_DEBOUNCE_MS);
+        const cursorAbs = buffer.baseY + buffer.cursorY;
+        const from = Math.max(0, buffer.viewportY - term.rows);
+        const to = buffer.viewportY + term.rows * 2;
+
+        for (let i = 0; i < state.matches.length; i++) {
+            const m = state.matches[i];
+            if (m.row < from || m.row > to) continue;
+
+            // registerMarker 的入参是"相对光标的行偏移"，传错会让高亮整体错位
+            const marker = term.registerMarker(m.row - cursorAbs);
+            if (!marker) continue;
+
+            const deco = term.registerDecoration({
+                marker,
+                x: m.col,
+                width: m.length,
+                backgroundColor: i === state.index ? SEARCH_ACTIVE_BG : SEARCH_MATCH_BG,
+            });
+            if (deco) state.decorations.push(deco);
+        }
+    };
+
+    const emitSearchState = (pane: PaneTerminalInstance, state: PaneSearchState) => {
+        emitWorkspaceEvent('search:markers', {
+            sessionId,
+            paneId: pane.paneId,
+            matchLines: state.matchLines,
+            totalLines: state.totalLines,
+            index: state.index,
+        });
+        emitWorkspaceEvent('search:results', {
+            sessionId,
+            paneId: pane.paneId,
+            index: state.index,
+            count: state.matches.length,
+        });
+    };
+
+    const jumpToSearchMatch = (
+        pane: PaneTerminalInstance,
+        state: PaneSearchState,
+        index: number
+    ) => {
+        if (!state.matches.length) return;
+        const total = state.matches.length;
+        // 循环翻页：-1 -> 最后一个，total -> 0
+        state.index = ((index % total) + total) % total;
+
+        const m = state.matches[state.index];
+        const term = pane.terminal;
+        term.scrollToLine(m.row);
+        // 不调用 term.select()：selection 的渲染优先级高于 bottom 层装饰，
+        // 会把当前匹配的红色盖成主题的选区蓝，看起来像"高亮没生效"。
+        applySearchDecorations(pane, state);
+        emitSearchState(pane, state);
+    };
+
+    const ensureSearchState = (pane: PaneTerminalInstance): PaneSearchState => {
+        const existing = searchStates.get(pane.paneId);
+        if (existing) return existing;
+
+        const state: PaneSearchState = {
+            terminal: pane.terminal,
+            term: '',
+            options: {},
+            matches: [],
+            matchLines: [],
+            totalLines: 1,
+            index: -1,
+            token: 0,
+            decorations: [],
+            viewport: null,
+            viewportListener: null,
+            rebuildTimer: null,
+            scanTimer: null,
+        };
+        searchStates.set(pane.paneId, state);
+
+        // 滚轮滚动走 .xterm-viewport 的原生 scroll，**不会触发 xterm 的 onScroll**，
+        // 所以标记/高亮重建必须监听这个元素（与滚动条组件同一套判据）。
+        const viewport = pane.terminal.element?.querySelector('.xterm-viewport') as HTMLElement | null;
+        if (viewport) {
+            const listener = () => {
+                if (state.rebuildTimer) clearTimeout(state.rebuildTimer);
+                state.rebuildTimer = setTimeout(() => {
+                    state.rebuildTimer = null;
+                    if (searchStates.get(pane.paneId) === state) {
+                        applySearchDecorations(pane, state);
+                    }
+                }, 120);
+            };
+            viewport.addEventListener('scroll', listener, { passive: true });
+            state.viewport = viewport;
+            state.viewportListener = listener;
+        }
+        return state;
+    };
+
+    const disposeSearchState = (paneId: string) => {
+        const state = searchStates.get(paneId);
+        if (!state) return;
+        state.token++;
+        if (state.scanTimer) clearTimeout(state.scanTimer);
+        if (state.rebuildTimer) clearTimeout(state.rebuildTimer);
+        disposeSearchDecorations(state, state.terminal);
+        if (state.viewport && state.viewportListener) {
+            state.viewport.removeEventListener('scroll', state.viewportListener);
+        }
+        searchStates.delete(paneId);
+    };
+
+    /**
+     * 搜索入口。同一个词只翻页（不重扫），词/选项变化才重新扫描。
+     */
+    const runTerminalSearch = (
+        pane: PaneTerminalInstance,
+        term: string,
+        options: TerminalSearchOptions,
+        direction: 'next' | 'previous'
+    ): boolean => {
+        const state = ensureSearchState(pane);
+        const sameQuery =
+            state.term === term &&
+            state.options.regex === options.regex &&
+            state.options.wholeWord === options.wholeWord &&
+            state.options.caseSensitive === options.caseSensitive;
+
+        if (sameQuery && state.matches.length > 0) {
+            jumpToSearchMatch(pane, state, state.index + (direction === 'next' ? 1 : -1));
+            return true;
+        }
+
+        // 新查询：作废上一轮扫描，先清掉旧高亮（否则旧词的高亮会挂着误导）
+        state.token++;
+        const token = state.token;
+        if (state.scanTimer) clearTimeout(state.scanTimer);
+        // 必须传 terminal：新查询时要连字符 span 的底色一起清掉，否则旧高亮会挂着
+        disposeSearchDecorations(state, pane.terminal);
+        state.term = term;
+        state.options = options;
+        state.matches = [];
+        state.matchLines = [];
+        state.index = -1;
+
+        if (!term) {
+            emitSearchState(pane, state);
+            return false;
+        }
+
+        state.scanTimer = setTimeout(async () => {
+            state.scanTimer = null;
+            const buffer = pane.terminal?.buffer?.active;
+            if (!buffer) return;
+
+            const result = await scanSearchBuffer(buffer, term, options, () => token !== state.token);
+            if (token !== state.token) return; // 已被更新的搜索取代
+
+            state.matches = result.matches;
+            state.matchLines = result.matchLines;
+            state.totalLines = result.totalLines;
+
+            if (!state.matches.length) {
+                state.index = -1;
+                emitSearchState(pane, state);
+                return;
+            }
+
+            // 从"当前视口顶部往后"的第一个命中开始，符合"从正在看的位置往下找"的直觉
+            let start = state.matches.findIndex((m) => m.row >= buffer.viewportY);
+            if (start < 0) start = 0;
+            jumpToSearchMatch(pane, state, start);
+        }, SEARCH_DEBOUNCE_MS);
+
+        return true;
     };
 
     const searchNext = (term: string, options?: ISearchOptions, targetPaneId?: string | null): boolean => {
         const entry = getTargetPaneEntry(targetPaneId);
-        const addon = entry?.searchAddon || searchAddon.value;
-        if (addon) {
-            const merged = withSearchDecorations(options);
-            forceRehighlightOnCaseChange(addon, entry?.paneId || 'default', merged);
-            const found = addon.findNext(term, merged);
-            scheduleSearchMarkerScan(entry, term, merged);
-            return found;
+        if (!entry) {
+            console.warn(`[会话 ${sessionId}][SSH终端模块] searchNext 调用失败，未找到有效终端。`);
+            return false;
         }
-        console.warn(`[会话 ${sessionId}][SSH终端模块] searchNext 调用失败，未找到有效 searchAddon。`);
-        return false;
+        return runTerminalSearch(
+            entry,
+            term,
+            {
+                regex: options?.regex,
+                wholeWord: options?.wholeWord,
+                caseSensitive: options?.caseSensitive,
+            },
+            'next'
+        );
     };
 
     const searchPrevious = (term: string, options?: ISearchOptions, targetPaneId?: string | null): boolean => {
         const entry = getTargetPaneEntry(targetPaneId);
-        const addon = entry?.searchAddon || searchAddon.value;
-        if (addon) {
-            const merged = withSearchDecorations(options);
-            forceRehighlightOnCaseChange(addon, entry?.paneId || 'default', merged);
-            const found = addon.findPrevious(term, merged);
-            scheduleSearchMarkerScan(entry, term, merged);
-            return found;
+        if (!entry) {
+            console.warn(`[会话 ${sessionId}][SSH终端模块] searchPrevious 调用失败，未找到有效终端。`);
+            return false;
         }
-        console.warn(`[会话 ${sessionId}][SSH终端模块] searchPrevious 调用失败，未找到有效 searchAddon。`);
-        return false;
+        return runTerminalSearch(
+            entry,
+            term,
+            {
+                regex: options?.regex,
+                wholeWord: options?.wholeWord,
+                caseSensitive: options?.caseSensitive,
+            },
+            'previous'
+        );
     };
 
     const clearTerminalSearch = (targetPaneId?: string | null) => {
-        searchScanToken++; // 取消进行中的扫描
-        if (searchScanTimer) {
-            clearTimeout(searchScanTimer);
-            searchScanTimer = null;
-        }
+        /*
+         * 这里**不按 paneId 精确清理**。
+         *
+         * 布局刷新时会话树的 paneId 会重新生成（terminal-0 / terminal-1），
+         * 用调用方传进来的 activeTerminalPaneId 去 searchStates 里找，
+         * 很容易找的是"重建后的新 ID"，而真正挂着装饰的 state 还挂在旧 ID 上 ——
+         * 表现就是"关闭搜索后高亮还在"（实测复现）。
+         *
+         * 搜索本身是全局单实例交互，任何时刻最多只有一个 pane 有高亮，直接清全部最稳。
+         */
+        Array.from(searchStates.keys()).forEach((paneId) => disposeSearchState(paneId));
 
-        if (targetPaneId) {
-            const entry = getTargetPaneEntry(targetPaneId);
-            entry?.searchAddon?.clearDecorations();
-        } else {
-            // 清理所有分屏终端的搜索高亮
-            terminalPanes.value.forEach(p => {
-                p.searchAddon?.clearDecorations();
-            });
-            searchAddon.value?.clearDecorations();
-        }
+        terminalPanes.value.forEach((pane) => {
+            pane.terminal.clearSelection();
+            // 兼容：老路径可能还在用 addon 的装饰
+            pane.searchAddon?.clearDecorations();
+        });
 
-        // 通知终端清空滚动条标记与计数
         emitWorkspaceEvent('search:markers', {
             sessionId,
             paneId: targetPaneId || undefined,
             matchLines: [],
             totalLines: 1,
+            index: -1,
         });
         emitWorkspaceEvent('search:results', {
             sessionId,

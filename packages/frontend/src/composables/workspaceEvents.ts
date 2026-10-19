@@ -47,7 +47,14 @@ export type WorkspaceEventPayloads = {
   /** 终端回报搜索结果（index 为 -1 表示无匹配或超出高亮上限） */
   'search:results': { sessionId?: string; paneId?: string; index: number; count: number };
   /** 终端扫描完 buffer 后广播命中行号，供滚动条画标记（totalLines 用于换算比例） */
-  'search:markers': { sessionId?: string; paneId?: string; matchLines: number[]; totalLines: number };
+  'search:markers': {
+    sessionId?: string;
+    paneId?: string;
+    matchLines: number[];
+    totalLines: number;
+    /** 当前聚焦的匹配序号（-1 表示没有命中） */
+    index?: number;
+  };
 
   // Session Management Events (主要由 TerminalTabBar 发出)
   'session:activate': { sessionId: string };
