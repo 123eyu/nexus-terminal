@@ -708,7 +708,12 @@ export const useLayoutStore = defineStore('layout', () => {
 
       // 首帧渲染用的是主布局树（来自 localStorage）。不同步的话，
       // 刷新时就会"先闪一下默认预设的尺寸，再跳到真实尺寸"。
-      if (layoutTree.value) {
+      //
+      // ⚠️ 只有活动会话用的就是**全局默认预设**时才同步主树：
+      // 主树 = 空闲工作区布局，被非默认预设（按连接绑定的那套）改掉的话，
+      // 关掉会话后空闲工作区会变成那个预设的样子，刷新也回不来。
+      const isDefaultPresetActive = preset?.id === defaultPresetId.value;
+      if (isDefaultPresetActive && layoutTree.value) {
         const syncedMainTree = applySizesAtPath(layoutTree.value, path, childrenSizes);
         if (syncedMainTree) {
           layoutTree.value = syncedMainTree;
@@ -1118,6 +1123,26 @@ export const useLayoutStore = defineStore('layout', () => {
     layoutPresets.value.forEach(p => {
       p.isDefault = (p.id === defaultPresetId.value);
     });
+
+    // 空闲工作区（没有打开任何会话）渲染的是主布局 settings.layout，
+    // 它必须等于"全局默认预设"。否则：编辑过某个按连接绑定的预设后，
+    // 关掉会话会看到那个预设的布局，刷新也还是它（数据已经写进 settings.layout 了）。
+    // 这里做一次对齐，顺带把历史上被写脏的老数据自愈回来。
+    const idlePreset = layoutPresets.value.find(p => p.id === defaultPresetId.value);
+    if (idlePreset) {
+      try {
+        if (idlePreset.layoutTree
+            && JSON.stringify(idlePreset.layoutTree) !== JSON.stringify(layoutTree.value)) {
+          await updateLayoutTree(JSON.parse(JSON.stringify(idlePreset.layoutTree)));
+        }
+        if (idlePreset.sidebarPanes
+            && JSON.stringify(idlePreset.sidebarPanes) !== JSON.stringify(sidebarPanes.value)) {
+          await updateSidebarPanes(JSON.parse(JSON.stringify(idlePreset.sidebarPanes)));
+        }
+      } catch (idleSyncErr) {
+        console.warn('[Layout Store] 对齐空闲工作区布局失败:', idleSyncErr);
+      }
+    }
   }
 
   /** 生成用于"是否真的变了"判断的稳定签名（排除 isDefault 之类的派生字段和数组顺序） */

@@ -385,14 +385,23 @@ watch(() => props.isVisible, async (newValue) => {
     if (!layoutStore.layoutPresets.some(p => p.id === selectedPresetId.value)) {
       selectedPresetId.value = layoutStore.defaultPresetId || layoutStore.layoutPresets[0]?.id || 'preset-default';
     }
-    // 用"当前实际渲染的树"初始化编辑器（桌面端为活动会话的专属树），
-    // 否则用户看到的画布和工作区里的布局根本不是同一棵，改完自然"对不上"。
+    // 初始化编辑器内容：
+    // - 有活动会话 → 用该会话实际渲染的树（和用户眼前看到的一致）；
+    // - 没有会话 → 用**当前选中预设**的树。空闲工作区渲染的是默认预设，
+    //   若这里仍取主树，编辑非默认预设时会"画布显示默认布局、保存写进别的预设"。
     const activeTree = layoutStore.getActiveLayoutTree();
-    const initialLayout = activeTree ? JSON.parse(JSON.stringify(activeTree)) : null;
+    const selectedPreset = layoutStore.layoutPresets.find(p => p.id === selectedPresetId.value);
+    const treeSource = activeSession
+      ? activeTree
+      : (selectedPreset?.layoutTree ?? activeTree);
+    const initialLayout = treeSource ? JSON.parse(JSON.stringify(treeSource)) : null;
     localLayoutTree.value = initialLayout;
     originalLayoutTree.value = JSON.parse(JSON.stringify(initialLayout));
 
-    const initialSidebars = layoutStore.sidebarPanes ? JSON.parse(JSON.stringify(layoutStore.sidebarPanes)) : { left: [], right: [] };
+    const sidebarSource = activeSession
+      ? layoutStore.sidebarPanes
+      : (selectedPreset?.sidebarPanes ?? layoutStore.sidebarPanes);
+    const initialSidebars = sidebarSource ? JSON.parse(JSON.stringify(sidebarSource)) : { left: [], right: [] };
     localSidebarPanes.value = initialSidebars;
     originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
 
@@ -518,22 +527,16 @@ const saveLayout = async () => {
     });
 
     /**
-     * 决定这次保存要不要落到"当前工作区"。
+     * 决定这次保存要不要落到"空闲工作区"（settings.layout）。
      *
-     * 旧逻辑只在"编辑的是默认预设"时才同步主布局，
-     * 于是编辑按连接绑定的非默认预设时，保存后界面毫无变化（且没有任何提示）。
-     * 现在把"当前活动会话正在使用的预设"也算作生效：
-     * 用户点保存的意图就是让改动生效。
+     * 只有**全局默认预设**才代表空闲布局。旧逻辑把"当前会话正在用的预设"也算进去，
+     * 于是保存一个按连接绑定的预设会把 settings.layout 覆盖成它 ——
+     * 关掉会话后空闲工作区就变成了那个预设的布局，刷新也回不来。
+     * 活动会话的更新由下面 refreshSessionLayoutTree 负责，不需要动主布局。
      */
-    const activeSession = sessionStore.activeSessionId
-      ? sessionStore.sessions.get(sessionStore.activeSessionId)
-      : null;
     const isDefaultPreset = selectedPresetId.value === layoutStore.defaultPresetId;
-    const isActiveSessionPreset = activeSession
-      ? layoutStore.isConnectionUsingPreset(activeSession.connectionId, selectedPresetId.value)
-      : false;
 
-    if (isDefaultPreset || isActiveSessionPreset || !layoutStore.layoutTree) {
+    if (isDefaultPreset || !layoutStore.layoutTree) {
       await layoutStore.updateLayoutTree(layoutTreeToSave);
       await layoutStore.updateSidebarPanes(sidebarConfigToSave);
     }
