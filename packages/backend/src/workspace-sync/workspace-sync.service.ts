@@ -3,6 +3,7 @@ import * as workspaceSyncRepo from './workspace-sync.repository';
 import { clientStates } from '../websocket/state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
+import { evaluateLeaseWrite, removeSessionFromSnapshot } from './workspace-sync.pure';
 
 export interface WorkspaceSyncStatePayload {
     syncEnabled: boolean;
@@ -249,12 +250,15 @@ export class WorkspaceSyncService {
         const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
         const leaseOwner = record?.activeClientId || null;
 
-        if (leaseOwner && leaseOwner !== clientId) {
+        // 判定逻辑抽到 workspace-sync.pure.ts（被接管后旧客户端的自动保存必须被拒，
+        // 否则会出现"关闭会话后刷新又复活"）
+        const decision = evaluateLeaseWrite(leaseOwner, clientId);
+        if (!decision.accepted) {
             console.warn(
-                `[WorkspaceSyncService] 拒绝非租约持有者 ${clientId} 的快照写入（当前持有者: ${leaseOwner}），`
+                `[WorkspaceSyncService] 拒绝非租约持有者 ${clientId} 的快照写入（当前持有者: ${decision.activeClientId}），`
                 + `会话数 ${Array.isArray((state as any)?.sessions) ? (state as any).sessions.length : '?'}`
             );
-            return { accepted: false, activeClientId: leaseOwner };
+            return decision;
         }
 
         const serialized = JSON.stringify(state);
@@ -351,31 +355,18 @@ export class WorkspaceSyncService {
                 const parsedState = JSON.parse(record.state);
                 if (Array.isArray(parsedState.sessions)) {
                     const beforeCount = parsedState.sessions.length;
-                    // 仅移除目标 sessionId，绝对保留同一连接的其他活跃会话！
-                    parsedState.sessions = parsedState.sessions.filter((s: any) => s.sessionId !== targetSessionId);
-                    remainingSessionsCount = parsedState.sessions.length;
-
-                    // 同步更新 sessionOrder 与 activeSessionId
-                    if (Array.isArray(parsedState.sessionOrder)) {
-                        parsedState.sessionOrder = parsedState.sessionOrder.filter((id: string) => id !== targetSessionId);
-                    }
-                    if (parsedState.activeSessionId === targetSessionId) {
-                        parsedState.activeSessionId = remainingSessionsCount > 0 ? parsedState.sessions[remainingSessionsCount - 1].sessionId : null;
-                    }
-
-                    // 清理属于该会话的文件管理器实例状态与多行命令草稿
-                    if (parsedState.fileManagers) {
-                        for (const key of Object.keys(parsedState.fileManagers)) {
-                            if (key.startsWith(`${targetSessionId}:`)) {
-                                delete parsedState.fileManagers[key];
-                            }
-                        }
-                    }
+                    // 剔除规则抽到 workspace-sync.pure.ts：只按 sessionId 匹配，
+                    // 绝不动同连接下的其他会话；顺带维护 sessionOrder / activeSessionId / fileManagers
+                    const { state: nextState, remainingSessionsCount: remaining } = removeSessionFromSnapshot(
+                        parsedState,
+                        targetSessionId
+                    );
+                    remainingSessionsCount = remaining;
 
                     // 立即原子写入数据库落盘
                     await workspaceSyncRepo.saveWorkspaceSyncRecord(
                         userId,
-                        JSON.stringify(parsedState),
+                        JSON.stringify(nextState),
                         record.activeClientId || 'system'
                     );
                     console.log(`[WorkspaceSyncService] 数据库快照已强制剔除会话 ${targetSessionId} (原数量: ${beforeCount}, 剩余: ${remainingSessionsCount})`);

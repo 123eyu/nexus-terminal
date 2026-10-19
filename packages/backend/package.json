@@ -8,7 +8,8 @@
       "bundle": "npm run build && ncc build dist/index.js -o dist-bundle -m && copyfiles -u 1 \"src/locales/**/*.json\" dist-bundle && copyfiles -u 0 \"html-presets/**/*\" dist-bundle",
       "start": "node dist/index.js",
       "dev": "cross-env NODE_ENV=development npx ts-node-dev --respawn --transpile-only src/index.ts",
-      "typecheck": "tsc --noEmit"
+      "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
    },
    "dependencies": {
       "@simplewebauthn/server": "^13.3.3",

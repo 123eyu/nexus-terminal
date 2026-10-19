@@ -10,7 +10,7 @@
     "doc": "doc"
   },
   "scripts": {
-    "test": "npm run --prefix packages/frontend test",
+    "test": "npm run --prefix packages/frontend test && npm run --prefix packages/backend test",
     "postinstall": "patch-package",
     "desktop:build": "npm run --prefix packages/desktop desktop:build",
     "desktop:build:quick": "npm run --prefix packages/desktop desktop:build:quick",

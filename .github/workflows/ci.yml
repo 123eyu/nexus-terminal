@@ -42,7 +42,7 @@ jobs:
       - name: i18n 体检（重复键 / 代码引用了不存在的键）
         run: npm run i18n:check
 
-      - name: 单元测试（布局树纯函数 / 设置 schema）
+      - name: 单元测试（前端纯函数 + 后端租约/快照剔除）
         run: npm test
 
       - name: 后端类型检查
