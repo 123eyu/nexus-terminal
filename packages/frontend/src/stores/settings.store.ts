@@ -63,6 +63,7 @@ interface SettingsState {
   terminalScrollbackLimit?: string; //  终端回滚行数上限 (e.g., '5000', '0' for unlimited)
   fileManagerShowDeleteConfirmation?: string;
   fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
+  fileManagerHighlightChanges?: string; // 'true' or 'false' - 文件列表增量变动(新增/修改)时高亮闪烁 (默认 true)
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
   terminalRightClickBehavior?: string; // 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none'
   terminalContextMenuItems?: string; // JSON string of TerminalContextMenuSettings
@@ -338,6 +339,10 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.fileManagerDoubleClickToOpen = 'false'; // 默认关闭双击打开 (单击即打开)
         console.log(`[SettingsStore] fileManagerDoubleClickToOpen not found, set to default: ${settings.value.fileManagerDoubleClickToOpen}`);
       }
+      if (settings.value.fileManagerHighlightChanges === undefined) {
+        settings.value.fileManagerHighlightChanges = 'true'; // 默认开启增量变动高亮
+        console.log(`[SettingsStore] fileManagerHighlightChanges not found, set to default: ${settings.value.fileManagerHighlightChanges}`);
+      }
       //  Terminal Right Click Paste default
       // --- 添加日志：打印从后端获取的原始值 ---
       console.log(`[SettingsStore DEBUG] Raw terminalEnableRightClickPaste from backend: '${settings.value.terminalEnableRightClickPaste}' (type: ${typeof settings.value.terminalEnableRightClickPaste})`);
@@ -482,6 +487,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'terminalScrollbackLimit',
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
+        'fileManagerHighlightChanges',
         'terminalEnableRightClickPaste',
         'terminalRightClickBehavior',
         'terminalContextMenuItems',
@@ -600,6 +606,7 @@ export const useSettingsStore = defineStore('settings', () => {
         'terminalScrollbackLimit',
         'fileManagerShowDeleteConfirmation',
         'fileManagerDoubleClickToOpen',
+        'fileManagerHighlightChanges',
         'terminalEnableRightClickPaste',
         'terminalRightClickBehavior',
         'terminalContextMenuItems',
@@ -936,6 +943,11 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.fileManagerShowDeleteConfirmation !== 'false'; // Default to true
   });
 
+  // 文件列表增量变动（新增/修改）高亮闪烁，默认开启
+  const fileManagerHighlightChangesBoolean = computed(() => {
+      return settings.value.fileManagerHighlightChanges !== 'false';
+  });
+
   //  Getter for Terminal Right Click Paste, returning boolean
   const terminalNoWrapBoolean = computed(() => {
       return settings.value.terminalNoWrap === 'true'; // Default to false
@@ -1127,6 +1139,7 @@ export const useSettingsStore = defineStore('settings', () => {
     layoutLockedBoolean,
     terminalScrollbackLimitNumber, //  Expose terminal scrollback limit getter
     fileManagerShowDeleteConfirmationBoolean, //  Expose file manager delete confirmation getter
+    fileManagerHighlightChangesBoolean, //  文件列表增量变动高亮开关
     fileManagerDoubleClickToOpenBoolean, //  Expose file manager double click to open getter
     terminalEnableRightClickPasteBoolean, //  Expose terminal right click paste getter
     terminalRightClickBehaviorString,

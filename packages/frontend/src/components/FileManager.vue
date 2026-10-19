@@ -186,6 +186,7 @@ const {
   showPopupFileEditorBoolean,
   fileManagerShowDeleteConfirmationBoolean,
   fileManagerDoubleClickToOpenBoolean,
+  fileManagerHighlightChangesBoolean,
 } = storeToRefs(settingsStore);
 
 // --- 统一组件实例标识 (跨会话联动核心，避免跟随单独会话隔离) ---
@@ -2401,9 +2402,9 @@ defineExpose({ focusSearchInput, startPathEdit });
                         ? 'bg-primary/10 text-foreground'
                         : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                           ? 'bg-primary text-white'
-                          : item._justAdded
+                          : (fileManagerHighlightChangesBoolean && item._justAdded)
                             ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-medium ring-1 ring-emerald-500/30'
-                            : item._justUpdated
+                            : (fileManagerHighlightChangesBoolean && item._justUpdated)
                               ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 font-medium ring-1 ring-amber-500/30'
                               : getItemHighlightColor(item)
                                 ? 'hover:brightness-95 dark:hover:brightness-110'
@@ -2555,9 +2556,9 @@ defineExpose({ focusSearchInput, startPathEdit });
                       ? 'bg-primary/10 border-primary/50 text-foreground'
                       : (selectedItems.has(item.filename) || (index + (hasParentLink ? 1 : 0) === selectedIndex))
                         ? 'bg-primary text-white border-primary shadow-sm ring-1 ring-primary/40'
-                        : item._justAdded
+                        : (fileManagerHighlightChangesBoolean && item._justAdded)
                           ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
-                          : item._justUpdated
+                          : (fileManagerHighlightChangesBoolean && item._justUpdated)
                             ? 'bg-amber-500/15 border-amber-500/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
                             : getItemHighlightColor(item)
                               ? 'hover:brightness-95 dark:hover:brightness-110'

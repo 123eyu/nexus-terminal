@@ -370,6 +370,30 @@
           </div>
         </div>
 
+        <!-- 文件列表变动高亮 (纯开关) -->
+        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
+          <div class="flex-1 pr-2">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.fileManagerHighlightChangesTitle', '文件列表变动高亮') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.fileManagerHighlightChangesDescription', '目录内容发生变化时，新增加的文件显示绿色、被修改的显示琥珀色并短暂闪烁；关闭后不再高亮')" />
+            </div>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!fileManagerHighlightChangesSuccess && fileManagerHighlightChangesMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
+              {{ fileManagerHighlightChangesMessage }}
+            </span>
+            <ToggleSwitch
+              v-model="fileManagerHighlightChangesLocal"
+              :loading="fileManagerHighlightChangesLoading"
+              @change="handleUpdateFileManagerHighlightChanges"
+              aria-label="文件列表变动高亮"
+            />
+          </div>
+        </div>
+
         <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊，移动端自适应) -->
         <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
@@ -700,6 +724,11 @@ const {
   fileManagerDoubleClickToOpenMessage,
   fileManagerDoubleClickToOpenSuccess,
   handleUpdateFileManagerDoubleClickToOpen,
+  fileManagerHighlightChangesLocal,
+  fileManagerHighlightChangesLoading,
+  fileManagerHighlightChangesMessage,
+  fileManagerHighlightChangesSuccess,
+  handleUpdateFileManagerHighlightChanges,
   terminalEnableRightClickPasteLocal,
   terminalEnableRightClickPasteLoading,
   terminalEnableRightClickPasteMessage,

@@ -100,6 +100,7 @@ export const settingsController = {
           'terminalContextMenuItems', // 终端右键菜单项配置键
           'showStatusMonitorIpAddress',
           'fileManagerDoubleClickToOpen',
+          'fileManagerHighlightChanges', // 文件列表增量变动高亮开关
           'fileEditorModalWidth', // 文本编辑器弹窗宽度键
           'fileEditorModalHeight', // 文本编辑器弹窗高度键
           'terminalNoWrap', // 终端不换行设置键

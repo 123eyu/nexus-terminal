@@ -18,6 +18,7 @@ export function useWorkspaceSettings() {
     terminalScrollbackLimitNumber,
     fileManagerShowDeleteConfirmationBoolean,
     fileManagerDoubleClickToOpenBoolean,
+    fileManagerHighlightChangesBoolean,
     terminalEnableRightClickPasteBoolean,
     terminalRightClickBehaviorString,
     terminalContextMenuItemsObject,
@@ -316,6 +317,30 @@ export function useWorkspaceSettings() {
     }
   };
 
+  // --- File Manager Highlight Changes (新增/修改高亮) ---
+  const fileManagerHighlightChangesLocal = ref(true);
+  const fileManagerHighlightChangesLoading = ref(false);
+  const fileManagerHighlightChangesMessage = ref('');
+  const fileManagerHighlightChangesSuccess = ref(false);
+
+  const handleUpdateFileManagerHighlightChanges = async () => {
+    fileManagerHighlightChangesLoading.value = true;
+    fileManagerHighlightChangesMessage.value = '';
+    fileManagerHighlightChangesSuccess.value = false;
+    try {
+      const valueToSave = fileManagerHighlightChangesLocal.value ? 'true' : 'false';
+      await settingsStore.updateSetting('fileManagerHighlightChanges', valueToSave);
+      fileManagerHighlightChangesMessage.value = t('settings.workspace.fileManagerHighlightChangesSuccess', '文件列表变动高亮设置已保存。');
+      fileManagerHighlightChangesSuccess.value = true;
+    } catch (error: any) {
+      console.error('更新文件列表变动高亮设置失败:', error);
+      fileManagerHighlightChangesMessage.value = error.message || t('settings.workspace.fileManagerHighlightChangesError', '保存文件列表变动高亮设置失败。');
+      fileManagerHighlightChangesSuccess.value = false;
+    } finally {
+      fileManagerHighlightChangesLoading.value = false;
+    }
+  };
+
   // --- Terminal No Wrap ---
   const terminalNoWrapLocal = ref(false);
   const terminalNoWrapLoading = ref(false);
@@ -502,6 +527,7 @@ export function useWorkspaceSettings() {
   watch(terminalScrollbackLimitNumber, (newValue) => { terminalScrollbackLimitLocal.value = newValue; }, { immediate: true });
   watch(fileManagerShowDeleteConfirmationBoolean, (newValue) => { fileManagerShowDeleteConfirmationLocal.value = newValue; }, { immediate: true });
   watch(fileManagerDoubleClickToOpenBoolean, (newValue) => { fileManagerDoubleClickToOpenLocal.value = newValue; }, { immediate: true });
+  watch(fileManagerHighlightChangesBoolean, (newValue) => { fileManagerHighlightChangesLocal.value = newValue; }, { immediate: true });
   watch(terminalEnableRightClickPasteBoolean, (newValue) => { terminalEnableRightClickPasteLocal.value = newValue; }, { immediate: true });
   watch(terminalRightClickBehaviorString, (newValue) => { terminalRightClickBehaviorLocal.value = newValue; }, { immediate: true });
   watch(terminalContextMenuItemsObject, (newValue) => { terminalContextMenuItemsLocal.value = { ...newValue }; }, { immediate: true, deep: true });
@@ -573,6 +599,12 @@ export function useWorkspaceSettings() {
     fileManagerDoubleClickToOpenMessage,
     fileManagerDoubleClickToOpenSuccess,
     handleUpdateFileManagerDoubleClickToOpen,
+
+    fileManagerHighlightChangesLocal,
+    fileManagerHighlightChangesLoading,
+    fileManagerHighlightChangesMessage,
+    fileManagerHighlightChangesSuccess,
+    handleUpdateFileManagerHighlightChanges,
 
     terminalEnableRightClickPasteLocal, 
     terminalEnableRightClickPasteLoading, 
