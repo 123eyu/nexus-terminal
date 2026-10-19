@@ -22,6 +22,9 @@ import {
   type WorkspaceSnapshot,
 } from './workspaceSync/types';
 import { collectWorkspaceSnapshot } from './workspaceSync/collectSnapshot';
+import { logSync, logSyncError, logSyncWarn } from './workspaceSync/log';
+import { restoreEditorsFromSnapshot } from './workspaceSync/restoreEditors';
+import { restoreFileManagersFromSnapshot } from './workspaceSync/restoreFileManagers';
 
 // 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
 export type {
@@ -76,16 +79,7 @@ const removePendingRemovedSessions = (ids: string[]): void => {
   removePendingRemovedSessionsIn(ids, storage());
 };
 
-// 统一的高可视度控制台诊断日志
-const logSync = (message: string, ...args: any[]) => {
-  console.log(`%c[WorkspaceSync] ${message}`, 'color: #10b981; font-weight: bold;', ...args);
-};
-const logSyncWarn = (message: string, ...args: any[]) => {
-  console.warn(`%c[WorkspaceSync] ${message}`, 'color: #f59e0b; font-weight: bold;', ...args);
-};
-const logSyncError = (message: string, ...args: any[]) => {
-  console.error(`%c[WorkspaceSync] ${message}`, 'color: #ef4444; font-weight: bold;', ...args);
-};
+// 诊断日志统一格式见 stores/workspaceSync/log.ts
 
 /**
  * 清理快照终端文本末尾悬空的 Shell 提示符行（用于新建立 SSH 连接时，防止旧 Prompt 与新 Shell 登录 Prompt 重复叠加）
@@ -837,150 +831,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         logSync('会话 SFTP 就绪阶段完成');
       }
 
-      // 4. 恢复编辑器标签与滚动位置 (即时秒开呈现 + 保持未保存状态)
-      if (snapshot.fileEditor && snapshot.fileEditor.tabs && snapshot.fileEditor.tabs.length > 0) {
-        logSync(`正在恢复 ${snapshot.fileEditor.tabs.length} 个编辑器标签...`);
-        for (const tab of snapshot.fileEditor.tabs) {
-          const targetSessionId = resolveSessionId(tab.sessionId);
-          if (!targetSessionId) {
-            logSyncWarn(`无法解析标签 ${tab.filePath} 对应的会话 ID，跳过`);
-            continue;
-          }
+      // 4/4.1 编辑器标签恢复（实现见 stores/workspaceSync/restoreEditors.ts）
+      restoreEditorsFromSnapshot({ snapshot, resolveSessionId });
 
-          // 即时秒开呈现标签页，杜绝未就绪时报错与白屏
-          const tabId = fileEditorStore.restoreTabFromSnapshot({
-            ...tab,
-            sessionId: targetSessionId,
-          });
-
-          // 恢复未保存内容
-          if (tab.content) {
-            fileEditorStore.updateFileContent(tabId, tab.content);
-          }
-          // 恢复滚动位置
-          if (typeof tab.scrollTop === 'number' || typeof tab.scrollLeft === 'number') {
-            fileEditorStore.updateTabScrollPosition(tabId, tab.scrollTop || 0, tab.scrollLeft || 0);
-          }
-
-          // SFTP 就绪后，对未修改的标签在后台静默 reload 校验远程最新数据
-          if (!tab.isModified) {
-            fileEditorStore.reloadFile(tabId, true).catch(() => {});
-          }
-          logSync(`成功恢复编辑器标签: ${tab.filename} (Tab ID: ${tabId}, 编码: ${tab.selectedEncoding})`);
-        }
-
-        // 激活原编辑器活动标签
-        if (snapshot.fileEditor.activeTabId) {
-          const origParts = snapshot.fileEditor.activeTabId.split(':');
-          const origSessionId = origParts[0];
-          const origFilePath = snapshot.fileEditor.activeTabId.substring(origSessionId.length + 1);
-          const mappedSessionId = resolveSessionId(origSessionId);
-          if (mappedSessionId && origFilePath) {
-            fileEditorStore.setActiveTab(`${mappedSessionId}:${origFilePath}`);
-            logSync(`激活全局编辑器活动标签: ${mappedSessionId}:${origFilePath}`);
-          }
-        }
-      }
-
-      // 4.1 恢复每个会话各自独立的标签页与激活状态 (供 shareFileEditorTabs=false 独立模式使用)
-      if (snapshot.sessions && snapshot.sessions.length > 0) {
-        for (const s of snapshot.sessions) {
-          const targetSessionId = resolveSessionId(s.sessionId);
-          if (!targetSessionId) continue;
-          const currentSession = sessionStore.sessions.get(targetSessionId);
-          if (!currentSession || !currentSession.editorTabs) continue;
-
-          // 获取该会话要恢复的标签列表（优先从 s.editorTabs，若无则从 snapshot.fileEditor.tabs 中过滤出属于该会话的标签）
-          const tabsForThisSession: SyncedFileTabInfo[] = (s.editorTabs && s.editorTabs.length > 0)
-            ? s.editorTabs
-            : (snapshot.fileEditor?.tabs || []).filter(t => t.sessionId === s.sessionId);
-
-          if (tabsForThisSession.length > 0) {
-            logSync(`正在恢复会话 ${targetSessionId} 的独立编辑器标签 (${tabsForThisSession.length} 个)...`);
-            for (const tab of tabsForThisSession) {
-              const tabId = `${targetSessionId}:${tab.filePath}`;
-              const existing = currentSession.editorTabs.value.find(t => t.id === tabId || t.filePath === tab.filePath);
-              if (existing) {
-                if (typeof tab.content === 'string') existing.content = tab.content;
-                if (tab.rawContentBase64) existing.rawContentBase64 = tab.rawContentBase64;
-                if (typeof tab.isModified === 'boolean') existing.isModified = tab.isModified;
-                if (typeof tab.scrollTop === 'number') existing.scrollTop = tab.scrollTop;
-                if (typeof tab.scrollLeft === 'number') existing.scrollLeft = tab.scrollLeft;
-              } else {
-                currentSession.editorTabs.value.push({
-                  id: tabId,
-                  sessionId: targetSessionId,
-                  filePath: tab.filePath,
-                  filename: tab.filename || tab.filePath.split('/').pop() || '',
-                  content: tab.content || '',
-                  originalContent: tab.isModified ? '' : (tab.content || ''),
-                  rawContentBase64: tab.rawContentBase64 || null,
-                  language: tab.language || 'plaintext',
-                  selectedEncoding: tab.selectedEncoding || 'utf-8',
-                  isLoading: false,
-                  loadingError: null,
-                  isSaving: false,
-                  saveStatus: 'idle',
-                  saveError: null,
-                  isModified: !!tab.isModified,
-                  scrollTop: tab.scrollTop || 0,
-                  scrollLeft: tab.scrollLeft || 0,
-                  remoteMtime: undefined,
-                  remoteSize: undefined,
-                  hasExternalConflict: false,
-                });
-              }
-            }
-            // 激活会话自身的活动标签
-            if (s.activeEditorTabId) {
-              const origParts = s.activeEditorTabId.split(':');
-              const origSessionId = origParts[0];
-              const origFilePath = s.activeEditorTabId.substring(origSessionId.length + 1);
-              currentSession.activeEditorTabId.value = `${targetSessionId}:${origFilePath}`;
-              logSync(`激活会话 ${targetSessionId} 独立活动标签: ${currentSession.activeEditorTabId.value}`);
-            }
-          }
-        }
-      }
-
-      // 5. 恢复文件管理器状态 (在 SFTP 就绪后平稳触发)
-      if (snapshot.fileManager) {
-        fileManagerState.value = { ...snapshot.fileManager };
-        // 只有当快照中保存的路径有效且非根目录占位时，才平稳导航
-        if (snapshot.fileManager.currentPath && isValidFileManagerSyncPath(snapshot.fileManager.currentPath)) {
-          const fmSessionId = resolveSessionId(sessionStore.activeSessionId || undefined);
-          logSync(`正在恢复文件管理器全局兼容路径: ${snapshot.fileManager.currentPath} (会话: ${fmSessionId || 'all'})`);
-          workspaceEmitter.emit('fileManager:navigateToPath', {
-            path: snapshot.fileManager.currentPath,
-            sessionId: fmSessionId || undefined,
-          });
-        }
-      }
-
-      // 5.1 恢复每个文件管理器实例的专属路径、搜索与滚动状态
-      if (snapshot.fileManagers && Object.keys(snapshot.fileManagers).length > 0) {
-        logSync(`正在恢复 ${Object.keys(snapshot.fileManagers).length} 个文件管理器实例状态...`);
-        for (const item of Object.values(snapshot.fileManagers)) {
-          const targetSessionId = resolveSessionId(item.sessionId);
-          if (!targetSessionId) continue;
-          const newKey = `${targetSessionId}:${item.instanceId}`;
-          fileManagerInstances.value[newKey] = {
-            ...item,
-            sessionId: targetSessionId,
-          };
-          if (item.sessionId !== targetSessionId) {
-            fileManagerInstances.value[`${item.sessionId}:${item.instanceId}`] = { ...item };
-          }
-          if (item.currentPath && isValidFileManagerSyncPath(item.currentPath)) {
-            logSync(`正在恢复文件管理器实例 [会话: ${targetSessionId}, 实例: ${item.instanceId}] 路径: ${item.currentPath}, scrollTop: ${item.scrollTop ?? 0}`);
-            workspaceEmitter.emit('fileManager:navigateToPath', {
-              path: item.currentPath,
-              sessionId: targetSessionId,
-              instanceId: item.instanceId,
-            });
-          }
-        }
-      }
+      // 5/5.1 文件管理器恢复（实现见 stores/workspaceSync/restoreFileManagers.ts）
+      restoreFileManagersFromSnapshot({
+        snapshot,
+        resolveSessionId,
+        activeSessionId: sessionStore.activeSessionId,
+        fileManagerState,
+        fileManagerInstances,
+      });
 
       // 6. 恢复多行命令输入框状态
       if (snapshot.multiLineCommandInput) {
