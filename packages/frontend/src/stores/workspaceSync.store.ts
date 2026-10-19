@@ -8,7 +8,6 @@ import { lastUserSwitchAt } from './session/state';
 import { useFileEditorStore, type FileTab } from './fileEditor.store';
 import { useConnectionsStore } from './connections.store';
 import { useUiNotificationsStore } from './uiNotifications.store';
-import { useTerminalHighlightStore } from './terminal-highlight.store';
 import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
 import { filterRemovedSessions, resolveSnapshotSessionId } from '../utils/workspaceSnapshot';
@@ -26,6 +25,7 @@ import { logSync, logSyncError, logSyncWarn } from './workspaceSync/log';
 import { restoreEditorsFromSnapshot } from './workspaceSync/restoreEditors';
 import { restoreFileManagersFromSnapshot } from './workspaceSync/restoreFileManagers';
 import { cleanTrailingPromptForReconnect } from './workspaceSync/terminalBuffer';
+import { restoreSessionsFromSnapshot } from './workspaceSync/restoreSessions';
 
 // 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
 export type {
@@ -455,7 +455,6 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     const fileEditorStore = useFileEditorStore();
     const connectionsStore = useConnectionsStore();
     const notifStore = useUiNotificationsStore();
-    const highlightStore = useTerminalHighlightStore();
     const layoutStore = useLayoutStore();
 
     isRestoring.value = true;
@@ -497,210 +496,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         logSyncWarn('获取挂起会话列表失败:', e);
       }
 
-      // 3. 恢复会话列表并建立会话 ID 映射 (快照旧 sessionId -> 当前实际 sessionId)
-      const sessionIdMap = new Map<string, string>();
-
-      if (snapshot.sessions && snapshot.sessions.length > 0) {
-        // 预先识别云端选中的目标激活会话（若未记录则默认第 0 个）
-        const targetActiveSessionSnapshotId = snapshot.activeSessionId || snapshot.sessions[0]?.sessionId;
-
-        // 先同步匹配消费池，为并发恢复做预先规划
-        const restorePlans = snapshot.sessions.map((s) => {
-          // 多维三级匹配：1. UUID 跨库唯一标识 -> 2. 主机名称 (跨端对齐) -> 3. 整数主键 ID (同库兜底)
-          let connInfo = undefined;
-          if (s.connectionUuid) {
-            connInfo = connectionsStore.connections.find(c => c.uuid && c.uuid === s.connectionUuid);
-          }
-          if (!connInfo && s.connectionName) {
-            connInfo = connectionsStore.connections.find(
-              c => c.name && c.name.trim().toLowerCase() === s.connectionName.trim().toLowerCase()
-            );
-          }
-          if (!connInfo && s.connectionId !== undefined && s.connectionId !== null) {
-            const connIdNum = Number(s.connectionId);
-            connInfo = connectionsStore.connections.find(c => c.id === connIdNum);
-          }
-
-          let matchedIdx = availableSuspended.findIndex(
-            item => item.originalSessionId && item.originalSessionId === s.sessionId
-          );
-
-          if (matchedIdx === -1 && s.suspendSessionId) {
-            matchedIdx = availableSuspended.findIndex(
-              item => item.suspendSessionId === s.suspendSessionId
-            );
-          }
-
-          if (matchedIdx === -1) {
-            matchedIdx = availableSuspended.findIndex(
-              item => String(item.connectionId) === String(s.connectionId) || item.connectionName === s.connectionName
-            );
-          }
-
-          let matchedSuspended: any = undefined;
-          if (matchedIdx !== -1) {
-            matchedSuspended = availableSuspended[matchedIdx];
-            availableSuspended.splice(matchedIdx, 1);
-          }
-
-          const isTargetActive = (s.sessionId === targetActiveSessionSnapshotId);
-
-          return {
-            snapshotSession: s,
-            connInfo,
-            matchedSuspended,
-            isTargetActive,
-          };
-        });
-
-        // 严格保持快照中会话从左到右的原始顺序，杜绝打乱会话栏排列
-        // 并行恢复所有会话：目标会话传入 shouldActivate: true（从第 0 毫秒即刻聚焦），后台会话传入 shouldActivate: false（静默并发）
-        logSync(`开始全量并发恢复 ${restorePlans.length} 个会话（保持原始顺序），目标激活会话即时聚焦，其余会话静默后台加载...`);
-        await Promise.all(
-          restorePlans.map(async (plan) => {
-            const s = plan.snapshotSession;
-            let targetSessionId: string | null = null;
-            let isResumed = false;
-            const shouldActivateThis = plan.isTargetActive;
-
-            if (plan.matchedSuspended) {
-              logSync(`发现匹配的挂起会话，正在并发唤醒接管: ${plan.matchedSuspended.suspendSessionId} (${plan.matchedSuspended.connectionName}, isTargetActive=${shouldActivateThis})`);
-              try {
-                targetSessionId = await sessionStore.resumeSshSession(plan.matchedSuspended.suspendSessionId, shouldActivateThis);
-                if (targetSessionId) {
-                  isResumed = true;
-                  logSync(`挂起会话已并发唤醒，新会话 ID: ${targetSessionId}，由服务端接管回放`);
-                }
-              } catch (err) {
-                logSyncWarn(`恢复挂起会话失败，降级为并发新建会话:`, err);
-              }
-            }
-
-            // 若无挂起或恢复失败，则并发新建会话 (使用本地查到的有效主键 ID)
-            if (!targetSessionId && plan.connInfo) {
-              logSync(`重新开启连接会话 (并发): ${plan.connInfo.name || plan.connInfo.host} (本地连接 ID: ${plan.connInfo.id}, 快照原 ID: ${s.connectionId}, isTargetActive=${shouldActivateThis})`);
-              targetSessionId = sessionStore.openNewSession(plan.connInfo.id, undefined, shouldActivateThis) || null;
-            }
-
-            // 若仍无 targetSessionId，检查本地是否已有属于该连接且未被映射的会话兜底
-            if (!targetSessionId) {
-              const matchedExisting = Array.from(sessionStore.sessions.values()).find(
-                existingSession => {
-                  if (Array.from(sessionIdMap.values()).includes(existingSession.sessionId)) return false;
-                  if (plan.connInfo && String(existingSession.connectionId) === String(plan.connInfo.id)) return true;
-                  if (s.connectionName && existingSession.connectionName === s.connectionName) return true;
-                  return String(existingSession.connectionId) === String(s.connectionId);
-                }
-              );
-              if (matchedExisting) {
-                targetSessionId = matchedExisting.sessionId;
-                if (shouldActivateThis) {
-                  sessionStore.activateSession(targetSessionId);
-                }
-              }
-            }
-
-            if (targetSessionId) {
-              sessionIdMap.set(s.sessionId, targetSessionId);
-              // 记下"新 ID -> 快照旧 ID"，关闭会话时才能把快照里那份旧记录一起剔除
-              recordSessionIdAlias(targetSessionId, s.sessionId);
-              logSync(`建立会话 ID 映射: 旧 ${s.sessionId} -> 新 ${targetSessionId} (激活: ${shouldActivateThis})`);
-
-              // 恢复单行命令输入框内容
-              if (s.commandInputContent) {
-                sessionStore.updateSessionCommandInput(targetSessionId, s.commandInputContent);
-              }
-
-              // 终端屏幕历史回放：如果是 resumeSshSession 唤醒的，后端会通过 logData 自动回放，此处无需重复写入
-              if (s.terminalBuffer) {
-                const sessionState = sessionStore.sessions.get(targetSessionId);
-                if (sessionState) {
-                  (sessionState as any).lastTerminalBuffer = s.terminalBuffer;
-                  if (!isResumed) {
-                    logSync(`为新连接会话 ${targetSessionId} 回放快照保存的终端屏幕历史 (字符数: ${s.terminalBuffer.length})`);
-                    const cleanedBuffer = cleanTrailingPromptForReconnect(s.terminalBuffer);
-                    const highlightedData: string = highlightStore.highlight(cleanedBuffer) as string;
-
-                    if (sessionState.terminalManager?.terminalInstance?.value) {
-                      sessionState.terminalManager.terminalInstance.value.write(highlightedData);
-                      try {
-                        sessionState.terminalManager.terminalInstance.value.refresh(0, sessionState.terminalManager.terminalInstance.value.rows - 1);
-                      } catch {}
-                    } else {
-                      if (!sessionState.pendingOutput) {
-                        sessionState.pendingOutput = [];
-                      }
-                      sessionState.pendingOutput.push(highlightedData);
-                    }
-                  }
-                }
-              } else if (s.terminalBuffer === '') {
-                // 快照中记录终端已清屏，若当前会话存在终端实例则立即同步清空视口
-                const sessionState = sessionStore.sessions.get(targetSessionId);
-                if (sessionState) {
-                  if (sessionState.terminalManager?.terminalInstance?.value) {
-                    sessionState.terminalManager.terminalInstance.value.clear();
-                  }
-                  sessionState.pendingOutput = [];
-                  logSync(`为会话 ${targetSessionId} 同步清空终端屏幕视口`);
-                }
-              }
-
-              // 多终端分屏历史回放：保存至 sessionState.lastTerminalPanesBuffer，并向已挂载的副终端回放
-              if (s.terminalPanesBuffer) {
-                const sessionState = sessionStore.sessions.get(targetSessionId);
-                if (sessionState) {
-                  (sessionState as any).lastTerminalPanesBuffer = s.terminalPanesBuffer;
-                  const tm = sessionState.terminalManager as any;
-                  if (tm?.terminalPanes?.value && !isResumed) {
-                    const panesMap = tm.terminalPanes.value as Map<string, any>;
-                    // 快照里存的是 pane#0/pane#1 这样的稳定序号，需要换算成当前这棵会话树的真实 paneId
-                    const order = layoutStore.getSessionTerminalPaneOrder(targetSessionId);
-                    Object.entries(s.terminalPanesBuffer).forEach(([key, buf]) => {
-                      const pId = key.startsWith('pane#') ? order[Number(key.slice(5))] : key;
-                      if (!pId || pId === 'primary') return;
-                      const paneEntry = panesMap.get(pId);
-                      if (paneEntry?.instance?.value && buf) {
-                        logSync(`为分屏终端 ${pId} (会话 ${targetSessionId}) 回放快照保存的屏幕历史 (字符数: ${buf.length})`);
-                        const cleaned = cleanTrailingPromptForReconnect(buf);
-                        const highlighted = highlightStore.highlight(cleaned) as string;
-                        paneEntry.instance.value.write(highlighted);
-                        try {
-                          paneEntry.instance.value.refresh(0, paneEntry.instance.value.rows - 1);
-                        } catch {}
-                      }
-                    });
-                  }
-                }
-              }
-
-              // 恢复主终端记录（只留作参考，不要直接写进 manager）
-              // 会话树每次刷新都会重新生成 paneId，把旧 paneId 写进 primaryPaneId
-              // 会锁定一个并不存在的分屏通道，导致命令发不出去。
-              // manager 会在终端就绪时按"当前布局树的先序第一个终端"自行确定。
-              if (s.primaryTerminalPaneId) {
-                const sessionState = sessionStore.sessions.get(targetSessionId);
-                if (sessionState) {
-                  (sessionState as any).primaryTerminalPaneId = s.primaryTerminalPaneId;
-                }
-              }
-
-              // 恢复"该会话上次聚焦的终端"，多终端分屏时切回来能直接落在正确的那一屏
-              if (s.focusedTerminalPaneId) {
-                const sessionState = sessionStore.sessions.get(targetSessionId);
-                if (sessionState) {
-                  sessionState.focusedTerminalPaneId = s.focusedTerminalPaneId;
-                  // 布局树的焦点同步发生在会话挂载时（早于这里），所以补一次，
-                  // 否则 activeTerminalPaneId 会停在默认的第一个终端上。
-                  if (sessionStore.activeSessionId === targetSessionId) {
-                    layoutStore.setActiveTerminalPaneId(s.focusedTerminalPaneId);
-                  }
-                }
-              }
-            }
-          })
-        );
-      }
+      // 3. 恢复会话列表并建立 ID 映射（实现见 stores/workspaceSync/restoreSessions.ts）
+      const sessionIdMap = await restoreSessionsFromSnapshot({ snapshot, availableSuspended });
 
       // 同步全局 activeSessionIdMap
       activeSessionIdMap.value = new Map(sessionIdMap);
