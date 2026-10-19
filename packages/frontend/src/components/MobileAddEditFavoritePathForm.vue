@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, computed, type PropType } from 'vue';
+import { type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
-import { useSessionStore } from '../stores/session.store';
-import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
-import MobileBottomSheet from './common/MobileBottomSheet.vue';
+import { type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useFavoritePathForm } from '../composables/useFavoritePathForm';
 
 const props = defineProps({
   isVisible: {
@@ -27,121 +25,22 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saveSuccess']);
 
+// 模板里用 t(...)
 const { t } = useI18n();
-const favoritePathsStore = useFavoritePathsStore();
-const sessionStore = useSessionStore();
-const workspaceSyncStore = useWorkspaceSyncStore();
 
-const form = ref({
-  id: '',
-  path: '',
-  name: '',
-});
-
-const effectivePathData = computed(() => props.pathData || props.pathItem || null);
-const isEditMode = computed(() => !effectivePathData.value?.id);
-const isLoading = ref(false);
-const errorMessage = ref<string | null>(null);
-
-// 获取当前文件管理器激活的当前路径
-const activeFileManagerPath = computed<string>(() => {
-  if (props.currentPath && props.currentPath.trim().startsWith('/')) {
-    return props.currentPath.trim();
-  }
-  const activeSession = sessionStore.activeSession;
-  if (activeSession?.sftpManagers) {
-    for (const mgr of activeSession.sftpManagers.values()) {
-      const p = mgr.currentPath?.value;
-      if (p && p.trim().startsWith('/')) {
-        return p.trim();
-      }
-    }
-  }
-  const syncPath = workspaceSyncStore.fileManagerState?.currentPath;
-  if (syncPath && syncPath.trim().startsWith('/')) {
-    return syncPath.trim();
-  }
-  return '';
-});
-
-// 从路径提取默认文件夹名称
-const extractFolderNameFromPath = (fullPath: string): string => {
-  if (!fullPath || fullPath === '/') return 'root';
-  const clean = fullPath.endsWith('/') ? fullPath.slice(0, -1) : fullPath;
-  const lastSlash = clean.lastIndexOf('/');
-  return lastSlash >= 0 ? clean.substring(lastSlash + 1) : clean;
-};
-
-// 点击填入当前路径
-const fillCurrentPath = () => {
-  const p = activeFileManagerPath.value;
-  if (!p) return;
-  form.value.path = p;
-  if (!form.value.name.trim()) {
-    form.value.name = extractFolderNameFromPath(p);
-  }
-  errorMessage.value = null;
-};
-
-watch(() => props.isVisible, (newValue) => {
-  if (newValue) {
-    errorMessage.value = null;
-    const target = effectivePathData.value;
-    if (target) {
-      form.value = { 
-        id: target.id, 
-        path: target.path, 
-        name: target.name || '' 
-      };
-    } else {
-      form.value = { id: '', path: '', name: '' };
-    }
-  }
-}, { immediate: true });
-
-const validateForm = (): boolean => {
-  if (!form.value.path.trim()) {
-    errorMessage.value = t('favoritePaths.addEditForm.validation.pathRequired', '请输入有效路径');
-    return false;
-  }
-  errorMessage.value = null;
-  return true;
-};
-
-const handleSubmit = async () => {
-  if (!validateForm()) {
-    return;
-  }
-  isLoading.value = true;
-  errorMessage.value = null;
-  try {
-    const finalName = form.value.name.trim() || extractFolderNameFromPath(form.value.path.trim());
-    if (isEditMode.value && form.value.id) {
-      await favoritePathsStore.updateFavoritePath(form.value.id, {
-        path: form.value.path.trim(),
-        name: finalName,
-      }, t);
-    } else {
-      await favoritePathsStore.addFavoritePath({
-        path: form.value.path.trim(),
-        name: finalName,
-      }, t);
-    }
-    emit('saveSuccess');
-    closeModal();
-  } catch (error: any) {
-    console.error('Error saving favorite path:', error);
-    errorMessage.value = error.message || t('favoritePaths.addEditForm.errors.genericSaveError', '保存常用路径失败');
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-const closeModal = () => {
-  if (!isLoading.value) {
-    emit('close');
-  }
-};
+// 表单逻辑两端共用（见 composables/useFavoritePathForm.ts）
+const {
+  form,
+  effectivePathData,
+  isEditMode,
+  isLoading,
+  errorMessage,
+  activeFileManagerPath,
+  fillCurrentPath,
+  validateForm,
+  handleSubmit,
+  closeModal,
+} = useFavoritePathForm(props, emit);
 </script>
 
 <template>
