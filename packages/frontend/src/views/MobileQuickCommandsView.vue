@@ -736,6 +736,7 @@ import { resolveFolderColor, resolveCommandFolderColor, countCommandsInFolder } 
 import { useQuickCommandExecution } from '../composables/quickCommands/useQuickCommandExecution';
 import { useQuickCommandFolderEditing } from '../composables/quickCommands/useQuickCommandFolderEditing';
 import { useQuickCommandMenuActions, type QuickCommandMenuAction } from '../composables/quickCommands/useQuickCommandMenuActions';
+import { useQuickCommandSearchNavigation } from '../composables/quickCommands/useQuickCommandSearchNavigation';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
@@ -838,8 +839,6 @@ const quickCommandContextTargetCommand = activeActionCommand; // 保持向后兼
 
 // +++ 文件夹弹窗状态 +++
 
-const localSearchTerm = ref(quickCommandsStore.searchTerm);
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- 从 Store 获取状态和 Getter ---
 const searchTerm = computed(() => quickCommandsStore.searchTerm);
@@ -848,13 +847,22 @@ const sortBy = computed(() => quickCommandsStore.sortBy);
 const filteredAndGroupedCommands = computed(() => quickCommandsStore.filteredAndGroupedCommands);
 const isLoading = computed(() => quickCommandsStore.isLoading);
 
-watch(searchTerm, (newVal) => {
-  if (newVal !== localSearchTerm.value) {
-    localSearchTerm.value = newVal;
-  }
-});
 
 const { selectedIndex: storeSelectedIndex, flatVisibleCommands, expandedGroups } = storeToRefs(quickCommandsStore);
+
+// --- 搜索 / 键盘导航 / 分组折叠（实现见 composables/quickCommands/useQuickCommandSearchNavigation.ts）---
+const {
+  localSearchTerm,
+  updateSearchTerm,
+  handleSearchInputKeydown,
+  toggleGroup,
+  scrollToSelected,
+} = useQuickCommandSearchNavigation({
+  flatVisibleCommands,
+  selectedIndex: storeSelectedIndex,
+  listContainerRef: commandListContainerRef,
+  onEnter: (cmd) => executeCommand(cmd),
+});
 
 // --- 文件夹改名 / 新建（实现见 composables/quickCommands/useQuickCommandFolderEditing.ts）---
 const {
@@ -1009,10 +1017,6 @@ onBeforeUnmount(() => {
       console.warn('[QuickCommandsView] 卸载时清理组件状态失败:', e);
     }
   }
-  if (searchDebounceTimer) {
-    clearTimeout(searchDebounceTimer);
-    searchDebounceTimer = null;
-  }
   if (longPressTimer) {
     clearTimeout(longPressTimer);
     longPressTimer = null;
@@ -1048,39 +1052,10 @@ watch(showQuickCommandTagsBoolean, () => {
 // --- 事件处理 ---
 
 // 更新搜索词 (带 120ms 防抖，消除连续打字掉帧)
-const updateSearchTerm = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  localSearchTerm.value = target.value;
-  if (searchDebounceTimer) {
-    clearTimeout(searchDebounceTimer);
-  }
-  searchDebounceTimer = setTimeout(() => {
-    quickCommandsStore.setSearchTerm(localSearchTerm.value);
-    searchDebounceTimer = null;
-  }, 120);
-};
+
 
 // +++ 重构滚动逻辑 +++
-const scrollToSelected = async (index: number) => {
-    await nextTick(); // 等待 DOM 更新
-    // 使用 store 的 flatVisibleCommands
-    if (index < 0 || !commandListContainerRef.value || !flatVisibleCommands.value[index]) return;
 
-    const selectedCommandId = flatVisibleCommands.value[index].id;
-    const listContainer = commandListContainerRef.value;
-
-    // Find the element using the data attribute (works for grid, list, and pills)
-    const selectedElement = listContainer.querySelector(`[data-command-id="${selectedCommandId}"]`) as HTMLElement;
-
-    if (selectedElement) {
-        selectedElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'nearest',
-        });
-    } else {
-        console.warn(`[QuickCmdView] scrollToSelected: Could not find element for command ID ${selectedCommandId}`);
-    }
-};
 
 // Watch for changes in the store's selectedIndex and scroll
 watch(storeSelectedIndex, (newIndex) => {
@@ -1088,36 +1063,7 @@ watch(storeSelectedIndex, (newIndex) => {
 });
 
 // Keyboard navigation now operates on the flat visible list from the store
-const handleSearchInputKeydown = (event: KeyboardEvent) => {
-    // 使用 store 的 flatVisibleCommands
-    const commands = flatVisibleCommands.value;
-    if (!commands.length) return;
 
-    switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault();
-      quickCommandsStore.selectNextCommand(); // Use store action
-      // scrollToSelected is handled by watcher
-      break;
-    case 'ArrowUp':
-      event.preventDefault();
-      quickCommandsStore.selectPreviousCommand(); // Use store action
-      // scrollToSelected is handled by watcher
-      break;
-    case 'Enter':
-      event.preventDefault();
-      if (searchDebounceTimer) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
-        quickCommandsStore.setSearchTerm(localSearchTerm.value);
-      }
-      // 使用 store 的 storeSelectedIndex
-      if (storeSelectedIndex.value >= 0 && storeSelectedIndex.value < commands.length) {
-        executeCommand(commands[storeSelectedIndex.value]);
-      }
-      break;
-  }
-};
 
 // 处理搜索框失焦事件
 const handleSearchInputBlur = () => {
@@ -1138,26 +1084,7 @@ const toggleSortBy = () => {
 };
 
 // +++ Action to toggle group expansion +++
-const toggleGroup = (groupName: string) => {
-    quickCommandsStore.toggleGroup(groupName);
-    // After toggling, selection might become invalid if the selected item is now hidden
-    // Reset selection or check if the selected item is still visible
-    nextTick(() => { // Wait for DOM update potentially caused by v-show
-         // 使用 store 的 flatVisibleCommands 和 storeSelectedIndex
-         const selectedCmdId = storeSelectedIndex.value >= 0 && flatVisibleCommands.value[storeSelectedIndex.value]
-             ? flatVisibleCommands.value[storeSelectedIndex.value].id
-             : null;
-         if (selectedCmdId !== null) {
-             const newIndex = flatVisibleCommands.value.findIndex(cmd => cmd.id === selectedCmdId);
-             if (newIndex === -1) { // Selected item is no longer visible
-                 quickCommandsStore.resetSelection();
-             } else {
-                 // Update index if it shifted, though usually reset is safer/simpler
-                 // storeSelectedIndex.value = newIndex;
-             }
-         }
-    });
-};
+
 
 // 计算排序按钮的 title 和 icon
 const sortButtonTitle = computed(() => {
