@@ -12,6 +12,14 @@ import { useTerminalHighlightStore } from './terminal-highlight.store';
 import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
 import { filterRemovedSessions, resolveSnapshotSessionId } from '../utils/workspaceSnapshot';
+import {
+  getLocalStorageSafe,
+  markSessionRemovedPendingSync as markSessionRemovedPendingSyncIn,
+  readPendingRemovedSessions as readPendingRemovedSessionsIn,
+  readSessionIdAliases as readSessionIdAliasesIn,
+  recordSessionIdAlias as recordSessionIdAliasIn,
+  removePendingRemovedSessions as removePendingRemovedSessionsIn,
+} from '../utils/pendingRemoval';
 
 const SYNC_ENABLED_STORAGE_KEY = 'nexus_workspace_sync_enabled';
 const CLIENT_ID_SESSION_KEY = 'nexus_workspace_sync_client_id';
@@ -23,90 +31,29 @@ const CLIENT_ID_SESSION_KEY = 'nexus_workspace_sync_client_id';
  * （DELETE /workspace-sync/sessions/:id、POST /workspace-sync/save）都还在路上，
  * 页面的下一次 GET 会先读到"还带着这个会话"的旧快照 → 已关闭的会话又活过来了。
  * 所以关闭的那一刻就同步写一份清单到 localStorage，加载快照时先把这些会话剔除掉。
+ *
+ * 具体实现（含存储 key、上限、别名表）在 utils/pendingRemoval.ts，那里可被单测直接覆盖。
  */
-const PENDING_REMOVED_SESSIONS_KEY = 'nexus_pending_removed_sessions';
-const MAX_PENDING_REMOVED_SESSIONS = 50;
-// 刷新恢复后"新本地 ID -> 快照旧 ID"的别名表（关闭会话时要把旧 ID 一起剔除）
-const SESSION_ID_ALIAS_KEY = 'nexus_session_id_alias';
 
+// --- 「已关闭待清理」清单与 ID 别名表（实现见 utils/pendingRemoval.ts）---
+const storage = () => getLocalStorageSafe();
 
-const readPendingRemovedSessions = (): string[] => {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PENDING_REMOVED_SESSIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((id: unknown) => typeof id === 'string' && id) : [];
-  } catch {
-    return [];
-  }
-};
+const readPendingRemovedSessions = (): string[] => readPendingRemovedSessionsIn(storage());
 
 /** 记录一个"已关闭待清理"的会话（同步写入，页面立刻刷新也不会丢） */
 export const markSessionRemovedPendingSync = (sessionId: string): void => {
-  if (!sessionId || typeof localStorage === 'undefined') return;
-  try {
-    const list = readPendingRemovedSessions().filter((id) => id !== sessionId);
-    list.push(sessionId);
-    // 刷新恢复出来的会话是**新 ID**，云端快照里还躺着它的旧 ID（快照要等 1.8s 才沉淀新 ID）。
-    // 关闭时如果只记新 ID，下次加载按 ID 剔除就对不上 → 会话又回来了。这里把旧 ID 一起记上。
-    const aliased = resolveSnapshotSessionId(sessionId, readSessionIdAliases());
-    if (aliased && !list.includes(aliased)) {
-      list.push(aliased);
-    }
-    localStorage.setItem(
-      PENDING_REMOVED_SESSIONS_KEY,
-      JSON.stringify(list.slice(-MAX_PENDING_REMOVED_SESSIONS))
-    );
-  } catch {
-    /* localStorage 不可用时忽略 */
-  }
+  markSessionRemovedPendingSyncIn(sessionId, storage(), resolveSnapshotSessionId);
 };
 
-/**
- * 会话 ID 别名表：刷新后恢复出来的新本地 ID  ->  云端快照里的旧 sessionId。
- * 关闭会话时用它把"快照里那份"也一起标记掉。
- */
-const readSessionIdAliases = (): Record<string, string> => {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(SESSION_ID_ALIAS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-};
+const readSessionIdAliases = (): Record<string, string> => readSessionIdAliasesIn(storage());
 
 const recordSessionIdAlias = (localId: string, snapshotId: string): void => {
-  if (!localId || !snapshotId || localId === snapshotId || typeof localStorage === 'undefined') return;
-  try {
-    const map = readSessionIdAliases();
-    map[localId] = snapshotId;
-    const keys = Object.keys(map);
-    // 只保留最近 100 条，避免无限增长
-    if (keys.length > 100) {
-      for (const k of keys.slice(0, keys.length - 100)) delete map[k];
-    }
-    localStorage.setItem(SESSION_ID_ALIAS_KEY, JSON.stringify(map));
-  } catch {
-    /* ignore */
-  }
+  recordSessionIdAliasIn(localId, snapshotId, storage());
 };
 
 /** 保存成功后，移除"本次保存之前就已记录"的条目（保存途中新关掉的会话不会被误清） */
 const removePendingRemovedSessions = (ids: string[]): void => {
-  if (!ids.length || typeof localStorage === 'undefined') return;
-  try {
-    const drop = new Set(ids);
-    const remain = readPendingRemovedSessions().filter((id) => !drop.has(id));
-    if (remain.length === 0) {
-      localStorage.removeItem(PENDING_REMOVED_SESSIONS_KEY);
-    } else {
-      localStorage.setItem(PENDING_REMOVED_SESSIONS_KEY, JSON.stringify(remain));
-    }
-  } catch {
-    /* ignore */
-  }
+  removePendingRemovedSessionsIn(ids, storage());
 };
 
 // 统一的高可视度控制台诊断日志
