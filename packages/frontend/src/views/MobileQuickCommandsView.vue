@@ -735,6 +735,7 @@ import { copyToClipboard } from '../utils/clipboard';
 import { resolveFolderColor, resolveCommandFolderColor, countCommandsInFolder } from '../utils/quickCommandDisplay';
 import { useQuickCommandExecution } from '../composables/quickCommands/useQuickCommandExecution';
 import { useQuickCommandFolderEditing } from '../composables/quickCommands/useQuickCommandFolderEditing';
+import { useQuickCommandMenuActions, type QuickCommandMenuAction } from '../composables/quickCommands/useQuickCommandMenuActions';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
@@ -1356,50 +1357,15 @@ const closeQuickCommandContextMenu = () => {
 };
 
 // 右键/长按菜单动作处理
-type QuickCommandMenuAction = 'execute' | 'edit' | 'copy' | 'sendToAllSessions' | 'delete';
 
-const handleQuickCommandMenuAction = (action: QuickCommandMenuAction, command: QuickCommandFE) => {
-  closeQuickCommandContextMenu();
-  switch (action) {
-    case 'execute':
-      executeCommand(command);
-      break;
-    case 'edit':
-      openEditForm(command);
-      break;
-    case 'copy':
-      copyCommand(command.command);
-      break;
-    case 'sendToAllSessions': {
-      const activeSshSessions = Array.from(sessionStore.sessions.values()).filter(
-        (s: SessionState) => {
-          if (s.wsManager.connectionStatus.value !== 'connected') return false;
-          const connInfo = connectionsStore.connections.find(c => c.id === Number(s.connectionId));
-          return connInfo?.type === 'SSH';
-        }
-      );
-
-      if (activeSshSessions.length > 0) {
-        activeSshSessions.forEach((session: SessionState) => {
-          emitWorkspaceEvent('terminal:sendCommand', { sessionId: session.sessionId, command: command.command });
-        });
-        uiNotificationsStore.addNotification({
-          message: t('quickCommands.notifications.sentToAllSessions', { count: activeSshSessions.length }),
-          type: 'success',
-        });
-      } else {
-        uiNotificationsStore.addNotification({
-          message: t('quickCommands.notifications.noActiveSshSessions'),
-          type: 'info',
-        });
-      }
-      break;
-    }
-    case 'delete':
-      confirmDelete(command);
-      break;
-  }
-};
+// --- 右键菜单动作分发（实现见 composables/quickCommands/useQuickCommandMenuActions.ts）---
+const { handleQuickCommandMenuAction } = useQuickCommandMenuActions({
+  closeContextMenu: closeQuickCommandContextMenu,
+  executeCommand,
+  openEditForm,
+  copyCommand,
+  confirmDelete,
+});
 
 // --- 文件夹管理操作 ---
 const openCreateFolderDialog = () => {
