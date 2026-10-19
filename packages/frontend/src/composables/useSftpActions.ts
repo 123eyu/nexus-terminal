@@ -1,6 +1,7 @@
 import { ref, readonly, reactive, computed, watch, type Ref, type ComputedRef } from 'vue'; 
 import type { FileListItem, FileAttributes, EditorFileContent, SftpReadFileSuccessPayload, SftpReadFileRequestPayload } from '../types/sftp.types';
 import type { WebSocketMessage, MessagePayload, MessageHandler } from '../types/websocket.types';
+import { diffDirectoryChildren } from '../utils/fileListDiff';
 
 import { useUiNotificationsStore } from '../stores/uiNotifications.store'; 
 import { workspaceEmitter } from './workspaceEvents'; 
@@ -789,72 +790,65 @@ export function createSftpActionsManager(
             targetNode.children.sort((a, b) => sortFiles(a as any, b as any));
         } else {
             const existingChildren = targetNode.children;
-            const newItemsMap = new Map(fileListPayload.map(item => [item.filename, item]));
-            const existingMap = new Map(existingChildren.map(node => [node.filename, node]));
             const now = Date.now();
+            const { removed, updated, added } = diffDirectoryChildren(existingChildren, fileListPayload);
 
-            // 1. 就地移除（Delete）：移除已在服务端删除的节点
-            for (let i = existingChildren.length - 1; i >= 0; i--) {
-                const child = existingChildren[i];
-                if (!newItemsMap.has(child.filename)) {
-                    console.log(`[SFTP ${instanceSessionId}] 就地增量移除项: ${path}/${child.filename}`);
-                    existingChildren.splice(i, 1);
-                }
-            }
-
-            // 2. 就地更新与追加（Update & Insert）
-            for (const newItem of fileListPayload) {
-                const existingNode = existingMap.get(newItem.filename);
-                if (existingNode) {
-                    const isSizeChanged = existingNode.attrs.size !== newItem.attrs.size;
-                    const isMtimeChanged = existingNode.attrs.mtime !== newItem.attrs.mtime;
-                    const isModeChanged = existingNode.attrs.mode !== newItem.attrs.mode;
-                    const isTypeChanged = existingNode.attrs.isDirectory !== newItem.attrs.isDirectory ||
-                                          existingNode.attrs.isFile !== newItem.attrs.isFile ||
-                                          existingNode.attrs.isSymbolicLink !== newItem.attrs.isSymbolicLink;
-
-                    if (isSizeChanged || isMtimeChanged || isModeChanged || isTypeChanged) {
-                        existingNode.attrs.size = newItem.attrs.size;
-                        existingNode.attrs.mtime = newItem.attrs.mtime;
-                        existingNode.attrs.mode = newItem.attrs.mode;
-                        existingNode.attrs.atime = newItem.attrs.atime;
-                        existingNode.attrs.uid = newItem.attrs.uid;
-                        existingNode.attrs.gid = newItem.attrs.gid;
-                        existingNode.attrs.isDirectory = newItem.attrs.isDirectory;
-                        existingNode.attrs.isFile = newItem.attrs.isFile;
-                        existingNode.attrs.isSymbolicLink = newItem.attrs.isSymbolicLink;
-                        existingNode.longname = newItem.longname;
-
-                        existingNode._justUpdated = now;
-                        setTimeout(() => {
-                            if (existingNode._justUpdated === now) {
-                                delete existingNode._justUpdated;
-                            }
-                        }, 1800);
-                        console.log(`[SFTP ${instanceSessionId}] 就地增量更新属性: ${path}/${newItem.filename}`);
+            // 1. 就地移除（Delete）：服务端已删除的节点
+            if (removed.length > 0) {
+                const removedSet = new Set(removed);
+                for (let i = existingChildren.length - 1; i >= 0; i--) {
+                    const child = existingChildren[i];
+                    if (removedSet.has(child.filename)) {
+                        console.log(`[SFTP ${instanceSessionId}] 就地增量移除项: ${path}/${child.filename}`);
+                        existingChildren.splice(i, 1);
                     }
-                } else {
-                    const newNode: FileTreeNode = reactive({
-                        filename: newItem.filename,
-                        longname: newItem.longname,
-                        attrs: { ...newItem.attrs },
-                        children: newItem.attrs.isDirectory ? null : [],
-                        childrenLoaded: !newItem.attrs.isDirectory,
-                        _justAdded: now,
-                    });
-
-                    setTimeout(() => {
-                        if (newNode._justAdded === now) {
-                            delete newNode._justAdded;
-                        }
-                    }, 1800);
-
-                    existingChildren.push(newNode);
-                    console.log(`[SFTP ${instanceSessionId}] 就地增量追加新项: ${path}/${newItem.filename}`);
                 }
             }
 
-            // 3. 原地保持排序
+            // 2. 就地更新（Update）：只同步会展示的字段，保持节点对象引用不变
+            for (const { node: existingNode, item: newItem } of updated) {
+                existingNode.attrs.size = newItem.attrs.size;
+                existingNode.attrs.mtime = newItem.attrs.mtime;
+                existingNode.attrs.mode = newItem.attrs.mode;
+                existingNode.attrs.atime = newItem.attrs.atime;
+                existingNode.attrs.uid = newItem.attrs.uid;
+                existingNode.attrs.gid = newItem.attrs.gid;
+                existingNode.attrs.isDirectory = newItem.attrs.isDirectory;
+                existingNode.attrs.isFile = newItem.attrs.isFile;
+                existingNode.attrs.isSymbolicLink = newItem.attrs.isSymbolicLink;
+                existingNode.longname = newItem.longname;
+
+                existingNode._justUpdated = now;
+                setTimeout(() => {
+                    if (existingNode._justUpdated === now) {
+                        delete existingNode._justUpdated;
+                    }
+                }, 1800);
+                console.log(`[SFTP ${instanceSessionId}] 就地增量更新属性: ${path}/${newItem.filename}`);
+            }
+
+            // 3. 追加新增（Insert）
+            for (const newItem of added) {
+                const newNode: FileTreeNode = reactive({
+                    filename: newItem.filename,
+                    longname: newItem.longname,
+                    attrs: { ...newItem.attrs },
+                    children: newItem.attrs.isDirectory ? null : [],
+                    childrenLoaded: !newItem.attrs.isDirectory,
+                    _justAdded: now,
+                });
+
+                setTimeout(() => {
+                    if (newNode._justAdded === now) {
+                        delete newNode._justAdded;
+                    }
+                }, 1800);
+
+                existingChildren.push(newNode);
+                console.log(`[SFTP ${instanceSessionId}] 就地增量追加新项: ${path}/${newItem.filename}`);
+            }
+
+            // 4. 原地保持排序
             existingChildren.sort((a, b) => sortFiles(a as any, b as any));
         }
 
