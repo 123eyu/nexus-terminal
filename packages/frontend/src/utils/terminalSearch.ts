@@ -24,9 +24,9 @@ export interface TerminalSearchOptions {
 export interface TerminalSearchMatch {
   /** buffer 绝对行号（0 = scrollback 第一行） */
   row: number;
-  /** 起始列（字符索引，xterm 的 select/decoration 都按列算） */
+  /** 起始**终端列**（cell 下标，不是字符串下标） */
   col: number;
-  /** 匹配长度（字符数，宽字符已由 translateToString 折算） */
+  /** 占用**列数**（宽字符算 2 列，不是字符数） */
   length: number;
 }
 
@@ -157,11 +157,92 @@ export function collectMatchLines(
   return result;
 }
 
-/** 最小 buffer 接口：只依赖扫描需要的两个成员，便于单测用假对象 */
+/** 最小 cell 接口（xterm IBufferCell 的子集） */
+export interface SearchCellLike {
+  getChars(): string;
+  getWidth(): number;
+}
+
+/** 最小行接口：只依赖扫描与列映射需要的东西，便于单测用假对象 */
+export interface SearchLineLike {
+  /** 该行的**列数**（不是字符串长度） */
+  readonly length: number;
+  translateToString(trimRight?: boolean): string;
+  getCell?(x: number): SearchCellLike | undefined;
+}
+
+/** 最小 buffer 接口：只依赖扫描需要的成员，便于单测用假对象 */
 export interface SearchBufferLike {
   length: number;
   baseY: number;
-  getLine(index: number): { translateToString(trimRight?: boolean): string } | undefined;
+  getLine(index: number): SearchLineLike | undefined;
+}
+
+/**
+ * 把「字符串下标」换算成「终端列」。
+ *
+ * `translateToString()` 拼的是每个 cell 的 chars，一个 CJK / emoji 只产生 1 个字符，
+ * 但在终端里占 2 列；它后面那个「续格」（width=0、chars=''）不产生字符。
+ * 所以正则匹配到的 `match.index` 是**字符下标**，直接当 `x` 传给 registerDecoration
+ * 会随着行内宽字符数量累积偏移 —— 这正是「高亮框往左偏、越到行尾偏得越多」的原因。
+ *
+ * 没有 getCell（单测假对象）时退化成恒等映射，保证纯函数可测。
+ */
+export function mapStringRangeToCells(
+  line: SearchLineLike,
+  start: number,
+  end: number
+): { col: number; width: number } {
+  const fallback = { col: Math.max(0, start), width: Math.max(1, end - start) };
+  if (!line || typeof line.length !== 'number' || line.length <= 0) return fallback;
+  if (typeof line.getCell !== 'function') return fallback;
+  if (start < 0 || end <= start) return fallback;
+
+  let charIndex = 0;
+  let startCol = -1;
+  let endCol = -1;
+
+  for (let x = 0; x < line.length; x++) {
+    const cell = line.getCell(x);
+    const width = cell?.getWidth?.() ?? 1;
+    const chars = cell?.getChars?.() ?? '';
+
+    if (width === 0) {
+      /*
+       * 两种 width=0 的 cell 必须区分开：
+       * - 宽字符的第二格（CJK/emoji）：chars 为空，既不占列也不产生字符
+       * - 零宽组合字符（天城文 matra、阿拉伯变音符）：chars 非空，
+       *   translateToString 会把它拼进字符串，所以字符下标要推进，但列不加
+       * 混为一谈会让组合文字之后的所有命中整体左偏。
+       */
+      if (chars.length) {
+        if (startCol < 0 && start < charIndex + chars.length) startCol = x;
+        charIndex += chars.length;
+        if (endCol < 0 && end <= charIndex) {
+          endCol = x + 1;
+          break;
+        }
+      }
+      continue;
+    }
+
+    // 正常 cell 的字符数就是 1；宽字符 1 个字符占 2 列；极少见的组合字符会有多个 code unit
+    const charSpan = chars.length || 1;
+
+    if (startCol < 0 && start < charIndex + charSpan) {
+      startCol = x;
+    }
+
+    charIndex += charSpan;
+    if (end <= charIndex) {
+      endCol = x + width;
+      break;
+    }
+  }
+
+  if (startCol < 0) startCol = fallback.col;
+  if (endCol < 0) endCol = startCol + fallback.width;
+  return { col: startCol, width: Math.max(1, endCol - startCol) };
 }
 
 /**
@@ -200,7 +281,9 @@ export async function scanSearchBuffer(
 
     const end = Math.min(total, offset + chunkSize);
     for (let i = offset; i < end; i++) {
-      const line = buffer.getLine(i)?.translateToString(true) ?? '';
+      const lineObj = buffer.getLine(i);
+      if (!lineObj) continue;
+      const line = lineObj.translateToString(true) ?? '';
       if (!line) continue;
 
       if (useLiteralPrefilter) {
@@ -210,8 +293,10 @@ export async function scanSearchBuffer(
 
       const ranges = findMatchRangesInLine(line, pattern, options.wholeWord);
       for (let r = 0; r < ranges.length; r++) {
-        const [start, endCol] = ranges[r];
-        matches.push({ row: i, col: start, length: endCol - start });
+        const [start, stop] = ranges[r];
+        // 只在命中行做 cell 映射（O(列数) 的 getCell 循环），不拖慢整体扫描
+        const { col, width } = mapStringRangeToCells(lineObj, start, stop);
+        matches.push({ row: i, col, length: width });
         // 一行多次命中要重复计数：滚动条标记的 active 段用"匹配序号"定位，
         // 少算会让"当前第几个"和标记对不上。
         matchLines.push(i);

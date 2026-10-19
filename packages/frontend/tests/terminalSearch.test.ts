@@ -7,6 +7,7 @@ import {
   collectMatchLines,
   escapeRegExp,
   findMatchRangesInLine,
+  mapStringRangeToCells,
   scanSearchBuffer,
 } from '../src/utils/terminalSearch.ts';
 
@@ -170,4 +171,87 @@ test('scanSearchBuffer：空搜索词不扫描', async () => {
   const result = await scanSearchBuffer(makeBuffer(['hit']), '', {}, () => false, 3);
   assert.deepEqual(result.matchLines, []);
   assert.equal(result.totalLines, 1);
+});
+
+
+// --- 字符串下标 -> 终端列（宽字符偏移的根因） ---
+
+/**
+ * 按「列规格」造一行：['中', 2] 表示一个占 2 列的字符（后面自动补 width=0 的续格）。
+ */
+function makeCells(spec: Array<[string, number]>) {
+  const cells: Array<{ getChars(): string; getWidth(): number }> = [];
+  for (const [chars, width] of spec) {
+    cells.push({ getChars: () => chars, getWidth: () => width });
+    for (let k = 1; k < width; k++) {
+      cells.push({ getChars: () => '', getWidth: () => 0 });
+    }
+  }
+  return {
+    length: cells.length,
+    translateToString: () => spec.map(([c]) => c).join(''),
+    getCell: (x: number) => cells[x],
+  };
+}
+
+test('mapStringRangeToCells：CJK 之前的命中要按列偏移', () => {
+  // "中abc"：字符串下标 1，但「中」占 2 列 → 列是 2
+  const line = makeCells([['中', 2], ['a', 1], ['b', 1], ['c', 1]]);
+  assert.deepEqual(mapStringRangeToCells(line, 1, 4), { col: 2, width: 3 });
+});
+
+test('mapStringRangeToCells：命中宽字符本身时宽度为 2', () => {
+  const line = makeCells([['a', 1], ['中', 2], ['b', 1]]);
+  assert.deepEqual(mapStringRangeToCells(line, 1, 2), { col: 1, width: 2 });
+});
+
+test('mapStringRangeToCells：全角标点按 2 列算', () => {
+  // "，。！" 三个全角标点 = 6 列，后面接 x
+  const line = makeCells([['，', 2], ['。', 2], ['！', 2], ['x', 1]]);
+  assert.deepEqual(mapStringRangeToCells(line, 3, 4), { col: 6, width: 1 });
+});
+
+test('mapStringRangeToCells：emoji（代理对 + 双宽）不产生额外偏移', () => {
+  // emoji 在 JS 里是 2 个 code unit，xterm 里占 2 列
+  const line = makeCells([['😀', 2], ['x', 1]]);
+  const text = line.translateToString();
+  assert.equal(text.indexOf('x'), 2, '字符串下标是 2');
+  assert.deepEqual(mapStringRangeToCells(line, 2, 3), { col: 2, width: 1 });
+});
+
+test('mapStringRangeToCells：日文/韩文混排逐字符累加列宽', () => {
+  // あ(2) い(2) 한(2) 글(2) 然后 "OK"(1+1) → OK 起始列 8
+  const line = makeCells([['あ', 2], ['い', 2], ['한', 2], ['글', 2], ['O', 1], ['K', 1]]);
+  assert.deepEqual(mapStringRangeToCells(line, 4, 6), { col: 8, width: 2 });
+});
+
+test('mapStringRangeToCells：无 getCell 的假对象退化为恒等映射', () => {
+  const line = { length: 5, translateToString: () => 'abcde' };
+  assert.deepEqual(mapStringRangeToCells(line, 1, 3), { col: 1, width: 2 });
+});
+
+test('scanSearchBuffer：宽字符行返回的 col 是列号而不是字符串下标', async () => {
+  const line = makeCells([['中', 2], ['文', 2], ['n', 1], ['e', 1], ['e', 1], ['d', 1], ['l', 1], ['e', 1]]);
+  const buffer = {
+    length: 1,
+    baseY: 1,
+    getLine: (i: number) => (i === 0 ? line : undefined),
+  };
+  const result = await scanSearchBuffer(buffer, 'needle', {}, () => false, 10);
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0].col, 4, '「中文」占 4 列，needle 从第 4 列开始');
+  assert.equal(result.matches[0].length, 6);
+});
+
+
+test('mapStringRangeToCells：零宽组合字符推进字符但不占列', () => {
+  // 模拟天城文：'न' + 零宽 matra 'ि'（width=0 但有 chars）+ 'x'
+  const cells = [
+    { getChars: () => 'न', getWidth: () => 1 },
+    { getChars: () => 'ि', getWidth: () => 0 },
+    { getChars: () => 'x', getWidth: () => 1 },
+  ];
+  const line = { length: cells.length, translateToString: () => 'निx', getCell: (x: number) => cells[x] };
+  // 字符串下标 2 是 'x'，列也应是 2（组合字符不加列）
+  assert.deepEqual(mapStringRangeToCells(line, 2, 3), { col: 2, width: 1 });
 });

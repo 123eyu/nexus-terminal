@@ -365,6 +365,38 @@ export function installDebugBridge(app: App) {
         bufferLines: t.term.buffer?.active?.length ?? null,
       })),
     dumpTerminal,
+    /** 在 buffer 里找包含指定文本的行号（供自动化脚本定位；limit 限制返回条数） */
+    findRows: (id: string, needle: string, limit = 5) => {
+      const entry = Array.from(terminals.values()).find((t) => t.id === id);
+      const buffer = entry?.term.buffer.active;
+      if (!buffer) return [];
+      const rows: number[] = [];
+      for (let i = 0; i < buffer.length; i++) {
+        const text = buffer.getLine(i)?.translateToString(true) ?? '';
+        if (text.includes(needle)) {
+          rows.push(i);
+          if (rows.length >= limit) break;
+        }
+      }
+      return rows;
+    },
+    /**
+     * 读取某行的每个 cell（字符 + 列宽）。
+     *
+     * 用来验证「字符串下标 → 终端列」的换算：宽字符（CJK/emoji）占 2 列且后面跟一个
+     * width=0 的续格，组合文字（泰文/天城文）的宽度只有从 cell 才能读准。
+     */
+    lineCells: (id: string, row: number) => {
+      const entry = Array.from(terminals.values()).find((t) => t.id === id);
+      const line = entry?.term.buffer.active.getLine(row);
+      if (!line) return null;
+      const cells: Array<{ chars: string; width: number }> = [];
+      for (let x = 0; x < line.length; x++) {
+        const cell = line.getCell(x);
+        cells.push({ chars: cell?.getChars() ?? '', width: cell?.getWidth() ?? -1 });
+      }
+      return { text: line.translateToString(true), cells };
+    },
     get errors() {
       return errors.slice();
     },
