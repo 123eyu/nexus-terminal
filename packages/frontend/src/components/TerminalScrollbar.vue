@@ -201,6 +201,9 @@ const handleMouseDown = (event: MouseEvent) => {
   justify-content: flex-end;
   pointer-events: none;
   transition: opacity 0.2s ease;
+  /* 必须压在搜索标记之上：标记只是"哪里有命中"的提示，
+     不该反过来盖住用户正在拖动的滑块。 */
+  z-index: 4;
 }
 
 /* 极简灰药丸状滚动条 */
@@ -258,8 +261,8 @@ const handleMouseDown = (event: MouseEvent) => {
   width: 4px;
   min-height: 2px;
   border-radius: 1px;
-  background-color: rgba(250, 204, 21, 0.85);
-  box-shadow: 0 0 2px rgba(250, 204, 21, 0.45);
+  /* 半透明：它只是位置提示，不能盖住轨道和滑块 */
+  background-color: rgba(250, 204, 21, 0.45);
   pointer-events: none;
   z-index: 2;
 }
@@ -268,8 +271,7 @@ const handleMouseDown = (event: MouseEvent) => {
 .search-marker.is-active {
   width: 6px;
   right: 0;
-  background-color: rgba(249, 115, 22, 0.98);
-  box-shadow: 0 0 4px rgba(249, 115, 22, 0.85);
+  background-color: rgba(249, 115, 22, 0.7);
   z-index: 3;
 }
 
