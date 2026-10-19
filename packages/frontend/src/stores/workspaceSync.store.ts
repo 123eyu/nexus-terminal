@@ -11,6 +11,7 @@ import { useUiNotificationsStore } from './uiNotifications.store';
 import { useLayoutStore, type LayoutNode, type PaneName } from './layout.store';
 import { workspaceEmitter } from '../composables/workspaceEvents';
 import { filterRemovedSessions, resolveSnapshotSessionId } from '../utils/workspaceSnapshot';
+import { gzipText } from '../utils/compression';
 import {
   isValidFileManagerSyncPath,
   type SyncedFileManagerInfo,
@@ -325,10 +326,33 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       });
 
       // 保存到后端数据库
-      const res = await apiClient.post('/workspace-sync/save', {
-        clientId: clientId.value,
-        state: snapshot,
-      });
+      //
+      // 请求体走 gzip：快照里 84% 的体积是终端 buffer（ANSI 文本），
+      // gzip 压缩比在 8 倍左右。后端 `express.json()` 的 inflate 默认开启，
+      // 收到 `Content-Encoding: gzip` 会自动解压，后端代码不需要改。
+      //
+      // 必须带 transformRequest 恒等函数：axios 默认会把对象 JSON.stringify，
+      // 虽然对 Uint8Array 会跳过，但显式声明能避免不同版本行为差异。
+      const requestBody = { clientId: clientId.value, state: snapshot };
+      const json = JSON.stringify(requestBody);
+      const compressed = await gzipText(json);
+      // 空工作区这类极小的快照压完反而更大，此时直接用明文
+      const useCompressed = Boolean(compressed && compressed.byteLength < json.length);
+      if (compressed && useCompressed) {
+        logSync(
+          `快照压缩上传: ${(json.length / 1024).toFixed(0)}KB -> ${(compressed.byteLength / 1024).toFixed(0)}KB `
+          + `(${(json.length / compressed.byteLength).toFixed(1)}x)`
+        );
+      }
+      const res = useCompressed
+        ? await apiClient.post('/workspace-sync/save', compressed!, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Encoding': 'gzip',
+            },
+            transformRequest: [(data) => data],
+          })
+        : await apiClient.post('/workspace-sync/save', requestBody);
 
       if (res.data?.success) {
         const payload = res.data.data as { accepted?: boolean; activeClientId?: string | null } | undefined;
