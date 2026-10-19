@@ -75,3 +75,49 @@ export function resolveSnapshotSessionId(
   if (!mapped || mapped === localSessionId) return null;
   return mapped;
 }
+
+/**
+ * 把「按 paneId 索引的分屏 buffer」规整成快照存储格式。
+ *
+ * 做两件事：
+ * 1. key 换成跨刷新稳定的先序序号（`pane#0` / `pane#1`）——会话树的 paneId 每次刷新都会
+ *    重新生成，直接存 paneId 恢复时必然全部 miss。
+ * 2. **摘掉主终端**。主终端内容由 `terminalBuffer` 单独承载，两处都存会让快照凭空大一倍
+ *    （实测 1.12MB 里约 0.5MB 是同一份 ANSI 文本）。
+ *
+ * 只剩主终端时返回 undefined（不写空对象），调用方据此省略字段。
+ */
+export function normalizePaneBuffers(
+  panesBuf: Record<string, string> | null | undefined,
+  paneOrder: string[] | null | undefined,
+  primaryPaneId?: string | null
+): Record<string, string> | undefined {
+  if (!panesBuf) return undefined;
+  const order = Array.isArray(paneOrder) ? paneOrder : [];
+  const normalized: Record<string, string> = {};
+
+  for (const [paneId, buffer] of Object.entries(panesBuf)) {
+    if (primaryPaneId && paneId === primaryPaneId) continue;
+    const index = order.indexOf(paneId);
+    normalized[index >= 0 ? `pane#${index}` : paneId] = buffer;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+/**
+ * 从已有的稳定键字典里再摘一次主终端。
+ *
+ * 用于兜底缓存（`lastTerminalPanesBuffer`）：它可能来自升级前的版本，那时字典里还带着主终端。
+ */
+export function stripPrimaryPaneBuffer(
+  panesBuf: Record<string, string> | null | undefined,
+  primaryPaneKey?: string | null
+): Record<string, string> | undefined {
+  if (!panesBuf) return undefined;
+  const next: Record<string, string> = { ...panesBuf };
+  if (primaryPaneKey && next[primaryPaneKey] !== undefined) {
+    delete next[primaryPaneKey];
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}

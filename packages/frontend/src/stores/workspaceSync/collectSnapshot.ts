@@ -2,6 +2,7 @@ import { useSessionStore } from '../session.store';
 import { useFileEditorStore } from '../fileEditor.store';
 import { useLayoutStore } from '../layout.store';
 import { useConnectionsStore } from '../connections.store';
+import { normalizePaneBuffers, stripPrimaryPaneBuffer } from '../../utils/workspaceSnapshot';
 import {
   isValidFileManagerSyncPath,
   type SyncedFileManagerInfo,
@@ -104,59 +105,37 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
 
     // 多终端分屏各 pane 独立序列化 buffer
     //
-    // 主终端的内容已经写进 terminalBuffer 了，分屏字典里必须摘掉它：
-    // 两处存同一份 ANSI 文本会让快照凭空大一倍（实测 1.12MB 里有约 0.5MB 是重复），
-    // 而恢复路径本来就是「terminalBuffer 写主终端 + terminalPanesBuffer 写副终端」，
-    // 摘掉主终端不丢内容，恢复逻辑也不用改。
-    //
     // primaryPaneId 可能是 ref，也可能已被 Vue 的 reactive 解包成普通字符串，
-    // 两种形态都要兼容（只写 .value 会在解包后拿到 undefined，删除静默失效）。
+    // 两种形态都要兼容（只写 .value 会在解包后拿到 undefined，去重静默失效）。
     const primaryRef = (s.terminalManager as any)?.primaryPaneId;
     const primaryId: string | undefined =
       (s as any).primaryTerminalPaneId
       || (primaryRef && typeof primaryRef === 'object' ? primaryRef.value : primaryRef)
       || undefined;
     const paneOrder = layoutStore.getSessionTerminalPaneOrder(sId);
-    // 主终端在分屏字典里的稳定键（pane#0 之类）；顺序表里没有就退回原始 paneId。
+    // 主终端在字典里的稳定键（pane#0 之类）；顺序表里没有就退回原始 paneId
+    const orderIndex = primaryId !== undefined ? paneOrder.indexOf(primaryId) : -1;
     const primaryPaneKey =
-      primaryId !== undefined
-        ? (paneOrder.indexOf(primaryId) >= 0 ? `pane#${paneOrder.indexOf(primaryId)}` : primaryId)
-        : undefined;
+      primaryId !== undefined ? (orderIndex >= 0 ? `pane#${orderIndex}` : primaryId) : undefined;
 
     let terminalPanesBuffer: Record<string, string> | undefined = undefined;
     if (s.terminalManager && typeof (s.terminalManager as any).serializeAllPanes === 'function') {
-      const panesBuf = (s.terminalManager as any).serializeAllPanes();
-      if (primaryId && panesBuf) {
-        delete panesBuf[primaryId];
-      }
-      if (panesBuf && Object.keys(panesBuf).length > 0) {
-        // 会话树的 paneId 每次刷新都会重新生成，
-        // 直接拿 paneId 当 key，恢复时必然全部 miss —— 表现就是"刷新后终端内容对不上"。
-        // 这里统一改写成跨刷新稳定的先序序号键：pane#0 / pane#1 ……
-        const normalized: Record<string, string> = {};
-        for (const [pid, buf] of Object.entries(panesBuf)) {
-          const idx = paneOrder.indexOf(pid);
-          normalized[idx >= 0 ? `pane#${idx}` : pid] = buf as string;
-        }
-        terminalPanesBuffer = normalized;
-      }
+      // 规整（换稳定键 + 摘掉主终端，主终端内容由 terminalBuffer 单独承载）
+      terminalPanesBuffer = normalizePaneBuffers(
+        (s.terminalManager as any).serializeAllPanes(),
+        paneOrder,
+        primaryId
+      );
     }
     if (!terminalPanesBuffer && (s as any).lastTerminalPanesBuffer) {
-      // 兜底值可能来自升级前的版本（那时字典里还带着主终端），按稳定键再摘一次
-      terminalPanesBuffer = { ...(s as any).lastTerminalPanesBuffer };
+      // 兜底值可能来自升级前的版本，那时字典里还带着主终端，按稳定键再摘一次
+      terminalPanesBuffer = stripPrimaryPaneBuffer(
+        (s as any).lastTerminalPanesBuffer,
+        primaryPaneKey
+      );
     }
-    if (terminalPanesBuffer && primaryPaneKey && terminalPanesBuffer[primaryPaneKey] !== undefined) {
-      delete terminalPanesBuffer[primaryPaneKey];
-    }
-    if (terminalPanesBuffer && Object.keys(terminalPanesBuffer).length === 0) {
-      terminalPanesBuffer = undefined;
-    }
-    if (terminalPanesBuffer) {
-      (s as any).lastTerminalPanesBuffer = terminalPanesBuffer;
-    } else {
-      // 只剩主终端时清掉兜底缓存，否则下次采集又会把含主终端的旧字典捡回来
-      (s as any).lastTerminalPanesBuffer = undefined;
-    }
+    // 只剩主终端时清掉兜底缓存，否则下次采集又会把含主终端的旧字典捡回来
+    (s as any).lastTerminalPanesBuffer = terminalPanesBuffer;
 
     // 会话自身独立的编辑器标签页（shareFileEditorTabs=false 时）
     let sessionSpecificTabs: SyncedFileTabInfo[] | undefined = undefined;

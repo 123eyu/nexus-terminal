@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   filterRemovedSessions,
+  normalizePaneBuffers,
   resolveSnapshotSessionId,
+  stripPrimaryPaneBuffer,
 } from '../src/utils/workspaceSnapshot.ts';
 
 /**
@@ -81,4 +83,50 @@ test('resolveSnapshotSessionId：只解析真实存在的别名', () => {
   assert.equal(resolveSnapshotSessionId('localNew', null), null);
   // 自我映射不算别名（避免把本地 ID 再记一遍）
   assert.equal(resolveSnapshotSessionId('same', { same: 'same' }), null);
+});
+
+// --- 分屏 buffer 规整（换稳定键 + 摘掉主终端） ---
+
+test('normalizePaneBuffers：只有主终端时返回 undefined（不写空对象）', () => {
+  const result = normalizePaneBuffers({ 'terminal-0': 'A' }, ['terminal-0'], 'terminal-0');
+  assert.equal(result, undefined);
+});
+
+test('normalizePaneBuffers：主终端被摘掉，副终端键换成先序序号', () => {
+  const result = normalizePaneBuffers(
+    { 'terminal-0': 'MAIN', 'terminal-1': 'SUB' },
+    ['terminal-0', 'terminal-1'],
+    'terminal-0'
+  );
+  assert.deepEqual(result, { 'pane#1': 'SUB' });
+});
+
+test('normalizePaneBuffers：主终端不在先序表里时按原始 paneId 摘除', () => {
+  const result = normalizePaneBuffers(
+    { primary: 'MAIN', 'terminal-1': 'SUB' },
+    ['terminal-1'],
+    'primary'
+  );
+  assert.deepEqual(result, { 'pane#0': 'SUB' });
+});
+
+test('normalizePaneBuffers：null / 空字典都返回 undefined', () => {
+  assert.equal(normalizePaneBuffers(null, [], 'x'), undefined);
+  assert.equal(normalizePaneBuffers({}, [], 'x'), undefined);
+});
+
+test('stripPrimaryPaneBuffer：从升级前的旧字典里摘掉主终端', () => {
+  // 旧版本存的是 pane#0（主）+ pane#1（副）
+  const result = stripPrimaryPaneBuffer({ 'pane#0': 'MAIN', 'pane#1': 'SUB' }, 'pane#0');
+  assert.deepEqual(result, { 'pane#1': 'SUB' });
+});
+
+test('stripPrimaryPaneBuffer：摘完为空时返回 undefined', () => {
+  assert.equal(stripPrimaryPaneBuffer({ 'pane#0': 'MAIN' }, 'pane#0'), undefined);
+});
+
+test('stripPrimaryPaneBuffer：不改入参（兜底缓存可能还被别处引用）', () => {
+  const src = { 'pane#0': 'MAIN', 'pane#1': 'SUB' };
+  stripPrimaryPaneBuffer(src, 'pane#0');
+  assert.deepEqual(src, { 'pane#0': 'MAIN', 'pane#1': 'SUB' });
 });
