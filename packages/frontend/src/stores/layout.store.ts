@@ -25,6 +25,7 @@ import {
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_NAME,
   buildDefaultPresetFrom as buildDefaultPresetFromBase,
+  buildPresetsSignature,
   reconcilePresets as reconcilePresetsBase,
 } from '../utils/layoutPreset';
 import { LEGACY_TEMPLATE_IDS } from '../utils/layoutPreset';
@@ -895,29 +896,7 @@ export const useLayoutStore = defineStore('layout', () => {
     }
   }
 
-  /** 生成用于"是否真的变了"判断的稳定签名（排除 isDefault 之类的派生字段和数组顺序） */
-  function buildPresetsSignature(
-    presets: LayoutPreset[],
-    defaultId: string,
-    map: Record<string, string>
-  ): string {
-    const normalized = [...presets]
-      .map(p => ({
-        id: p.id,
-        name: p.name,
-        layoutTree: p.layoutTree,
-        sidebarPanes: p.sidebarPanes,
-        connectionIds: p.connectionIds || [],
-        connectionUuids: p.connectionUuids || [],
-        updatedAt: p.updatedAt || 0,
-      }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-    const normalizedMap: Record<string, string> = {};
-    Object.keys(map || {}).sort().forEach(key => {
-      normalizedMap[key] = map[key];
-    });
-    return JSON.stringify({ presets: normalized, defaultId, map: normalizedMap });
-  }
+  /** 生成用于"是否真的变了"判断的稳定签名（实现见 utils/layoutPreset.ts） */
 
   /**
    * 从后端重新拉取布局预设（跨端实时刷新）。

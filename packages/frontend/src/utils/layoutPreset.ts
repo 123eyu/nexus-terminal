@@ -56,6 +56,38 @@ export function buildDefaultPresetFrom(
 }
 
 /**
+ * 预设同步用的稳定签名（判断"内容是否真的变了"）。
+ *
+ * 排除 `isDefault` 这类派生字段与数组顺序，否则：
+ * - 切换默认预设会把整份数据重推一遍，后端的 updated_at 被顶到最新，
+ *   另一端的推送在 LWW 里永远比不过 —— 跨端同步变成单向的。
+ */
+export function buildPresetsSignature(
+  presets: LayoutPreset[],
+  defaultId: string,
+  map: Record<string, string>
+): string {
+  const normalized = [...presets]
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      layoutTree: p.layoutTree,
+      sidebarPanes: p.sidebarPanes,
+      connectionIds: p.connectionIds || [],
+      connectionUuids: p.connectionUuids || [],
+      updatedAt: p.updatedAt || 0,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const normalizedMap: Record<string, string> = {};
+  Object.keys(map || {})
+    .sort()
+    .forEach((key) => {
+      normalizedMap[key] = map[key];
+    });
+  return JSON.stringify({ presets: normalized, defaultId, map: normalizedMap });
+}
+
+/**
  * 把"存储里的预设列表"与系统默认预设对齐：
  * 1. 过滤掉已废弃的内置模板；
  * 2. 缺 preset-default 时用 seedPreset（用户当前布局）补齐，而不是内置默认；

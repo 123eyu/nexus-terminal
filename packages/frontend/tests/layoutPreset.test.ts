@@ -5,6 +5,7 @@ import {
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_NAME,
   buildDefaultPresetFrom,
+  buildPresetsSignature,
   reconcilePresets,
   sanitizeDefaultPresetName,
 } from '../src/utils/layoutPreset.ts';
@@ -100,4 +101,27 @@ test('reconcilePresets：非默认预设原样保留，默认预设名称被清�
 test('reconcilePresets：入参不是数组时也能返回可用列表', () => {
   const result = reconcilePresets(undefined as unknown as LayoutPreset[], preset(DEFAULT_PRESET_ID, DEFAULT_PRESET_NAME), builtinLayout, layoutShapeSignature);
   assert.deepEqual(result.map((p) => p.id), [DEFAULT_PRESET_ID]);
+});
+
+// --- buildPresetsSignature：跨端同步"是否真的变了"的判据 ---
+
+test('buildPresetsSignature：数组顺序与 isDefault 不影响签名', () => {
+  const a = { ...preset('preset-a', 'A'), isDefault: true };
+  const b = preset('preset-b', 'B');
+
+  const s1 = buildPresetsSignature([a, b], DEFAULT_PRESET_ID, { uuid1: 'preset-a' });
+  const s2 = buildPresetsSignature([b, a], DEFAULT_PRESET_ID, { uuid1: 'preset-a' });
+
+  assert.equal(s1, s2, '顺序不同不应被判为"内容变了"，否则每次切默认预设都会重推一遍');
+});
+
+test('buildPresetsSignature：绑定表顺序无关，内容变化必须能检出', () => {
+  const p = preset('preset-a', 'A');
+
+  const s1 = buildPresetsSignature([p], 'preset-a', { u1: 'preset-a', u2: 'preset-a' });
+  const s2 = buildPresetsSignature([p], 'preset-a', { u2: 'preset-a', u1: 'preset-a' });
+  assert.equal(s1, s2);
+
+  const s3 = buildPresetsSignature([p], 'preset-a', { u1: 'preset-a' });
+  assert.notEqual(s1, s3, '绑定少了一条必须被检出，否则 LWW 会漏掉这次更新');
 });
