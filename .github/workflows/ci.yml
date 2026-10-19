@@ -1,0 +1,46 @@
+name: CI
+
+# 项目此前没有任何自动回归保护：只有 2 个测试文件、没有 vitest、npm test 直接 exit 1。
+# 这一层先做最便宜也最有效的三件事：类型检查、设置 schema 漂移、构建可行性。
+# 都不跑测试数据、不需要密钥、10 分钟内能跑完。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: Typecheck & Schema Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出仓库源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 设置项 schema 漂移检查
+        run: npm run settings:check
+
+      - name: 后端类型检查
+        run: npm run --prefix packages/backend typecheck
+
+      - name: 前端类型检查
+        run: npm run --prefix packages/frontend typecheck
