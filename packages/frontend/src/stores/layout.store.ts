@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed, shallowReactive, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, type Ref, type ComputedRef } from 'vue';
 import apiClient from '../utils/apiClient';
 import { useComponentStateStore } from './componentState.store';
 import { useConnectionsStore } from './connections.store';
@@ -14,15 +14,13 @@ import type {
 } from '../types/layout';
 import {
   applySizesAtPath,
-  cloneLayoutTreeWithStableIds,
   ensureNodeIds,
   findNodePath,
-  getTerminalPaneIdsInLayout,
   layoutShapeSignature,
   randomId,
-  reconcileTreePreservingIds,
 } from '../utils/layoutTree';
 import { usePaneFocus } from './layout/usePaneFocus';
+import { useSessionLayoutTrees } from './layout/useSessionLayoutTrees';
 import {
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_NAME,
@@ -765,29 +763,16 @@ export const useLayoutStore = defineStore('layout', () => {
   // updated_at 顶到最新，另一端的推送在 LWW 里永远比不过，跨端同步就成了单向的。
   let lastPersistedPresetsSignature: string | null = null;
 
-  // 会话独立稳定布局树映射缓存 (sessionId -> LayoutNode)
-  // 用 shallowReactive(Map) 保证"整体替换某会话的树"能触发桌面端重渲染：
-  // 之前是裸 Map，刷新后模板读不到变化，表现为"保存布局没反应"。
-  const sessionLayoutTreeMap = shallowReactive(new Map<string, LayoutNode>());
-
-  /**
-   * 每个会话树里终端 pane 的先序 ID 顺序。
-   *
-   * 会话树的 paneId 每次刷新都会重新生成，而云端同步快照是按 paneId 存终端屏幕内容的，
-   * 直接对 key 会全部 miss（表现为"刷新后终端内容对不上/每次都不一样"）。
-   * 这里用"先序序号"作为跨刷新稳定的逻辑键：pane#0、pane#1 ……
-   */
-  const sessionPaneOrderMap = new Map<string, string[]>();
-
-  function recordSessionPaneOrder(sessionId: string, tree: LayoutNode) {
-    sessionPaneOrderMap.set(sessionId, getTerminalPaneIdsInLayout(tree));
-  }
-
-  /** 取某会话终端 pane 的先序顺序（跨刷新稳定） */
-  function getSessionTerminalPaneOrder(sessionId: string): string[] {
-    return sessionPaneOrderMap.get(sessionId) ?? [];
-  }
-
+  // 会话独立布局树（缓存与不变量见 stores/layout/useSessionLayoutTrees.ts）
+  // getPresetForConnection 是函数声明，这里传引用不会踩 TDZ。
+  const {
+    sessionLayoutTreeMap,
+    recordSessionPaneOrder,
+    getSessionTerminalPaneOrder,
+    getLayoutTreeForSession,
+    clearSessionLayoutTree,
+    refreshSessionLayoutTree,
+  } = useSessionLayoutTrees({ getPresetForConnection });
 
   // 初始化预设（layoutReady：主布局加载完成信号，见文件末尾的初始化顺序）
   function initializePresets(layoutReady?: Promise<unknown>) {
@@ -1134,39 +1119,6 @@ export const useLayoutStore = defineStore('layout', () => {
   }
 
   // 为会话获取专属稳定布局树（0 毫秒秒切基石）
-  function getLayoutTreeForSession(sessionId?: string | null, connectionId?: number | string | null): LayoutNode {
-    if (!sessionId) {
-      return getPresetForConnection(connectionId).layoutTree;
-    }
-    if (sessionLayoutTreeMap.has(sessionId)) {
-      return sessionLayoutTreeMap.get(sessionId)!;
-    }
-    const preset = getPresetForConnection(connectionId);
-    const dedicatedTree = cloneLayoutTreeWithStableIds(preset.layoutTree);
-    sessionLayoutTreeMap.set(sessionId, dedicatedTree);
-    recordSessionPaneOrder(sessionId, dedicatedTree);
-    return dedicatedTree;
-  }
-
-  // 会话关闭时释放专属布局树
-  function clearSessionLayoutTree(sessionId: string) {
-    sessionLayoutTreeMap.delete(sessionId);
-    sessionPaneOrderMap.delete(sessionId);
-  }
-
-  // 刷新某会话的布局树（当配置更新时触发）
-  // 保留可复用节点的旧 ID，避免已挂载终端被无谓销毁重建
-  function refreshSessionLayoutTree(sessionId: string, connectionId?: number | string | null) {
-    const preset = getPresetForConnection(connectionId);
-    const oldTree = sessionLayoutTreeMap.get(sessionId);
-    const dedicatedTree = oldTree
-      ? reconcileTreePreservingIds(oldTree, preset.layoutTree)
-      : cloneLayoutTreeWithStableIds(preset.layoutTree);
-    sessionLayoutTreeMap.set(sessionId, dedicatedTree);
-    recordSessionPaneOrder(sessionId, dedicatedTree);
-    return dedicatedTree;
-  }
-
   /** 某连接（会话）当前是否在用指定预设 */
   function isConnectionUsingPreset(connectionId: number | string | null | undefined, presetId: string): boolean {
     return getPresetForConnection(connectionId).id === presetId;
