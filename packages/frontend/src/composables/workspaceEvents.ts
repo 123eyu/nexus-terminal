@@ -35,10 +35,19 @@ export type WorkspaceEventPayloads = {
   'connection:requestEdit': { connectionInfo: ConnectionInfo }; // 来自 WorkspaceConnectionList 或 TerminalTabBar
 
   // Search Events (主要由 CommandInputBar 或 PaneTitleBar 发出)
-  'search:start': { term: string; sessionId?: string }; // sessionId 可选，用于指定搜索目标终端
+  /** options 带上来后，终端才能按"正则/整词/大小写"扫描滚动条标记 */
+  'search:start': {
+    term: string;
+    sessionId?: string;
+    options?: { regex?: boolean; wholeWord?: boolean; caseSensitive?: boolean };
+  }; // sessionId 可选，用于指定搜索目标终端
   'search:findNext': void;
   'search:findPrevious': void;
   'search:close': void;
+  /** 终端回报搜索结果（index 为 -1 表示无匹配或超出高亮上限） */
+  'search:results': { sessionId?: string; paneId?: string; index: number; count: number };
+  /** 终端扫描完 buffer 后广播命中行号，供滚动条画标记（totalLines 用于换算比例） */
+  'search:markers': { sessionId?: string; paneId?: string; matchLines: number[]; totalLines: number };
 
   // Session Management Events (主要由 TerminalTabBar 发出)
   'session:activate': { sessionId: string };

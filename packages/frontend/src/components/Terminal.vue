@@ -21,6 +21,7 @@ import { registerTerminal as registerDebugTerminal } from '../debug';
 import { useTerminalContextMenu } from '../composables/terminal/useTerminalContextMenu';
 import { useTerminalScrollbar } from '../composables/terminal/useTerminalScrollbar';
 import { useTerminalPinchZoom } from '../composables/terminal/useTerminalPinchZoom';
+import { buildSearchMarkers, DEFAULT_SEARCH_DECORATIONS } from '../utils/terminalSearch';
 
 const highlightStore = useTerminalHighlightStore();
 
@@ -54,6 +55,31 @@ const terminalOuterWrapperRef = ref<HTMLElement | null>(null); // 最外层容�
 let terminal: Terminal | null = null;
 let fitAddon: FitAddon | null = null;
 let searchAddon: SearchAddon | null = null; // *** 添加 searchAddon 变量 ***
+
+// --- 终端搜索：命中计数 + 滚动条标记 ---
+// 高亮由 addon 的 decoration 负责；这里只保存"扫描结果"和"当前第几个"，
+// markers 用 computed 派生，翻页时不需要重新扫描 buffer。
+const searchMatchIndex = ref(-1);
+const searchMatchCount = ref(0);
+const searchMatchLines = ref<number[]>([]);
+const searchTotalLines = ref(1);
+const searchMarkers = computed(() =>
+  buildSearchMarkers(searchMatchLines.value, searchTotalLines.value, searchMatchIndex.value)
+);
+let searchResultsDisposable: IDisposable | null = null;
+
+/** 会话管理器扫完 buffer 后广播命中行号（只认自己这个 pane，避免分屏串台） */
+const handleSearchMarkers = (payload: {
+  sessionId?: string;
+  paneId?: string;
+  matchLines: number[];
+  totalLines: number;
+}) => {
+  if (payload.sessionId && payload.sessionId !== props.sessionId) return;
+  if (payload.paneId && props.paneId && payload.paneId !== props.paneId) return;
+  searchMatchLines.value = payload.matchLines;
+  searchTotalLines.value = payload.totalLines;
+};
 let serializeAddon: SerializeAddon | null = null; // 官方序列化插件，用于保存完整 ANSI 颜色与样式
 let unregisterDebugTerminal: (() => void) | null = null;
 let resizeObserver: ResizeObserver | null = null;
@@ -247,6 +273,8 @@ const { handleTouchStart, handleTouchMove, handleTouchEnd } = useTerminalPinchZo
 
 // 初始化终端
 onMounted(() => {
+  subscribeToWorkspaceEvent('search:markers', handleSearchMarkers);
+
   // xterm 挂载到 terminalRef (内部容器)
   if (terminalRef.value) {
     terminal = new Terminal({
@@ -284,6 +312,18 @@ onMounted(() => {
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(new WebLinksAddon());
     terminal.loadAddon(searchAddon); // *** 加载 SearchAddon ***
+    // 只有在启用 decorations 时 addon 才会上报结果（见 useSshTerminal 的 withSearchDecorations）
+    searchResultsDisposable = searchAddon.onDidChangeResults(({ resultIndex, resultCount }: { resultIndex: number; resultCount: number }) => {
+      searchMatchIndex.value = resultIndex;
+      searchMatchCount.value = resultCount;
+      // 广播给 CommandInputBar 显示 "3/57"
+      emitWorkspaceEvent('search:results', {
+        sessionId: props.sessionId,
+        paneId: props.paneId,
+        index: resultIndex,
+        count: resultCount,
+      });
+    });
     terminal.loadAddon(unicode11Addon);
     terminal.loadAddon(serializeAddon); // *** 加载 SerializeAddon ***
     terminal.unicode.activeVersion = '11'; // 激活 Unicode 11 版本支持
@@ -678,6 +718,11 @@ onMounted(() => {
 
 // 组件卸载前清理资源
 onBeforeUnmount(() => {
+  unsubscribeFromWorkspaceEvent('search:markers', handleSearchMarkers);
+  if (searchResultsDisposable) {
+    searchResultsDisposable.dispose();
+    searchResultsDisposable = null;
+  }
   if (unregisterDebugTerminal) {
     unregisterDebugTerminal();
     unregisterDebugTerminal = null;
@@ -744,22 +789,28 @@ const write = (data: string | Uint8Array) => {
 };
 
 // *** 暴露搜索方法 ***
+// 保留这两个公开方法（父组件仍可能调用）。默认带 decorations，
+// 否则调用方忘了传就只有"当前选中"，没有全量高亮。
 const findNext = (term: string, options?: ISearchOptions): boolean => {
   if (searchAddon) {
-    return searchAddon.findNext(term, options);
+    return searchAddon.findNext(term, { ...options, decorations: options?.decorations ?? DEFAULT_SEARCH_DECORATIONS });
   }
   return false;
 };
 
 const findPrevious = (term: string, options?: ISearchOptions): boolean => {
   if (searchAddon) {
-    return searchAddon.findPrevious(term, options);
+    return searchAddon.findPrevious(term, { ...options, decorations: options?.decorations ?? DEFAULT_SEARCH_DECORATIONS });
   }
   return false;
 };
 
 const clearSearch = () => {
   searchAddon?.clearDecorations();
+  searchMatchIndex.value = -1;
+  searchMatchCount.value = 0;
+  searchMatchLines.value = [];
+  searchTotalLines.value = 1;
 };
 
 // +++  clear 方法 +++
@@ -1016,6 +1067,7 @@ const handleTerminalClick = () => {
         :can-scroll="canScroll"
         :scroll-progress="scrollProgress"
         :thumb-height-ratio="thumbHeightRatio"
+        :search-markers="searchMarkers"
         @scroll-progress="handleScrollProgressChange"
       />
     </div>
@@ -1027,6 +1079,7 @@ const handleTerminalClick = () => {
       :can-scroll="canScroll"
       :scroll-progress="scrollProgress"
       :thumb-height-ratio="thumbHeightRatio"
+      :search-markers="searchMarkers"
       @scroll-progress="handleScrollProgressChange"
     />
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import type { TerminalSearchMarker } from '../utils/terminalSearch';
 
 const props = withDefaults(
   defineProps<{
@@ -11,8 +12,10 @@ const props = withDefaults(
      * gutter：占据右侧独立一列，不与终端内容重叠（桌面端）
      */
     variant?: 'floating' | 'gutter';
+    /** 搜索命中位置标记（top/height 为轨道百分比），没有搜索时传空数组 */
+    searchMarkers?: TerminalSearchMarker[];
   }>(),
-  { variant: 'floating' }
+  { variant: 'floating', searchMarkers: () => [] }
 );
 
 const emit = defineEmits<{
@@ -123,6 +126,21 @@ const handleMouseDown = (event: MouseEvent) => {
     @touchcancel.stop.prevent="handleTouchEnd"
     @mousedown.stop.prevent="handleMouseDown"
   >
+    <!--
+      搜索命中标记：画在滚动条轨道上，让"哪些位置有命中"一眼可见。
+      顺序上放在滑块之前，滑块仍压在最上层；pointer-events: none 不抢拖拽手势。
+    -->
+    <div
+      v-for="(marker, index) in props.searchMarkers"
+      :key="`search-marker-${index}`"
+      class="search-marker"
+      :class="{ 'is-active': marker.active }"
+      :style="{
+        top: `${marker.top * 100}%`,
+        height: `${Math.max(marker.height * 100, 0.35)}%`
+      }"
+    ></div>
+
     <div
       class="terminal-scrollbar-thumb"
       :style="{
@@ -217,5 +235,43 @@ const handleMouseDown = (event: MouseEvent) => {
 .terminal-scrollbar-track.is-gutter.is-idle {
   opacity: 0;
   pointer-events: none;
+}
+
+/*
+ * 搜索命中标记（小横条）：
+ * - 只在 gutter 模式显示。floating 模式轨道宽 24px 但贴右边缘，
+ *   横条会和拇指滑块抢视觉位置，且移动端有专门的高亮条更易读。
+ * - 绝对定位，右侧对齐，不参与拖拽命中。
+ */
+.search-marker {
+  position: absolute;
+  right: 1px;
+  width: 4px;
+  min-height: 2px;
+  border-radius: 1px;
+  background-color: rgba(250, 204, 21, 0.85);
+  box-shadow: 0 0 2px rgba(250, 204, 21, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* 当前聚焦的匹配：更宽更亮（橙红），与"全部匹配"的黄色区分开 */
+.search-marker.is-active {
+  width: 6px;
+  right: 0;
+  background-color: rgba(249, 115, 22, 0.98);
+  box-shadow: 0 0 4px rgba(249, 115, 22, 0.85);
+  z-index: 3;
+}
+
+/* 悬浮模式下标记稍窄一点，避免盖住药丸滑块 */
+.terminal-scrollbar-track.is-floating .search-marker {
+  right: 9px;
+  width: 3px;
+}
+
+.terminal-scrollbar-track.is-floating .search-marker.is-active {
+  right: 8px;
+  width: 5px;
 }
 </style>

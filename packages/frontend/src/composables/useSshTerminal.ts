@@ -9,6 +9,12 @@ import type { WebSocketMessage, MessagePayload } from '../types/websocket.types'
 import { useTerminalHighlightStore } from '../stores/terminal-highlight.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useLayoutStore, getTerminalPaneIdsInLayout } from '../stores/layout.store';
+import { useWorkspaceEventEmitter } from './workspaceEvents';
+import {
+    DEFAULT_SEARCH_DECORATIONS,
+    scanSearchBuffer,
+    type TerminalSearchOptions,
+} from '../utils/terminalSearch';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -628,8 +634,6 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         handleTerminalData(data, paneId);
     };
 
-    // --- 搜索相关方法 (移除计数逻辑) ---
-
     // 获取目标终端实例（支持分屏路由）
     const getTargetPaneEntry = (targetPaneId?: string | null): PaneTerminalInstance | null => {
         let pid = targetPaneId;
@@ -649,13 +653,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (primaryPaneId.value && terminalPanes.value.has(primaryPaneId.value)) {
             return terminalPanes.value.get(primaryPaneId.value)!;
         }
-        if (terminalPanes.value.size > 0) {
-            return Array.from(terminalPanes.value.values())[0];
-        }
-        return null;
+        const first = terminalPanes.value.values().next();
+        return first.done ? null : first.value;
     };
 
-    const clearTerminal = (targetPaneId?: string | null): boolean => {
+    const clearTerminal = (targetPaneId?: string | null) => {
         const entry = getTargetPaneEntry(targetPaneId);
         if (entry?.terminal && typeof entry.terminal.clear === 'function') {
             console.log(`[会话 ${sessionId}][SSH终端模块] 正在清空终端 (paneId: ${entry.paneId})`);
@@ -678,12 +680,100 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         terminalInstance.value?.scrollToBottom();
     };
 
+    // --- 搜索相关方法 ---
+    //
+    // 分工：
+    // - 高亮与"当前匹配"由 @xterm/addon-search 的 decorations 负责（它处理宽字符/一行多处命中/增量搜索）
+    // - 结果计数由 Terminal 组件订阅 addon.onDidChangeResults 后广播
+    // - 滚动条标记需要 buffer 行号，addon 不暴露，所以这里自己扫一遍（分片 + 防抖，见 utils/terminalSearch.ts）
+
+    const emitWorkspaceEvent = useWorkspaceEventEmitter();
+
+    const SEARCH_SCAN_DEBOUNCE_MS = 120;
+    let searchScanTimer: ReturnType<typeof setTimeout> | null = null;
+    let searchScanToken = 0;
+
+    /** 调用方没显式给 decorations 时补上默认配色（黄=全部，橙=当前） */
+    const withSearchDecorations = (options?: ISearchOptions): ISearchOptions => ({
+        ...options,
+        decorations: options?.decorations ?? DEFAULT_SEARCH_DECORATIONS,
+    });
+
+    /** 每个 pane 上次的"区分大小写"取值，用来识别选项切换 */
+    const lastCaseSensitiveByPane = new Map<string, boolean>();
+
+    /**
+     * addon 内部的 didOptionsChange 只比较 regex 和 wholeWord，**漏了 caseSensitive**。
+     * 所以切到"区分大小写"时它不会重算高亮：计数会变成 0/31，黄色高亮还挂在旧结果上。
+     * 这里在切换瞬间清掉它的缓存词，逼它走完整的重新搜索。
+     */
+    const forceRehighlightOnCaseChange = (
+        addon: SearchAddon,
+        paneId: string,
+        options?: ISearchOptions
+    ) => {
+        const next = Boolean(options?.caseSensitive);
+        const prev = lastCaseSensitiveByPane.get(paneId);
+        if (prev !== undefined && prev !== next) {
+            // 不能用 addon 的私有 _state.clearCachedTerm()：打包后字段不可靠，实测无效。
+            // 改用公开 API：先清装饰，再用一个必然不命中的哨兵词把内部 cachedSearchTerm 顶掉，
+            // 这样紧接着的 findNext(term) 会判定"词变了"，触发完整重算。
+            addon.clearDecorations();
+            addon.findNext('\u0000', { decorations: DEFAULT_SEARCH_DECORATIONS });
+        }
+        lastCaseSensitiveByPane.set(paneId, next);
+    };
+
+    /**
+     * 搜索结束后扫描 buffer，把命中行号广播给终端组件画滚动条标记。
+     *
+     * 120ms 防抖的意义：搜索框每键入一个字符都会触发 findNext，
+     * 但标记只需要"停手之后的最终结果"，否则每次按键都全量扫一遍 buffer。
+     */
+    const scheduleSearchMarkerScan = (
+        pane: PaneTerminalInstance | null,
+        term: string,
+        options?: ISearchOptions
+    ) => {
+        if (!pane) return;
+        if (searchScanTimer) clearTimeout(searchScanTimer);
+        const token = ++searchScanToken;
+
+        searchScanTimer = setTimeout(() => {
+            searchScanTimer = null;
+            void (async () => {
+                const buffer = pane.terminal?.buffer?.active;
+                if (!buffer) return;
+                const result = await scanSearchBuffer(
+                    buffer,
+                    term,
+                    {
+                        regex: options?.regex,
+                        wholeWord: options?.wholeWord,
+                        caseSensitive: options?.caseSensitive,
+                    } satisfies TerminalSearchOptions,
+                    () => token !== searchScanToken
+                );
+                if (token !== searchScanToken) return; // 已被更新的搜索取代
+                emitWorkspaceEvent('search:markers', {
+                    sessionId,
+                    paneId: pane.paneId,
+                    matchLines: result.matchLines,
+                    totalLines: result.totalLines,
+                });
+            })();
+        }, SEARCH_SCAN_DEBOUNCE_MS);
+    };
+
     const searchNext = (term: string, options?: ISearchOptions, targetPaneId?: string | null): boolean => {
         const entry = getTargetPaneEntry(targetPaneId);
         const addon = entry?.searchAddon || searchAddon.value;
         if (addon) {
-            console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchNext: "${term}" (paneId: ${entry?.paneId || 'default'})`);
-            return addon.findNext(term, options);
+            const merged = withSearchDecorations(options);
+            forceRehighlightOnCaseChange(addon, entry?.paneId || 'default', merged);
+            const found = addon.findNext(term, merged);
+            scheduleSearchMarkerScan(entry, term, merged);
+            return found;
         }
         console.warn(`[会话 ${sessionId}][SSH终端模块] searchNext 调用失败，未找到有效 searchAddon。`);
         return false;
@@ -693,19 +783,26 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const entry = getTargetPaneEntry(targetPaneId);
         const addon = entry?.searchAddon || searchAddon.value;
         if (addon) {
-            console.log(`[会话 ${sessionId}][SSH终端模块] 执行 searchPrevious: "${term}" (paneId: ${entry?.paneId || 'default'})`);
-            return addon.findPrevious(term, options);
+            const merged = withSearchDecorations(options);
+            forceRehighlightOnCaseChange(addon, entry?.paneId || 'default', merged);
+            const found = addon.findPrevious(term, merged);
+            scheduleSearchMarkerScan(entry, term, merged);
+            return found;
         }
         console.warn(`[会话 ${sessionId}][SSH终端模块] searchPrevious 调用失败，未找到有效 searchAddon。`);
         return false;
     };
 
     const clearTerminalSearch = (targetPaneId?: string | null) => {
+        searchScanToken++; // 取消进行中的扫描
+        if (searchScanTimer) {
+            clearTimeout(searchScanTimer);
+            searchScanTimer = null;
+        }
+
         if (targetPaneId) {
             const entry = getTargetPaneEntry(targetPaneId);
-            if (entry?.searchAddon) {
-                entry.searchAddon.clearDecorations();
-            }
+            entry?.searchAddon?.clearDecorations();
         } else {
             // 清理所有分屏终端的搜索高亮
             terminalPanes.value.forEach(p => {
@@ -713,9 +810,21 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             });
             searchAddon.value?.clearDecorations();
         }
-        console.log(`[会话 ${sessionId}][SSH终端模块] 搜索高亮已清除。`);
-    };
 
+        // 通知终端清空滚动条标记与计数
+        emitWorkspaceEvent('search:markers', {
+            sessionId,
+            paneId: targetPaneId || undefined,
+            matchLines: [],
+            totalLines: 1,
+        });
+        emitWorkspaceEvent('search:results', {
+            sessionId,
+            paneId: targetPaneId || undefined,
+            index: -1,
+            count: 0,
+        });
+    };
 
     // 返回工厂实例
     return {

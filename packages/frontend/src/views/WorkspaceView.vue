@@ -351,7 +351,7 @@ onMounted(() => {
   onWs('connection:requestAdd', handleRequestAddConnection);
   onWs('connection:requestEdit', (payload) => handleRequestEditConnection(payload.connectionInfo));
 
-  onWs('search:start', (payload) => handleSearch(payload.term));
+  onWs('search:start', (payload) => handleSearch(payload));
   onWs('search:findNext', handleFindNext);
   onWs('search:findPrevious', handleFindPrevious);
   onWs('search:close', handleCloseSearch);
@@ -595,7 +595,19 @@ const offAllWs = () => {
 };
 
 // --- 搜索事件处理 ---
-const handleSearch = (term: string) => { // +++ 修改 +++
+/**
+ * 搜索选项（正则/整词/大小写）。
+ *
+ * 必须从 CommandInputBar 一路带到 addon：addon 用它决定匹配规则，
+ * 我们扫描滚动条标记时也用同一套规则，否则"计数 5 个、标记 9 条"会对不上。
+ */
+const currentSearchOptions = ref<{ regex?: boolean; wholeWord?: boolean; caseSensitive?: boolean }>({});
+
+const handleSearch = (payload: { term: string; options?: { regex?: boolean; wholeWord?: boolean; caseSensitive?: boolean } } | string) => {
+  const term = typeof payload === 'string' ? payload : payload.term;
+  if (payload && typeof payload !== 'string' && payload.options) {
+    currentSearchOptions.value = { ...payload.options };
+  }
   currentSearchTerm.value = term;
   if (!term) {
     // 如果搜索词为空，清除搜索
@@ -614,7 +626,11 @@ const handleFindNext = () => {
     const mode = isMobile.value ? 'Mobile' : 'Desktop';
     console.log(`[WorkspaceView ${mode}] Calling findNext for term: "${currentSearchTerm.value}"`);
     const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
-    const found = (manager as any).searchNext(currentSearchTerm.value, { incremental: true }, targetPaneId);
+    const found = (manager as any).searchNext(
+      currentSearchTerm.value,
+      { incremental: true, ...currentSearchOptions.value },
+      targetPaneId
+    );
     console.log(`[WorkspaceView ${mode}] findNext returned: ${found}`);
     if (!found) {
       console.log(`[WorkspaceView ${mode}] findNext: No more results for "${currentSearchTerm.value}"`);
@@ -631,7 +647,11 @@ const handleFindPrevious = () => {
     const mode = isMobile.value ? 'Mobile' : 'Desktop';
     console.log(`[WorkspaceView ${mode}] Calling findPrevious for term: "${currentSearchTerm.value}"`);
     const targetPaneId = layoutStore.activeTerminalPaneId || undefined;
-    const found = (manager as any).searchPrevious(currentSearchTerm.value, { incremental: true }, targetPaneId);
+    const found = (manager as any).searchPrevious(
+      currentSearchTerm.value,
+      { incremental: true, ...currentSearchOptions.value },
+      targetPaneId
+    );
     console.log(`[WorkspaceView ${mode}] findPrevious returned: ${found}`);
     if (!found) {
       console.log(`[WorkspaceView ${mode}] findPrevious: No previous results for "${currentSearchTerm.value}"`);

@@ -46,6 +46,26 @@ const searchTerm = ref('');
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const commandInputRef = ref<HTMLInputElement | null>(null);
 
+// --- 终端搜索选项与结果计数 ---
+// 选项必须显式带上：addon 用它匹配，终端扫描滚动条标记时用同一套规则，
+// 否则会出现"计数 3 个但轨道上 7 条标记"的不一致。
+const searchCaseSensitive = ref(false);
+const searchWholeWord = ref(false);
+const searchRegex = ref(false);
+const searchCurrentIndex = ref(-1);
+const searchTotalCount = ref(0);
+
+const searchOptions = computed(() => ({
+  caseSensitive: searchCaseSensitive.value,
+  wholeWord: searchWholeWord.value,
+  regex: searchRegex.value,
+}));
+
+/** 显示成 "3/57"；没有匹配时显示 "0/0"，而不是空白让人以为功能没生效 */
+const searchCountLabel = computed(() =>
+  searchTotalCount.value > 0 ? `${searchCurrentIndex.value + 1}/${searchTotalCount.value}` : '0/0'
+);
+
 // 计算属性：当前活动会话的命令输入
 const currentSessionCommandInput = computed({
   get: () => {
@@ -77,13 +97,27 @@ const toggleSearch = () => {
   isSearching.value = !isSearching.value;
   if (!isSearching.value) {
     searchTerm.value = '';
+    searchCurrentIndex.value = -1;
+    searchTotalCount.value = 0;
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = null;
+    }
     emitWorkspaceEvent('search:close');
   }
 };
 
 const performSearch = () => {
-  emitWorkspaceEvent('search:start', { term: searchTerm.value });
+  emitWorkspaceEvent('search:start', {
+    term: searchTerm.value,
+    options: searchOptions.value,
+  });
 };
+
+// 140ms 防抖：连续键入时只对最后一段词做全量搜索 + 标记扫描，
+// 长 scrollback（十万行级）下这是"输入不卡"的关键。
+const SEARCH_DEBOUNCE_MS = 140;
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 const findNext = () => {
   emitWorkspaceEvent('search:findNext');
@@ -94,7 +128,17 @@ const findPrevious = () => {
 };
 
 watch(searchTerm, () => {
-  if (isSearching.value) {
+  if (!isSearching.value) return;
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    searchDebounceTimer = null;
+    performSearch();
+  }, SEARCH_DEBOUNCE_MS);
+});
+
+// 切换大小写/整词/正则要立即重搜（不是键入，无需防抖）
+watch([searchCaseSensitive, searchWholeWord, searchRegex], () => {
+  if (isSearching.value && searchTerm.value) {
     performSearch();
   }
 });
@@ -238,7 +282,15 @@ const handleCommandFill = (payload: { command: string }) => {
 let unregisterCommandInputFocus: (() => void) | null = null;
 let unregisterTerminalSearchFocus: (() => void) | null = null;
 
+const handleSearchResults = (payload: { sessionId?: string; index: number; count: number }) => {
+  // 分屏/多会话时只认当前会话；否则别的会话的搜索会把计数改掉
+  if (payload.sessionId && activeSessionId.value && payload.sessionId !== activeSessionId.value) return;
+  searchCurrentIndex.value = payload.index;
+  searchTotalCount.value = payload.count;
+};
+
 onMounted(() => {
+  onWorkspaceEvent('search:results', handleSearchResults);
   if (!props.isMobile) {
     unregisterCommandInputFocus = focusSwitcherStore.registerFocusAction('commandInput', focusCommandInput);
     unregisterTerminalSearchFocus = focusSwitcherStore.registerFocusAction('terminalSearch', focusSearchInput);
@@ -249,7 +301,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (unregisterCommandInputFocus) unregisterCommandInputFocus();
   if (unregisterTerminalSearchFocus) unregisterTerminalSearchFocus();
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
   offWorkspaceEvent('commandInput:fill', handleCommandFill);
+  offWorkspaceEvent('search:results', handleSearchResults);
 });
 
 const openFileManagerModal = () => {
@@ -307,7 +364,7 @@ const getBarButtonClass = (isActive: boolean = false) => [
         type="text"
         v-model="currentSessionCommandInput"
         :placeholder="t('commandInputBar.placeholder')"
-        class="flex-grow min-w-0 px-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300 ease-in-out"
+        class="flex-grow min-w-[120px] px-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300 ease-in-out"
         :class="{
           'basis-3/4': isSearching,
           'basis-full': !isSearching,
@@ -333,6 +390,13 @@ const getBarButtonClass = (isActive: boolean = false) => [
         ref="searchInputRef"
       />
 
+      <!-- 命中计数："3/57"；没有匹配显示 0/0，避免空白让人以为没生效 -->
+      <span
+        v-if="isSearching"
+        class="shrink-0 min-w-[40px] text-center text-xs tabular-nums font-medium select-none"
+        :class="searchTotalCount > 0 ? 'text-text-secondary' : 'text-text-secondary/45'"
+      >{{ searchCountLabel }}</span>
+
       <!-- Search Controls -->
       <div class="flex items-center gap-1 flex-shrink-0">
         <!-- Search Toggle Button -->
@@ -347,6 +411,32 @@ const getBarButtonClass = (isActive: boolean = false) => [
 
         <!-- Search navigation buttons -->
         <template v-if="isSearching">
+          <!-- 大小写 / 整词 / 正则：改完立即重搜 -->
+          <button
+            @click="searchCaseSensitive = !searchCaseSensitive"
+            style="width: 1.75rem;"
+            :class="getBarButtonClass(searchCaseSensitive)"
+            :title="t('commandInputBar.matchCase', '区分大小写')"
+          >
+            <span class="text-[11px] font-bold leading-none">Aa</span>
+          </button>
+          <button
+            @click="searchWholeWord = !searchWholeWord"
+            style="width: 1.75rem;"
+            :class="getBarButtonClass(searchWholeWord)"
+            :title="t('commandInputBar.matchWholeWord', '全词匹配')"
+          >
+            <span class="text-[11px] font-bold leading-none">ab<span class="opacity-50">|</span>c</span>
+          </button>
+          <button
+            @click="searchRegex = !searchRegex"
+            style="width: 1.75rem;"
+            :class="getBarButtonClass(searchRegex)"
+            :title="t('commandInputBar.useRegex', '使用正则表达式')"
+          >
+            <span class="text-[11px] font-bold leading-none">.*</span>
+          </button>
+
           <button
             @click="findPrevious"
             class="flex items-center justify-center w-8 h-8 border border-border/50 rounded-lg text-text-secondary transition-colors duration-200 hover:bg-border hover:text-foreground"
