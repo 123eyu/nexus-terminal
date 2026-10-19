@@ -17,6 +17,7 @@
     "desktop:sync": "npm run --prefix packages/desktop desktop:sync",
     "settings:gen": "node tools/gen-settings-schema.mjs",
     "settings:check": "node tools/gen-settings-schema.mjs --check",
+    "i18n:check": "node tools/check-i18n.mjs",
     "typecheck": "npm run --prefix packages/backend typecheck && npm run --prefix packages/frontend typecheck"
   },
   "repository": {

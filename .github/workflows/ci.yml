@@ -39,6 +39,9 @@ jobs:
       - name: 设置项 schema 漂移检查
         run: npm run settings:check
 
+      - name: i18n 体检（重复键 / 代码引用了不存在的键）
+        run: npm run i18n:check
+
       - name: 单元测试（布局树纯函数 / 设置 schema）
         run: npm test
 

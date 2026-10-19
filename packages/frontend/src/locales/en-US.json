@@ -44,7 +44,14 @@
     "folderDeleted": "Folder deleted",
     "manageFolder": "Manage Folder",
     "folderColor": "Folder Background Color",
-    "rightClickToManage": "Right click to manage"
+    "rightClickToManage": "Right click to manage",
+    "deleteFolderTitle": "Delete group \"{name}\"",
+    "deleteFolderNotice": "This group contains {count} quick commands",
+    "deleteWithCommandsDesc": "Also permanently delete this group and all {count} commands (irreversible)",
+    "movedSuccessTo": "Moved to {name}",
+    "batchMoveSuccess": "Moved {count} connections to {name}",
+    "customColor": "Custom background color",
+    "colorUpdated": "Folder background color updated"
   },
   "styleCustomizer": {
     "title": "Appearance Customizer",
@@ -220,7 +227,14 @@
     "errorJsonSyntax": "JSON Syntax Error",
     "noThemeSelected": "No theme selected",
     "unknownTheme": "Unknown theme",
-    "noThemesFound": "No matching themes found"
+    "noThemesFound": "No matching themes found",
+    "customHtmlResetFailed": "Failed to reset custom HTML: {message}",
+    "errorFetchingPresetContentForCopy": "Failed to load preset \"{name}\": {message}",
+    "confirmDeletePresetMessage": "Delete preset \"{name}\"?",
+    "themeAppliedSuccess": "Theme \"{name}\" applied",
+    "themeApplyFailed": "Failed to apply theme: {message}",
+    "localPresetRenamed": "Local preset \"{oldName}\" renamed to \"{newName}\".",
+    "localPresetRenameFailed": "Failed to rename local preset: {message}"
   },
   "login": {
     "title": "User Login",
@@ -402,7 +416,8 @@
       "selectJumpHost": "Please select a jump host",
       "removeJumpHostTitle": "Remove this jump host",
       "addJumpHost": "Add Jump Host",
-      "noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first."
+      "noAvailableSshConnectionsForJump": "No available SSH connections for jump host. Please create some SSH connections first.",
+      "errorDelete": "Failed to delete connection: {error}"
     },
     "test": {
       "success": "Connection test successful!",
@@ -488,7 +503,8 @@
       "unknownSshError": "Unknown SSH error",
       "genericErrorMsg": "Error: {message}",
       "infoPrefix": "[Info]",
-      "errorPrefix": "[Error]"
+      "errorPrefix": "[Error]",
+      "unknownGenericError": "An unknown error occurred"
     }
   },
   "fileEditor": {
@@ -623,7 +639,10 @@
       "commandNotFoundCompress": "Command '{command}' not found on server, cannot complete compression.",
       "commandNotFoundDecompress": "Command '{command}' not found on server, cannot complete decompression.",
       "genericCommandNotFound": "Command '{command}' not found on server, cannot complete '{operation}' operation.",
-      "copyPathFailed": "Failed to copy path"
+      "copyPathFailed": "Failed to copy path",
+      "uploadFailed": "Upload failed",
+      "readFileTimeout": "Timed out reading the file, please retry",
+      "sessionInvalidOrNotReady": "Session is invalid or not ready yet"
     },
     "notifications": {
       "copySuccess": "Copy successful",
@@ -755,7 +774,11 @@
     "updateSuccess": "Tag updated successfully.",
     "deleteSuccess": "Tag \"{name}\" deleted successfully.",
     "deleteFailed": "Failed to delete tag \"{name}\": {error}",
-    "errorDelete": "Error deleting tag: {error}"
+    "errorDelete": "Error deleting tag: {error}",
+    "createFailed": "Failed to create tag \"{name}\": {error}",
+    "deleteSuccessWithName": "Tag \"{name}\" deleted",
+    "deleteFailedWithName": "Failed to delete tag \"{name}\": {error}",
+    "deleteConfirm": "Delete tag \"{name}\" everywhere? This cannot be undone."
   },
   "settings": {
     "popupFileManager": {
@@ -802,7 +825,8 @@
       "success": "Password changed successfully!",
       "error": {
         "passwordsDoNotMatch": "New password and confirmation do not match.",
-        "generic": "Failed to change password. Please try again later."
+        "generic": "Failed to change password. Please try again later.",
+        "fieldsRequired": "Please fill in your current and new password"
       }
     },
     "twoFactor": {
@@ -903,7 +927,8 @@
         "userNotLoggedIn": "User not logged in or username unavailable.",
         "registrationCancelled": "Passkey registration was cancelled.",
         "registrationFailed": "Passkey registration failed.",
-        "deleteFailedGeneral": "Failed to delete Passkey. Please try again."
+        "deleteFailedGeneral": "Failed to delete Passkey. Please try again.",
+        "registrationCancelledOrExists": "Registration cancelled, or this device already has a passkey"
       },
       "success": {
         "registered": "New Passkey registered successfully!",
@@ -988,7 +1013,8 @@
         "SSH_CONNECT_FAILURE": "SSH Connection Failed",
         "SSH_SHELL_FAILURE": "SSH Shell Open Failed",
         "DATABASE_MIGRATION": "Database Migration",
-        "ADMIN_SETUP_COMPLETE": "Initial Admin Setup Completed"
+        "ADMIN_SETUP_COMPLETE": "Initial Admin Setup Completed",
+        "CONNECTIONS_EXPORTED": "Connections exported"
       }
     },
     "appearance": {
@@ -1281,7 +1307,9 @@
     "send": "Send",
     "updateSuccess": "Update successful",
     "copied": "Copied to clipboard",
-    "confirmationTitle": "Confirmation"
+    "confirmationTitle": "Confirmation",
+    "unknownError": "Unknown error",
+    "unexpectedError": "An unexpected error occurred"
   },
   "layoutConfigurator": {
     "title": "Layout Configurator",
@@ -1296,7 +1324,9 @@
     "saveError": "Error saving layout. Please try again later.",
     "confirmClearLayout": "Are you sure you want to clear the entire layout? All panes will return to the available list.",
     "lockLayout": "Lock Layout",
-    "lockUpdateError": "Failed to update layout lock status."
+    "lockUpdateError": "Failed to update layout lock status.",
+    "confirmClose": "You have unsaved changes. Close anyway?",
+    "confirmReset": "Restore the default layout and sidebar configuration? Current changes will be lost."
   },
   "layoutNodeEditor": {
     "containerLabel": "Container ({direction})",
@@ -1453,7 +1483,8 @@
     "send": "Send"
   },
   "term": {
-    "sshSuspend": "SSH Suspend"
+    "sshSuspend": "SSH Suspend",
+    "unknownError": "Unknown error"
   },
   "layout": {
     "loading": "Loading...",
@@ -1552,7 +1583,10 @@
     },
     "untagged": "Untagged",
     "tags": {
-      "clickToEditTag": "Click to edit tag name"
+      "clickToEditTag": "Click to edit tag name",
+      "createSuccess": "Tag created",
+      "noCommandsToAssign": "No commands available to tag",
+      "updateSuccess": "Tag updated"
     },
     "actions": {
       "sendToAllSessions": "Send to All Sessions",
@@ -1565,7 +1599,8 @@
     "notifications": {
       "sentToAllSessions": "Command sent to {count} sessions.",
       "noActiveSshSessions": "No active SSH sessions to send command to."
-    }
+    },
+    "deleteConfirm": "Delete command \"{name}\"?"
   },
   "setup": {
     "title": "Initial Setup",
@@ -1652,7 +1687,8 @@
       "netIO": "Network I/O",
       "blockIO": "Block I/O",
       "pids": "PIDs"
-    }
+    },
+    "title": "Docker Manager"
   },
   "dashboard": {
     "recentConnections": "Recent Connections",

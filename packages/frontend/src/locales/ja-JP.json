@@ -380,7 +380,7 @@
     "actions": {
       "cancel": "キャンセル",
       "rootDirectory": "ルートディレクトリ",
-      "parentDirectory": "上の階層へ",
+      "parentDirectory": "上位ディレクトリ",
       "alreadyRoot": "ルートディレクトリです",
       "cdToTerminal": "ターミナルのディレクトリを現在のパスに変更",
       "changePermissions": "権限を変更",
@@ -395,7 +395,6 @@
       "downloadMultiple": "{count} 個のアイテムをダウンロード",
       "newFile": "新しいファイル",
       "newFolder": "新しいフォルダー",
-      "parentDirectory": "上位ディレクトリ",
       "paste": "貼り付け",
       "openEditor": "エディターを開く",
       "refresh": "更新",
@@ -630,6 +629,16 @@
       "wsClosed": "WebSocket が閉じられました (コード: {code})",
       "wsClosedWillRetry": "WebSocket が閉じられました (コード: {code})、再試行中...",
       "markedForSuspendNoReconnect": "セッションはサスペンド予約済みのため、自動再接続しません"
+    },
+    "terminal": {
+      "reconnectingMsg": "再接続を試行中...",
+      "reconnectedMsg": "セッションが正常に再接続されました",
+      "disconnectMsg": "[接続が切断されました: {reason}]",
+      "unknownReason": "不明な理由",
+      "unknownSshError": "不明なSSHエラー",
+      "genericErrorMsg": "エラー: {message}",
+      "infoPrefix": "[情報]",
+      "errorPrefix": "[エラー]"
     }
   },
   "layout": {
@@ -709,7 +718,7 @@
   },
   "nav": {
     "auditLogs": "監査ログ",
-    "customizeStyle": "外観のカスタマイズ",
+    "customizeStyle": "外観カスタマイズ",
     "dashboard": "ダッシュボード",
     "connections": "接続管理",
     "login": "ログイン",
@@ -717,36 +726,41 @@
     "notifications": "通知管理",
     "proxies": "プロキシ管理",
     "settings": "設定",
-    "terminal": "ターミナル"
+    "terminal": "ターミナル",
+    "quickCommands": "クイックコマンド"
   },
   "folders": {
     "title": "フォルダー",
     "all": "すべての接続",
     "uncategorized": "未分類",
     "customFolders": "フォルダー一覧",
-    "newFolder": "新規フォルダー",
-    "createNewFolder": "新規フォルダー作成",
+    "newFolder": "新しいフォルダー",
+    "createNewFolder": "新しいフォルダー",
     "newFolderPlaceholder": "フォルダー名を入力...",
-    "renameFolder": "フォルダー名変更",
+    "renameFolder": "フォルダー名を変更",
     "renamePlaceholder": "新しいフォルダー名を入力...",
-    "deleteFolder": "フォルダー削除",
-    "deleteConfirmTitle": "フォルダー削除",
-    "deleteConfirm": "フォルダー \"{name}\" を削除してもよろしいですか？中の接続は「未分類」に安全に移動されます。",
-    "selectPlaceholder": "フォルダーを選択...",
+    "deleteFolder": "フォルダーを削除",
+    "deleteConfirmTitle": "フォルダーの削除",
+    "deleteConfirm": "フォルダー \"{name}\" を削除してもよろしいですか？アイテムは「未分類」に安全に移動されます。",
+    "selectPlaceholder": "所属フォルダーを選択...",
     "clearToUncategorized": "未分類にする",
     "moveTo": "フォルダーへ移動",
     "moveToFolder": "フォルダーへ移動",
     "selectDestinationFolder": "移動先フォルダーを選択",
     "movedSuccess": "フォルダーへ移動しました",
-    "batchMove": "選択項目をフォルダーへ移動",
+    "batchMove": "一括でフォルダーへ移動",
     "noCustomFolders": "カスタムフォルダーはありません",
-    "emptyFolder": "このフォルダーには項目がありません",
+    "emptyFolder": "このフォルダーには内容がありません",
     "dragTip": "カードを左側のフォルダーにドラッグして分類できます",
     "folderCreated": "フォルダーを作成しました",
     "folderDeleted": "フォルダーを削除しました",
     "manageFolder": "フォルダー管理",
     "folderColor": "フォルダー背景色",
-    "rightClickToManage": "右クリックで管理"
+    "rightClickToManage": "右クリックで管理",
+    "viewFolderOnly": "このフォルダーのみ表示",
+    "allCommands": "すべてのコマンド",
+    "colorUpdated": "フォルダー背景色を更新しました",
+    "customColor": "個別背景色"
   },
   "notificationController": {
     "errorCreateSetting": "通知設定の作成に失敗しました",
@@ -1594,18 +1608,6 @@
     "selectServerTitle": "接続するサーバーを選択",
     "showTransferProgressTooltip": "転送進捗の表示/非表示"
   },
-  "workspace": {
-    "terminal": {
-      "reconnectingMsg": "再接続を試行中...",
-      "reconnectedMsg": "セッションが正常に再接続されました",
-      "disconnectMsg": "[接続が切断されました: {reason}]",
-      "unknownReason": "不明な理由",
-      "unknownSshError": "不明なSSHエラー",
-      "genericErrorMsg": "エラー: {message}",
-      "infoPrefix": "[情報]",
-      "errorPrefix": "[エラー]"
-    }
-  },
   "workspaceConnectionList": {
     "noResults": "\"{searchTerm}\"に一致する接続は見つかりませんでした。",
     "searchPlaceholder": "名前またはホストを検索...",
@@ -1878,48 +1880,5 @@
     "reclaiming": "引き継ぎ中...",
     "backToHome": "ホームに戻る",
     "safetyNote": "クラウドセッションは安全に維持され、シームレスにローミング可能です"
-  },
-  "nav": {
-    "dashboard": "ダッシュボード",
-    "terminal": "ターミナル",
-    "connections": "接続管理",
-    "quickCommands": "クイックコマンド",
-    "proxies": "プロキシ管理",
-    "login": "ログイン",
-    "logout": "ログアウト",
-    "notifications": "通知管理",
-    "auditLogs": "監査ログ",
-    "settings": "設定",
-    "customizeStyle": "外観カスタマイズ"
-  },
-  "folders": {
-    "title": "フォルダー",
-    "viewFolderOnly": "このフォルダーのみ表示",
-    "all": "すべての接続",
-    "allCommands": "すべてのコマンド",
-    "uncategorized": "未分類",
-    "customFolders": "フォルダー一覧",
-    "newFolder": "新しいフォルダー",
-    "createNewFolder": "新しいフォルダー",
-    "newFolderPlaceholder": "フォルダー名を入力...",
-    "renameFolder": "フォルダー名を変更",
-    "renamePlaceholder": "新しいフォルダー名を入力...",
-    "deleteFolder": "フォルダーを削除",
-    "deleteConfirmTitle": "フォルダーの削除",
-    "deleteConfirm": "フォルダー \"{name}\" を削除してもよろしいですか？アイテムは「未分類」に安全に移動されます。",
-    "selectPlaceholder": "所属フォルダーを選択...",
-    "clearToUncategorized": "未分類にする",
-    "moveTo": "フォルダーへ移動",
-    "moveToFolder": "フォルダーへ移動",
-    "movedSuccess": "フォルダーへ移動しました",
-    "batchMove": "一括でフォルダーへ移動",
-    "noCustomFolders": "カスタムフォルダーはありません",
-    "emptyFolder": "このフォルダーには内容がありません",
-    "dragTip": "カードを左側のフォルダーにドラッグして分類できます",
-    "folderCreated": "フォルダーを作成しました",
-    "folderDeleted": "フォルダーを削除しました",
-    "folderColor": "フォルダー背景色",
-    "colorUpdated": "フォルダー背景色を更新しました",
-    "customColor": "個別背景色"
   }
 }

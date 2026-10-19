@@ -44,7 +44,14 @@
     "folderDeleted": "文件夹已删除",
     "manageFolder": "管理文件夹",
     "folderColor": "文件夹背景颜色",
-    "rightClickToManage": "右键管理"
+    "rightClickToManage": "右键管理",
+    "deleteFolderTitle": "删除分组「{name}」",
+    "deleteFolderNotice": "该分组下包含 {count} 条快捷指令",
+    "deleteWithCommandsDesc": "同时永久删除该分组及其包含的全部 {count} 条指令（不可恢复）",
+    "movedSuccessTo": "已移动至 {name}",
+    "batchMoveSuccess": "已将 {count} 个连接移动至 {name}",
+    "customColor": "独立背景颜色",
+    "colorUpdated": "文件夹背景颜色已更新"
   },
   "styleCustomizer": {
     "title": "外观自定义",
@@ -221,7 +228,12 @@
     "errorJsonSyntax": "JSON 语法错误",
     "noThemeSelected": "未选择主题",
     "unknownTheme": "未知主题",
-    "noThemesFound": "未找到匹配的主题"
+    "noThemesFound": "未找到匹配的主题",
+    "customHtmlResetFailed": "重置自定义 HTML 失败：{message}",
+    "errorFetchingPresetContentForCopy": "获取预设「{name}」内容失败：{message}",
+    "confirmDeletePresetMessage": "确定要删除预设「{name}」吗？",
+    "themeAppliedSuccess": "已应用主题「{name}」",
+    "themeApplyFailed": "应用主题失败：{message}"
   },
   "login": {
     "title": "用户登录",
@@ -403,7 +415,8 @@
       "selectJumpHost": "请选择跳板机",
       "removeJumpHostTitle": "移除此跳板机",
       "addJumpHost": "添加跳板机",
-      "noAvailableSshConnectionsForJump": "没有可用的SSH连接作为跳板机。请先创建一些SSH连接。"
+      "noAvailableSshConnectionsForJump": "没有可用的SSH连接作为跳板机。请先创建一些SSH连接。",
+      "errorDelete": "删除连接失败：{error}"
     },
     "test": {
       "success": "连接测试成功！",
@@ -489,7 +502,8 @@
       "unknownSshError": "未知 SSH 错误",
       "genericErrorMsg": "发生错误: {message}",
       "infoPrefix": "[提示]",
-      "errorPrefix": "[错误]"
+      "errorPrefix": "[错误]",
+      "unknownGenericError": "发生未知错误"
     }
   },
   "fileEditor": {
@@ -624,7 +638,10 @@
       "commandNotFoundCompress": "服务器上缺少 '{command}' 命令，无法完成压缩操作。",
       "commandNotFoundDecompress": "服务器上缺少 '{command}' 命令，无法完成解压操作。",
       "genericCommandNotFound": "服务器上缺少 '{command}' 命令，无法完成 '{operation}' 操作。",
-      "copyPathFailed": "复制路径失败"
+      "copyPathFailed": "复制路径失败",
+      "uploadFailed": "上传失败",
+      "readFileTimeout": "读取文件超时，请重试",
+      "sessionInvalidOrNotReady": "会话已失效或尚未就绪"
     },
     "notifications": {
       "copySuccess": "复制成功",
@@ -756,7 +773,11 @@
     "updateSuccess": "标签更新成功。",
     "deleteSuccess": "标签 \"{name}\" 删除成功。",
     "deleteFailed": "标签 \"{name}\" 删除失败: {error}",
-    "errorDelete": "删除标签时出错: {error}"
+    "errorDelete": "删除标签时出错: {error}",
+    "createFailed": "创建标签「{name}」失败：{error}",
+    "deleteSuccessWithName": "已删除标签「{name}」",
+    "deleteFailedWithName": "删除标签「{name}」失败：{error}",
+    "deleteConfirm": "确定要全局删除标签“{name}”吗？此操作无法撤销。"
   },
   "settings": {
     "popupFileManager": {
@@ -798,7 +819,8 @@
       "success": "密码修改成功！",
       "error": {
         "passwordsDoNotMatch": "新密码和确认密码不匹配。",
-        "generic": "修改密码失败，请稍后重试。"
+        "generic": "修改密码失败，请稍后重试。",
+        "fieldsRequired": "请填写当前密码与新密码"
       }
     },
     "twoFactor": {
@@ -899,7 +921,8 @@
         "userNotLoggedIn": "用户未登录或用户名不可用。",
         "registrationCancelled": "Passkey 注册已取消。",
         "registrationFailed": "Passkey 注册失败。",
-        "deleteFailedGeneral": "删除 Passkey 失败。请重试。"
+        "deleteFailedGeneral": "删除 Passkey 失败。请重试。",
+        "registrationCancelledOrExists": "注册已取消，或该设备已注册过通行密钥"
       },
       "success": {
         "registered": "新的 Passkey 已成功注册！",
@@ -1283,7 +1306,9 @@
     "error": "失败",
     "alert": "提示",
     "confirm": "确认",
-    "updateSuccess": "更新成功"
+    "updateSuccess": "更新成功",
+    "unknownError": "未知错误",
+    "unexpectedError": "发生意外错误"
   },
   "layoutConfigurator": {
     "title": "布局管理器",
@@ -1457,7 +1482,8 @@
     "send": "发送"
   },
   "term": {
-    "sshSuspend": "SSH挂起"
+    "sshSuspend": "SSH挂起",
+    "unknownError": "未知错误"
   },
   "layout": {
     "loading": "加载中...",
@@ -1556,7 +1582,10 @@
     },
     "untagged": "未标记",
     "tags": {
-      "clickToEditTag": "点击编辑标签名称"
+      "clickToEditTag": "点击编辑标签名称",
+      "createSuccess": "标签创建成功",
+      "noCommandsToAssign": "没有可分配标签的指令",
+      "updateSuccess": "标签更新成功"
     },
     "actions": {
       "sendToAllSessions": "发送到全部会话",
@@ -1569,7 +1598,8 @@
     "notifications": {
       "sentToAllSessions": "指令已发送到 {count} 个会话。",
       "noActiveSshSessions": "没有活动的 SSH 会话可发送指令。"
-    }
+    },
+    "deleteConfirm": "确定要删除指令 \"{name}\" 吗？"
   },
   "setup": {
     "title": "初始设置",
