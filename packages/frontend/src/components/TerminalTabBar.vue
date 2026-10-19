@@ -151,6 +151,20 @@ const handleContextMenuAction = (payload: { action: string; targetId: string | n
     case 'close-left':
       emitWorkspaceEvent('session:closeToLeft', { targetSessionId: targetId });
       break;
+    case 'edit-connection': {
+      // 右键的标签 → 找到它对应的连接 → 直接打开编辑窗口
+      const session = sessionStore.sessions.get(targetId);
+      const connIdNum = session ? parseInt(session.connectionId, 10) : NaN;
+      const conn = Number.isNaN(connIdNum)
+        ? undefined
+        : connectionsStore.connections.find(c => c.id === connIdNum);
+      if (conn) {
+        emitWorkspaceEvent('connection:requestEdit', { connectionInfo: conn });
+      } else {
+        console.warn(`[TabBar] 找不到会话 ${targetId} 对应的连接，无法编辑`);
+      }
+      break;
+    }
     case 'mark-for-suspend':
       sessionStore.requestStartSshSuspend(targetId);
       break;
@@ -175,6 +189,12 @@ const contextMenuItems = computed(() => {
 
   const currentIndex = props.sessions.findIndex(s => s.sessionId === targetSessionIdValue);
   const totalTabs = props.sessions.length;
+
+  // 编辑连接：任何能解析到连接的会话都给（SSH / RDP / VNC 都支持）
+  if (connectionInfo) {
+    items.push({ label: 'tabs.contextMenu.editConnection', action: 'edit-connection' });
+    items.push({ label: '', action: '', isSeparator: true });
+  }
 
   if (connectionInfo && connectionInfo.type === 'SSH') {
     const isActiveSession = targetSessionState.wsManager.isConnected.value;

@@ -1680,6 +1680,7 @@
   },
   "tabs": {
     "contextMenu": {
+      "editConnection": "Edit Connection",
       "close": "Close Tab",
       "closeOthers": "Close Other Tabs",
       "closeRight": "Close Tabs to the Right",

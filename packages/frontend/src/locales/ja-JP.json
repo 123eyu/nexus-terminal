@@ -1322,6 +1322,15 @@
     "buttonText": "エクスポートを開始"
   },
   "tabs": {
+    "contextMenu": {
+      "editConnection": "接続を編集",
+      "close": "タブを閉じる",
+      "closeOthers": "他のタブを閉じる",
+      "closeRight": "右側のタブを閉じる",
+      "closeLeft": "左側のタブを閉じる",
+      "suspendSession": "セッションを一時停止",
+      "unmarkForSuspend": "一時停止を解除"
+    },
     "security": "セキュリティ",
     "ipControl": "IP制御",
     "workspace": "ワークスペース",
