@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia';
-import { ref, computed, watch, shallowRef, shallowReactive, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, shallowReactive, type Ref, type ComputedRef } from 'vue';
 import apiClient from '../utils/apiClient';
 import { useComponentStateStore } from './componentState.store';
 import { useConnectionsStore } from './connections.store';
-import { sessions as sessionStateMap, activeSessionId as activeSessionIdRef } from './session/state';
+import { sessions as sessionStateMap } from './session/state';
 
 import type {
   LayoutNode,
@@ -17,10 +17,12 @@ import {
   cloneLayoutTreeWithStableIds,
   ensureNodeIds,
   findNodePath,
+  getTerminalPaneIdsInLayout,
   layoutShapeSignature,
   randomId,
   reconcileTreePreservingIds,
 } from '../utils/layoutTree';
+import { usePaneFocus } from './layout/usePaneFocus';
 import {
   DEFAULT_PRESET_ID,
   DEFAULT_PRESET_NAME,
@@ -323,6 +325,20 @@ export const useLayoutStore = defineStore('layout', () => {
   // --- 计算属性 ---
   // 计算当前布局和侧栏中正在使用的所有面板
   const usedPanes: ComputedRef<Set<PaneName>> = computed(() => getAllUsedPaneNames(layoutTree.value, sidebarPanes.value));
+
+  // --- 终端多窗格聚焦（拆到 stores/layout/usePaneFocus.ts）---
+  // 必须在这里就调用：updateNodeSizes 等动作会用到 activeLayoutTreeOverride。
+  const {
+    activeTerminalPaneId,
+    activeLayoutTreeOverride,
+    activeLayoutSessionId,
+    activeLayoutConnectionId,
+    currentTerminalPaneIds,
+    syncActiveTerminalPaneFromTree,
+    getActiveLayoutTree,
+    setActiveTerminalPaneId,
+    cycleTerminalFocus,
+  } = usePaneFocus(layoutTree);
 
   // 计算当前未在布局或侧栏中使用的面板（可用于配置器中添加）
   const availablePanes: ComputedRef<PaneName[]> = computed(() => {
@@ -764,7 +780,7 @@ export const useLayoutStore = defineStore('layout', () => {
   const sessionPaneOrderMap = new Map<string, string[]>();
 
   function recordSessionPaneOrder(sessionId: string, tree: LayoutNode) {
-    sessionPaneOrderMap.set(sessionId, collectTerminalPaneIds(tree));
+    sessionPaneOrderMap.set(sessionId, getTerminalPaneIdsInLayout(tree));
   }
 
   /** 取某会话终端 pane 的先序顺序（跨刷新稳定） */
@@ -1308,119 +1324,10 @@ export const useLayoutStore = defineStore('layout', () => {
     return true;
   }
 
-  // --- 终端多窗格聚焦管理 (方案 A) ---
-  const activeTerminalPaneId = ref<string | null>(null);
-
-  // 提取当前布局树中所有终端 pane ID
-  function collectTerminalPaneIds(node: LayoutNode | null): string[] {
-    if (!node) return [];
-    const ids: string[] = [];
-    if (node.type === 'pane' && node.component === 'terminal') {
-      ids.push(node.id);
-    } else if (node.type === 'container' && node.children) {
-      for (const child of node.children) {
-        ids.push(...collectTerminalPaneIds(child));
-      }
-    }
-    return ids;
-  }
-
-  /**
-   * 当前"实际渲染"的布局树。
-   *
-   * 桌面端每个会话都有独立的会话树（pane ID 与主布局树不同），
-   * 如果聚焦校正仍然盯着 layoutTree，就会出现：
-   * 切到新会话后 activeTerminalPaneId 还停留在上一个会话的 paneId，
-   * 命令输入框把数据发到不存在的分屏通道 → 后端直接丢弃 → "发不出去"。
-   */
-  const activeLayoutTreeOverride = shallowRef<LayoutNode | null>(null);
-  /** override 对应的会话（用于把"拖动分屏/改尺寸"写回正确的会话树） */
-  const activeLayoutSessionId = ref<string | null>(null);
-  /** override 对应的连接（用于把尺寸写回该会话使用的预设，否则刷新会回到旧尺寸） */
-  const activeLayoutConnectionId = ref<number | string | null>(null);
-
-  const currentTerminalPaneIds = computed(() => {
-    return collectTerminalPaneIds(activeLayoutTreeOverride.value ?? layoutTree.value);
-  });
-
-  // 监听布局树终端节点变化，若当前聚焦 ID 不存在则重置
-  watch(currentTerminalPaneIds, (paneIds) => {
-    if (paneIds.length === 0) {
-      activeTerminalPaneId.value = null;
-    } else if (!activeTerminalPaneId.value || !paneIds.includes(activeTerminalPaneId.value)) {
-      activeTerminalPaneId.value = paneIds[0];
-    }
-  }, { immediate: true });
-
-  /**
-   * 把"当前可见的会话布局树"设为聚焦校正的依据。
-   * 传 null 表示回退到主布局树（无活动会话时）。
-   */
-  function syncActiveTerminalPaneFromTree(
-    tree: LayoutNode | null,
-    sessionId: string | null = null,
-    connectionId: number | string | null = null
-  ) {
-    activeLayoutTreeOverride.value = tree;
-    activeLayoutSessionId.value = sessionId;
-    activeLayoutConnectionId.value = connectionId;
-    const ids = collectTerminalPaneIds(tree ?? layoutTree.value);
-
-    // 优先恢复"这个会话上次聚焦的终端"（多终端分屏场景），而不是默认第一个
-    const preferred = sessionId
-      ? sessionStateMap.value.get(sessionId)?.focusedTerminalPaneId
-      : undefined;
-
-    if (ids.length === 0) {
-      activeTerminalPaneId.value = null;
-    } else if (preferred && ids.includes(preferred)) {
-      activeTerminalPaneId.value = preferred;
-    } else if (!activeTerminalPaneId.value || !ids.includes(activeTerminalPaneId.value)) {
-      activeTerminalPaneId.value = ids[0];
-    }
-    return activeTerminalPaneId.value;
-  }
-
-  /** 当前实际渲染的布局树（桌面端为活动会话的专属树） */
-  function getActiveLayoutTree(): LayoutNode | null {
-    return activeLayoutTreeOverride.value ?? layoutTree.value;
-  }
-
-  function setActiveTerminalPaneId(paneId: string | null) {
-    activeTerminalPaneId.value = paneId;
-    // 记住"这个会话聚焦的是哪个终端"：切回会话 / 云端恢复时直接聚焦到它。
-    // 用 activeSessionId 而不是 activeLayoutSessionId —— 后者由 DesktopWorkspaceView 的
-    // watch 异步写入，切会话瞬间点终端可能还没更新到新会话。
-    const sessionId = activeSessionIdRef.value || activeLayoutSessionId.value;
-    if (sessionId && paneId) {
-      const session = sessionStateMap.value.get(sessionId);
-      if (session && session.focusedTerminalPaneId !== paneId) {
-        session.focusedTerminalPaneId = paneId;
-      }
-    }
-  }
-
-  // 循环切换终端焦点 (默认 Alt+` 触发)
-  function cycleTerminalFocus(direction: 'next' | 'prev' = 'next'): string | null {
-    const ids = currentTerminalPaneIds.value;
-    if (ids.length === 0) return null;
-    if (ids.length === 1) {
-      activeTerminalPaneId.value = ids[0];
-      return ids[0];
-    }
-    const currentIndex = activeTerminalPaneId.value ? ids.indexOf(activeTerminalPaneId.value) : -1;
-    let nextIndex = 0;
-    if (currentIndex === -1) {
-      nextIndex = 0;
-    } else if (direction === 'next') {
-      nextIndex = (currentIndex + 1) % ids.length;
-    } else {
-      nextIndex = (currentIndex - 1 + ids.length) % ids.length;
-    }
-    const targetId = ids[nextIndex];
-    activeTerminalPaneId.value = targetId;
-    return targetId;
-  }
+  // --- 终端多窗格聚焦管理 ---
+  // 实现已拆到 stores/layout/usePaneFocus.ts（在文件上方调用并解构）。
+  // 这里曾是一个 110 行的状态机：collectTerminalPaneIds / activeLayoutTreeOverride /
+  // syncActiveTerminalPaneFromTree / setActiveTerminalPaneId / cycleTerminalFocus。
 
   // --- 初始化 ---
   // Store 创建时自动初始化布局和侧栏。
