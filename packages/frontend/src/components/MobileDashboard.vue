@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
+import { copyToClipboard } from '../utils/clipboard';
 import { storeToRefs } from 'pinia';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, ja } from 'date-fns/locale';
@@ -248,30 +249,21 @@ const handleConnect = (conn: ConnectionInfo) => {
 const handleCopyAddress = async (conn: ConnectionInfo, e?: Event) => {
   if (e) e.stopPropagation();
   const address = `${conn.username ? conn.username + '@' : ''}${conn.host}:${conn.port}`;
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(address);
-    } else {
-      const input = document.createElement('input');
-      input.value = address;
-      document.body.appendChild(input);
-      input.select();
-      document.execCommand('copy');
-      document.body.removeChild(input);
-    }
-    copiedConnId.value = conn.id;
-    uiNotificationsStore.addNotification({
-      type: 'success',
-      message: `已复制主机地址: ${address}`
-    });
-    setTimeout(() => {
-      if (copiedConnId.value === conn.id) {
-        copiedConnId.value = null;
-      }
-    }, 2000);
-  } catch (err) {
-    console.error('复制主机失败:', err);
+  // 统一走 utils/clipboard：局域网 HTTP / 手机浏览器下也有兜底
+  if (!(await copyToClipboard(address))) {
+    uiNotificationsStore.addNotification({ type: 'error', message: '复制失败' });
+    return;
   }
+  copiedConnId.value = conn.id;
+  uiNotificationsStore.addNotification({
+    type: 'success',
+    message: `已复制主机地址: ${address}`
+  });
+  setTimeout(() => {
+    if (copiedConnId.value === conn.id) {
+      copiedConnId.value = null;
+    }
+  }, 2000);
 };
 
 // 打开新建连接抽屉

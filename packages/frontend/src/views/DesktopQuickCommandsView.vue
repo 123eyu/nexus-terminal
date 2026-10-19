@@ -995,6 +995,9 @@ import { useQuickCommandsStore, type QuickCommandFE, type QuickCommandSortByType
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store'; 
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useI18n } from 'vue-i18n';
+import { copyToClipboard } from '../utils/clipboard';
+import { resolveFolderColor, resolveCommandFolderColor, countCommandsInFolder } from '../utils/quickCommandDisplay';
+import { useQuickCommandExecution } from '../composables/quickCommands/useQuickCommandExecution';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
@@ -1042,23 +1045,11 @@ const handleUpdateFolderColor = async (tagId: number, color: string | null) => {
   activeFolderColorPickerTriggerEl.value = null;
 };
 
-const getFolderColorById = (tagId?: number | null): string | null => {
-  if (!tagId) return null;
-  const folder = quickCommandTagsStore.folders.find(f => f.id === tagId);
-  return folder?.background_color || null;
-};
+const getFolderColorById = (tagId?: number | null): string | null =>
+  resolveFolderColor(quickCommandTagsStore.folders, tagId);
 
-const getCommandFolderColor = (cmd: QuickCommandFE, groupTagId?: number | null): string | null => {
-  if (typeof groupTagId === 'number') {
-    const folder = quickCommandTagsStore.folders.find(f => f.id === groupTagId);
-    return folder?.background_color || null;
-  }
-  if (cmd.tagIds && cmd.tagIds.length > 0) {
-    const folder = quickCommandTagsStore.folders.find(f => f.id === cmd.tagIds[0]);
-    return folder?.background_color || null;
-  }
-  return null;
-};
+const getCommandFolderColor = (cmd: QuickCommandFE, groupTagId?: number | null): string | null =>
+  resolveCommandFolderColor(quickCommandTagsStore.folders, cmd, groupTagId);
 
 const getCommandCardStyle = (cmd: QuickCommandFE, groupTagId?: number | null) => {
   const folderColor = getCommandFolderColor(cmd, groupTagId);
@@ -1349,15 +1340,8 @@ const folderLayoutTitle = computed(() => {
 // --- 侧栏文件夹导航状态与指令过滤 ---
 const sidebarActiveFolderId = ref<number | 'all' | 'untagged'>('all');
 
-const getFolderCommandCount = (folderId: number | 'all' | 'untagged'): number => {
-  if (folderId === 'all') {
-    return quickCommandsStore.quickCommandsList.length;
-  }
-  if (folderId === 'untagged') {
-    return quickCommandsStore.quickCommandsList.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0).length;
-  }
-  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(folderId)).length;
-};
+const getFolderCommandCount = (folderId: number | 'all' | 'untagged'): number =>
+  countCommandsInFolder(quickCommandsStore.quickCommandsList, folderId);
 
 const activeSidebarFolderName = computed(() => {
   if (sidebarActiveFolderId.value === 'all') {
@@ -1763,74 +1747,23 @@ const confirmDelete = async (command: QuickCommandFE) => {
 
 // 复制命令到剪贴板
 const copyCommand = async (command: string) => {
-  try {
-    await navigator.clipboard.writeText(command);
+  // 统一走 utils/clipboard：它带 iOS readonly 兜底（手写版本会弹出软键盘）
+  if (await copyToClipboard(command)) {
     uiNotificationsStore.showSuccess(t('commandHistory.copied', '已复制到剪贴板'));
-  } catch (err) {
-    console.error('使用Clipboard API复制命令失败:', err);
-    // 备用方案：使用临时文本区域和execCommand
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = command;
-      textarea.style.position = 'fixed'; // 避免滚动到页面底部
-      textarea.style.opacity = '0'; // 隐藏文本区域
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (successful) {
-        uiNotificationsStore.showSuccess(t('commandHistory.copied', '已复制到剪贴板'));
-      } else {
-        uiNotificationsStore.showError(t('commandHistory.copyFailed', '复制失败'));
-      }
-    } catch (fallbackErr) {
-      console.error('备用复制方法也失败:', fallbackErr);
-      uiNotificationsStore.showError(t('commandHistory.copyFailed', '复制失败'));
-    }
+  } else {
+    uiNotificationsStore.showError(t('commandHistory.copyFailed', '复制失败'));
   }
 };
 
 // 执行命令
-const executeCommand = (cmd: QuickCommandFE) => {
-  // 1. 增加使用次数
-  quickCommandsStore.incrementUsage(cmd.id);
-
-  let processedCommand = cmd.command;
-  const savedVariables = cmd.variables || {}; // 使用已保存的变量
-
-  // 2. 执行变量替换
-  for (const varName in savedVariables) {
-    const placeholder = new RegExp(`\\$\\{${varName}\\}`, 'g');
-    processedCommand = processedCommand.replace(placeholder, savedVariables[varName]);
-  }
-
-  // 3. 检查未定义变量
-  const variablePlaceholders = cmd.command.match(/\$\{[^\}]+\}/g) || [];
-  const undefinedVariables: string[] = [];
-  variablePlaceholders.forEach(placeholder => {
-    const varName = placeholder.substring(2, placeholder.length - 1);
-    if (!savedVariables.hasOwnProperty(varName)) {
-      undefinedVariables.push(varName);
-    }
-  });
-
-
-
-  // 4. 获取当前激活的 SSH 会话 ID
-  const activeSessionId = sessionStore.activeSessionId;
-  if (!activeSessionId) {
-    uiNotificationsStore.showError(t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。'));
-    return;
-  }
-
-  // 5. 触发 quickCommand:executeProcessed 事件
-  emitWorkspaceEvent('quickCommand:executeProcessed', {
-    command: processedCommand,
-    sessionId: activeSessionId
-  });
-  emit('execute-command', processedCommand);
-};
+const { executeCommand } = useQuickCommandExecution({
+  incrementUsage: (id) => quickCommandsStore.incrementUsage(id),
+  getActiveSessionId: () => sessionStore.activeSessionId,
+  emitProcessed: (payload) => emitWorkspaceEvent('quickCommand:executeProcessed', payload),
+  noActiveSessionMessage: () => t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。'),
+  onNoActiveSession: () => uiNotificationsStore.showError(t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。')),
+  onExecuted: (processed) => emit('execute-command', processed),
+});
 
 // +++ 聚焦搜索框的方法 +++
 const focusSearchInput = (): boolean => {
