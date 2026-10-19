@@ -99,7 +99,12 @@ const sendCommand = () => {
 
 const toggleSearch = () => {
   isSearching.value = !isSearching.value;
-  if (!isSearching.value) {
+  if (isSearching.value) {
+    // 打开后立刻把焦点送进输入框，用户可以直接打字（否则还得再点一次输入框）
+    nextTick(() => {
+      searchInputRef.value?.focus();
+    });
+  } else {
     searchTerm.value = '';
     searchCurrentIndex.value = -1;
     searchTotalCount.value = 0;
