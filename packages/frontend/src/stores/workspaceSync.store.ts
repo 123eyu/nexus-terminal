@@ -25,7 +25,12 @@ import { logSync, logSyncError, logSyncWarn } from './workspaceSync/log';
 import { restoreEditorsFromSnapshot } from './workspaceSync/restoreEditors';
 import { restoreFileManagersFromSnapshot } from './workspaceSync/restoreFileManagers';
 import { cleanTrailingPromptForReconnect } from './workspaceSync/terminalBuffer';
-import { restoreSessionsFromSnapshot } from './workspaceSync/restoreSessions';
+import {
+  createSessionIdResolver,
+  restoreSessionOrder,
+  restoreSessionsFromSnapshot,
+} from './workspaceSync/restoreSessions';
+import { waitForSessionSftpReady } from './workspaceSync/waitForSftp';
 
 // 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
 export type {
@@ -393,43 +398,6 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     }
   };
 
-  // 等待会话 SFTP 状态就绪的辅助方法
-  const waitForSessionSftpReady = (session: any, timeoutMs: number = 8000): Promise<boolean> => {
-    return new Promise((resolve) => {
-      if (!session || !session.wsManager) {
-        return resolve(false);
-      }
-      if (session.wsManager.isSftpReady?.value) {
-        return resolve(true);
-      }
-
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      let stopWatch: (() => void) | null = null;
-
-      const cleanup = () => {
-        if (timer) clearTimeout(timer);
-        if (stopWatch) stopWatch();
-      };
-
-      timer = setTimeout(() => {
-        cleanup();
-        logSyncWarn(`等待会话 ${session.sessionId} SFTP 就绪超时 (${timeoutMs}ms)`);
-        resolve(false);
-      }, timeoutMs);
-
-      stopWatch = watch(
-        () => session.wsManager.isSftpReady?.value,
-        (ready) => {
-          if (ready) {
-            cleanup();
-            resolve(true);
-          }
-        },
-        { immediate: true }
-      );
-    });
-  };
-
   // 恢复工作区状态快照到前端各个模块
   /**
    * 应用"已关闭待清理"清单：把快照里那些刚被关掉、但删除/保存请求还没到账的会话剔除。
@@ -502,60 +470,11 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       // 同步全局 activeSessionIdMap
       activeSessionIdMap.value = new Map(sessionIdMap);
 
-      // 4. 同步恢复快照中的会话标签排布顺序至本地 sessionOrder (映射旧 sessionId 为新 sessionId)
-      const rawOrderList = snapshot.sessionOrder || snapshot.sessions?.map(s => s.sessionId) || [];
-      const restoredSessionOrder: string[] = [];
-      rawOrderList.forEach(oldId => {
-        const newId = sessionIdMap.get(oldId) || (sessionStore.sessions.has(oldId) ? oldId : null);
-        if (newId && !restoredSessionOrder.includes(newId)) {
-          restoredSessionOrder.push(newId);
-        }
-      });
-      sessionStore.sessions.forEach((_, sId) => {
-        if (!restoredSessionOrder.includes(sId)) {
-          restoredSessionOrder.push(sId);
-        }
-      });
-      if (restoredSessionOrder.length > 0) {
-        logSync('从云端快照恢复会话标签排布顺序:', restoredSessionOrder);
-        sessionStore.setSessionOrder(restoredSessionOrder, false);
-      }
+      // 4. 恢复会话标签排布顺序（实现见 stores/workspaceSync/restoreSessions.ts）
+      restoreSessionOrder({ snapshot, sessionIdMap });
 
-      // 会话 SessionId 解析器 (解决新设备/重连后会话 ID 重新生成的问题)
-      const resolveSessionId = (oldId?: string | null, fallbackConnId?: number | string): string | null => {
-        if (oldId && sessionStore.sessions.has(oldId)) return oldId;
-        if (oldId && sessionIdMap.has(oldId)) {
-          const mapped = sessionIdMap.get(oldId)!;
-          if (sessionStore.sessions.has(mapped)) return mapped;
-        }
-        // 如果未显式提供 fallbackConnId，尝试从快照 sessions 中自动反查 oldId 对应的 connectionId
-        let targetConnId = fallbackConnId;
-        if (targetConnId === undefined && oldId && snapshot.sessions) {
-          const sItem = snapshot.sessions.find(s => s.sessionId === oldId);
-          if (sItem) {
-            targetConnId = sItem.connectionId;
-          }
-        }
-        if (targetConnId !== undefined) {
-          const matched = Array.from(sessionStore.sessions.values()).find(
-            item => String(item.connectionId) === String(targetConnId)
-          );
-          if (matched) return matched.sessionId;
-        }
-        if (oldId && snapshot.sessions) {
-          const sItem = snapshot.sessions.find(s => s.sessionId === oldId);
-          if (sItem && sItem.connectionName) {
-            const matchedByName = Array.from(sessionStore.sessions.values()).find(
-              item => item.connectionName && item.connectionName.trim().toLowerCase() === sItem.connectionName.trim().toLowerCase()
-            );
-            if (matchedByName) return matchedByName.sessionId;
-          }
-        }
-        if (sessionStore.sessions.size === 1) {
-          return sessionStore.sessions.keys().next().value || null;
-        }
-        return sessionStore.activeSessionId || null;
-      };
+      // 会话 ID 解析器（降级顺序见 createSessionIdResolver）
+      const resolveSessionId = createSessionIdResolver({ snapshot, sessionIdMap });
 
       // 恢复激活会话 ID (优先通过 sessionIdMap，次选通过快照中记录的 connectionId)
       if (snapshot.activeSessionId) {

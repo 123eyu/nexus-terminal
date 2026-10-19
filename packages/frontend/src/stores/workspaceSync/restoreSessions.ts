@@ -271,3 +271,96 @@ export async function restoreSessionsFromSnapshot(
 
   return sessionIdMap;
 }
+
+/**
+ * 恢复会话标签栏的排布顺序。
+ *
+ * 快照里的顺序是**旧 sessionId**，必须经映射表翻译；映射不到的（会话已不存在）丢弃。
+ * 之后把本地新增的会话追加到末尾 —— 否则新开的会话会因为不在快照里而消失于标签栏。
+ */
+export function restoreSessionOrder(deps: {
+  snapshot: WorkspaceSnapshot;
+  sessionIdMap: Map<string, string>;
+}): string[] {
+  const sessionStore = useSessionStore();
+  const { snapshot, sessionIdMap } = deps;
+
+  const rawOrderList = snapshot.sessionOrder || snapshot.sessions?.map((s) => s.sessionId) || [];
+  const restoredSessionOrder: string[] = [];
+  rawOrderList.forEach((oldId) => {
+    const newId = sessionIdMap.get(oldId) || (sessionStore.sessions.has(oldId) ? oldId : null);
+    if (newId && !restoredSessionOrder.includes(newId)) {
+      restoredSessionOrder.push(newId);
+    }
+  });
+  sessionStore.sessions.forEach((_, sId) => {
+    if (!restoredSessionOrder.includes(sId)) {
+      restoredSessionOrder.push(sId);
+    }
+  });
+
+  if (restoredSessionOrder.length > 0) {
+    logSync('从云端快照恢复会话标签排布顺序:', restoredSessionOrder);
+    sessionStore.setSessionOrder(restoredSessionOrder, false);
+  }
+  return restoredSessionOrder;
+}
+
+/**
+ * 构造「快照旧 sessionId -> 当前 sessionId」的解析器。
+ *
+ * 降级顺序（每一步都可能救回一个会话）：
+ *   1. 旧 id 本身还在（同一次会话内刷新）
+ *   2. 映射表命中且目标仍存在
+ *   3. 按 connectionId 找本地同连接的会话
+ *   4. 按连接名（忽略大小写）找
+ *   5. 只剩一个会话时直接用它（单会话用户的兜底）
+ *   6. 退到当前激活会话
+ */
+export function createSessionIdResolver(deps: {
+  snapshot: WorkspaceSnapshot;
+  sessionIdMap: Map<string, string>;
+}): (oldId?: string | null, fallbackConnId?: number | string) => string | null {
+  const sessionStore = useSessionStore();
+  const { snapshot, sessionIdMap } = deps;
+
+  return (oldId?: string | null, fallbackConnId?: number | string): string | null => {
+    if (oldId && sessionStore.sessions.has(oldId)) return oldId;
+    if (oldId && sessionIdMap.has(oldId)) {
+      const mapped = sessionIdMap.get(oldId)!;
+      if (sessionStore.sessions.has(mapped)) return mapped;
+    }
+
+    // 未显式提供 fallbackConnId 时，从快照里反查 oldId 对应的 connectionId
+    let targetConnId = fallbackConnId;
+    if (targetConnId === undefined && oldId && snapshot.sessions) {
+      const sItem = snapshot.sessions.find((s) => s.sessionId === oldId);
+      if (sItem) {
+        targetConnId = sItem.connectionId;
+      }
+    }
+    if (targetConnId !== undefined) {
+      const matched = Array.from(sessionStore.sessions.values()).find(
+        (item) => String(item.connectionId) === String(targetConnId)
+      );
+      if (matched) return matched.sessionId;
+    }
+
+    if (oldId && snapshot.sessions) {
+      const sItem = snapshot.sessions.find((s) => s.sessionId === oldId);
+      if (sItem && sItem.connectionName) {
+        const matchedByName = Array.from(sessionStore.sessions.values()).find(
+          (item) =>
+            item.connectionName &&
+            item.connectionName.trim().toLowerCase() === sItem.connectionName.trim().toLowerCase()
+        );
+        if (matchedByName) return matchedByName.sessionId;
+      }
+    }
+
+    if (sessionStore.sessions.size === 1) {
+      return sessionStore.sessions.keys().next().value || null;
+    }
+    return sessionStore.activeSessionId || null;
+  };
+}
