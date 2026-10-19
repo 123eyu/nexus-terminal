@@ -39,6 +39,9 @@ jobs:
       - name: 设置项 schema 漂移检查
         run: npm run settings:check
 
+      - name: 单元测试（布局树纯函数 / 设置 schema）
+        run: npm test
+
       - name: 后端类型检查
         run: npm run --prefix packages/backend typecheck
 

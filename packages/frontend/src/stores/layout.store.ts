@@ -5,55 +5,33 @@ import { useComponentStateStore } from './componentState.store';
 import { useConnectionsStore } from './connections.store';
 import { sessions as sessionStateMap, activeSessionId as activeSessionIdRef } from './session/state';
 
-// 定义所有可用面板的名称
-export type PaneName = 'connections' | 'terminal' | 'commandBar' | 'fileManager' | 'editor' | 'statusMonitor' | 'commandHistory' | 'quickCommands' | 'dockerManager' | 'suspendedSshSessions' | 'multiLineCommandInput';
+import type {
+  LayoutNode,
+  LayoutPreset,
+  PaneName,
+  TerminalAutoExecConfig,
+  TerminalPaneBackgroundConfig,
+} from '../types/layout';
+import {
+  applySizesAtPath,
+  cloneLayoutTreeWithStableIds,
+  cloneTree,
+  ensureNodeIds,
+  findNodePath,
+  layoutShapeSignature,
+  randomId,
+  reconcileTreePreservingIds,
+} from '../utils/layoutTree';
 
-// 定义终端自动执行指令配置接口
-export interface TerminalAutoExecConfig {
-  defaultCommand?: string; // 通用默认自动执行指令
-  connectionCommands?: Record<string, string>; // 连接专属自动执行指令 (key: connectionId)
-}
-
-// 定义终端窗格专属背景配置接口
-export interface TerminalPaneBackgroundConfig {
-  mode?: 'inherit' | 'transparent' | 'none' | 'custom'; // inherit: 跟随全局(默认); transparent: 纯透明; none: 经典纯黑/无背景; custom: 专属壁纸
-  customImage?: string; // 专属壁纸路径或 URL
-  overlayOpacity?: number; // 专属暗色蒙版不透明度 (0-1)
-}
-
-// 定义布局节点接口
-
-// 定义布局预设接口
-export interface LayoutPreset {
-  id: string; // 唯一 ID (如 "preset-default", "preset-single-terminal", 或自定义 uuid)
-  name: string; // 预设名称 (如 "默认工作区", "纯粹全屏终端", "双终端分屏")
-  isDefault?: boolean; // 是否为全局默认布局
-  isSystem?: boolean; // 是否为系统内置预设 (不可删除)
-  layoutTree: LayoutNode; // 主布局树
-  sidebarPanes: { left: PaneName[]; right: PaneName[] }; // 侧栏配置
-  connectionIds?: number[]; // 绑定使用此预设的连接 ID 列表（**本地数据库自增 ID，跨端无意义**）
-  /**
-   * 绑定使用此预设的连接 UUID 列表（跨端稳定，真正的权威绑定）。
-   *
-   * `connectionIds` 只是本机 id 缓存：桌面端和 Web 端各自有独立的 SQLite，
-   * 同一条连接在两边的自增 id 完全不同（同步按 uuid 落库、id 重新分配）。
-   * 只存 id 会导致"桌面端指定的连接，Web 端既勾不上也用不到对应布局"。
-   */
-  connectionUuids?: string[];
-  createdAt?: number;
-  updatedAt?: number;
-}
-
-export interface LayoutNode {
-  id: string; // 唯一 ID
-  type: 'pane' | 'container'; // 节点类型：面板或容器
-  component?: PaneName; // 如果 type 是 'pane'，指定要渲染的组件
-  direction?: 'horizontal' | 'vertical'; // 如果 type 是 'container'，指定分割方向
-  children?: LayoutNode[]; // 如果 type 是 'container'，包含子节点数组
-  size?: number; // 节点在父容器中的大小比例 (例如 20, 50, 30)
-  terminalAutoExec?: TerminalAutoExecConfig; // 终端自动执行指令配置
-  terminalBackground?: TerminalPaneBackgroundConfig; // 终端专属背景样式配置
-}
+// 布局领域类型集中在 types/layout.ts 定义；这里重新导出，既有 import 路径保持不变。
+export type {
+  LayoutNode,
+  LayoutPreset,
+  PaneName,
+  TerminalAutoExecConfig,
+  TerminalPaneBackgroundConfig,
+} from '../types/layout';
+export { getTerminalPaneIdsInLayout } from '../utils/layoutTree';
 
 // 本地存储的 Key
 const LAYOUT_STORAGE_KEY = 'nexus_terminal_layout_config';
@@ -63,11 +41,8 @@ const DEFAULT_PRESET_ID_STORAGE_KEY = 'nexus_terminal_default_preset_id';
 const CONNECTION_LAYOUT_MAP_STORAGE_KEY = 'nexus_terminal_connection_layout_map';
  // 新增侧栏配置 Key
 
-// 生成唯一 ID 的辅助函数
-function generateId(): string {
-  // 简单实现，实际项目中可能使用更健壮的库如 uuid
-  return Math.random().toString(36).substring(2, 15);
-}
+// 纯函数模块里的随机 ID 生成器（保持旧的 13 位 base36 行为）
+const generateId = randomId;
 
 // 定义默认布局结构 (根据用户提供的配置更新，但使用 generateId)
 const getDefaultLayout = (): LayoutNode => ({
@@ -164,32 +139,6 @@ export const LEGACY_TEMPLATE_IDS = new Set([
 // 全局默认预设的固定 ID 与出厂名称
 const DEFAULT_PRESET_ID = 'preset-default';
 const DEFAULT_PRESET_NAME = '默认布局';
-
-// 深拷贝（切断与主布局树的引用，避免编辑预设时污染当前工作区）
-function cloneTree<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value));
-}
-
-/**
- * 布局结构签名：忽略节点 ID，只比较 类型/组件/方向/尺寸/层级。
- * 用来判断某个预设的布局是否仍是"未编辑过的出厂默认"。
- */
-function layoutShapeSignature(node: LayoutNode | null | undefined): string {
-  if (!node) return '';
-  const strip = (n: LayoutNode): unknown => {
-    const out: Record<string, unknown> = { t: n.type };
-    if (n.component) out.c = n.component;
-    if (n.direction) out.d = n.direction;
-    if (typeof n.size === 'number') out.s = Math.round(n.size * 1000) / 1000;
-    if (n.children) out.k = n.children.map(strip);
-    return out;
-  };
-  try {
-    return JSON.stringify(strip(node));
-  } catch {
-    return '';
-  }
-}
 
 /**
  * 用"用户当前正在使用的布局"生成全局默认预设。
@@ -320,24 +269,6 @@ export function getAllActivePaneIds(node: LayoutNode | null): Set<string> {
 }
 
 // 收集主布局中所有终端节点的 paneId 列表（按视觉先序深度优先遍历：从左到右、从上到下，顺序严格确定）
-export function getTerminalPaneIdsInLayout(node: LayoutNode | null): string[] {
-  const ids: string[] = [];
-  if (!node) return ids;
-
-  function traverse(currentNode: LayoutNode) {
-    if (currentNode.type === 'pane' && currentNode.component === 'terminal' && currentNode.id) {
-      ids.push(currentNode.id);
-    }
-    if (currentNode.type === 'container' && currentNode.children) {
-      currentNode.children.forEach(traverse);
-    }
-  }
-
-  traverse(node);
-  return ids;
-}
-
-
 // --- Validation Helper ---
 // Checks if a value is a valid PaneName
 function isValidPaneName(value: any, allPanes: PaneName[]): value is PaneName {
@@ -363,23 +294,6 @@ const ALL_POSSIBLE_PANES: PaneName[] = [
   'editor', 'statusMonitor', 'commandHistory', 'quickCommands',
   'dockerManager', 'suspendedSshSessions', 'multiLineCommandInput'
 ];
-
-// +++ 递归确保节点及其子节点都有 ID +++
-function ensureNodeIds(node: LayoutNode | null): LayoutNode | null {
-    if (!node) return null;
-
-    // 确保当前节点有 ID
-    if (!node.id) {
-        node.id = generateId();
-    }
-
-    // 递归处理子节点
-    if (node.type === 'container' && node.children) {
-        node.children = node.children.map(child => ensureNodeIds(child)).filter(Boolean) as LayoutNode[];
-    }
-
-    return node;
-}
 
 // 同步获取初始布局结构（优先从 localStorage 读取，杜绝打开工作区时全屏显示加载中占位）
 function getInitialLayout(): LayoutNode {
@@ -632,39 +546,6 @@ export const useLayoutStore = defineStore('layout', () => {
         console.error('[Layout Store] updateSidebarPanes 接收到无效的侧栏配置数据，未更新状态:', newPanes);
         // 可选：抛出错误或通知用户
     }
-  }
-
-  /** 找出节点在树里的索引路径（跨"主树 / 会话树 / 预设树"定位同一结构位置） */
-  function findNodePath(node: LayoutNode | null, id: string, path: number[] = []): number[] | null {
-    if (!node) return null;
-    if (node.id === id) return path;
-    if (node.children) {
-      for (let i = 0; i < node.children.length; i++) {
-        const found = findNodePath(node.children[i], id, [...path, i]);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
-
-  /** 按索引路径把子节点尺寸写到目标树（结构与来源树一致时才生效） */
-  function applySizesAtPath(node: LayoutNode | null, path: number[], sizes: { index: number; size: number }[]): LayoutNode | null {
-    if (!node) return null;
-    if (path.length === 0) {
-      if (node.type !== 'container' || !node.children) return node;
-      const children = node.children.map((child, index) => {
-        const hit = sizes.find((s) => s.index === index);
-        return hit ? { ...child, size: hit.size } : child;
-      });
-      return { ...node, children };
-    }
-    const [head, ...rest] = path;
-    if (!node.children || !node.children[head]) return node;
-    const children = [...node.children];
-    const updated = applySizesAtPath(children[head], rest, sizes);
-    if (!updated) return node;
-    children[head] = updated;
-    return { ...node, children };
   }
 
   // 更新特定容器节点的子节点大小
@@ -946,81 +827,6 @@ export const useLayoutStore = defineStore('layout', () => {
   /** 取某会话终端 pane 的先序顺序（跨刷新稳定） */
   function getSessionTerminalPaneOrder(sessionId: string): string[] {
     return sessionPaneOrderMap.get(sessionId) ?? [];
-  }
-
-
-  // 深度克隆节点并赋以全新唯一 ID
-  function cloneLayoutTreeWithNewIds(node: LayoutNode): LayoutNode {
-    const cloned: LayoutNode = {
-      ...node,
-      id: generateId(),
-    };
-    if (node.children && Array.isArray(node.children)) {
-      cloned.children = node.children.map(child => cloneLayoutTreeWithNewIds(child));
-    }
-    return cloned;
-  }
-
-  /**
-   * 克隆并赋"结构序号"ID：第 0 个终端叫 terminal-0、第 1 个叫 terminal-1……
-   *
-   * 重要：paneId 会被发给后端当作 `paneStreams` 的 key。以前用随机 ID，
-   * 每次刷新都换一套 key，后端找不到旧通道 → 重新开 shell → 每个副终端
-   * 都重新打印一遍登录 banner。改成序号后，刷新时能命中同一个通道并复用。
-   */
-  function cloneLayoutTreeWithStableIds(node: LayoutNode): LayoutNode {
-    const counter = { pane: 0, terminal: 0, container: 0 };
-    const walk = (n: LayoutNode): LayoutNode => {
-      let id: string;
-      if (n.type === 'pane') {
-        id = n.component === 'terminal' ? `terminal-${counter.terminal++}` : `pane-${counter.pane++}`;
-      } else {
-        id = `container-${counter.container++}`;
-      }
-      const out: LayoutNode = { ...n, id };
-      if (n.children && Array.isArray(n.children)) {
-        out.children = n.children.map(walk);
-      }
-      return out;
-    };
-    return walk(node);
-  }
-
-  /**
-   * 按"结构位置 + 同类型组件"把旧树里的 pane/container ID 迁移到新树上。
-   *
-   * 目的：布局管理器保存后需要把新结构应用到已打开的会话，
-   * 但如果无脑用 cloneLayoutTreeWithNewIds，所有 paneId 都会变，
-   * 已挂载的 xterm 会被重建（断连、丢滚动历史）。
-   * 这里尽量复用旧 ID，只有真正被删除/新增的节点才换新 ID。
-   */
-  function reconcileTreePreservingIds(oldNode: LayoutNode | null, newNode: LayoutNode): LayoutNode {
-    const sameKind = !!oldNode
-      && oldNode.type === newNode.type
-      && oldNode.component === newNode.component
-      && (newNode.type !== 'container' || oldNode.direction === newNode.direction);
-
-    const out: LayoutNode = { ...newNode };
-    if (sameKind && oldNode) out.id = oldNode.id;
-
-    if (newNode.children) {
-      const oldChildren = sameKind && oldNode?.children ? oldNode.children : [];
-      const used = new Set<number>();
-      out.children = newNode.children.map((child, index) => {
-        // 先按位置匹配，再按同类组件在旧兄弟中查找（应对"删除中间某个容器"导致的错位）
-        let candidate: LayoutNode | null = oldChildren[index] ?? null;
-        if (!candidate || candidate.type !== child.type || candidate.component !== child.component) {
-          candidate = oldChildren.find((c, i) =>
-            !used.has(i) && c.type === child.type && c.component === child.component) ?? null;
-        }
-        if (candidate) {
-          const ci = oldChildren.indexOf(candidate);
-          if (ci >= 0) used.add(ci);
-        }
-        return reconcileTreePreservingIds(candidate, child);
-      });
-    }
-    return out;
   }
 
 
