@@ -18,6 +18,7 @@
     "settings:gen": "node tools/gen-settings-schema.mjs",
     "settings:check": "node tools/gen-settings-schema.mjs --check",
     "i18n:check": "node tools/check-i18n.mjs",
+    "check": "npm run typecheck && npm run settings:check && npm run i18n:check && npm test",
     "typecheck": "npm run --prefix packages/backend typecheck && npm run --prefix packages/frontend typecheck"
   },
   "repository": {
