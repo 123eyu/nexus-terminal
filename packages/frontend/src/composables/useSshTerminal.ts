@@ -1,4 +1,4 @@
-import { ref, readonly, type Ref, ComputedRef } from 'vue';
+import { ref, readonly, toRaw, type Ref, ComputedRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { sessions as globalSessionsRef } from '../stores/session/state'; // +++ 导入全局 sessions state +++
 // import { useWebSocketConnection } from './useWebSocketConnection'; // 移除全局导入
@@ -51,6 +51,19 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     const terminalInstance = ref<Terminal | null>(null);
     const searchAddon = ref<SearchAddon | null>(null); // Keep searchAddon ref
     const serializeAddon = ref<SerializeAddon | null>(null); // 保存 SerializeAddon 实例
+
+    /**
+     * 写进云端快照的最大行数。
+     *
+     * addon-serialize 的成本与行数线性相关（5000 行 ≈ 250ms，500 行 ≈ 25ms），
+     * 而快照每 1.5s 就可能保存一次 —— 不限行数的话，`docker logs --tail 5000`
+     * 这类输出会让每次自动保存都卡掉半秒主线程。
+     */
+    const SNAPSHOT_SCROLLBACK_LINES = 500;
+
+    /** 同一次采集内的序列化结果缓存（微任务清除，不会返回过期内容） */
+    let panesSerializeCache: Record<string, string> | null = null;
+    let panesCacheClearScheduled = false;
     // Removed search result state refs
     // const searchResultCount = ref(0);
     // const currentSearchResultIndex = ref(-1);
@@ -1007,6 +1020,109 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         });
     };
 
+        // --- 序列化方法 (带完整 ANSI 样式) ---
+    //
+    // 三个必须注意的点（5000 行 buffer 实测出来的）：
+    // 1. **只序列化最近 N 行**。addon-serialize 是逐 cell 生成 ANSI，成本与行数线性相关：
+    //    5000 行 × 94 列一次约 250ms，500 行约 25ms。用户刷新后要看到的是"最近发生了什么"，
+    //    存几十屏以外的历史既占带宽又拖慢每次自动保存。
+    // 2. **必须 toRaw**。terminalPanes 是 ref(Map)，entries() 出来的是 Vue 代理，
+    //    addon 内部逐 cell 读 buffer 时每次属性访问都要走 BaseReactiveHandler.get +
+    //    toRawType（profile 里这两项合计约 900ms）。
+    // 3. **主终端不要单独再序列化一次**。serializeAllPanes 已经包含主终端，
+    //    collectSnapshot 同时调用两个方法时，同一个 buffer 会被完整序列化两遍。
+    const serializeAllPanesImpl = (): Record<string, string> => {
+        // 同一次采集里 serializeTerminal 会接着调用，复用结果避免重复序列化。
+        // 用微任务清除缓存：只在当前同步调用栈内有效，不会返回过期内容。
+        if (panesSerializeCache) return panesSerializeCache;
+
+        const result: Record<string, string> = {};
+        for (const [pId, entry] of terminalPanes.value.entries()) {
+            const rawEntry = toRaw(entry);
+            // 同上：备用屏（TUI）不参与快照，避免刷新后停在备用屏
+            if (rawEntry.terminal?.buffer?.active?.type === 'alternate') {
+                console.log(`[会话 ${sessionId}][分屏终端 ${pId}] 处于 TUI 备用屏，跳过序列化`);
+                continue;
+            }
+            if (rawEntry.serializeAddon) {
+                try {
+                    const s = toRaw(rawEntry.serializeAddon).serialize({ scrollback: SNAPSHOT_SCROLLBACK_LINES });
+                    if (typeof s === 'string' && s.length > 0) {
+                        result[pId] = s;
+                        continue;
+                    }
+                } catch (e) {
+                    console.warn(`[会话 ${sessionId}][分屏终端 ${pId}] 序列化失败:`, e);
+                }
+            }
+            // 降级使用 buffer 遍历（同样只取最近 N 行，否则和上面的成本一样）
+            if (rawEntry.terminal) {
+                const buffer = rawEntry.terminal.buffer.active;
+                const fromRow = Math.max(0, buffer.length - SNAPSHOT_SCROLLBACK_LINES);
+                let lastNonEmpty = -1;
+                for (let i = buffer.length - 1; i >= fromRow; i--) {
+                    const line = buffer.getLine(i);
+                    if (line && line.translateToString(true).trim() !== '') {
+                        lastNonEmpty = i;
+                        break;
+                    }
+                }
+                if (lastNonEmpty !== -1) {
+                    let text = '';
+                    for (let i = fromRow; i <= lastNonEmpty; i++) {
+                        const line = buffer.getLine(i);
+                        if (!line) continue;
+                        const next = i < lastNonEmpty ? buffer.getLine(i + 1) : null;
+                        if (next?.isWrapped) {
+                            text += line.translateToString(false);
+                        } else {
+                            text += line.translateToString(true);
+                            if (i < lastNonEmpty) text += '\r\n';
+                        }
+                    }
+                    if (text) result[pId] = text;
+                }
+            }
+        }
+
+        panesSerializeCache = result;
+        if (!panesCacheClearScheduled) {
+            panesCacheClearScheduled = true;
+            queueMicrotask(() => {
+                panesSerializeCache = null;
+                panesCacheClearScheduled = false;
+            });
+        }
+        return result;
+    };
+
+    const serializeTerminalImpl = (): string | null => {
+        // 处于备用屏（btop / vim / less 等全屏 TUI）时不要序列化。
+        // 否则恢复出来的终端会停在备用屏里，用户退出 TUI（Ctrl+C）后回到空的正常屏，
+        // 整块区域被"当前 SGR 背景"填满 —— 表现为刷新后终端变成一块黑。
+        if (terminalInstance.value?.buffer?.active?.type === 'alternate') {
+            console.log(`[会话 ${sessionId}][SSH终端模块] 当前处于 TUI 备用屏，跳过屏幕内容序列化`);
+            return '';
+        }
+
+        // 复用 allPanes 的结果（主终端本来就在 terminalPanes 里，不必再序列化一遍）
+        const primary = primaryPaneId.value;
+        if (primary) {
+            const panes = serializeAllPanesImpl();
+            const buf = panes[primary];
+            if (typeof buf === 'string') return buf;
+        }
+
+        if (serializeAddon.value) {
+            try {
+                return toRaw(serializeAddon.value).serialize({ scrollback: SNAPSHOT_SCROLLBACK_LINES });
+            } catch (e) {
+                console.warn(`[会话 ${sessionId}][SSH终端模块] 序列化终端内容失败:`, e);
+            }
+        }
+        return null;
+    };
+
     // 返回工厂实例
     return {
         // 公共接口
@@ -1024,74 +1140,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         searchNext,
         searchPrevious,
         clearTerminalSearch,
-        // --- 序列化方法 (带完整 ANSI 样式) ---
-        serializeTerminal: (): string | null => {
-            // 处于备用屏（btop / vim / less 等全屏 TUI）时不要序列化。
-            // 否则恢复出来的终端会停在备用屏里，用户退出 TUI（Ctrl+C）后回到空的正常屏，
-            // 整块区域被"当前 SGR 背景"填满 —— 表现为刷新后终端变成一块黑。
-            if (terminalInstance.value?.buffer?.active?.type === 'alternate') {
-                console.log(`[会话 ${sessionId}][SSH终端模块] 当前处于 TUI 备用屏，跳过屏幕内容序列化`);
-                return '';
-            }
-            if (serializeAddon.value) {
-                try {
-                    return serializeAddon.value.serialize();
-                } catch (e) {
-                    console.warn(`[会话 ${sessionId}][SSH终端模块] 序列化终端内容失败:`, e);
-                }
-            }
-            return null;
-        },
-        // --- 多终端分屏全量序列化字典 (paneId -> ANSI Buffer) ---
-        serializeAllPanes: (): Record<string, string> => {
-            const result: Record<string, string> = {};
-            for (const [pId, entry] of terminalPanes.value.entries()) {
-                // 同上：备用屏（TUI）不参与快照，避免刷新后停在备用屏
-                if (entry.terminal?.buffer?.active?.type === 'alternate') {
-                    console.log(`[会话 ${sessionId}][分屏终端 ${pId}] 处于 TUI 备用屏，跳过序列化`);
-                    continue;
-                }
-                if (entry.serializeAddon) {
-                    try {
-                        const s = entry.serializeAddon.serialize();
-                        if (typeof s === 'string' && s.length > 0) {
-                            result[pId] = s;
-                            continue;
-                        }
-                    } catch (e) {
-                        console.warn(`[会话 ${sessionId}][分屏终端 ${pId}] 序列化失败:`, e);
-                    }
-                }
-                // 降级使用 buffer 遍历
-                if (entry.terminal) {
-                    const buffer = entry.terminal.buffer.active;
-                    let lastNonEmpty = -1;
-                    for (let i = buffer.length - 1; i >= 0; i--) {
-                        const line = buffer.getLine(i);
-                        if (line && line.translateToString(true).trim() !== '') {
-                            lastNonEmpty = i;
-                            break;
-                        }
-                    }
-                    if (lastNonEmpty !== -1) {
-                        let text = '';
-                        for (let i = 0; i <= lastNonEmpty; i++) {
-                            const line = buffer.getLine(i);
-                            if (!line) continue;
-                            const next = i < lastNonEmpty ? buffer.getLine(i + 1) : null;
-                            if (next?.isWrapped) {
-                                text += line.translateToString(false);
-                            } else {
-                                text += line.translateToString(true);
-                                if (i < lastNonEmpty) text += '\r\n';
-                            }
-                        }
-                        if (text) result[pId] = text;
-                    }
-                }
-            }
-            return result;
-        },
+        // --- 序列化（实现见上方的 serializeTerminalImpl / serializeAllPanesImpl）---
+        serializeTerminal: serializeTerminalImpl,
+        serializeAllPanes: serializeAllPanesImpl,
         serializeAddon,
         // --- 暴露状态与多终端 Map ---
         isSshConnected: readonly(isSshConnected), // 暴露 SSH 连接状态 (只读)
