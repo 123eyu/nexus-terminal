@@ -14,7 +14,10 @@
     "postinstall": "patch-package",
     "desktop:build": "npm run --prefix packages/desktop desktop:build",
     "desktop:build:quick": "npm run --prefix packages/desktop desktop:build:quick",
-    "desktop:sync": "npm run --prefix packages/desktop desktop:sync"
+    "desktop:sync": "npm run --prefix packages/desktop desktop:sync",
+    "settings:gen": "node tools/gen-settings-schema.mjs",
+    "settings:check": "node tools/gen-settings-schema.mjs --check",
+    "typecheck": "npm run --prefix packages/backend typecheck && npm run --prefix packages/frontend typecheck"
   },
   "repository": {
     "type": "git",

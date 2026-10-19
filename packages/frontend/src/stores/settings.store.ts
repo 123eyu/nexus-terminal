@@ -6,6 +6,7 @@ import type { PaneName } from './layout.store';
 import { useAuthStore } from './auth.store';
 import { isDesktopApp } from '../utils/platform';
 import type { ConnectionInfo } from './connections.store';
+import { SETTING_DEFAULTS, isWritableSettingKey } from './settings.schema.generated';
 
 export type SortField = keyof Pick<ConnectionInfo, 'created_at' | 'last_connected_at' | 'updated_at' | 'name' | 'type'>;
 export type SortOrder = 'asc' | 'desc';
@@ -122,6 +123,10 @@ export const useSettingsStore = defineStore('settings', () => {
     error.value = null;
     let determinedLang: string | undefined; // 使用 string 类型
 
+    // 先用 schema 默认值铺底：即使下面的请求失败，界面也不会因为读到 undefined 而退化。
+    // 默认值只在 settings.schema.json 维护一份（由 tools/gen-settings-schema.mjs 生成副本）。
+    settings.value = { ...SETTING_DEFAULTS };
+
     try {
       console.log('[SettingsStore] 加载通用设置...');
       // Fetch all settings, including the new ones
@@ -135,70 +140,17 @@ export const useSettingsStore = defineStore('settings', () => {
         apiClient.get<{ enabled: boolean }>('/settings/show-quick-command-tags')
       ]);
 
-      settings.value = generalSettingsResponse.data; // Store fetched general settings
+      settings.value = { ...settings.value, ...generalSettingsResponse.data };
 
-      // Store the specific boolean settings
+      // 这两个开关有独立接口，以独立接口的返回为准
       settings.value.showConnectionTags = String(showConnectionTagsResponse.data.enabled);
       settings.value.showQuickCommandTags = String(showQuickCommandTagsResponse.data.enabled);
 
-      // --- 更详细的日志 ---
       console.log('[SettingsStore] Fetched settings from backend:', JSON.stringify(settings.value));
 
-      // --- 设置默认值 (如果后端未返回) ---
-      if (!settings.value.markdownDefaultViewMode) {
-          settings.value.markdownDefaultViewMode = 'split';
-      }
-      if (!settings.value.markdownDefaultViewModeMobile) {
-          settings.value.markdownDefaultViewModeMobile = 'preview';
-      }
-      if (settings.value.showPopupFileEditor === undefined) {
-          settings.value.showPopupFileEditor = 'true';
-      }
-      // +++  showPopupFileManager 默认值 (改为 false) +++
-      if (settings.value.showPopupFileManager === undefined) {
-          settings.value.showPopupFileManager = 'false'; // 默认禁用弹窗文件管理器
-      }
-      if (settings.value.shareFileEditorTabs === undefined) {
-          settings.value.shareFileEditorTabs = 'true';
-      }
-      if (settings.value.ipWhitelistEnabled === undefined) {
-          settings.value.ipWhitelistEnabled = 'false'; // 默认禁用 IP 白名单
-      }
-      if (settings.value.maxLoginAttempts === undefined) {
-          settings.value.maxLoginAttempts = '5'; // 默认 5 次
-      }
-       if (settings.value.loginBanDuration === undefined) {
-          settings.value.loginBanDuration = '300'; // 默认 300 秒
-      }
-
-
-      //  IP Blacklist enabled default
-      if (settings.value.ipBlacklistEnabled === undefined) {
-          settings.value.ipBlacklistEnabled = 'true'; // 默认启用 IP 黑名单
-      }
-
-      if (settings.value.autoCopyOnSelect === undefined) {
-          settings.value.autoCopyOnSelect = 'false'; // 默认禁用选中即复制
-      }
-      //  Docker setting defaults
-      if (settings.value.dockerStatusIntervalSeconds === undefined) {
-          settings.value.dockerStatusIntervalSeconds = '2'; // 默认 2 秒
-      }
-      if (settings.value.dockerDefaultExpand === undefined) {
-          settings.value.dockerDefaultExpand = 'false'; // 默认不展开
-      }
-      //  Status Monitor interval default
-      if (settings.value.statusMonitorIntervalSeconds === undefined) {
-          settings.value.statusMonitorIntervalSeconds = '3'; // 默认 3 秒
-      }
-      //  Workspace sidebar persistent default
-      if (settings.value.workspaceSidebarPersistent === undefined) {
-          settings.value.workspaceSidebarPersistent = 'false'; // 默认不固定
-      }
-      //  Load and parse sidebar pane widths
+      // --- 侧边栏宽度：JSON 解析 + 已知面板缺省补齐 ---
       const defaultPaneWidth = '350px';
-      // +++ Ensure PaneName type is available or define it here +++
-      const knownPanes: PaneName[] = ['connections', 'fileManager', 'editor', 'statusMonitor', 'commandHistory', 'quickCommands', 'dockerManager']; // Add all possible sidebar panes
+      const knownPanes: PaneName[] = ['connections', 'fileManager', 'editor', 'statusMonitor', 'commandHistory', 'quickCommands', 'dockerManager'];
       let loadedWidths: Record<string, string> = {};
       try {
           if (settings.value.sidebarPaneWidths) {
@@ -212,38 +164,22 @@ export const useSettingsStore = defineStore('settings', () => {
           console.error('[SettingsStore] Failed to parse sidebarPaneWidths, resetting.', e);
           loadedWidths = {};
       }
-      // Ensure defaults for all known panes
       const finalWidths: Record<string, string> = {};
       knownPanes.forEach(pane => {
           finalWidths[pane] = loadedWidths[pane] || defaultPaneWidth;
       });
       parsedSidebarPaneWidths.value = finalWidths;
-      // Optionally save back if defaults were added (might cause extra write on first load)
-      // if (Object.keys(loadedWidths).length !== Object.keys(finalWidths).length) {
-      //     await updateSetting('sidebarPaneWidths', JSON.stringify(finalWidths));
-      // }
 
-      //  Load and parse file manager layout settings
-      const defaultFileManagerRowMultiplier = '1.0';
-      const defaultFileManagerColWidths = { type: 50, name: 300, size: 100, permissions: 120, modified: 180 };
-
-      // Row Size Multiplier
-      console.log(`[SettingsStore] Raw fileManagerRowSizeMultiplier from backend: '${settings.value.fileManagerRowSizeMultiplier}'`);
-      if (settings.value.fileManagerRowSizeMultiplier === undefined) {
-          settings.value.fileManagerRowSizeMultiplier = defaultFileManagerRowMultiplier; // Assign first
-          console.log(`[SettingsStore] fileManagerRowSizeMultiplier not found, set to default: ${settings.value.fileManagerRowSizeMultiplier}`); // Log the assigned value
-      }
-      // Ensure it's a valid number string before parsing later
-      const parsedMultiplier = parseFloat(settings.value.fileManagerRowSizeMultiplier);
+      // --- 文件管理器行高倍率：非法值回落默认 ---
+      const parsedMultiplier = parseFloat(settings.value.fileManagerRowSizeMultiplier || '1.0');
       if (isNaN(parsedMultiplier) || parsedMultiplier <= 0) {
           console.warn(`[SettingsStore] Invalid fileManagerRowSizeMultiplier loaded ('${settings.value.fileManagerRowSizeMultiplier}'), resetting to default.`);
-          settings.value.fileManagerRowSizeMultiplier = defaultFileManagerRowMultiplier;
+          settings.value.fileManagerRowSizeMultiplier = '1.0';
       }
-      console.log(`[SettingsStore] Final fileManagerRowSizeMultiplier value in store: '${settings.value.fileManagerRowSizeMultiplier}'`);
 
-      // Column Widths
+      // --- 文件管理器列宽：JSON 解析 + 数值校验 + 缺省补齐 ---
+      const defaultFileManagerColWidths = { type: 50, name: 300, size: 100, permissions: 120, modified: 180 };
       let loadedFmWidths: Record<string, number> = {};
-      console.log(`[SettingsStore] Raw fileManagerColWidths from backend: '${settings.value.fileManagerColWidths}'`);
       try {
           if (settings.value.fileManagerColWidths) {
               loadedFmWidths = JSON.parse(settings.value.fileManagerColWidths);
@@ -251,7 +187,6 @@ export const useSettingsStore = defineStore('settings', () => {
                   console.warn('[SettingsStore] Invalid fileManagerColWidths format loaded, resetting.');
                   loadedFmWidths = {};
               }
-              // Validate that values are numbers
               for (const key in loadedFmWidths) {
                   if (typeof loadedFmWidths[key] !== 'number') {
                       console.warn(`[SettingsStore] Invalid non-numeric value found in fileManagerColWidths for key '${key}', resetting.`);
@@ -264,125 +199,20 @@ export const useSettingsStore = defineStore('settings', () => {
           console.error('[SettingsStore] Failed to parse fileManagerColWidths, resetting.', e);
           loadedFmWidths = {};
       }
-      // Ensure defaults for all known columns, merging with loaded valid ones
       const finalFmWidths: Record<string, number> = { ...defaultFileManagerColWidths };
-      console.log(`[SettingsStore] Default FM Col Widths: ${JSON.stringify(defaultFileManagerColWidths)}`);
       Object.keys(defaultFileManagerColWidths).forEach(key => {
           if (loadedFmWidths[key] !== undefined && loadedFmWidths[key] > 0) { // Use loaded if valid
               finalFmWidths[key] = loadedFmWidths[key];
           }
       });
       parsedFileManagerColWidths.value = finalFmWidths;
-      console.log(`[SettingsStore] Final parsedFileManagerColWidths value in store: ${JSON.stringify(parsedFileManagerColWidths.value)}`);
-      // Save back if defaults were added or structure changed (optional, might cause extra write)
-      // const currentSavedFmWidthsString = settings.value.fileManagerColWidths;
-      // const finalFmWidthsString = JSON.stringify(finalFmWidths);
-      // if (currentSavedFmWidthsString !== finalFmWidthsString) {
-      //     await updateSetting('fileManagerColWidths', finalFmWidthsString);
-      // }
 
-      //  Command Input Sync Target default
-      if (settings.value.commandInputSyncTarget === undefined) {
-          settings.value.commandInputSyncTarget = 'none'; // 默认不同步
-      }
-      //  Timezone default
-      if (settings.value.timezone === undefined) {
-          settings.value.timezone = 'UTC'; // 默认 UTC
-      }
-      //  RDP Modal Size defaults
-      if (settings.value.rdpModalWidth === undefined) {
-          settings.value.rdpModalWidth = '1064'; // 默认宽度 (1024 + 40 padding)
-      }
-      if (settings.value.rdpModalHeight === undefined) {
-          settings.value.rdpModalHeight = '858';
-      }
-      //  VNC Modal Size defaults
-      if (settings.value.vncModalWidth === undefined) {
-          settings.value.vncModalWidth = '1024'; // 默认宽度
-      }
-      if (settings.value.vncModalHeight === undefined) {
-          settings.value.vncModalHeight = '768'; // 默认高度
-      }
-        
-      if (settings.value.dashboardSortBy === undefined) {
-          settings.value.dashboardSortBy = 'last_connected_at';
-      }
-      if (settings.value.dashboardSortOrder === undefined) {
-          settings.value.dashboardSortOrder = 'desc';
-      }
-
-      //  Tag visibility defaults
-      if (settings.value.showConnectionTags === undefined) {
-          settings.value.showConnectionTags = 'true'; // 默认显示
-      }
-      if (settings.value.showQuickCommandTags === undefined) {
-          settings.value.showQuickCommandTags = 'true'; // 默认显示
-      } // +++ Add missing closing brace +++
-      //  Layout locked default - Only set if not provided by backend
-      if (settings.value.layoutLocked === undefined) {
-          settings.value.layoutLocked = 'false'; // 默认不锁定
-          console.log('[SettingsStore] layoutLocked not found in fetched settings, set to default: false');
-      } else {
-          console.log(`[SettingsStore] layoutLocked found in fetched settings: ${settings.value.layoutLocked}`);
-      }
-      //  Terminal scrollback limit default
-      if (settings.value.terminalScrollbackLimit === undefined) {
-          settings.value.terminalScrollbackLimit = '5000'; // 默认 5000 行
-          console.log(`[SettingsStore] terminalScrollbackLimit not found, set to default: ${settings.value.terminalScrollbackLimit}`);
-      }
-      //  File Manager Delete Confirmation default
-      if (settings.value.fileManagerShowDeleteConfirmation === undefined) {
-        settings.value.fileManagerShowDeleteConfirmation = 'true'; // 默认显示删除确认
-        console.log(`[SettingsStore] fileManagerShowDeleteConfirmation not found, set to default: ${settings.value.fileManagerShowDeleteConfirmation}`);
-      }
-      if (settings.value.fileManagerDoubleClickToOpen === undefined) {
-        settings.value.fileManagerDoubleClickToOpen = 'false'; // 默认关闭双击打开 (单击即打开)
-        console.log(`[SettingsStore] fileManagerDoubleClickToOpen not found, set to default: ${settings.value.fileManagerDoubleClickToOpen}`);
-      }
-      if (settings.value.fileManagerHighlightChanges === undefined) {
-        settings.value.fileManagerHighlightChanges = 'true'; // 默认开启增量变动高亮
-        console.log(`[SettingsStore] fileManagerHighlightChanges not found, set to default: ${settings.value.fileManagerHighlightChanges}`);
-      }
-      //  Terminal Right Click Paste default
-      // --- 添加日志：打印从后端获取的原始值 ---
-      console.log(`[SettingsStore DEBUG] Raw terminalEnableRightClickPaste from backend: '${settings.value.terminalEnableRightClickPaste}' (type: ${typeof settings.value.terminalEnableRightClickPaste})`);
-      // --- 日志结束 ---
-      if (settings.value.terminalEnableRightClickPaste === undefined) {
-        settings.value.terminalEnableRightClickPaste = 'true'; // 默认启用右键粘贴
-        console.log(`[SettingsStore] terminalEnableRightClickPaste not found, set to default: ${settings.value.terminalEnableRightClickPaste}`);
-      }
-      if (settings.value.terminalNoWrap === undefined) {
-        settings.value.terminalNoWrap = 'false'; // 默认关闭不换行 (即自动换行)
-        console.log(`[SettingsStore] terminalNoWrap not found, set to default: ${settings.value.terminalNoWrap}`);
-      }
-      if (settings.value.showStatusMonitorIpAddress === undefined) {
-        settings.value.showStatusMonitorIpAddress = 'false'; // 默认禁用状态监视器显示IP
-        console.log(`[SettingsStore] showStatusMonitorIpAddress not found, set to default: ${settings.value.showStatusMonitorIpAddress}`);
-      }
-      // +++ 快捷命令列表行大小乘数默认值 +++
-      if (settings.value.quickCommandRowSizeMultiplier === undefined) {
-        settings.value.quickCommandRowSizeMultiplier = '1.0';
-        console.log(`[SettingsStore] quickCommandRowSizeMultiplier not found, set to default: ${settings.value.quickCommandRowSizeMultiplier}`);
-      }
-      // +++ 快捷指令视图紧凑模式默认值 +++
-      if (settings.value.quickCommandsCompactMode === undefined) {
-        settings.value.quickCommandsCompactMode = 'false';
-        console.log(`[SettingsStore] quickCommandsCompactMode not found, set to default: ${settings.value.quickCommandsCompactMode}`);
-      }
-      // +++ 记住上次停留页面默认值 (默认开启) +++
-      if (settings.value.rememberLastRoute === undefined) {
-        const localRemember = localStorage.getItem('nexus_remember_last_route');
-        settings.value.rememberLastRoute = localRemember !== null ? localRemember : 'true';
-        console.log(`[SettingsStore] rememberLastRoute not found, set to default: ${settings.value.rememberLastRoute}`);
-      }
-        
-      // --- 从 localStorage 加载 QuickCommands 特有设置 ---
+      // --- 快捷指令的两个偏好：localStorage 优先（历史行为，跨设备不共享）---
       const localQcRowSizeMultiplier = localStorage.getItem('nexus_quickCommandRowSizeMultiplier');
       if (localQcRowSizeMultiplier) {
         const parsedLocalMultiplier = parseFloat(localQcRowSizeMultiplier);
         if (!isNaN(parsedLocalMultiplier) && parsedLocalMultiplier > 0) {
           settings.value.quickCommandRowSizeMultiplier = localQcRowSizeMultiplier;
-          console.log(`[SettingsStore] Loaded quickCommandRowSizeMultiplier from localStorage: ${localQcRowSizeMultiplier}`);
         } else {
           console.warn(`[SettingsStore] Invalid quickCommandRowSizeMultiplier in localStorage: ${localQcRowSizeMultiplier}. Using server/default.`);
         }
@@ -391,11 +221,16 @@ export const useSettingsStore = defineStore('settings', () => {
       const localQcCompactMode = localStorage.getItem('nexus_quickCommandsCompactMode');
       if (localQcCompactMode === 'true' || localQcCompactMode === 'false') {
         settings.value.quickCommandsCompactMode = localQcCompactMode;
-        console.log(`[SettingsStore] Loaded quickCommandsCompactMode from localStorage: ${localQcCompactMode}`);
       } else if (localQcCompactMode !== null) {
         console.warn(`[SettingsStore] Invalid quickCommandsCompactMode in localStorage: ${localQcCompactMode}. Using server/default.`);
       }
-        
+
+      // --- rememberLastRoute：schema 故意不给默认值，首次以 localStorage 为准 ---
+      if (settings.value.rememberLastRoute === undefined) {
+        const localRemember = localStorage.getItem('nexus_remember_last_route');
+        settings.value.rememberLastRoute = localRemember !== null ? localRemember : 'true';
+      }
+
       // --- 语言设置 ---
       const langFromSettings = settings.value.language;
       console.log(`[SettingsStore] Language from fetched settings: ${langFromSettings}`); // <-- 添加日志
@@ -418,8 +253,6 @@ export const useSettingsStore = defineStore('settings', () => {
               }
           }
           console.warn(`[SettingsStore] Invalid or missing language setting ('${langFromSettings}') received from backend. Falling back to '${determinedLang}'.`);
-          // Optionally save the fallback language back
-          // await updateSetting('language', determinedLang);
       }
 
       if (determinedLang) {
@@ -436,8 +269,6 @@ export const useSettingsStore = defineStore('settings', () => {
       console.error('Error loading general settings:', err); // <-- 修改日志
       error.value = err.response?.data?.message || err.message || 'Failed to load settings';
       // 出错时（例如未登录），根据浏览器语言设置回退语言
-      const navigatorLang = navigator.language?.split('-')[0];
-      // 错误时也尝试浏览器完整区域代码，然后主语言部分，最后默认
       const navigatorLocale = navigator.language;
       const navigatorLangPart = navigatorLocale?.split('-')[0];
       let fallbackLang = defaultLng; // Start with default
@@ -463,47 +294,11 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   async function updateSetting(key: keyof SettingsState, value: string | boolean) {
     // 移除外观相关的键检查
-    const allowedKeys: Array<keyof SettingsState> = [
-        'language', 'ipWhitelist', 'maxLoginAttempts', 'loginBanDuration',
-        'showPopupFileEditor', 'showPopupFileManager', 'shareFileEditorTabs', 'ipWhitelistEnabled', // +++  showPopupFileManager +++
-        'autoCopyOnSelect', 'dockerStatusIntervalSeconds', 'dockerDefaultExpand',
-        'statusMonitorIntervalSeconds', // +++ 状态监控间隔键 +++
-        'workspaceSidebarPersistent', // +++ 侧边栏固定键 +++
-        'sidebarPaneWidths', // +++ 侧边栏宽度对象键 +++
-        'fileManagerRowSizeMultiplier', // +++ 文件管理器行大小键 +++
-        'fileManagerColWidths', // +++ 文件管理器列宽键 +++
-        'commandInputSyncTarget', // +++ 命令输入同步目标键 +++
-        'timezone', // 时区键
-        'rdpModalWidth', //  RDP 模态框宽度键
-        'rdpModalHeight', //  RDP 模态框高度键
-        'vncModalWidth', //  VNC 模态框宽度键
-        'vncModalHeight', //  VNC 模态框高度键
-        'ipBlacklistEnabled',
-        'dashboardSortBy',
-        'dashboardSortOrder',
-        'showConnectionTags',
-        'showQuickCommandTags',
-        'layoutLocked',
-        'terminalScrollbackLimit',
-        'fileManagerShowDeleteConfirmation',
-        'fileManagerDoubleClickToOpen',
-        'fileManagerHighlightChanges',
-        'terminalEnableRightClickPaste',
-        'terminalRightClickBehavior',
-        'terminalContextMenuItems',
-        'terminalNoWrap',
-        'showStatusMonitorIpAddress',
-        'quickCommandRowSizeMultiplier',
-        'quickCommandsCompactMode',
-        'fileEditorModalWidth',
-        'fileEditorModalHeight',
-        'markdownDefaultViewMode',
-        'markdownDefaultViewModeMobile',
-        'rememberLastRoute'
-      ];
-      if (!allowedKeys.includes(key)) {
-          console.error(`[SettingsStore] 尝试更新不允许的设置键: ${key}`);
-        throw new Error(`不允许更新设置项 '${key}'`);
+    // 白名单来自 settings.schema.json（前端副本由 tools/gen-settings-schema.mjs 生成）：
+    // 不在 schema 里声明的键一律拒绝，避免和后端"静默过滤"叠加成静默失败。
+    if (!isWritableSettingKey(String(key))) {
+      console.error(`[SettingsStore] 尝试更新未在 schema 中声明的设置键: ${key}`);
+      throw new Error(`不允许更新设置项 '${key}'`);
     }
 
     // Use specific endpoints for boolean settings
@@ -582,49 +377,12 @@ export const useSettingsStore = defineStore('settings', () => {
    */
   async function updateMultipleSettings(updates: Partial<SettingsState>) {
      // 移除外观相关的键检查
-    const allowedKeys: Array<keyof SettingsState> = [
-        'language', 'ipWhitelist', 'maxLoginAttempts', 'loginBanDuration',
-        'showPopupFileEditor', 'showPopupFileManager', 'shareFileEditorTabs', 'ipWhitelistEnabled', // +++  showPopupFileManager +++
-        'autoCopyOnSelect', 'dockerStatusIntervalSeconds', 'dockerDefaultExpand',
-        'statusMonitorIntervalSeconds', // +++ 状态监控间隔键 +++
-        'workspaceSidebarPersistent', // +++ 侧边栏固定键 +++
-        'sidebarPaneWidths', // +++ 侧边栏宽度对象键 +++
-        'fileManagerRowSizeMultiplier', // +++ 文件管理器行大小键 +++
-        'fileManagerColWidths', // +++ 文件管理器列宽键 +++
-        'commandInputSyncTarget', // +++ 命令输入同步目标键 +++
-        'timezone', // 时区键
-        'rdpModalWidth', //  RDP 模态框宽度键
-        'rdpModalHeight', //  RDP 模态框高度键
-        'vncModalWidth', //  VNC 模态框宽度键
-        'vncModalHeight', //  VNC 模态框高度键
-        'ipBlacklistEnabled',
-        'dashboardSortBy',
-        'dashboardSortOrder',
-        'showConnectionTags',
-        'showQuickCommandTags',
-        'layoutLocked',
-        'terminalScrollbackLimit',
-        'fileManagerShowDeleteConfirmation',
-        'fileManagerDoubleClickToOpen',
-        'fileManagerHighlightChanges',
-        'terminalEnableRightClickPaste',
-        'terminalRightClickBehavior',
-        'terminalContextMenuItems',
-        'terminalNoWrap',
-        'showStatusMonitorIpAddress',
-        'quickCommandRowSizeMultiplier',
-        'quickCommandsCompactMode',
-        'fileEditorModalWidth',
-        'fileEditorModalHeight',
-        'markdownDefaultViewMode',
-        'markdownDefaultViewModeMobile',
-        'rememberLastRoute'
-      ];
+    // 白名单同上（schema 唯一来源），被拒的键会打日志而不是静默丢弃
       const filteredUpdates: Partial<SettingsState> = {};
       let languageUpdate: string | undefined = undefined;
 
     for (const key in updates) {
-        if (allowedKeys.includes(key as keyof SettingsState)) {
+        if (isWritableSettingKey(key)) {
             filteredUpdates[key as keyof SettingsState] = updates[key];
             if (key === 'language') {
                 // Check if the language update is valid before storing it for setLocale
@@ -636,7 +394,7 @@ export const useSettingsStore = defineStore('settings', () => {
                 }
             }
         } else {
-             console.warn(`[SettingsStore] 尝试批量更新不允许的设置键: ${key}`);
+             console.warn(`[SettingsStore] 跳过未在 schema 中声明的设置键: ${key}`);
         }
       }
 

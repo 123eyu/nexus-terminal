@@ -14,6 +14,7 @@ import {
     UpdateCaptchaSettingsDto,
     CaptchaProvider,
 } from '../types/settings.types';
+import { withSettingDefaults } from './settings.schema';
 
 // +++ 定义焦点切换完整配置接口 (与前端 store 保持一致) +++
 interface FocusItemConfig { // 单个项目的配置
@@ -52,7 +53,9 @@ export const settingsService = {
     settingsArray.forEach(setting => {
       settingsRecord[setting.key] = setting.value;
     });
-    return settingsRecord;
+    // 用 schema 默认值补齐从未写入过的键：返回一份完整设置，
+    // 前端不必再维护 30 个 `if (xxx === undefined)` 的默认值分支。
+    return withSettingDefaults(settingsRecord);
   },
 
   /**

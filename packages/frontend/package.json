@@ -6,6 +6,7 @@
    "scripts": {
       "dev": "vite --host",
       "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
       "build:fast": "vite build",
       "preview": "vite preview",
       "debug:eye": "node devtools/eye.mjs",

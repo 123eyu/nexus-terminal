@@ -9,6 +9,7 @@ import { AppearanceSettings, UpdateAppearanceDto } from '../types/appearance.typ
 import { getAppearanceSettings, updateAppearanceSettings as updateAppearanceSettingsInRepo } from '../appearance/appearance.repository';
 import { getServerSyncApiKey } from '../sync/sync.middleware';
 import { settingsRepository } from './settings.repository';
+import { isWritableSettingKey } from './settings.schema';
 import i18next from '../i18n'; 
 
 const auditLogService = new AuditLogService();
@@ -75,45 +76,24 @@ export const settingsController = {
         return;
       }
 
-      const allowedSettingsKeys = [
-          'language', 'ipWhitelist', 'maxLoginAttempts', 'loginBanDuration',
-          'showPopupFileEditor', 'shareFileEditorTabs', 'ipWhitelistEnabled',
-          'autoCopyOnSelect', 'dockerStatusIntervalSeconds', 'dockerDefaultExpand',
-          'statusMonitorIntervalSeconds', // +++ 状态监控间隔键 +++
-          'workspaceSidebarPersistent', // +++ 侧边栏固定键 +++
-          'showPopupFileManager', // +++ 弹窗文件管理器设置键 +++
-          'sidebarPaneWidths', // +++ 侧边栏宽度对象键 +++
-          'fileManagerRowSizeMultiplier', // +++ 文件管理器行大小键 +++
-          'fileManagerColWidths', // +++ 文件管理器列宽键 +++
-          'commandInputSyncTarget', // +++ 命令输入同步目标键 +++
-          'timezone', // 时区键
-          'rdpModalWidth', //  RDP 模态框宽度键
-          'rdpModalHeight', //  RDP 模态框高度键
-          'vncModalWidth', //  VNC 模态框宽度键
-          'vncModalHeight', //  VNC 模态框高度键
-          'ipBlacklistEnabled', // <-- 添加 IP 黑名单启用键
-          'layoutLocked', // +++ 布局锁定键 +++
-          'terminalScrollbackLimit', // 终端回滚行数键
-          'fileManagerShowDeleteConfirmation', // 文件管理器删除确认键
-          'terminalEnableRightClickPaste', // 终端右键粘贴键
-          'terminalRightClickBehavior', // 终端右键行为交互键
-          'terminalContextMenuItems', // 终端右键菜单项配置键
-          'showStatusMonitorIpAddress',
-          'fileManagerDoubleClickToOpen',
-          'fileManagerHighlightChanges', // 文件列表增量变动高亮开关
-          'fileEditorModalWidth', // 文本编辑器弹窗宽度键
-          'fileEditorModalHeight', // 文本编辑器弹窗高度键
-          'terminalNoWrap', // 终端不换行设置键
-          'markdownDefaultViewMode',
-          'markdownDefaultViewModeMobile',
-          'componentInstanceStates', // 组件实例状态设置键
-          'rememberLastRoute' // 记住上次停留页面设置键
-      ];
+      // 白名单来自 settings.schema.json（唯一来源，见 settings.schema.ts）。
+      //
+      // 这里以前是硬编码数组，而且是"静默过滤"：不在名单里的键被悄悄丢掉，
+      // 接口仍返回 200。结果是前端开关能点、刷新就复原，没有任何报错，
+      // 排查成本极高（新增设置项时踩过一次）。
+      // 现在被拒绝的键会原样回传，前端发现 rejected 非空会直接 console.error。
       const filteredSettings: Record<string, string> = {};
+      const rejectedKeys: string[] = [];
       for (const key in settingsToUpdate) {
-          if (allowedSettingsKeys.includes(key)) {
+          if (isWritableSettingKey(key)) {
               filteredSettings[key] = settingsToUpdate[key];
+          } else {
+              rejectedKeys.push(key);
           }
+      }
+
+      if (rejectedKeys.length > 0) {
+          console.warn('[Settings] 拒绝写入未在 schema 中声明的设置键:', rejectedKeys.join(', '));
       }
 
       if (Object.keys(filteredSettings).length > 0) {
@@ -129,7 +109,7 @@ export const settingsController = {
               notificationService.sendNotification('SETTINGS_UPDATED', { updatedKeys }); // 添加通知调用
             }
         }
-      res.status(200).json({ message: '设置已成功更新' });
+      res.status(200).json({ message: '设置已成功更新', updatedKeys, rejectedKeys });
     } catch (error: any) {
       console.error('更新设置时出错:', error);
       res.status(500).json({ message: '更新设置失败', error: error.message });

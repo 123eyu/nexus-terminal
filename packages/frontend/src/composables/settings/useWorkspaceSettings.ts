@@ -1,660 +1,333 @@
-import { ref, watch } from 'vue';
-import { useSettingsStore, type TerminalRightClickBehavior, type TerminalContextMenuSettings } from '../../stores/settings.store';
+import { useSettingsStore, type TerminalRightClickBehavior, type TerminalContextMenuSettings, DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS } from '../../stores/settings.store';
 import { useI18n } from 'vue-i18n';
-import { storeToRefs } from 'pinia';
+import {
+  useBooleanSettingControl,
+  useNumberSettingControl,
+  useSettingControl,
+  useStringSettingControl,
+} from './useSettingControl';
 
+/**
+ * 「工作区」设置页用到的全部设置项。
+ *
+ * 每个设置项的实现都收敛到 useSettingControl：
+ * 以前这里是一个设置项 20 行（4 个 ref + handler + watch + 4 个 return），
+ * 20 个设置项 = 400 行纯样板，且漏写 watch 会让"其它端改了值这边不刷新"。
+ *
+ * 对外暴露的字段名保持原样，模板不需要改动。
+ */
 export function useWorkspaceSettings() {
   const settingsStore = useSettingsStore();
   const { t } = useI18n();
 
-  const {
-    showPopupFileEditorBoolean,
-    shareFileEditorTabsBoolean,
-    autoCopyOnSelectBoolean,
-    workspaceSidebarPersistentBoolean,
-    commandInputSyncTarget,
-    showConnectionTagsBoolean,
-    showQuickCommandTagsBoolean,
-    terminalScrollbackLimitNumber,
-    fileManagerShowDeleteConfirmationBoolean,
-    fileManagerDoubleClickToOpenBoolean,
-    fileManagerHighlightChangesBoolean,
-    terminalEnableRightClickPasteBoolean,
-    terminalRightClickBehaviorString,
-    terminalContextMenuItemsObject,
-    terminalNoWrapBoolean,
-    showPopupFileManagerBoolean, 
-    statusMonitorShowIpBoolean,
-    markdownDefaultViewModeString,
-    markdownDefaultViewModeMobileString,
-    terminalSwitchPaneShortcutString,
-  } = storeToRefs(settingsStore);
+  // --- Markdown 默认视图模式（桌面端 / 移动端）---
+  const markdownDefaultViewMode = useStringSettingControl({
+    key: 'markdownDefaultViewMode',
+    defaultValue: 'split',
+    successMessage: () => t('common.saved'),
+    errorMessage: () => t('common.saveFailed'),
+  });
 
-  // --- Markdown Default View Mode (Desktop) ---
-  const markdownDefaultViewModeLocal = ref<'preview' | 'split' | 'edit'>('split');
-  const markdownDefaultViewModeLoading = ref(false);
-  const markdownDefaultViewModeMessage = ref('');
-  const markdownDefaultViewModeSuccess = ref(false);
+  const markdownDefaultViewModeMobile = useStringSettingControl({
+    key: 'markdownDefaultViewModeMobile',
+    defaultValue: 'preview',
+    successMessage: () => t('common.saved'),
+    errorMessage: () => t('common.saveFailed'),
+  });
 
-  const handleUpdateMarkdownDefaultViewMode = async () => {
-    markdownDefaultViewModeLoading.value = true;
-    markdownDefaultViewModeMessage.value = '';
-    markdownDefaultViewModeSuccess.value = false;
-    try {
-      await settingsStore.updateMarkdownDefaultViewMode(markdownDefaultViewModeLocal.value);
-      markdownDefaultViewModeMessage.value = t('common.saved');
-      markdownDefaultViewModeSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新 Markdown 默认视图模式 (桌面端) 失败:', error);
-      markdownDefaultViewModeMessage.value = error.message || t('common.saveFailed');
-      markdownDefaultViewModeSuccess.value = false;
-    } finally {
-      markdownDefaultViewModeLoading.value = false;
-    }
-  };
+  // --- 弹窗编辑器 / 弹窗文件管理器 / 共享编辑器标签页 ---
+  const popupEditor = useBooleanSettingControl({
+    key: 'showPopupFileEditor',
+    defaultValue: true,
+    successMessage: () => t('settings.popupEditor.success.saved'),
+    errorMessage: () => t('settings.popupEditor.error.saveFailed'),
+  });
 
-  // --- Markdown Default View Mode (Mobile) ---
-  const markdownDefaultViewModeMobileLocal = ref<'preview' | 'split' | 'edit'>('preview');
-  const markdownDefaultViewModeMobileLoading = ref(false);
-  const markdownDefaultViewModeMobileMessage = ref('');
-  const markdownDefaultViewModeMobileSuccess = ref(false);
+  const shareTabs = useBooleanSettingControl({
+    key: 'shareFileEditorTabs',
+    defaultValue: true,
+    successMessage: () => t('settings.shareEditorTabs.success.saved'),
+    errorMessage: () => t('settings.shareEditorTabs.error.saveFailed'),
+  });
 
-  const handleUpdateMarkdownDefaultViewModeMobile = async () => {
-    markdownDefaultViewModeMobileLoading.value = true;
-    markdownDefaultViewModeMobileMessage.value = '';
-    markdownDefaultViewModeMobileSuccess.value = false;
-    try {
-      await settingsStore.updateMarkdownDefaultViewModeMobile(markdownDefaultViewModeMobileLocal.value);
-      markdownDefaultViewModeMobileMessage.value = t('common.saved');
-      markdownDefaultViewModeSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新 Markdown 默认视图模式 (移动端) 失败:', error);
-      markdownDefaultViewModeMobileMessage.value = error.message || t('common.saveFailed');
-      markdownDefaultViewModeMobileSuccess.value = false;
-    } finally {
-      markdownDefaultViewModeMobileLoading.value = false;
-    }
-  };
+  const showPopupFileManager = useBooleanSettingControl({
+    key: 'showPopupFileManager',
+    defaultValue: false,
+    successMessage: () => t('settings.popupFileManager.success.saved'),
+    errorMessage: () => t('settings.popupFileManager.error.saveFailed'),
+  });
 
-  // --- Popup Editor ---
-  const popupEditorEnabled = ref(true);
-  const popupEditorLoading = ref(false);
-  const popupEditorMessage = ref('');
-  const popupEditorSuccess = ref(false);
+  // --- 终端选中自动复制 ---
+  const autoCopy = useBooleanSettingControl({
+    key: 'autoCopyOnSelect',
+    defaultValue: false,
+    successMessage: () => t('settings.autoCopyOnSelect.success.saved'),
+    errorMessage: () => t('settings.autoCopyOnSelect.error.saveFailed'),
+  });
 
-  const handleUpdatePopupEditorSetting = async () => {
-    popupEditorLoading.value = true;
-    popupEditorMessage.value = '';
-    popupEditorSuccess.value = false;
-    try {
-      const valueToSave = popupEditorEnabled.value ? 'true' : 'false';
-      await settingsStore.updateSetting('showPopupFileEditor', valueToSave);
-      popupEditorMessage.value = t('settings.popupEditor.success.saved');
-      popupEditorSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新弹窗编辑器设置失败:', error);
-      popupEditorMessage.value = error.message || t('settings.popupEditor.error.saveFailed');
-      popupEditorSuccess.value = false;
-    } finally {
-      popupEditorLoading.value = false;
-    }
-  };
+  // --- 工作区侧边栏固定 ---
+  const workspaceSidebarPersistent = useBooleanSettingControl({
+    key: 'workspaceSidebarPersistent',
+    defaultValue: false,
+    successMessage: () => t('settings.workspace.success.sidebarPersistentSaved'),
+    errorMessage: () => t('settings.workspace.error.sidebarPersistentSaveFailed'),
+  });
 
-  // --- Share Editor Tabs ---
-  const shareTabsEnabled = ref(true);
-  const shareTabsLoading = ref(false);
-  const shareTabsMessage = ref('');
-  const shareTabsSuccess = ref(false);
+  // --- 命令输入同步目标 ---
+  const commandInputSyncTarget = useStringSettingControl({
+    key: 'commandInputSyncTarget',
+    defaultValue: 'none',
+    successMessage: () => t('settings.commandInputSync.success.saved', '同步目标已保存'),
+    errorMessage: () => t('settings.commandInputSync.error.saveFailed', '保存同步目标失败'),
+  });
 
-  const handleUpdateShareTabsSetting = async () => {
-    shareTabsLoading.value = true;
-    shareTabsMessage.value = '';
-    shareTabsSuccess.value = false;
-    try {
-      const valueToSave = shareTabsEnabled.value ? 'true' : 'false';
-      await settingsStore.updateSetting('shareFileEditorTabs', valueToSave);
-      shareTabsMessage.value = t('settings.shareEditorTabs.success.saved');
-      shareTabsSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新共享编辑器标签页设置失败:', error);
-      shareTabsMessage.value = error.message || t('settings.shareEditorTabs.error.saveFailed');
-      shareTabsSuccess.value = false;
-    } finally {
-      shareTabsLoading.value = false;
-    }
-  };
+  // --- 标签显示（有专用接口，需要传原生 boolean）---
+  const showConnectionTags = useBooleanSettingControl({
+    key: 'showConnectionTags',
+    defaultValue: true,
+    nativeBoolean: true,
+    successMessage: () => t('settings.workspace.success.showConnectionTagsSaved', '连接标签显示设置已保存'),
+    errorMessage: () => t('settings.workspace.error.showConnectionTagsSaveFailed', '保存连接标签显示设置失败'),
+  });
 
-  // --- Auto Copy on Select ---
-  const autoCopyEnabled = ref(false);
-  const autoCopyLoading = ref(false);
-  const autoCopyMessage = ref('');
-  const autoCopySuccess = ref(false);
+  const showQuickCommandTags = useBooleanSettingControl({
+    key: 'showQuickCommandTags',
+    defaultValue: true,
+    nativeBoolean: true,
+    successMessage: () => t('settings.workspace.success.showQuickCommandTagsSaved', '快捷指令标签显示设置已保存'),
+    errorMessage: () => t('settings.workspace.error.showQuickCommandTagsSaveFailed', '保存快捷指令标签显示设置失败'),
+  });
 
-  const handleUpdateAutoCopySetting = async () => {
-    autoCopyLoading.value = true;
-    autoCopyMessage.value = '';
-    autoCopySuccess.value = false;
-    try {
-      const valueToSave = autoCopyEnabled.value ? 'true' : 'false';
-      await settingsStore.updateSetting('autoCopyOnSelect', valueToSave);
-      autoCopyMessage.value = t('settings.autoCopyOnSelect.success.saved');
-      autoCopySuccess.value = true;
-    } catch (error: any) {
-      console.error('更新自动复制设置失败:', error);
-      autoCopyMessage.value = error.message || t('settings.autoCopyOnSelect.error.saveFailed');
-      autoCopySuccess.value = false;
-    } finally {
-      autoCopyLoading.value = false;
-    }
-  };
-
-  // --- Workspace Sidebar Persistent ---
-  const workspaceSidebarPersistentEnabled = ref(false);
-  const workspaceSidebarPersistentLoading = ref(false);
-  const workspaceSidebarPersistentMessage = ref('');
-  const workspaceSidebarPersistentSuccess = ref(false);
-
-  const handleUpdateWorkspaceSidebarSetting = async () => {
-    workspaceSidebarPersistentLoading.value = true;
-    workspaceSidebarPersistentMessage.value = '';
-    workspaceSidebarPersistentSuccess.value = false;
-    try {
-      const valueToSave = workspaceSidebarPersistentEnabled.value ? 'true' : 'false';
-      await settingsStore.updateSetting('workspaceSidebarPersistent', valueToSave);
-      workspaceSidebarPersistentMessage.value = t('settings.workspace.success.sidebarPersistentSaved');
-      workspaceSidebarPersistentSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新侧边栏固定设置失败:', error);
-      workspaceSidebarPersistentMessage.value = error.message || t('settings.workspace.error.sidebarPersistentSaveFailed');
-      workspaceSidebarPersistentSuccess.value = false;
-    } finally {
-      workspaceSidebarPersistentLoading.value = false;
-    }
-  };
-
-  // --- Command Input Sync Target ---
-  const commandInputSyncTargetLocal = ref<'none' | 'quickCommands' | 'commandHistory'>('none');
-  const commandInputSyncLoading = ref(false);
-  const commandInputSyncMessage = ref('');
-  const commandInputSyncSuccess = ref(false);
-
-  const handleUpdateCommandInputSyncTarget = async () => {
-    commandInputSyncLoading.value = true;
-    commandInputSyncMessage.value = '';
-    commandInputSyncSuccess.value = false;
-    try {
-      await settingsStore.updateSetting('commandInputSyncTarget', commandInputSyncTargetLocal.value);
-      commandInputSyncMessage.value = t('settings.commandInputSync.success.saved', '同步目标已保存');
-      commandInputSyncSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新命令输入同步目标失败:', error);
-      commandInputSyncMessage.value = error.message || t('settings.commandInputSync.error.saveFailed', '保存同步目标失败');
-      commandInputSyncSuccess.value = false;
-    } finally {
-      commandInputSyncLoading.value = false;
-    }
-  };
-
-  // --- Show Connection Tags ---
-  const showConnectionTagsLocal = ref(true);
-  const showConnectionTagsLoading = ref(false);
-  const showConnectionTagsMessage = ref('');
-  const showConnectionTagsSuccess = ref(false);
-
-  const handleUpdateShowConnectionTags = async () => {
-    showConnectionTagsLoading.value = true;
-    showConnectionTagsMessage.value = '';
-    showConnectionTagsSuccess.value = false;
-    try {
-      await settingsStore.updateSetting('showConnectionTags', showConnectionTagsLocal.value);
-      showConnectionTagsMessage.value = t('settings.workspace.success.showConnectionTagsSaved', '连接标签显示设置已保存');
-      showConnectionTagsSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新显示连接标签设置失败:', error);
-      showConnectionTagsMessage.value = error.message || t('settings.workspace.error.showConnectionTagsSaveFailed', '保存连接标签显示设置失败');
-      showConnectionTagsSuccess.value = false;
-    } finally {
-      showConnectionTagsLoading.value = false;
-    }
-  };
-
-  // --- Show Quick Command Tags ---
-  const showQuickCommandTagsLocal = ref(true);
-  const showQuickCommandTagsLoading = ref(false);
-  const showQuickCommandTagsMessage = ref('');
-  const showQuickCommandTagsSuccess = ref(false);
-
-  const handleUpdateShowQuickCommandTags = async () => {
-    showQuickCommandTagsLoading.value = true;
-    showQuickCommandTagsMessage.value = '';
-    showQuickCommandTagsSuccess.value = false;
-    try {
-      await settingsStore.updateSetting('showQuickCommandTags', showQuickCommandTagsLocal.value);
-      showQuickCommandTagsMessage.value = t('settings.workspace.success.showQuickCommandTagsSaved', '快捷指令标签显示设置已保存');
-      showQuickCommandTagsSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新显示快捷指令标签设置失败:', error);
-      showQuickCommandTagsMessage.value = error.message || t('settings.workspace.error.showQuickCommandTagsSaveFailed', '保存快捷指令标签显示设置失败');
-      showQuickCommandTagsSuccess.value = false;
-    } finally {
-      showQuickCommandTagsLoading.value = false;
-    }
-  };
-
-  // --- Terminal Scrollback Limit ---
-  const terminalScrollbackLimitLocal = ref<number | null>(null);
-  const terminalScrollbackLimitLoading = ref(false);
-  const terminalScrollbackLimitMessage = ref('');
-  const terminalScrollbackLimitSuccess = ref(false);
-
-  const handleUpdateTerminalScrollbackLimit = async () => {
-    terminalScrollbackLimitLoading.value = true;
-    terminalScrollbackLimitMessage.value = '';
-    terminalScrollbackLimitSuccess.value = false;
-    try {
-      const limitValue = terminalScrollbackLimitLocal.value;
-      if (limitValue !== null && limitValue !== undefined && (isNaN(limitValue) || !Number.isInteger(limitValue) || limitValue < 0)) {
+  // --- 终端回滚行数（0 = 不限制，空值回落 5000）---
+  const terminalScrollbackLimit = useNumberSettingControl({
+    key: 'terminalScrollbackLimit',
+    defaultValue: 5000,
+    validate: (value) => {
+      if (value !== null && value !== undefined && (!Number.isInteger(value) || value < 0)) {
         throw new Error(t('settings.terminalScrollback.error.invalidInput', '请输入一个有效的非负整数。'));
       }
-      const valueToSave = (limitValue === null || limitValue === undefined) ? '5000' : String(limitValue);
-      await settingsStore.updateSetting('terminalScrollbackLimit', valueToSave);
-      terminalScrollbackLimitMessage.value = t('settings.terminalScrollback.success.saved', '终端回滚行数设置已保存。');
-      terminalScrollbackLimitSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新终端回滚行数设置失败:', error);
-      terminalScrollbackLimitMessage.value = error.message || t('settings.terminalScrollback.error.saveFailed', '保存终端回滚行数设置失败。');
-      terminalScrollbackLimitSuccess.value = false;
-    } finally {
-      terminalScrollbackLimitLoading.value = false;
-    }
-  };
-
-  // --- File Manager Delete Confirmation ---
-  const fileManagerShowDeleteConfirmationLocal = ref(true);
-  const fileManagerShowDeleteConfirmationLoading = ref(false);
-  const fileManagerShowDeleteConfirmationMessage = ref('');
-  const fileManagerShowDeleteConfirmationSuccess = ref(false);
-
-  const handleUpdateFileManagerDeleteConfirmation = async () => {
-    fileManagerShowDeleteConfirmationLoading.value = true;
-    fileManagerShowDeleteConfirmationMessage.value = '';
-    fileManagerShowDeleteConfirmationSuccess.value = false;
-    try {
-      const valueToSave = fileManagerShowDeleteConfirmationLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('fileManagerShowDeleteConfirmation', valueToSave);
-      fileManagerShowDeleteConfirmationMessage.value = t('settings.workspace.fileManagerDeleteConfirmSuccess', '文件管理器删除确认设置已保存。');
-      fileManagerShowDeleteConfirmationSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新文件管理器删除确认设置失败:', error);
-      fileManagerShowDeleteConfirmationMessage.value = error.message || t('settings.workspace.fileManagerDeleteConfirmError', '保存文件管理器删除确认设置失败。');
-      fileManagerShowDeleteConfirmationSuccess.value = false;
-    } finally {
-      fileManagerShowDeleteConfirmationLoading.value = false;
-    }
-  };
-
-  // --- File Manager Double Click to Open ---
-  const fileManagerDoubleClickToOpenLocal = ref(false);
-  const fileManagerDoubleClickToOpenLoading = ref(false);
-  const fileManagerDoubleClickToOpenMessage = ref('');
-  const fileManagerDoubleClickToOpenSuccess = ref(false);
-
-  const handleUpdateFileManagerDoubleClickToOpen = async () => {
-    fileManagerDoubleClickToOpenLoading.value = true;
-    fileManagerDoubleClickToOpenMessage.value = '';
-    fileManagerDoubleClickToOpenSuccess.value = false;
-    try {
-      const valueToSave = fileManagerDoubleClickToOpenLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('fileManagerDoubleClickToOpen', valueToSave);
-      fileManagerDoubleClickToOpenMessage.value = t('settings.workspace.fileManagerDoubleClickToOpenSuccess', '双击打开文件/文件夹设置已保存。');
-      fileManagerDoubleClickToOpenSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新双击打开设置失败:', error);
-      fileManagerDoubleClickToOpenMessage.value = error.message || t('settings.workspace.fileManagerDoubleClickToOpenError', '保存双击打开文件/文件夹设置失败。');
-      fileManagerDoubleClickToOpenSuccess.value = false;
-    } finally {
-      fileManagerDoubleClickToOpenLoading.value = false;
-    }
-  };
-
-  // --- File Manager Highlight Changes (新增/修改高亮) ---
-  const fileManagerHighlightChangesLocal = ref(true);
-  const fileManagerHighlightChangesLoading = ref(false);
-  const fileManagerHighlightChangesMessage = ref('');
-  const fileManagerHighlightChangesSuccess = ref(false);
-
-  const handleUpdateFileManagerHighlightChanges = async () => {
-    fileManagerHighlightChangesLoading.value = true;
-    fileManagerHighlightChangesMessage.value = '';
-    fileManagerHighlightChangesSuccess.value = false;
-    try {
-      const valueToSave = fileManagerHighlightChangesLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('fileManagerHighlightChanges', valueToSave);
-      fileManagerHighlightChangesMessage.value = t('settings.workspace.fileManagerHighlightChangesSuccess', '文件列表变动高亮设置已保存。');
-      fileManagerHighlightChangesSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新文件列表变动高亮设置失败:', error);
-      fileManagerHighlightChangesMessage.value = error.message || t('settings.workspace.fileManagerHighlightChangesError', '保存文件列表变动高亮设置失败。');
-      fileManagerHighlightChangesSuccess.value = false;
-    } finally {
-      fileManagerHighlightChangesLoading.value = false;
-    }
-  };
-
-  // --- Terminal No Wrap ---
-  const terminalNoWrapLocal = ref(false);
-  const terminalNoWrapLoading = ref(false);
-  const terminalNoWrapMessage = ref('');
-  const terminalNoWrapSuccess = ref(false);
-
-  const handleUpdateTerminalNoWrapSetting = async () => {
-    terminalNoWrapLoading.value = true;
-    terminalNoWrapMessage.value = '';
-    terminalNoWrapSuccess.value = false;
-    try {
-      const valueToSave = terminalNoWrapLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('terminalNoWrap', valueToSave);
-      terminalNoWrapMessage.value = t('settings.workspace.terminalNoWrapSuccess', '终端不换行设置已保存。');
-      terminalNoWrapSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新终端不换行设置失败:', error);
-      terminalNoWrapMessage.value = error.message || t('settings.workspace.terminalNoWrapError', '保存终端不换行设置失败。');
-      terminalNoWrapSuccess.value = false;
-    } finally {
-      terminalNoWrapLoading.value = false;
-    }
-  };
-
-  // --- Terminal Right Click Paste ---
-  const terminalEnableRightClickPasteLocal = ref(true);
-  const terminalEnableRightClickPasteLoading = ref(false);
-  const terminalEnableRightClickPasteMessage = ref('');
-  const terminalEnableRightClickPasteSuccess = ref(false);
-
-  const handleUpdateTerminalRightClickPasteSetting = async () => {
-    terminalEnableRightClickPasteLoading.value = true;
-    terminalEnableRightClickPasteMessage.value = '';
-    terminalEnableRightClickPasteSuccess.value = false;
-    try {
-      const valueToSave = terminalEnableRightClickPasteLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('terminalEnableRightClickPaste', valueToSave);
-      terminalEnableRightClickPasteMessage.value = t('settings.workspace.terminalRightClickPasteSuccess', '终端右键粘贴设置已保存。');
-      terminalEnableRightClickPasteSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新终端右键粘贴设置失败:', error);
-      terminalEnableRightClickPasteMessage.value = error.message || t('settings.workspace.terminalRightClickPasteError', '保存终端右键粘贴设置失败。');
-      terminalEnableRightClickPasteSuccess.value = false;
-    } finally {
-      terminalEnableRightClickPasteLoading.value = false;
-    }
-  };
-
-  
-  // --- Terminal Switch Pane Shortcut ---
-  const terminalSwitchPaneShortcutLocal = ref('Alt+`');
-  const terminalSwitchPaneShortcutLoading = ref(false);
-  const terminalSwitchPaneShortcutMessage = ref('');
-  const terminalSwitchPaneShortcutSuccess = ref(false);
-
-  const handleUpdateTerminalSwitchPaneShortcut = async () => {
-    terminalSwitchPaneShortcutLoading.value = true;
-    terminalSwitchPaneShortcutMessage.value = '';
-    terminalSwitchPaneShortcutSuccess.value = false;
-    try {
-      const val = terminalSwitchPaneShortcutLocal.value.trim() || 'Alt+`';
-      terminalSwitchPaneShortcutLocal.value = val;
-      await settingsStore.updateTerminalSwitchPaneShortcut(val);
-      terminalSwitchPaneShortcutMessage.value = t('settings.workspace.terminalSwitchPaneShortcutSuccess', '分屏终端切换快捷键已保存。');
-      terminalSwitchPaneShortcutSuccess.value = true;
-      setTimeout(() => { terminalSwitchPaneShortcutMessage.value = ''; }, 3000);
-    } catch (error: any) {
-      console.error('更新分屏终端切换快捷键失败:', error);
-      terminalSwitchPaneShortcutMessage.value = error.message || t('settings.workspace.terminalSwitchPaneShortcutError', '保存分屏终端切换快捷键失败。');
-      terminalSwitchPaneShortcutSuccess.value = false;
-    } finally {
-      terminalSwitchPaneShortcutLoading.value = false;
-    }
-  };
-
-  // --- Terminal Right Click Behavior ---
-  const terminalRightClickBehaviorLocal = ref<TerminalRightClickBehavior>('contextMenu');
-  const terminalRightClickBehaviorLoading = ref(false);
-  const terminalRightClickBehaviorMessage = ref('');
-  const terminalRightClickBehaviorSuccess = ref(false);
-
-  const handleUpdateTerminalRightClickBehavior = async () => {
-    terminalRightClickBehaviorLoading.value = true;
-    terminalRightClickBehaviorMessage.value = '';
-    terminalRightClickBehaviorSuccess.value = false;
-    try {
-      await settingsStore.updateTerminalRightClickBehavior(terminalRightClickBehaviorLocal.value);
-      terminalRightClickBehaviorMessage.value = t('common.saved', '已保存');
-      terminalRightClickBehaviorSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新终端右键行为设置失败:', error);
-      terminalRightClickBehaviorMessage.value = error.message || t('common.saveFailed', '保存失败');
-      terminalRightClickBehaviorSuccess.value = false;
-    } finally {
-      terminalRightClickBehaviorLoading.value = false;
-    }
-  };
-
-  // --- Terminal Context Menu Items ---
-  const terminalContextMenuItemsLocal = ref<TerminalContextMenuSettings>({
-    copy: true,
-    paste: true,
-    openPath: true,
-    openFile: true,
-    saveQuickCommand: true,
+    },
+    serialize: (value) => (value === null || value === undefined ? '5000' : String(value)),
+    successMessage: () => t('settings.terminalScrollback.success.saved', '终端回滚行数设置已保存。'),
+    errorMessage: () => t('settings.terminalScrollback.error.saveFailed', '保存终端回滚行数设置失败。'),
   });
-  const terminalContextMenuItemsLoading = ref(false);
-  const terminalContextMenuItemsMessage = ref('');
-  const terminalContextMenuItemsSuccess = ref(false);
 
-  const handleUpdateTerminalContextMenuItems = async () => {
-    terminalContextMenuItemsLoading.value = true;
-    terminalContextMenuItemsMessage.value = '';
-    terminalContextMenuItemsSuccess.value = false;
-    try {
-      await settingsStore.updateTerminalContextMenuItems(terminalContextMenuItemsLocal.value);
-      terminalContextMenuItemsMessage.value = t('common.saved', '已保存');
-      terminalContextMenuItemsSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新终端右键菜单项配置失败:', error);
-      terminalContextMenuItemsMessage.value = error.message || t('common.saveFailed', '保存失败');
-      terminalContextMenuItemsSuccess.value = false;
-    } finally {
-      terminalContextMenuItemsLoading.value = false;
-    }
-  };
+  // --- 文件管理器 ---
+  const fileManagerShowDeleteConfirmation = useBooleanSettingControl({
+    key: 'fileManagerShowDeleteConfirmation',
+    defaultValue: true,
+    successMessage: () => t('settings.workspace.fileManagerDeleteConfirmSuccess', '文件管理器删除确认设置已保存。'),
+    errorMessage: () => t('settings.workspace.fileManagerDeleteConfirmError', '保存文件管理器删除确认设置失败。'),
+  });
 
-  // --- Popup File Manager ---
-  const showPopupFileManagerLocal = ref(true);
-  const showPopupFileManagerLoading = ref(false);
-  const showPopupFileManagerMessage = ref('');
-  const showPopupFileManagerSuccess = ref(false);
+  const fileManagerDoubleClickToOpen = useBooleanSettingControl({
+    key: 'fileManagerDoubleClickToOpen',
+    defaultValue: false,
+    successMessage: () => t('settings.workspace.fileManagerDoubleClickToOpenSuccess', '双击打开文件/文件夹设置已保存。'),
+    errorMessage: () => t('settings.workspace.fileManagerDoubleClickToOpenError', '保存双击打开文件/文件夹设置失败。'),
+  });
 
-  const handleUpdateShowPopupFileManager = async () => {
-    showPopupFileManagerLoading.value = true;
-    showPopupFileManagerMessage.value = '';
-    showPopupFileManagerSuccess.value = false;
-    try {
-      const valueToSave = showPopupFileManagerLocal.value ? 'true' : 'false';
-      await settingsStore.updateSetting('showPopupFileManager', valueToSave);
-      showPopupFileManagerMessage.value = t('settings.popupFileManager.success.saved');
-      showPopupFileManagerSuccess.value = true;
-    } catch (error: any) {
-      console.error('更新弹窗文件管理器设置失败:', error);
-      showPopupFileManagerMessage.value = error.message || t('settings.popupFileManager.error.saveFailed');
-      showPopupFileManagerSuccess.value = false;
-    } finally {
-      showPopupFileManagerLoading.value = false;
-    }
-  };
+  const fileManagerHighlightChanges = useBooleanSettingControl({
+    key: 'fileManagerHighlightChanges',
+    defaultValue: true,
+    successMessage: () => t('settings.workspace.fileManagerHighlightChangesSuccess', '文件列表变动高亮设置已保存。'),
+    errorMessage: () => t('settings.workspace.fileManagerHighlightChangesError', '保存文件列表变动高亮设置失败。'),
+  });
 
-  // --- Status Monitor Show IP ---
-  const statusMonitorShowIpEnabled = ref(false);
-  const statusMonitorShowIpLoading = ref(false);
-  const statusMonitorShowIpMessage = ref('');
-  const statusMonitorShowIpSuccess = ref(false);
+  // --- 终端 ---
+  const terminalNoWrap = useBooleanSettingControl({
+    key: 'terminalNoWrap',
+    defaultValue: false,
+    successMessage: () => t('settings.workspace.terminalNoWrapSuccess', '终端不换行设置已保存。'),
+    errorMessage: () => t('settings.workspace.terminalNoWrapError', '保存终端不换行设置失败。'),
+  });
 
-  const handleUpdateStatusMonitorShowIpSetting = async () => {
-    statusMonitorShowIpLoading.value = true;
-    statusMonitorShowIpMessage.value = '';
-    statusMonitorShowIpSuccess.value = false;
-    try {
-      const valueToSave = statusMonitorShowIpEnabled.value ? 'true' : 'false';
-      await settingsStore.updateSetting('showStatusMonitorIpAddress', valueToSave);
-      statusMonitorShowIpMessage.value = t('common.saved');
-      statusMonitorShowIpSuccess.value = true;
-    } catch (error: any) {
-      console.error('Failed to update status monitor IP display setting:', error);
-      statusMonitorShowIpMessage.value = error.message || t('settings.statusMonitorShowIp.error.saveFailed', 'Failed to save status monitor IP display setting.'); //  需要添加相应的i18n键
-      statusMonitorShowIpSuccess.value = false;
-    } finally {
-      statusMonitorShowIpLoading.value = false;
-    }
-  };
+  const terminalEnableRightClickPaste = useBooleanSettingControl({
+    key: 'terminalEnableRightClickPaste',
+    defaultValue: true,
+    successMessage: () => t('settings.workspace.terminalRightClickPasteSuccess', '终端右键粘贴设置已保存。'),
+    errorMessage: () => t('settings.workspace.terminalRightClickPasteError', '保存终端右键粘贴设置失败。'),
+  });
 
-  // Watchers to sync local state with store state
-  watch(showPopupFileEditorBoolean, (newValue) => { popupEditorEnabled.value = newValue; }, { immediate: true });
-  watch(shareFileEditorTabsBoolean, (newValue) => { shareTabsEnabled.value = newValue; }, { immediate: true });
-  watch(autoCopyOnSelectBoolean, (newValue) => { autoCopyEnabled.value = newValue; }, { immediate: true });
-  watch(workspaceSidebarPersistentBoolean, (newValue) => { workspaceSidebarPersistentEnabled.value = newValue; }, { immediate: true });
-  watch(commandInputSyncTarget, (newValue) => { commandInputSyncTargetLocal.value = newValue; }, { immediate: true });
-  watch(showConnectionTagsBoolean, (newValue) => { showConnectionTagsLocal.value = newValue; }, { immediate: true });
-  watch(showQuickCommandTagsBoolean, (newValue) => { showQuickCommandTagsLocal.value = newValue; }, { immediate: true });
-  watch(terminalScrollbackLimitNumber, (newValue) => { terminalScrollbackLimitLocal.value = newValue; }, { immediate: true });
-  watch(fileManagerShowDeleteConfirmationBoolean, (newValue) => { fileManagerShowDeleteConfirmationLocal.value = newValue; }, { immediate: true });
-  watch(fileManagerDoubleClickToOpenBoolean, (newValue) => { fileManagerDoubleClickToOpenLocal.value = newValue; }, { immediate: true });
-  watch(fileManagerHighlightChangesBoolean, (newValue) => { fileManagerHighlightChangesLocal.value = newValue; }, { immediate: true });
-  watch(terminalEnableRightClickPasteBoolean, (newValue) => { terminalEnableRightClickPasteLocal.value = newValue; }, { immediate: true });
-  watch(terminalRightClickBehaviorString, (newValue) => { terminalRightClickBehaviorLocal.value = newValue; }, { immediate: true });
-  watch(terminalContextMenuItemsObject, (newValue) => { terminalContextMenuItemsLocal.value = { ...newValue }; }, { immediate: true, deep: true });
-  watch(terminalNoWrapBoolean, (newValue) => { terminalNoWrapLocal.value = newValue; }, { immediate: true });
-  watch(terminalSwitchPaneShortcutString, (newValue) => { terminalSwitchPaneShortcutLocal.value = newValue || 'Alt+`'; }, { immediate: true });
-  watch(showPopupFileManagerBoolean, (newValue) => { showPopupFileManagerLocal.value = newValue; }, { immediate: true }); // +++ Watch for popup file manager +++
-  watch(statusMonitorShowIpBoolean, (newValue) => { statusMonitorShowIpEnabled.value = newValue; }, { immediate: true });
-  watch(markdownDefaultViewModeString, (newValue) => { markdownDefaultViewModeLocal.value = newValue; }, { immediate: true });
-  watch(markdownDefaultViewModeMobileString, (newValue) => { markdownDefaultViewModeMobileLocal.value = newValue; }, { immediate: true });
+  const terminalSwitchPaneShortcut = useSettingControl<string>({
+    key: 'terminalSwitchPaneShortcut',
+    defaultValue: 'Alt+`',
+    parse: (raw) => raw,
+    // 空串回落默认键位，避免用户清空后无法切分屏
+    validate: (value) => {
+      if (!value || !value.trim()) {
+        throw new Error(t('settings.workspace.terminalSwitchPaneShortcutError', '保存分屏终端切换快捷键失败。'));
+      }
+    },
+    persist: async (value) => {
+      const normalized = value.trim() || 'Alt+`';
+      terminalSwitchPaneShortcut.local.value = normalized;
+      await settingsStore.updateTerminalSwitchPaneShortcut(normalized);
+    },
+    clearMessageAfterMs: 3000,
+    successMessage: () => t('settings.workspace.terminalSwitchPaneShortcutSuccess', '分屏终端切换快捷键已保存。'),
+    errorMessage: () => t('settings.workspace.terminalSwitchPaneShortcutError', '保存分屏终端切换快捷键失败。'),
+  });
 
+  const terminalRightClickBehavior = useSettingControl<TerminalRightClickBehavior>({
+    key: 'terminalRightClickBehavior',
+    defaultValue: 'contextMenu',
+    parse: (raw) => raw as TerminalRightClickBehavior,
+    persist: (value) => settingsStore.updateTerminalRightClickBehavior(value),
+    successMessage: () => t('common.saved', '已保存'),
+    errorMessage: () => t('common.saveFailed', '保存失败'),
+  });
+
+  const terminalContextMenuItems = useSettingControl<TerminalContextMenuSettings>({
+    key: 'terminalContextMenuItems',
+    defaultValue: { ...DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS },
+    parse: (raw) => {
+      try {
+        const parsed = JSON.parse(raw);
+        return {
+          copy: parsed.copy !== false,
+          paste: parsed.paste !== false,
+          openPath: parsed.openPath !== false,
+          openFile: parsed.openFile !== false,
+          saveQuickCommand: parsed.saveQuickCommand !== false,
+        };
+      } catch {
+        return { ...DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS };
+      }
+    },
+    persist: (value) => settingsStore.updateTerminalContextMenuItems(value),
+    successMessage: () => t('common.saved', '已保存'),
+    errorMessage: () => t('common.saveFailed', '保存失败'),
+  });
+
+  // --- 状态监视器显示 IP ---
+  const statusMonitorShowIp = useBooleanSettingControl({
+    key: 'showStatusMonitorIpAddress',
+    defaultValue: false,
+    successMessage: () => t('common.saved'),
+    errorMessage: () => t('settings.statusMonitorShowIp.error.saveFailed', 'Failed to save status monitor IP display setting.'),
+  });
 
   return {
-    popupEditorEnabled,
-    popupEditorLoading,
-    popupEditorMessage,
-    popupEditorSuccess,
-    handleUpdatePopupEditorSetting,
+    // 兼容原有模板的字段名
+    popupEditorEnabled: popupEditor.local,
+    popupEditorLoading: popupEditor.loading,
+    popupEditorMessage: popupEditor.message,
+    popupEditorSuccess: popupEditor.success,
+    handleUpdatePopupEditorSetting: popupEditor.save,
 
-    shareTabsEnabled,
-    shareTabsLoading,
-    shareTabsMessage,
-    shareTabsSuccess,
-    handleUpdateShareTabsSetting,
+    shareTabsEnabled: shareTabs.local,
+    shareTabsLoading: shareTabs.loading,
+    shareTabsMessage: shareTabs.message,
+    shareTabsSuccess: shareTabs.success,
+    handleUpdateShareTabsSetting: shareTabs.save,
 
-    autoCopyEnabled,
-    autoCopyLoading,
-    autoCopyMessage,
-    autoCopySuccess,
-    handleUpdateAutoCopySetting,
+    autoCopyEnabled: autoCopy.local,
+    autoCopyLoading: autoCopy.loading,
+    autoCopyMessage: autoCopy.message,
+    autoCopySuccess: autoCopy.success,
+    handleUpdateAutoCopySetting: autoCopy.save,
 
-    workspaceSidebarPersistentEnabled,
-    workspaceSidebarPersistentLoading,
-    workspaceSidebarPersistentMessage,
-    workspaceSidebarPersistentSuccess,
-    handleUpdateWorkspaceSidebarSetting,
+    workspaceSidebarPersistentEnabled: workspaceSidebarPersistent.local,
+    workspaceSidebarPersistentLoading: workspaceSidebarPersistent.loading,
+    workspaceSidebarPersistentMessage: workspaceSidebarPersistent.message,
+    workspaceSidebarPersistentSuccess: workspaceSidebarPersistent.success,
+    handleUpdateWorkspaceSidebarSetting: workspaceSidebarPersistent.save,
 
-    commandInputSyncTargetLocal,
-    commandInputSyncLoading,
-    commandInputSyncMessage,
-    commandInputSyncSuccess,
-    handleUpdateCommandInputSyncTarget,
+    commandInputSyncTargetLocal: commandInputSyncTarget.local,
+    commandInputSyncLoading: commandInputSyncTarget.loading,
+    commandInputSyncMessage: commandInputSyncTarget.message,
+    commandInputSyncSuccess: commandInputSyncTarget.success,
+    handleUpdateCommandInputSyncTarget: commandInputSyncTarget.save,
 
-    showConnectionTagsLocal,
-    showConnectionTagsLoading,
-    showConnectionTagsMessage,
-    showConnectionTagsSuccess,
-    handleUpdateShowConnectionTags,
+    showConnectionTagsLocal: showConnectionTags.local,
+    showConnectionTagsLoading: showConnectionTags.loading,
+    showConnectionTagsMessage: showConnectionTags.message,
+    showConnectionTagsSuccess: showConnectionTags.success,
+    handleUpdateShowConnectionTags: showConnectionTags.save,
 
-    showQuickCommandTagsLocal,
-    showQuickCommandTagsLoading,
-    showQuickCommandTagsMessage,
-    showQuickCommandTagsSuccess,
-    handleUpdateShowQuickCommandTags,
+    showQuickCommandTagsLocal: showQuickCommandTags.local,
+    showQuickCommandTagsLoading: showQuickCommandTags.loading,
+    showQuickCommandTagsMessage: showQuickCommandTags.message,
+    showQuickCommandTagsSuccess: showQuickCommandTags.success,
+    handleUpdateShowQuickCommandTags: showQuickCommandTags.save,
 
-    terminalScrollbackLimitLocal,
-    terminalScrollbackLimitLoading,
-    terminalScrollbackLimitMessage,
-    terminalScrollbackLimitSuccess,
-    handleUpdateTerminalScrollbackLimit,
+    terminalScrollbackLimitLocal: terminalScrollbackLimit.local,
+    terminalScrollbackLimitLoading: terminalScrollbackLimit.loading,
+    terminalScrollbackLimitMessage: terminalScrollbackLimit.message,
+    terminalScrollbackLimitSuccess: terminalScrollbackLimit.success,
+    handleUpdateTerminalScrollbackLimit: terminalScrollbackLimit.save,
 
-    fileManagerShowDeleteConfirmationLocal,
-    fileManagerShowDeleteConfirmationLoading,
-    fileManagerShowDeleteConfirmationMessage,
-    fileManagerShowDeleteConfirmationSuccess,
-    handleUpdateFileManagerDeleteConfirmation,
+    fileManagerShowDeleteConfirmationLocal: fileManagerShowDeleteConfirmation.local,
+    fileManagerShowDeleteConfirmationLoading: fileManagerShowDeleteConfirmation.loading,
+    fileManagerShowDeleteConfirmationMessage: fileManagerShowDeleteConfirmation.message,
+    fileManagerShowDeleteConfirmationSuccess: fileManagerShowDeleteConfirmation.success,
+    handleUpdateFileManagerDeleteConfirmation: fileManagerShowDeleteConfirmation.save,
 
-    fileManagerDoubleClickToOpenLocal,
-    fileManagerDoubleClickToOpenLoading,
-    fileManagerDoubleClickToOpenMessage,
-    fileManagerDoubleClickToOpenSuccess,
-    handleUpdateFileManagerDoubleClickToOpen,
+    fileManagerDoubleClickToOpenLocal: fileManagerDoubleClickToOpen.local,
+    fileManagerDoubleClickToOpenLoading: fileManagerDoubleClickToOpen.loading,
+    fileManagerDoubleClickToOpenMessage: fileManagerDoubleClickToOpen.message,
+    fileManagerDoubleClickToOpenSuccess: fileManagerDoubleClickToOpen.success,
+    handleUpdateFileManagerDoubleClickToOpen: fileManagerDoubleClickToOpen.save,
 
-    fileManagerHighlightChangesLocal,
-    fileManagerHighlightChangesLoading,
-    fileManagerHighlightChangesMessage,
-    fileManagerHighlightChangesSuccess,
-    handleUpdateFileManagerHighlightChanges,
+    fileManagerHighlightChangesLocal: fileManagerHighlightChanges.local,
+    fileManagerHighlightChangesLoading: fileManagerHighlightChanges.loading,
+    fileManagerHighlightChangesMessage: fileManagerHighlightChanges.message,
+    fileManagerHighlightChangesSuccess: fileManagerHighlightChanges.success,
+    handleUpdateFileManagerHighlightChanges: fileManagerHighlightChanges.save,
 
-    terminalEnableRightClickPasteLocal, 
-    terminalEnableRightClickPasteLoading, 
-    terminalEnableRightClickPasteMessage, 
-    terminalEnableRightClickPasteSuccess, 
-    handleUpdateTerminalRightClickPasteSetting,
-    terminalRightClickBehaviorLocal,
-    terminalRightClickBehaviorLoading,
-    terminalRightClickBehaviorMessage,
-    terminalRightClickBehaviorSuccess,
-    handleUpdateTerminalRightClickBehavior,
-    terminalContextMenuItemsLocal,
-    terminalContextMenuItemsLoading,
-    terminalContextMenuItemsMessage,
-    terminalContextMenuItemsSuccess,
-    handleUpdateTerminalContextMenuItems,
-    terminalNoWrapLocal,
-    terminalNoWrapLoading,
-    terminalNoWrapMessage,
-    terminalNoWrapSuccess,
-    terminalSwitchPaneShortcutLocal,
-    terminalSwitchPaneShortcutLoading,
-    terminalSwitchPaneShortcutMessage,
-    terminalSwitchPaneShortcutSuccess,
-    handleUpdateTerminalSwitchPaneShortcut,
-    handleUpdateTerminalNoWrapSetting, 
+    terminalEnableRightClickPasteLocal: terminalEnableRightClickPaste.local,
+    terminalEnableRightClickPasteLoading: terminalEnableRightClickPaste.loading,
+    terminalEnableRightClickPasteMessage: terminalEnableRightClickPaste.message,
+    terminalEnableRightClickPasteSuccess: terminalEnableRightClickPaste.success,
+    handleUpdateTerminalRightClickPasteSetting: terminalEnableRightClickPaste.save,
 
-    // Popup File Manager
-    showPopupFileManagerLocal,
-    showPopupFileManagerLoading,
-    showPopupFileManagerMessage,
-    showPopupFileManagerSuccess,
-    handleUpdateShowPopupFileManager,
+    terminalRightClickBehaviorLocal: terminalRightClickBehavior.local,
+    terminalRightClickBehaviorLoading: terminalRightClickBehavior.loading,
+    terminalRightClickBehaviorMessage: terminalRightClickBehavior.message,
+    terminalRightClickBehaviorSuccess: terminalRightClickBehavior.success,
+    handleUpdateTerminalRightClickBehavior: terminalRightClickBehavior.save,
 
-    statusMonitorShowIpEnabled,
-    statusMonitorShowIpLoading,
-    statusMonitorShowIpMessage,
-        statusMonitorShowIpSuccess,
-    handleUpdateStatusMonitorShowIpSetting,
+    terminalContextMenuItemsLocal: terminalContextMenuItems.local,
+    terminalContextMenuItemsLoading: terminalContextMenuItems.loading,
+    terminalContextMenuItemsMessage: terminalContextMenuItems.message,
+    terminalContextMenuItemsSuccess: terminalContextMenuItems.success,
+    handleUpdateTerminalContextMenuItems: terminalContextMenuItems.save,
 
-    markdownDefaultViewModeLocal,
-    markdownDefaultViewModeLoading,
-    markdownDefaultViewModeMessage,
-    markdownDefaultViewModeSuccess,
-    handleUpdateMarkdownDefaultViewMode,
+    terminalNoWrapLocal: terminalNoWrap.local,
+    terminalNoWrapLoading: terminalNoWrap.loading,
+    terminalNoWrapMessage: terminalNoWrap.message,
+    terminalNoWrapSuccess: terminalNoWrap.success,
+    handleUpdateTerminalNoWrapSetting: terminalNoWrap.save,
 
-    markdownDefaultViewModeMobileLocal,
-    markdownDefaultViewModeMobileLoading,
-    markdownDefaultViewModeMobileMessage,
-    markdownDefaultViewModeMobileSuccess,
-    handleUpdateMarkdownDefaultViewModeMobile,
+    terminalSwitchPaneShortcutLocal: terminalSwitchPaneShortcut.local,
+    terminalSwitchPaneShortcutLoading: terminalSwitchPaneShortcut.loading,
+    terminalSwitchPaneShortcutMessage: terminalSwitchPaneShortcut.message,
+    terminalSwitchPaneShortcutSuccess: terminalSwitchPaneShortcut.success,
+    handleUpdateTerminalSwitchPaneShortcut: terminalSwitchPaneShortcut.save,
+
+    showPopupFileManagerLocal: showPopupFileManager.local,
+    showPopupFileManagerLoading: showPopupFileManager.loading,
+    showPopupFileManagerMessage: showPopupFileManager.message,
+    showPopupFileManagerSuccess: showPopupFileManager.success,
+    handleUpdateShowPopupFileManager: showPopupFileManager.save,
+
+    statusMonitorShowIpEnabled: statusMonitorShowIp.local,
+    statusMonitorShowIpLoading: statusMonitorShowIp.loading,
+    statusMonitorShowIpMessage: statusMonitorShowIp.message,
+    statusMonitorShowIpSuccess: statusMonitorShowIp.success,
+    handleUpdateStatusMonitorShowIpSetting: statusMonitorShowIp.save,
+
+    markdownDefaultViewModeLocal: markdownDefaultViewMode.local,
+    markdownDefaultViewModeLoading: markdownDefaultViewMode.loading,
+    markdownDefaultViewModeMessage: markdownDefaultViewMode.message,
+    markdownDefaultViewModeSuccess: markdownDefaultViewMode.success,
+    handleUpdateMarkdownDefaultViewMode: markdownDefaultViewMode.save,
+
+    markdownDefaultViewModeMobileLocal: markdownDefaultViewModeMobile.local,
+    markdownDefaultViewModeMobileLoading: markdownDefaultViewModeMobile.loading,
+    markdownDefaultViewModeMobileMessage: markdownDefaultViewModeMobile.message,
+    markdownDefaultViewModeMobileSuccess: markdownDefaultViewModeMobile.success,
+    handleUpdateMarkdownDefaultViewModeMobile: markdownDefaultViewModeMobile.save,
   };
 }

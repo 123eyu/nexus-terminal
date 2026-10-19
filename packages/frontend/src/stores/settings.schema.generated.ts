@@ -1,0 +1,161 @@
+/* eslint-disable */
+// 此文件由 tools/gen-settings-schema.mjs 自动生成，请勿手动编辑。
+// 唯一来源：packages/backend/src/settings/settings.schema.data.json
+// 重新生成：npm run settings:gen
+
+export interface SettingSchemaEntry {
+  type: 'boolean' | 'string' | 'number' | 'json';
+  default?: string;
+  writable?: boolean;
+  desc?: string;
+}
+
+/** 全部设置项定义（顺序与 schema 一致） */
+export const SETTINGS_SCHEMA = {
+  language: { type: 'string' },
+  ipWhitelist: { type: 'string' },
+  maxLoginAttempts: { type: 'string', default: '5' },
+  loginBanDuration: { type: 'string', default: '300' },
+  showPopupFileEditor: { type: 'boolean', default: 'true' },
+  showPopupFileManager: { type: 'boolean', default: 'false' },
+  shareFileEditorTabs: { type: 'boolean', default: 'true' },
+  ipWhitelistEnabled: { type: 'boolean', default: 'false' },
+  ipBlacklistEnabled: { type: 'boolean', default: 'true' },
+  autoCopyOnSelect: { type: 'boolean', default: 'false' },
+  dockerStatusIntervalSeconds: { type: 'number', default: '2' },
+  dockerDefaultExpand: { type: 'boolean', default: 'false' },
+  statusMonitorIntervalSeconds: { type: 'number', default: '3' },
+  showStatusMonitorIpAddress: { type: 'boolean', default: 'false' },
+  workspaceSidebarPersistent: { type: 'boolean', default: 'false' },
+  sidebarPaneWidths: { type: 'json' },
+  fileManagerRowSizeMultiplier: { type: 'number', default: '1.0' },
+  fileManagerColWidths: { type: 'json' },
+  fileManagerShowDeleteConfirmation: { type: 'boolean', default: 'true' },
+  fileManagerDoubleClickToOpen: { type: 'boolean', default: 'false' },
+  fileManagerHighlightChanges: { type: 'boolean', default: 'true' },
+  quickCommandRowSizeMultiplier: { type: 'number', default: '1.0' },
+  quickCommandsCompactMode: { type: 'boolean', default: 'false' },
+  commandInputSyncTarget: { type: 'string', default: 'none' },
+  timezone: { type: 'string', default: 'UTC' },
+  rdpModalWidth: { type: 'string', default: '1064' },
+  rdpModalHeight: { type: 'string', default: '858' },
+  vncModalWidth: { type: 'string', default: '1024' },
+  vncModalHeight: { type: 'string', default: '768' },
+  dashboardSortBy: { type: 'string', default: 'last_connected_at' },
+  dashboardSortOrder: { type: 'string', default: 'desc' },
+  showConnectionTags: { type: 'boolean', default: 'true' },
+  showQuickCommandTags: { type: 'boolean', default: 'true' },
+  layoutLocked: { type: 'boolean', default: 'false' },
+  terminalScrollbackLimit: { type: 'number', default: '5000' },
+  terminalEnableRightClickPaste: { type: 'boolean', default: 'true' },
+  terminalRightClickBehavior: { type: 'string' },
+  terminalContextMenuItems: { type: 'json' },
+  terminalNoWrap: { type: 'boolean', default: 'false' },
+  terminalSwitchPaneShortcut: { type: 'string', default: 'Alt+`' },
+  fileEditorModalWidth: { type: 'string' },
+  fileEditorModalHeight: { type: 'string' },
+  markdownDefaultViewMode: { type: 'string', default: 'split' },
+  markdownDefaultViewModeMobile: { type: 'string', default: 'preview' },
+  rememberLastRoute: { type: 'boolean' },
+  componentInstanceStates: { type: 'json' },
+} as const satisfies Record<string, SettingSchemaEntry>;
+
+export type SettingKey = keyof typeof SETTINGS_SCHEMA;
+
+/** 允许通过 PUT /api/v1/settings 写入的键 */
+export const WRITABLE_SETTING_KEYS = [
+  'language',
+  'ipWhitelist',
+  'maxLoginAttempts',
+  'loginBanDuration',
+  'showPopupFileEditor',
+  'showPopupFileManager',
+  'shareFileEditorTabs',
+  'ipWhitelistEnabled',
+  'ipBlacklistEnabled',
+  'autoCopyOnSelect',
+  'dockerStatusIntervalSeconds',
+  'dockerDefaultExpand',
+  'statusMonitorIntervalSeconds',
+  'showStatusMonitorIpAddress',
+  'workspaceSidebarPersistent',
+  'sidebarPaneWidths',
+  'fileManagerRowSizeMultiplier',
+  'fileManagerColWidths',
+  'fileManagerShowDeleteConfirmation',
+  'fileManagerDoubleClickToOpen',
+  'fileManagerHighlightChanges',
+  'quickCommandRowSizeMultiplier',
+  'quickCommandsCompactMode',
+  'commandInputSyncTarget',
+  'timezone',
+  'rdpModalWidth',
+  'rdpModalHeight',
+  'vncModalWidth',
+  'vncModalHeight',
+  'dashboardSortBy',
+  'dashboardSortOrder',
+  'showConnectionTags',
+  'showQuickCommandTags',
+  'layoutLocked',
+  'terminalScrollbackLimit',
+  'terminalEnableRightClickPaste',
+  'terminalRightClickBehavior',
+  'terminalContextMenuItems',
+  'terminalNoWrap',
+  'terminalSwitchPaneShortcut',
+  'fileEditorModalWidth',
+  'fileEditorModalHeight',
+  'markdownDefaultViewMode',
+  'markdownDefaultViewModeMobile',
+  'rememberLastRoute',
+  'componentInstanceStates',
+] as const;
+
+export type WritableSettingKey = (typeof WRITABLE_SETTING_KEYS)[number];
+
+const WRITABLE_KEY_SET: ReadonlySet<string> = new Set(WRITABLE_SETTING_KEYS);
+
+export function isWritableSettingKey(key: string): boolean {
+  return WRITABLE_KEY_SET.has(key);
+}
+
+/** 带默认值的键 -> 默认值（字符串，与数据库存储一致） */
+export const SETTING_DEFAULTS: Readonly<Record<string, string>> = {
+  maxLoginAttempts:                   '5',
+  loginBanDuration:                   '300',
+  showPopupFileEditor:                'true',
+  showPopupFileManager:               'false',
+  shareFileEditorTabs:                'true',
+  ipWhitelistEnabled:                 'false',
+  ipBlacklistEnabled:                 'true',
+  autoCopyOnSelect:                   'false',
+  dockerStatusIntervalSeconds:        '2',
+  dockerDefaultExpand:                'false',
+  statusMonitorIntervalSeconds:       '3',
+  showStatusMonitorIpAddress:         'false',
+  workspaceSidebarPersistent:         'false',
+  fileManagerRowSizeMultiplier:       '1.0',
+  fileManagerShowDeleteConfirmation:  'true',
+  fileManagerDoubleClickToOpen:       'false',
+  fileManagerHighlightChanges:        'true',
+  quickCommandRowSizeMultiplier:      '1.0',
+  quickCommandsCompactMode:           'false',
+  commandInputSyncTarget:             'none',
+  timezone:                           'UTC',
+  rdpModalWidth:                      '1064',
+  rdpModalHeight:                     '858',
+  vncModalWidth:                      '1024',
+  vncModalHeight:                     '768',
+  dashboardSortBy:                    'last_connected_at',
+  dashboardSortOrder:                 'desc',
+  showConnectionTags:                 'true',
+  showQuickCommandTags:               'true',
+  layoutLocked:                       'false',
+  terminalScrollbackLimit:            '5000',
+  terminalEnableRightClickPaste:      'true',
+  terminalNoWrap:                     'false',
+  terminalSwitchPaneShortcut:         'Alt+`',
+  markdownDefaultViewMode:            'split',
+  markdownDefaultViewModeMobile:      'preview',
+};
