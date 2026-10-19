@@ -53,13 +53,17 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     const serializeAddon = ref<SerializeAddon | null>(null); // 保存 SerializeAddon 实例
 
     /**
-     * 写进云端快照的最大行数。
+     * 快照里终端内容的行数上限（安全阀，不是功能限制）。
      *
-     * addon-serialize 的成本与行数线性相关（5000 行 ≈ 250ms，500 行 ≈ 25ms），
-     * 而快照每 1.5s 就可能保存一次 —— 不限行数的话，`docker logs --tail 5000`
-     * 这类输出会让每次自动保存都卡掉半秒主线程。
+     * 默认 scrollback 是 5000 行，实测全量序列化约 40ms —— 不会产生长任务，
+     * 所以这里**完整保存**，不截断用户的终端历史。
+     *
+     * 但 scrollback 设置允许用户填更大的值（0 表示不限），buffer 无限增长时
+     * addon-serialize 的逐 cell 成本会线性上升（2 万行约 160ms，5 万行约 400ms），
+     * 每次自动保存都卡一下。所以留一个 2 万行的上限兜底：正常使用永远碰不到，
+     * 只有把 scrollback 调到极端值时才生效。
      */
-    const SNAPSHOT_SCROLLBACK_LINES = 500;
+    const SNAPSHOT_MAX_LINES = 20000;
 
     /** 同一次采集内的序列化结果缓存（微任务清除，不会返回过期内容） */
     let panesSerializeCache: Record<string, string> | null = null;
@@ -386,7 +390,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         if (terminalInstance.value) {
             terminalInstance.value.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
             // 终端数据输出写入后安排 1.5s 防抖同步至云端工作区
-            scheduleTerminalSync(1500);
+            scheduleTerminalSync(2500);
         } else {
             // 如果终端还没准备好，先缓冲输出
             terminalOutputBuffer.value.push(outputData);
@@ -556,7 +560,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         }
 
         paneEntry.terminal.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
-        scheduleTerminalSync(1500);
+        scheduleTerminalSync(2500);
     };
 
     const handleSshPaneReady = (payload: any, message?: WebSocketMessage) => {
@@ -1023,9 +1027,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // --- 序列化方法 (带完整 ANSI 样式) ---
     //
     // 三个必须注意的点（5000 行 buffer 实测出来的）：
-    // 1. **只序列化最近 N 行**。addon-serialize 是逐 cell 生成 ANSI，成本与行数线性相关：
-    //    5000 行 × 94 列一次约 250ms，500 行约 25ms。用户刷新后要看到的是"最近发生了什么"，
-    //    存几十屏以外的历史既占带宽又拖慢每次自动保存。
+    // 1. **完整保存，不截断历史**。addon-serialize 是逐 cell 生成 ANSI，成本与行数线性相关；
+    //    默认 5000 行一次约 40ms（toRaw 之后），不会产生长任务。只有 SNAPSHOT_MAX_LINES
+    //    这个安全阀在 scrollback 被调到极端值时才会生效。
     // 2. **必须 toRaw**。terminalPanes 是 ref(Map)，entries() 出来的是 Vue 代理，
     //    addon 内部逐 cell 读 buffer 时每次属性访问都要走 BaseReactiveHandler.get +
     //    toRawType（profile 里这两项合计约 900ms）。
@@ -1046,7 +1050,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             }
             if (rawEntry.serializeAddon) {
                 try {
-                    const s = toRaw(rawEntry.serializeAddon).serialize({ scrollback: SNAPSHOT_SCROLLBACK_LINES });
+                    const s = toRaw(rawEntry.serializeAddon).serialize({ scrollback: SNAPSHOT_MAX_LINES });
                     if (typeof s === 'string' && s.length > 0) {
                         result[pId] = s;
                         continue;
@@ -1058,7 +1062,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // 降级使用 buffer 遍历（同样只取最近 N 行，否则和上面的成本一样）
             if (rawEntry.terminal) {
                 const buffer = rawEntry.terminal.buffer.active;
-                const fromRow = Math.max(0, buffer.length - SNAPSHOT_SCROLLBACK_LINES);
+                const fromRow = Math.max(0, buffer.length - SNAPSHOT_MAX_LINES);
                 let lastNonEmpty = -1;
                 for (let i = buffer.length - 1; i >= fromRow; i--) {
                     const line = buffer.getLine(i);
@@ -1115,7 +1119,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         if (serializeAddon.value) {
             try {
-                return toRaw(serializeAddon.value).serialize({ scrollback: SNAPSHOT_SCROLLBACK_LINES });
+                return toRaw(serializeAddon.value).serialize({ scrollback: SNAPSHOT_MAX_LINES });
             } catch (e) {
                 console.warn(`[会话 ${sessionId}][SSH终端模块] 序列化终端内容失败:`, e);
             }
