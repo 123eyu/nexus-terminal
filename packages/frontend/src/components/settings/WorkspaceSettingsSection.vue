@@ -125,51 +125,25 @@
         </div>
 
         <!-- 松开鼠标时自动复制选中文本 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.autoCopyOnSelect.title') }}
-              </span>
-              <HelpTooltip :text="$t('settings.autoCopyOnSelect.enableLabel')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!autoCopySuccess && autoCopyMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ autoCopyMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="autoCopyEnabled"
-              @change="handleUpdateAutoCopySetting"
-              aria-label="自动复制"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="autoCopyOnSelect"
+          title-key="settings.autoCopyOnSelect.title"
+          title-fallback="自动复制"
+          desc-key="settings.autoCopyOnSelect.enableLabel"
+          success-key="settings.autoCopyOnSelect.success.saved"
+          error-key="settings.autoCopyOnSelect.error.saveFailed"
+        />
 
         <!-- 不换行 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.terminalNoWrapTitle', '不换行') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.terminalNoWrapDescription', '开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!terminalNoWrapSuccess && terminalNoWrapMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ terminalNoWrapMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="terminalNoWrapLocal"
-              :loading="terminalNoWrapLoading"
-              @change="handleUpdateTerminalNoWrapSetting"
-              aria-label="终端不换行"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="terminalNoWrap"
+          title-key="settings.workspace.terminalNoWrapTitle"
+          title-fallback="不换行"
+          desc-key="settings.workspace.terminalNoWrapDescription"
+          desc-fallback="开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行"
+          success-key="settings.workspace.terminalNoWrapSuccess"
+          error-key="settings.workspace.terminalNoWrapError"
+        />
 
         <!-- 分屏终端焦点切换快捷键 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
@@ -255,144 +229,67 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 弹窗编辑器 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.popupEditor.title') }}
-              </span>
-              <HelpTooltip :text="$t('settings.popupEditor.enableLabel')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!popupEditorSuccess && popupEditorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ popupEditorMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="popupEditorEnabled"
-              @change="handleUpdatePopupEditorSetting"
-              aria-label="弹窗编辑器"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="showPopupFileEditor"
+          title-key="settings.popupEditor.title"
+          title-fallback="弹窗编辑器"
+          desc-key="settings.popupEditor.enableLabel"
+          success-key="settings.popupEditor.success.saved"
+          error-key="settings.popupEditor.error.saveFailed"
+        />
 
         <!-- 弹窗文件管理器 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ t('settings.popupFileManager.title') }}
-              </span>
-              <HelpTooltip :text="t('settings.popupFileManager.enableLabel')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showPopupFileManagerSuccess && showPopupFileManagerMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ showPopupFileManagerMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="showPopupFileManagerLocal"
-              @change="handleUpdateShowPopupFileManager"
-              aria-label="弹窗文件管理器"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="showPopupFileManager"
+          title-key="settings.popupFileManager.title"
+          title-fallback="弹窗文件管理器"
+          desc-key="settings.popupFileManager.enableLabel"
+          success-key="settings.popupFileManager.success.saved"
+          error-key="settings.popupFileManager.error.saveFailed"
+        />
 
         <!-- 共享编辑器标签页 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.shareEditorTabs.title') }}
-              </span>
-              <HelpTooltip :text="$t('settings.shareEditorTabs.description')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!shareTabsSuccess && shareTabsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ shareTabsMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="shareTabsEnabled"
-              @change="handleUpdateShareTabsSetting"
-              aria-label="共享编辑器标签页"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="shareFileEditorTabs"
+          title-key="settings.shareEditorTabs.title"
+          title-fallback="共享编辑器标签页"
+          desc-key="settings.shareEditorTabs.description"
+          success-key="settings.shareEditorTabs.success.saved"
+          error-key="settings.shareEditorTabs.error.saveFailed"
+        />
 
         <!-- 文件管理器删除确认 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.fileManagerDeleteConfirmTitle', '文件管理器删除确认') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.fileManagerShowDeleteConfirmationLabel', '删除文件或文件夹时显示确认提示框')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!fileManagerShowDeleteConfirmationSuccess && fileManagerShowDeleteConfirmationMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ fileManagerShowDeleteConfirmationMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="fileManagerShowDeleteConfirmationLocal"
-              @change="handleUpdateFileManagerDeleteConfirmation"
-              aria-label="文件管理器删除确认"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="fileManagerShowDeleteConfirmation"
+          title-key="settings.workspace.fileManagerDeleteConfirmTitle"
+          title-fallback="文件管理器删除确认"
+          desc-key="settings.workspace.fileManagerShowDeleteConfirmationLabel"
+          desc-fallback="删除文件或文件夹时显示确认提示框"
+          success-key="settings.workspace.fileManagerDeleteConfirmSuccess"
+          error-key="settings.workspace.fileManagerDeleteConfirmError"
+        />
 
         <!-- 双击打开文件/文件夹 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.fileManagerDoubleClickToOpenTitle', '双击打开文件/文件夹') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.fileManagerDoubleClickToOpenDescription', '开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!fileManagerDoubleClickToOpenSuccess && fileManagerDoubleClickToOpenMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ fileManagerDoubleClickToOpenMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="fileManagerDoubleClickToOpenLocal"
-              :loading="fileManagerDoubleClickToOpenLoading"
-              @change="handleUpdateFileManagerDoubleClickToOpen"
-              aria-label="双击打开文件或文件夹"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="fileManagerDoubleClickToOpen"
+          title-key="settings.workspace.fileManagerDoubleClickToOpenTitle"
+          title-fallback="双击打开文件/文件夹"
+          desc-key="settings.workspace.fileManagerDoubleClickToOpenDescription"
+          desc-fallback="开启后需双击打开文件或进入文件夹，单击仅选中；关闭时单击即可直接打开"
+          success-key="settings.workspace.fileManagerDoubleClickToOpenSuccess"
+          error-key="settings.workspace.fileManagerDoubleClickToOpenError"
+        />
 
         <!-- 文件列表变动高亮 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.fileManagerHighlightChangesTitle', '文件列表变动高亮') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.fileManagerHighlightChangesDescription', '目录内容发生变化时，新增加的文件显示绿色、被修改的显示琥珀色并短暂闪烁；关闭后不再高亮')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!fileManagerHighlightChangesSuccess && fileManagerHighlightChangesMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ fileManagerHighlightChangesMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="fileManagerHighlightChangesLocal"
-              :loading="fileManagerHighlightChangesLoading"
-              @change="handleUpdateFileManagerHighlightChanges"
-              aria-label="文件列表变动高亮"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="fileManagerHighlightChanges"
+          title-key="settings.workspace.fileManagerHighlightChangesTitle"
+          title-fallback="文件列表变动高亮"
+          desc-key="settings.workspace.fileManagerHighlightChangesDescription"
+          desc-fallback="目录内容发生变化时，新增加的文件显示绿色、被修改的显示琥珀色并短暂闪烁；关闭后不再高亮"
+          success-key="settings.workspace.fileManagerHighlightChangesSuccess"
+          error-key="settings.workspace.fileManagerHighlightChangesError"
+        />
 
         <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊，移动端自适应) -->
         <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
@@ -475,73 +372,38 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 侧边栏持久化/固定行为 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.sidebarPersistentTitle') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.sidebarPersistentDescription')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!workspaceSidebarPersistentSuccess && workspaceSidebarPersistentMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ workspaceSidebarPersistentMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="workspaceSidebarPersistentEnabled"
-              @change="handleUpdateWorkspaceSidebarSetting"
-              aria-label="侧边栏固定行为"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="workspaceSidebarPersistent"
+          title-key="settings.workspace.sidebarPersistentTitle"
+          title-fallback="侧边栏固定行为"
+          desc-key="settings.workspace.sidebarPersistentDescription"
+          success-key="settings.workspace.success.sidebarPersistentSaved"
+          error-key="settings.workspace.error.sidebarPersistentSaveFailed"
+        />
 
         <!-- 显示连接标签 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.showConnectionTagsTitle', '显示连接标签') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.showConnectionTagsDescription', '关闭后将隐藏连接列表中的标签，并从搜索中排除标签。')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showConnectionTagsSuccess && showConnectionTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ showConnectionTagsMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="showConnectionTagsLocal"
-              @change="handleUpdateShowConnectionTags"
-              aria-label="显示连接标签"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="showConnectionTags"
+          title-key="settings.workspace.showConnectionTagsTitle"
+          title-fallback="显示连接标签"
+          desc-key="settings.workspace.showConnectionTagsDescription"
+          desc-fallback="关闭后将隐藏连接列表中的标签，并从搜索中排除标签。"
+          success-key="settings.workspace.success.showConnectionTagsSaved"
+          error-key="settings.workspace.error.showConnectionTagsSaveFailed"
+          native-boolean
+        />
 
         <!-- 显示快捷指令标签 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.workspace.showQuickCommandTagsTitle', '显示快捷指令标签') }}
-              </span>
-              <HelpTooltip :text="$t('settings.workspace.showQuickCommandTagsDescription', '关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!showQuickCommandTagsSuccess && showQuickCommandTagsMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ showQuickCommandTagsMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="showQuickCommandTagsLocal"
-              @change="handleUpdateShowQuickCommandTags"
-              aria-label="显示快捷指令标签"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="showQuickCommandTags"
+          title-key="settings.workspace.showQuickCommandTagsTitle"
+          title-fallback="显示快捷指令标签"
+          desc-key="settings.workspace.showQuickCommandTagsDescription"
+          desc-fallback="关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。"
+          success-key="settings.workspace.success.showQuickCommandTagsSaved"
+          error-key="settings.workspace.error.showQuickCommandTagsSaveFailed"
+          native-boolean
+        />
       </div>
     </div>
 
@@ -561,28 +423,15 @@
       </div>
       <div class="divide-y divide-border/40">
         <!-- 状态监视器 IP 显示 (纯开关) -->
-        <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
-          <div class="flex-1 pr-2">
-            <div class="flex items-center gap-1.5">
-              <span class="text-[15px] sm:text-base font-medium text-foreground">
-                {{ $t('settings.statusMonitorShowIp.title', '状态监视器 IP 显示') }}
-              </span>
-              <HelpTooltip :text="$t('settings.statusMonitorShowIp.enableLabel', '在状态监视器中显示IP地址')" />
-            </div>
-          </div>
-          <div class="flex items-center gap-3 shrink-0">
-            <span v-if="!statusMonitorShowIpSuccess && statusMonitorShowIpMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
-              <i class="fas fa-exclamation-circle text-xs"></i>
-              {{ statusMonitorShowIpMessage }}
-            </span>
-            <ToggleSwitch
-              v-model="statusMonitorShowIpEnabled"
-              :loading="statusMonitorShowIpLoading"
-              @change="handleUpdateStatusMonitorShowIpSetting"
-              aria-label="状态监视器IP显示"
-            />
-          </div>
-        </div>
+        <SettingToggle
+          setting-key="showStatusMonitorIpAddress"
+          title-key="settings.statusMonitorShowIp.title"
+          title-fallback="状态监视器 IP 显示"
+          desc-key="settings.statusMonitorShowIp.enableLabel"
+          desc-fallback="在状态监视器中显示IP地址"
+          success-key="settings.statusMonitorShowIp.success.saved"
+          error-key="settings.statusMonitorShowIp.error.saveFailed"
+        />
 
         <!-- 状态监视器刷新间隔 -->
         <div class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
@@ -674,6 +523,7 @@ import { useWorkspaceSettings } from '../../composables/settings/useWorkspaceSet
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
 import ToggleSwitch from '../common/ToggleSwitch.vue';
 import HelpTooltip from '../common/HelpTooltip.vue';
+import SettingToggle from './SettingToggle.vue';
 
 const settingsStore = useSettingsStore();
 const { settings } = storeToRefs(settingsStore);
@@ -683,57 +533,14 @@ const workspaceSettings = useWorkspaceSettings();
 const systemSettings = useSystemSettings();
 
 const {
-  popupEditorEnabled,
-  popupEditorMessage,
-  popupEditorSuccess,
-  handleUpdatePopupEditorSetting,
-  shareTabsEnabled,
-  shareTabsMessage,
-  shareTabsSuccess,
-  handleUpdateShareTabsSetting,
-  autoCopyEnabled,
-  autoCopyMessage,
-  autoCopySuccess,
-  handleUpdateAutoCopySetting,
-  workspaceSidebarPersistentEnabled,
-  workspaceSidebarPersistentMessage,
-  workspaceSidebarPersistentSuccess,
-  handleUpdateWorkspaceSidebarSetting,
   commandInputSyncTargetLocal,
   commandInputSyncMessage,
   commandInputSyncSuccess,
   handleUpdateCommandInputSyncTarget,
-  showConnectionTagsLocal,
-  showConnectionTagsMessage,
-  showConnectionTagsSuccess,
-  handleUpdateShowConnectionTags,
-  showQuickCommandTagsLocal,
-  showQuickCommandTagsMessage,
-  showQuickCommandTagsSuccess,
-  handleUpdateShowQuickCommandTags,
   terminalScrollbackLimitLocal,
   terminalScrollbackLimitMessage,
   terminalScrollbackLimitSuccess,
   handleUpdateTerminalScrollbackLimit,
-  fileManagerShowDeleteConfirmationLocal,
-  fileManagerShowDeleteConfirmationMessage,
-  fileManagerShowDeleteConfirmationSuccess,
-  handleUpdateFileManagerDeleteConfirmation,
-  fileManagerDoubleClickToOpenLocal,
-  fileManagerDoubleClickToOpenLoading,
-  fileManagerDoubleClickToOpenMessage,
-  fileManagerDoubleClickToOpenSuccess,
-  handleUpdateFileManagerDoubleClickToOpen,
-  fileManagerHighlightChangesLocal,
-  fileManagerHighlightChangesLoading,
-  fileManagerHighlightChangesMessage,
-  fileManagerHighlightChangesSuccess,
-  handleUpdateFileManagerHighlightChanges,
-  terminalEnableRightClickPasteLocal,
-  terminalEnableRightClickPasteLoading,
-  terminalEnableRightClickPasteMessage,
-  terminalEnableRightClickPasteSuccess,
-  handleUpdateTerminalRightClickPasteSetting,
   terminalRightClickBehaviorLocal,
   terminalRightClickBehaviorLoading,
   terminalRightClickBehaviorMessage,
@@ -744,25 +551,11 @@ const {
   terminalContextMenuItemsMessage,
   terminalContextMenuItemsSuccess,
   handleUpdateTerminalContextMenuItems,
-  terminalNoWrapLocal,
-  terminalNoWrapLoading,
-  terminalNoWrapMessage,
-  terminalNoWrapSuccess,
   terminalSwitchPaneShortcutLocal,
   terminalSwitchPaneShortcutLoading,
   terminalSwitchPaneShortcutMessage,
   terminalSwitchPaneShortcutSuccess,
   handleUpdateTerminalSwitchPaneShortcut,
-  handleUpdateTerminalNoWrapSetting,
-  showPopupFileManagerLocal,
-  showPopupFileManagerMessage,
-  showPopupFileManagerSuccess,
-  handleUpdateShowPopupFileManager,
-  statusMonitorShowIpEnabled,
-  statusMonitorShowIpLoading,
-  statusMonitorShowIpMessage,
-  statusMonitorShowIpSuccess,
-  handleUpdateStatusMonitorShowIpSetting,
   markdownDefaultViewModeLocal,
   markdownDefaultViewModeLoading,
   markdownDefaultViewModeMessage,

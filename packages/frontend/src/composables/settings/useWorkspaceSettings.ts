@@ -1,20 +1,19 @@
 import { useSettingsStore, type TerminalRightClickBehavior, type TerminalContextMenuSettings, DEFAULT_TERMINAL_CONTEXT_MENU_ITEMS } from '../../stores/settings.store';
 import { useI18n } from 'vue-i18n';
 import {
-  useBooleanSettingControl,
   useNumberSettingControl,
   useSettingControl,
   useStringSettingControl,
 } from './useSettingControl';
 
 /**
- * 「工作区」设置页用到的全部设置项。
+ * 「工作区」设置页里**不是单纯开关**的那部分设置项。
  *
- * 每个设置项的实现都收敛到 useSettingControl：
- * 以前这里是一个设置项 20 行（4 个 ref + handler + watch + 4 个 return），
- * 20 个设置项 = 400 行纯样板，且漏写 watch 会让"其它端改了值这边不刷新"。
+ * 单纯布尔开关已全部收敛到 `<SettingToggle setting-key="…" />`：
+ * 组件自己从 schema 取默认值、自己管草稿/loading/提示/保存，
+ * 模板从 20 多行降到 1~2 行，也不用再在 useWorkspaceSettings 里登记。
  *
- * 对外暴露的字段名保持原样，模板不需要改动。
+ * 这里只留需要自定义解析、校验、专用保存接口或联动逻辑的项。
  */
 export function useWorkspaceSettings() {
   const settingsStore = useSettingsStore();
@@ -35,67 +34,12 @@ export function useWorkspaceSettings() {
     errorMessage: () => t('common.saveFailed'),
   });
 
-  // --- 弹窗编辑器 / 弹窗文件管理器 / 共享编辑器标签页 ---
-  const popupEditor = useBooleanSettingControl({
-    key: 'showPopupFileEditor',
-    defaultValue: true,
-    successMessage: () => t('settings.popupEditor.success.saved'),
-    errorMessage: () => t('settings.popupEditor.error.saveFailed'),
-  });
-
-  const shareTabs = useBooleanSettingControl({
-    key: 'shareFileEditorTabs',
-    defaultValue: true,
-    successMessage: () => t('settings.shareEditorTabs.success.saved'),
-    errorMessage: () => t('settings.shareEditorTabs.error.saveFailed'),
-  });
-
-  const showPopupFileManager = useBooleanSettingControl({
-    key: 'showPopupFileManager',
-    defaultValue: false,
-    successMessage: () => t('settings.popupFileManager.success.saved'),
-    errorMessage: () => t('settings.popupFileManager.error.saveFailed'),
-  });
-
-  // --- 终端选中自动复制 ---
-  const autoCopy = useBooleanSettingControl({
-    key: 'autoCopyOnSelect',
-    defaultValue: false,
-    successMessage: () => t('settings.autoCopyOnSelect.success.saved'),
-    errorMessage: () => t('settings.autoCopyOnSelect.error.saveFailed'),
-  });
-
-  // --- 工作区侧边栏固定 ---
-  const workspaceSidebarPersistent = useBooleanSettingControl({
-    key: 'workspaceSidebarPersistent',
-    defaultValue: false,
-    successMessage: () => t('settings.workspace.success.sidebarPersistentSaved'),
-    errorMessage: () => t('settings.workspace.error.sidebarPersistentSaveFailed'),
-  });
-
   // --- 命令输入同步目标 ---
   const commandInputSyncTarget = useStringSettingControl({
     key: 'commandInputSyncTarget',
     defaultValue: 'none',
     successMessage: () => t('settings.commandInputSync.success.saved', '同步目标已保存'),
     errorMessage: () => t('settings.commandInputSync.error.saveFailed', '保存同步目标失败'),
-  });
-
-  // --- 标签显示（有专用接口，需要传原生 boolean）---
-  const showConnectionTags = useBooleanSettingControl({
-    key: 'showConnectionTags',
-    defaultValue: true,
-    nativeBoolean: true,
-    successMessage: () => t('settings.workspace.success.showConnectionTagsSaved', '连接标签显示设置已保存'),
-    errorMessage: () => t('settings.workspace.error.showConnectionTagsSaveFailed', '保存连接标签显示设置失败'),
-  });
-
-  const showQuickCommandTags = useBooleanSettingControl({
-    key: 'showQuickCommandTags',
-    defaultValue: true,
-    nativeBoolean: true,
-    successMessage: () => t('settings.workspace.success.showQuickCommandTagsSaved', '快捷指令标签显示设置已保存'),
-    errorMessage: () => t('settings.workspace.error.showQuickCommandTagsSaveFailed', '保存快捷指令标签显示设置失败'),
   });
 
   // --- 终端回滚行数（0 = 不限制，空值回落 5000）---
@@ -112,43 +56,7 @@ export function useWorkspaceSettings() {
     errorMessage: () => t('settings.terminalScrollback.error.saveFailed', '保存终端回滚行数设置失败。'),
   });
 
-  // --- 文件管理器 ---
-  const fileManagerShowDeleteConfirmation = useBooleanSettingControl({
-    key: 'fileManagerShowDeleteConfirmation',
-    defaultValue: true,
-    successMessage: () => t('settings.workspace.fileManagerDeleteConfirmSuccess', '文件管理器删除确认设置已保存。'),
-    errorMessage: () => t('settings.workspace.fileManagerDeleteConfirmError', '保存文件管理器删除确认设置失败。'),
-  });
-
-  const fileManagerDoubleClickToOpen = useBooleanSettingControl({
-    key: 'fileManagerDoubleClickToOpen',
-    defaultValue: false,
-    successMessage: () => t('settings.workspace.fileManagerDoubleClickToOpenSuccess', '双击打开文件/文件夹设置已保存。'),
-    errorMessage: () => t('settings.workspace.fileManagerDoubleClickToOpenError', '保存双击打开文件/文件夹设置失败。'),
-  });
-
-  const fileManagerHighlightChanges = useBooleanSettingControl({
-    key: 'fileManagerHighlightChanges',
-    defaultValue: true,
-    successMessage: () => t('settings.workspace.fileManagerHighlightChangesSuccess', '文件列表变动高亮设置已保存。'),
-    errorMessage: () => t('settings.workspace.fileManagerHighlightChangesError', '保存文件列表变动高亮设置失败。'),
-  });
-
   // --- 终端 ---
-  const terminalNoWrap = useBooleanSettingControl({
-    key: 'terminalNoWrap',
-    defaultValue: false,
-    successMessage: () => t('settings.workspace.terminalNoWrapSuccess', '终端不换行设置已保存。'),
-    errorMessage: () => t('settings.workspace.terminalNoWrapError', '保存终端不换行设置失败。'),
-  });
-
-  const terminalEnableRightClickPaste = useBooleanSettingControl({
-    key: 'terminalEnableRightClickPaste',
-    defaultValue: true,
-    successMessage: () => t('settings.workspace.terminalRightClickPasteSuccess', '终端右键粘贴设置已保存。'),
-    errorMessage: () => t('settings.workspace.terminalRightClickPasteError', '保存终端右键粘贴设置失败。'),
-  });
-
   const terminalSwitchPaneShortcut = useSettingControl<string>({
     key: 'terminalSwitchPaneShortcut',
     defaultValue: 'Alt+`',
@@ -200,87 +108,19 @@ export function useWorkspaceSettings() {
     errorMessage: () => t('common.saveFailed', '保存失败'),
   });
 
-  // --- 状态监视器显示 IP ---
-  const statusMonitorShowIp = useBooleanSettingControl({
-    key: 'showStatusMonitorIpAddress',
-    defaultValue: false,
-    successMessage: () => t('common.saved'),
-    errorMessage: () => t('settings.statusMonitorShowIp.error.saveFailed', 'Failed to save status monitor IP display setting.'),
-  });
-
   return {
     // 兼容原有模板的字段名
-    popupEditorEnabled: popupEditor.local,
-    popupEditorLoading: popupEditor.loading,
-    popupEditorMessage: popupEditor.message,
-    popupEditorSuccess: popupEditor.success,
-    handleUpdatePopupEditorSetting: popupEditor.save,
-
-    shareTabsEnabled: shareTabs.local,
-    shareTabsLoading: shareTabs.loading,
-    shareTabsMessage: shareTabs.message,
-    shareTabsSuccess: shareTabs.success,
-    handleUpdateShareTabsSetting: shareTabs.save,
-
-    autoCopyEnabled: autoCopy.local,
-    autoCopyLoading: autoCopy.loading,
-    autoCopyMessage: autoCopy.message,
-    autoCopySuccess: autoCopy.success,
-    handleUpdateAutoCopySetting: autoCopy.save,
-
-    workspaceSidebarPersistentEnabled: workspaceSidebarPersistent.local,
-    workspaceSidebarPersistentLoading: workspaceSidebarPersistent.loading,
-    workspaceSidebarPersistentMessage: workspaceSidebarPersistent.message,
-    workspaceSidebarPersistentSuccess: workspaceSidebarPersistent.success,
-    handleUpdateWorkspaceSidebarSetting: workspaceSidebarPersistent.save,
-
     commandInputSyncTargetLocal: commandInputSyncTarget.local,
     commandInputSyncLoading: commandInputSyncTarget.loading,
     commandInputSyncMessage: commandInputSyncTarget.message,
     commandInputSyncSuccess: commandInputSyncTarget.success,
     handleUpdateCommandInputSyncTarget: commandInputSyncTarget.save,
 
-    showConnectionTagsLocal: showConnectionTags.local,
-    showConnectionTagsLoading: showConnectionTags.loading,
-    showConnectionTagsMessage: showConnectionTags.message,
-    showConnectionTagsSuccess: showConnectionTags.success,
-    handleUpdateShowConnectionTags: showConnectionTags.save,
-
-    showQuickCommandTagsLocal: showQuickCommandTags.local,
-    showQuickCommandTagsLoading: showQuickCommandTags.loading,
-    showQuickCommandTagsMessage: showQuickCommandTags.message,
-    showQuickCommandTagsSuccess: showQuickCommandTags.success,
-    handleUpdateShowQuickCommandTags: showQuickCommandTags.save,
-
     terminalScrollbackLimitLocal: terminalScrollbackLimit.local,
     terminalScrollbackLimitLoading: terminalScrollbackLimit.loading,
     terminalScrollbackLimitMessage: terminalScrollbackLimit.message,
     terminalScrollbackLimitSuccess: terminalScrollbackLimit.success,
     handleUpdateTerminalScrollbackLimit: terminalScrollbackLimit.save,
-
-    fileManagerShowDeleteConfirmationLocal: fileManagerShowDeleteConfirmation.local,
-    fileManagerShowDeleteConfirmationLoading: fileManagerShowDeleteConfirmation.loading,
-    fileManagerShowDeleteConfirmationMessage: fileManagerShowDeleteConfirmation.message,
-    fileManagerShowDeleteConfirmationSuccess: fileManagerShowDeleteConfirmation.success,
-    handleUpdateFileManagerDeleteConfirmation: fileManagerShowDeleteConfirmation.save,
-
-    fileManagerDoubleClickToOpenLocal: fileManagerDoubleClickToOpen.local,
-    fileManagerDoubleClickToOpenLoading: fileManagerDoubleClickToOpen.loading,
-    fileManagerDoubleClickToOpenMessage: fileManagerDoubleClickToOpen.message,
-    fileManagerDoubleClickToOpenSuccess: fileManagerDoubleClickToOpen.success,
-    handleUpdateFileManagerDoubleClickToOpen: fileManagerDoubleClickToOpen.save,
-
-    fileManagerHighlightChangesLocal: fileManagerHighlightChanges.local,
-    fileManagerHighlightChangesLoading: fileManagerHighlightChanges.loading,
-    fileManagerHighlightChangesMessage: fileManagerHighlightChanges.message,
-    fileManagerHighlightChangesSuccess: fileManagerHighlightChanges.success,
-    handleUpdateFileManagerHighlightChanges: fileManagerHighlightChanges.save,
-
-    terminalEnableRightClickPasteLocal: terminalEnableRightClickPaste.local,
-    terminalEnableRightClickPasteLoading: terminalEnableRightClickPaste.loading,
-    terminalEnableRightClickPasteMessage: terminalEnableRightClickPaste.message,
-    terminalEnableRightClickPasteSuccess: terminalEnableRightClickPaste.success,
-    handleUpdateTerminalRightClickPasteSetting: terminalEnableRightClickPaste.save,
 
     terminalRightClickBehaviorLocal: terminalRightClickBehavior.local,
     terminalRightClickBehaviorLoading: terminalRightClickBehavior.loading,
@@ -294,29 +134,11 @@ export function useWorkspaceSettings() {
     terminalContextMenuItemsSuccess: terminalContextMenuItems.success,
     handleUpdateTerminalContextMenuItems: terminalContextMenuItems.save,
 
-    terminalNoWrapLocal: terminalNoWrap.local,
-    terminalNoWrapLoading: terminalNoWrap.loading,
-    terminalNoWrapMessage: terminalNoWrap.message,
-    terminalNoWrapSuccess: terminalNoWrap.success,
-    handleUpdateTerminalNoWrapSetting: terminalNoWrap.save,
-
     terminalSwitchPaneShortcutLocal: terminalSwitchPaneShortcut.local,
     terminalSwitchPaneShortcutLoading: terminalSwitchPaneShortcut.loading,
     terminalSwitchPaneShortcutMessage: terminalSwitchPaneShortcut.message,
     terminalSwitchPaneShortcutSuccess: terminalSwitchPaneShortcut.success,
     handleUpdateTerminalSwitchPaneShortcut: terminalSwitchPaneShortcut.save,
-
-    showPopupFileManagerLocal: showPopupFileManager.local,
-    showPopupFileManagerLoading: showPopupFileManager.loading,
-    showPopupFileManagerMessage: showPopupFileManager.message,
-    showPopupFileManagerSuccess: showPopupFileManager.success,
-    handleUpdateShowPopupFileManager: showPopupFileManager.save,
-
-    statusMonitorShowIpEnabled: statusMonitorShowIp.local,
-    statusMonitorShowIpLoading: statusMonitorShowIp.loading,
-    statusMonitorShowIpMessage: statusMonitorShowIp.message,
-    statusMonitorShowIpSuccess: statusMonitorShowIp.success,
-    handleUpdateStatusMonitorShowIpSetting: statusMonitorShowIp.save,
 
     markdownDefaultViewModeLocal: markdownDefaultViewMode.local,
     markdownDefaultViewModeLoading: markdownDefaultViewMode.loading,
