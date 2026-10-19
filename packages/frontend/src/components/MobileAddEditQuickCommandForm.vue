@@ -1,22 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import FolderSelect from './FolderSelect.vue';
-import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
+import type { QuickCommandFE } from '../stores/quickCommands.store';
+import { useQuickCommandForm } from '../composables/quickCommands/useQuickCommandForm';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
-import { useSessionStore } from '../stores/session.store';
-import { useUiNotificationsStore } from '../stores/uiNotifications.store';
-import { useConfirmDialog } from '../composables/useConfirmDialog';
-import { useAlertDialog } from '../composables/useAlertDialog';
-import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
-import { PRESET_COLORS, generateRandomColor } from '../utils/colorUtils';
+import { PRESET_COLORS } from '../utils/colorUtils';
+import FolderSelect from './FolderSelect.vue';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
-
-interface LocalVariable {
-  id: string;
-  name: string;
-  value: string;
-}
 
 const props = withDefaults(
   defineProps<{
@@ -36,216 +26,36 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const quickCommandsStore = useQuickCommandsStore();
+// 模板里的颜色选择器直接用到了 tags store
 const quickCommandTagsStore = useQuickCommandTagsStore();
-const sessionStore = useSessionStore();
-const uiNotificationsStore = useUiNotificationsStore();
-const { showConfirmDialog } = useConfirmDialog();
-const { showAlertDialog } = useAlertDialog();
-const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
-const isEditing = computed(() => !!(props.commandToEdit && props.commandToEdit.id > 0));
-const isSubmitting = ref(false);
-const commandError = ref<string | null>(null);
-
-const formData = reactive({
-  name: '',
-  command: '',
-  tagIds: [] as number[],
-  custom_background_color: false,
-  background_color: '#3b82f6',
-});
-
-const toggleCustomColor = () => {
-  formData.custom_background_color = !formData.custom_background_color;
-  if (formData.custom_background_color && !formData.background_color) {
-    formData.background_color = '#3b82f6';
-  }
-};
-
-const handleRandomColor = () => {
-  formData.background_color = generateRandomColor();
-};
-
-const selectedFolderId = computed({
-  get: () => {
-    return formData.tagIds && formData.tagIds.length > 0 ? formData.tagIds[0] : null;
-  },
-  set: (val: number | null) => {
-    formData.tagIds = val !== null ? [val] : [];
-  }
-});
-
-const localVariables = ref<LocalVariable[]>([]);
+// 表单逻辑两端共用（见 composables/quickCommands/useQuickCommandForm.ts）
+const {
+  isSubmitting,
+  isEditing,
+  formData,
+  localVariables,
+  commandError,
+  selectedFolderId,
+  toggleCustomColor,
+  handleRandomColor,
+  initForm,
+  handleCreateFolder,
+  handleDeleteTag,
+  handleSubmit,
+  closeForm,
+  addVariable,
+  deleteVariable,
+  handleExecute,
+} = useQuickCommandForm(props, emit);
 
 const placeholder = computed(() => {
   return t('quickCommands.form.commandPlaceholder', '例如：\necho "Hello World"\n支持变量：${VARIABLE_NAME}');
 });
 
-watch(() => formData.command, (newCommand) => {
-  if (!newCommand || newCommand.trim().length === 0) {
-    commandError.value = t('quickCommands.form.errorCommandRequired', '指令内容不能为空');
-  } else {
-    commandError.value = null;
-  }
-});
-
 onMounted(() => {
-  if (isEditing.value && props.commandToEdit) {
-    formData.name = props.commandToEdit.name ?? '';
-    formData.command = props.commandToEdit.command;
-    formData.tagIds = props.commandToEdit.tagIds ? [...props.commandToEdit.tagIds] : [];
-    if (props.commandToEdit.background_color) {
-      formData.custom_background_color = true;
-      formData.background_color = props.commandToEdit.background_color;
-    } else {
-      formData.custom_background_color = false;
-      formData.background_color = '#3b82f6';
-    }
-    if (props.commandToEdit.variables) {
-      localVariables.value = Object.entries(props.commandToEdit.variables).map(([name, value]) => ({
-        name,
-        value: String(value ?? ''),
-        id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
-      }));
-    } else {
-      localVariables.value = [];
-    }
-  } else if (props.initialCommand) {
-    formData.command = props.initialCommand;
-  }
+  initForm();
 });
-
-const handleCreateFolder = async (folderName: string) => {
-  if (!folderName || folderName.trim().length === 0) return;
-  const newFolder = await quickCommandTagsStore.createFolder(folderName.trim());
-  if (newFolder) {
-    formData.tagIds = [newFolder.id];
-  }
-};
-
-const handleDeleteTag = async (tagId: number) => {
-  const tagToDelete = quickCommandTagsStore.tags.find(t => t.id === tagId);
-  if (!tagToDelete) return;
-
-  const confirmed = await showConfirmDialog({
-    message: t('tags.prompts.confirmDelete', { name: tagToDelete.name })
-  });
-  if (confirmed) {
-    const success = await quickCommandTagsStore.deleteTag(tagId);
-    if (success) {
-      const index = formData.tagIds.indexOf(tagId);
-      if (index > -1) {
-        formData.tagIds.splice(index, 1);
-      }
-    } else {
-      showAlertDialog({ title: t('common.error', '错误'), message: t('tags.errorDelete', { error: quickCommandTagsStore.error || '未知错误' }) });
-    }
-  }
-};
-
-const addVariable = () => {
-  localVariables.value.push({
-    name: '',
-    value: '',
-    id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
-  });
-};
-
-const deleteVariable = (variableId: string) => {
-  localVariables.value = localVariables.value.filter(v => v.id !== variableId);
-};
-
-const closeForm = () => {
-  emit('close');
-};
-
-const handleSubmit = async () => {
-  if (commandError.value) return;
-
-  isSubmitting.value = true;
-  let success = false;
-
-  const finalName = formData.name.trim().length > 0 ? formData.name.trim() : null;
-
-  const variablesToSave: Record<string, string> = localVariables.value.reduce((acc, curr) => {
-    if (curr.name.trim()) {
-      acc[curr.name.trim()] = curr.value;
-    }
-    return acc;
-  }, {} as Record<string, string>);
-
-  const backgroundColorToSave = formData.custom_background_color && formData.background_color
-    ? formData.background_color.trim()
-    : null;
-
-  if (isEditing.value && props.commandToEdit) {
-    success = await quickCommandsStore.updateQuickCommand(
-      props.commandToEdit.id,
-      finalName,
-      formData.command.trim(),
-      formData.tagIds,
-      variablesToSave,
-      backgroundColorToSave
-    );
-  } else {
-    success = await quickCommandsStore.addQuickCommand(
-      finalName,
-      formData.command.trim(),
-      formData.tagIds,
-      variablesToSave,
-      backgroundColorToSave
-    );
-  }
-
-  isSubmitting.value = false;
-  if (success) {
-    closeForm();
-  }
-};
-
-const handleExecute = () => {
-  let processedCommand = formData.command;
-  const currentVariables = localVariables.value.reduce((acc, curr) => {
-    if (curr.name.trim()) {
-      acc[curr.name.trim()] = curr.value;
-    }
-    return acc;
-  }, {} as Record<string, string>);
-
-  for (const varName in currentVariables) {
-    const placeholder = new RegExp(`\\$\\{${varName}\\}`, 'g');
-    processedCommand = processedCommand.replace(placeholder, currentVariables[varName]);
-  }
-
-  const variablePlaceholders = formData.command.match(/\$\{[^\}]+\}/g) || [];
-  const undefinedVariables: string[] = [];
-  variablePlaceholders.forEach(placeholder => {
-    const varName = placeholder.substring(2, placeholder.length - 1);
-    if (!currentVariables.hasOwnProperty(varName)) {
-      undefinedVariables.push(varName);
-    }
-  });
-
-  if (undefinedVariables.length > 0) {
-    uiNotificationsStore.showWarning(
-      t('quickCommands.form.warningUndefinedVariables', { variables: undefinedVariables.join(', ') })
-    );
-  }
-
-  const activeSessionId = sessionStore.activeSessionId;
-  if (!activeSessionId) {
-    uiNotificationsStore.showError(t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。'));
-    return;
-  }
-
-  emitWorkspaceEvent('quickCommand:executeProcessed', {
-    command: processedCommand,
-    sessionId: activeSessionId
-  });
-
-  closeForm(); 
-};
 </script>
 
 <template>

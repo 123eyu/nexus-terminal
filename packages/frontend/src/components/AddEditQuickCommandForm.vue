@@ -261,93 +261,67 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useResizable } from '../composables/useResizable';
-import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import MobileAddEditQuickCommandForm from './MobileAddEditQuickCommandForm.vue';
-import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
+import type { QuickCommandFE } from '../stores/quickCommands.store';
+import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { useResizable } from '../composables/useResizable';
+import { useQuickCommandForm } from '../composables/quickCommands/useQuickCommandForm';
 import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
-import { useSessionStore } from '../stores/session.store';
-import { useUiNotificationsStore } from '../stores/uiNotifications.store'; 
-import { useWorkspaceEventEmitter } from '../composables/workspaceEvents'; 
-import { PRESET_COLORS, generateRandomColor } from '../utils/colorUtils';
+import { PRESET_COLORS } from '../utils/colorUtils';
 import FolderSelect from './FolderSelect.vue';
-import { useConfirmDialog } from '../composables/useConfirmDialog';
-import { useAlertDialog } from '../composables/useAlertDialog'; 
+import MobileAddEditQuickCommandForm from './MobileAddEditQuickCommandForm.vue';
 
 const props = defineProps<{
-    commandToEdit?: QuickCommandFE | null; // 接收要编辑的指令对象 (应包含标签ID和变量)
-    initialCommand?: string; // 初始命令文本（新增时预填）
-    initialFolderId?: number | null; // 新增时预选的所属文件夹ID
+  commandToEdit?: QuickCommandFE | null; // 接收要编辑的指令对象 (应包含标签ID和变量)
+  initialCommand?: string; // 初始命令文本（新增时预填）
+  initialFolderId?: number | null; // 新增时预选的所属文件夹ID
 }>();
 
 const emit = defineEmits(['close']);
 
 const { isMobile } = useDeviceDetection();
 const { t } = useI18n();
-const { showConfirmDialog } = useConfirmDialog();
-const { showAlertDialog } = useAlertDialog(); 
-const quickCommandsStore = useQuickCommandsStore();
-const quickCommandTagsStore = useQuickCommandTagsStore(); 
-const sessionStore = useSessionStore(); 
-const uiNotificationsStore = useUiNotificationsStore(); 
-const emitWorkspaceEvent = useWorkspaceEventEmitter(); 
-const isSubmitting = ref(false);
+// 模板里的颜色选择器直接用到了 tags store
+const quickCommandTagsStore = useQuickCommandTagsStore();
 
+// 桌面端可调整尺寸的弹窗
 const modalContentRef = ref<HTMLElement | null>(null);
 const R_MIN_WIDTH = 800; // 可调整大小的最小宽度 (像素)
 const R_MIN_HEIGHT = 700; // 可调整大小的最小高度 (像素)
-const placeholder = t('quickCommands.form.commandPlaceholder') + 'echo "Hello,\${USERNAME}"';
+const placeholder = t('quickCommands.form.commandPlaceholder') + 'echo "Hello,${USERNAME}"';
 
 const { width: resizableWidth, height: resizableHeight } = useResizable(modalContentRef, {
   minWidth: R_MIN_WIDTH,
   minHeight: R_MIN_HEIGHT,
 });
 
-const isEditing = computed(() => !!(props.commandToEdit && props.commandToEdit.id > 0));
+// 表单逻辑两端共用（见 composables/quickCommands/useQuickCommandForm.ts）
+const {
+  isSubmitting,
+  isEditing,
+  formData,
+  localVariables,
+  commandError,
+  selectedFolderId,
+  toggleCustomColor,
+  handleRandomColor,
+  initForm,
+  handleCreateFolder,
+  handleDeleteTag,
+  handleSubmit,
+  closeForm,
+  addVariable,
+  deleteVariable,
+  handleExecute,
+} = useQuickCommandForm(props, emit);
 
-const formData = reactive({
-    name: '',
-    command: '',
-    tagIds: [] as number[],
-    custom_background_color: false,
-    background_color: '#3b82f6',
-});
-
-const toggleCustomColor = () => {
-  formData.custom_background_color = !formData.custom_background_color;
-  if (formData.custom_background_color && !formData.background_color) {
-    formData.background_color = '#3b82f6';
+const onKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && !isSubmitting.value) {
+    closeForm();
   }
 };
 
-const handleRandomColor = () => {
-  formData.background_color = generateRandomColor();
-};
-
-const selectedFolderId = computed({
-  get: () => {
-    return formData.tagIds && formData.tagIds.length > 0 ? formData.tagIds[0] : null;
-  },
-  set: (val: number | null) => {
-    formData.tagIds = val !== null ? [val] : [];
-  }
-});
-const localVariables = ref<{ name: string; value: string; id: string }[]>([]);
-
-const commandError = ref<string | null>(null);
-
-// 监听指令内容变化，进行校验
-watch(() => formData.command, (newCommand) => {
-  if (!newCommand || newCommand.trim().length === 0) {
-    commandError.value = t('quickCommands.form.errorCommandRequired', '指令内容不能为空');
-  } else {
-    commandError.value = null;
-  }
-});
-
-// 初始化表单数据
 onMounted(() => {
   // 仅在桌面端应用 resizable 尺寸初始化
   if (typeof window !== 'undefined' && !isMobile.value) {
@@ -361,178 +335,13 @@ onMounted(() => {
     resizableHeight.value = initialH;
   }
 
-  if (isEditing.value && props.commandToEdit) {
-    formData.name = props.commandToEdit.name ?? '';
-    formData.command = props.commandToEdit.command;
-    formData.tagIds = props.commandToEdit.tagIds ? [...props.commandToEdit.tagIds] : [];
-    if (props.commandToEdit.background_color) {
-      formData.custom_background_color = true;
-      formData.background_color = props.commandToEdit.background_color;
-    } else {
-      formData.custom_background_color = false;
-      formData.background_color = '#3b82f6';
-    }
-    if (props.commandToEdit.variables) {
-      localVariables.value = Object.entries(props.commandToEdit.variables).map(([name, value]) => ({
-        name,
-        value,
-        id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
-      }));
-    } else {
-      localVariables.value = [];
-    }
-  } else {
-    if (props.initialCommand) {
-      formData.command = props.initialCommand;
-    }
-    if (props.initialFolderId) {
-      formData.tagIds = [props.initialFolderId];
-    }
-  }
-
+  initForm();
   window.addEventListener('keydown', onKeyDown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
 });
-
-const onKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && !isSubmitting.value) {
-    closeForm();
-  }
-};
-
-const handleCreateFolder = async (folderName: string) => {
-    if (!folderName || folderName.trim().length === 0) return;
-    const newFolder = await quickCommandTagsStore.createFolder(folderName.trim());
-    if (newFolder) {
-        formData.tagIds = [newFolder.id];
-    }
-};
-
-const handleDeleteTag = async (tagId: number) => {
-    const tagToDelete = quickCommandTagsStore.tags.find(t => t.id === tagId);
-    if (!tagToDelete) return;
-
-    const confirmed = await showConfirmDialog({
-        message: t('tags.prompts.confirmDelete', { name: tagToDelete.name })
-    });
-    if (confirmed) {
-        const success = await quickCommandTagsStore.deleteTag(tagId);
-        if (success) {
-            const index = formData.tagIds.indexOf(tagId);
-            if (index > -1) {
-                 formData.tagIds.splice(index, 1);
-            }
-        } else {
-             showAlertDialog({ title: t('common.error', '错误'), message: t('tags.errorDelete', { error: quickCommandTagsStore.error || '未知错误' }) });
-        }
-    }
-};
-
-const handleSubmit = async () => {
-  if (commandError.value) return;
-
-  isSubmitting.value = true;
-  let success = false;
-
-  const finalName = formData.name.trim().length > 0 ? formData.name.trim() : null;
-
-  const variablesToSave: Record<string, string> = localVariables.value.reduce((acc, curr) => {
-    if (curr.name.trim()) {
-      acc[curr.name.trim()] = curr.value;
-    }
-    return acc;
-  }, {} as Record<string, string>);
-
-  const backgroundColorToSave = formData.custom_background_color && formData.background_color
-    ? formData.background_color.trim()
-    : null;
-
-  if (isEditing.value && props.commandToEdit) {
-    success = await quickCommandsStore.updateQuickCommand(
-      props.commandToEdit.id,
-      finalName,
-      formData.command.trim(),
-      formData.tagIds,
-      variablesToSave,
-      backgroundColorToSave
-    );
-  } else {
-    success = await quickCommandsStore.addQuickCommand(
-      finalName,
-      formData.command.trim(),
-      formData.tagIds,
-      variablesToSave,
-      backgroundColorToSave
-    );
-  }
-
-  isSubmitting.value = false;
-  if (success) {
-    closeForm();
-  }
-};
-
-const closeForm = () => {
-  emit('close');
-};
-
-const addVariable = () => {
-  localVariables.value.push({
-    name: '',
-    value: '',
-    id: `var-${Date.now()}-${Math.random().toString(36).substring(7)}`
-  });
-};
-
-const deleteVariable = (variableId: string) => {
-  localVariables.value = localVariables.value.filter(v => v.id !== variableId);
-};
-
-const handleExecute = () => {
-  let processedCommand = formData.command;
-  const currentVariables = localVariables.value.reduce((acc, curr) => {
-    if (curr.name.trim()) {
-      acc[curr.name.trim()] = curr.value;
-    }
-    return acc;
-  }, {} as Record<string, string>);
-
-  for (const varName in currentVariables) {
-    const placeholder = new RegExp(`\\$\\{${varName}\\}`, 'g');
-    processedCommand = processedCommand.replace(placeholder, currentVariables[varName]);
-  }
-
-  const variablePlaceholders = formData.command.match(/\$\{[^\}]+\}/g) || [];
-  const undefinedVariables: string[] = [];
-  variablePlaceholders.forEach(placeholder => {
-    const varName = placeholder.substring(2, placeholder.length - 1);
-    if (!currentVariables.hasOwnProperty(varName)) {
-      undefinedVariables.push(varName);
-    }
-  });
-
-  if (undefinedVariables.length > 0) {
-    uiNotificationsStore.showWarning(
-      t('quickCommands.form.warningUndefinedVariables', { variables: undefinedVariables.join(', ') })
-    );
-  }
-
-  const activeSessionId = sessionStore.activeSessionId;
-  if (!activeSessionId) {
-    uiNotificationsStore.showError(t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。'));
-    return;
-  }
-
-  emitWorkspaceEvent('quickCommand:executeProcessed', {
-    command: processedCommand,
-    sessionId: activeSessionId
-  });
-
-  closeForm(); 
-};
 </script>
 
 <style scoped>
