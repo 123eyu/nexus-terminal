@@ -3,6 +3,9 @@ import { type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { type FavoritePathItem } from '../stores/favoritePaths.store';
 import { useFavoritePathForm } from '../composables/useFavoritePathForm';
+// 必须显式导入：漏了的话 Vue 会把 <MobileBottomSheet> 当成未知自定义元素，
+// slot 内容会内联渲染进父级布局里（表现为移动端文件管理器工具栏跑出来一个输入框）
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps({
   isVisible: {

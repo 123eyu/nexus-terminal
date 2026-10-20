@@ -3,6 +3,8 @@ import { type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FileListItem } from '../types/sftp.types';
 import { useFileManagerActionModal } from '../composables/file-manager/useFileManagerActionModal';
+// 同上：必须显式导入，否则退化成未知自定义元素、内容裸渲染
+import MobileBottomSheet from './common/MobileBottomSheet.vue';
 
 const props = defineProps({
   isVisible: {
