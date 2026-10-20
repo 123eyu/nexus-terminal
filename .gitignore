@@ -190,3 +190,5 @@ packages/backend/src/sync/__test_e2e_sync.ts
 .workbuddy-ai/
 doc/FRONTEND_DEBUGGING.md
 doc/CUSTOM_PANEL_PLAN.md
+tools/mock-ssh-server.mjs
+/tools
