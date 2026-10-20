@@ -397,6 +397,41 @@ export function installDebugBridge(app: App) {
       }
       return { text: line.translateToString(true), cells };
     },
+    /**
+     * 读终端的缓冲区状态（主屏 / 备用屏 + 回滚位置）。
+     *
+     * 「右侧滚动条消失、怎么都滚不上去」这类问题的唯一可靠判别依据：
+     * 备用屏（`type==='alternate'`）没有回滚历史，`baseY` 恒为 0，
+     * 只看屏幕文本是看不出来的（画面看起来完全正常）。
+     */
+    bufferState: (idOrIndex?: string | number) => {
+      const list = Array.from(terminals.values());
+      const entry =
+        typeof idOrIndex === 'number' ? list[idOrIndex] : idOrIndex ? list.find((t) => t.id === idOrIndex) : list[list.length - 1];
+      if (!entry) return null;
+      const buf = entry.term.buffer.active;
+      return {
+        id: entry.id,
+        sessionId: entry.sessionId,
+        type: buf.type, // 'normal' | 'alternate'
+        baseY: buf.baseY, // >0 说明存在回滚历史（滚动条可以出现）
+        viewportY: buf.viewportY,
+        cursorY: buf.cursorY,
+        rows: entry.term.rows,
+        scrollback: entry.term.options.scrollback,
+        historyLines: buf.length - entry.term.rows,
+      };
+    },
+    /** 样式级判定：右侧 gutter 滚动条当前是否被淡出（is-idle） */
+    scrollbarState: () => {
+      const tracks = Array.from(document.querySelectorAll('.terminal-scrollbar-track'));
+      return tracks.map((el) => ({
+        idle: el.classList.contains('is-idle'),
+        gutter: el.classList.contains('is-gutter'),
+        thumbHeight: (el.querySelector('.terminal-scrollbar-thumb') as HTMLElement | null)?.style.height ?? null,
+        thumbTop: (el.querySelector('.terminal-scrollbar-thumb') as HTMLElement | null)?.style.top ?? null,
+      }));
+    },
     get errors() {
       return errors.slice();
     },

@@ -117,11 +117,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
 
         // 兜底：旧快照可能把"备用屏（TUI）"状态一起存了下来。
         // 这里先强制切回主屏，避免刷新后 Ctrl+C 退出 TUI 时回到一个空的备用屏、整块变黑。
-        try {
-            term.write('\x1b[?1049l\x1b[0m');
-        } catch {
-            /* 忽略 */
-        }
+        restoreMainScreenBuffer(term);
 
         const currentSessionState = globalSessionsRef.value.get(sessionId);
 
@@ -343,6 +339,32 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         else run();
     };
 
+    /**
+     * 把终端从备用屏（全屏 TUI）强行切回主屏。
+     *
+     * 为什么需要：备用屏是靠程序自己发 `\e[?1049l` 退出的。一旦程序没机会发
+     * （dd 断流、screen/btop 被 kill、SSH 通道先断），xterm 就会永远停在备用屏上。
+     * 备用屏**没有回滚历史**（`buffer.active.baseY` 恒为 0），表现正是：
+     * 右侧滚动条消失、鼠标滚轮/拖动都滚不上去，而主屏里原有历史其实还在，只是被压住。
+     *
+     * 所以只要确认"通道已经死了、不可能再有程序接管屏幕"，就补一发 1049l：
+     * 画面回到主屏，滚动条和历史一起回来。
+     *
+     * @returns 是否真的做过切换（调用方可据此决定是否要补清屏/补提示）
+     */
+    const restoreMainScreenBuffer = (term: Terminal | null | undefined): boolean => {
+        if (!term) return false;
+        try {
+            if (term.buffer.active.type !== 'alternate') return false;
+            // 只退备用屏 + 重置 SGR：故意不带 `\e[2J`，
+            // 清屏会把手动恢复出来的主屏历史内容抹掉，那不是我们要的。
+            term.write('\x1b[?1049l\x1b[0m');
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
     const handleSshOutput = (payload: MessagePayload, message?: WebSocketMessage) => {
         // 检查消息是否属于此会话
         if (message?.sessionId && message.sessionId !== sessionId) {
@@ -479,6 +501,25 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const reason = payload || t('workspace.terminal.unknownReason'); // 使用 i18n 获取未知原因文本
         console.log(`[会话 ${sessionId}][SSH终端模块] SSH 会话已断开:`, reason);
         isSshConnected.value = false; // 更新状态
+
+        // 通道已确认关闭 = 远端 pty 没了，不可能再有全屏程序"合法占用"备用屏。
+        // 若此刻仍停在备用屏，说明退出序列随连接一起丢了（screen/btop 被 kill 的典型后果）。
+        // 必须在这里补切回主屏，否则用户失去全部回滚历史：滚动条消失、怎么都滚不上去。
+        if (terminalPanes.value.size > 0) {
+            for (const [, entry] of terminalPanes.value.entries()) {
+                if (restoreMainScreenBuffer(entry.terminal)) {
+                    console.log(`[会话 ${sessionId}][SSH终端模块] 检测到 ${entry.paneId} 停在备用屏，已强制切回主屏以恢复回滚历史`);
+                    // 主屏内容会"跳回"进入 TUI 之前的样子（TUI 画的那些行本来就不在回滚历史里），
+                    // 不解释一句用户会以为输出被清掉了。
+                    entry.terminal.writeln(`\r\n\x1b[33m${getTerminalText('altScreenRestoredMsg')}\x1b[0m`);
+                }
+            }
+        } else {
+            if (restoreMainScreenBuffer(terminalInstance.value)) {
+                terminalInstance.value?.writeln(`\r\n\x1b[33m${getTerminalText('altScreenRestoredMsg')}\x1b[0m`);
+            }
+        }
+
         terminalInstance.value?.writeln(`\r\n\x1b[31m${getTerminalText('disconnectMsg', { reason })}\x1b[0m`);
         // 可以在这里添加其他清理逻辑，例如禁用输入
     };
@@ -597,6 +638,9 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         console.log(`[会话 ${sessionId}][SSH终端模块] 分屏终端 ${paneId} Shell 通道已关闭`);
         const paneEntry = terminalPanes.value.get(paneId);
         if (paneEntry && paneEntry.terminal) {
+            // 同 handleSshDisconnected：分屏的 pty 也没了，先补退出备用屏再写提示，
+            // 否则这个 pane 会永久停在备用屏（滚动条消失 + 无法回看历史）。
+            restoreMainScreenBuffer(paneEntry.terminal);
             paneEntry.terminal.writeln(`\r\n\x1b[31m--- [${getTerminalText('disconnectMsg', { reason: '分屏会话已结束' })}] ---\x1b[0m\r\n`);
         }
     };

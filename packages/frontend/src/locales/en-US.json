@@ -499,6 +499,7 @@
       "reconnectingMsg": "Attempting to reconnect...",
       "reconnectedMsg": "Session reconnected successfully",
       "disconnectMsg": "[Connection closed: {reason}]",
+      "altScreenRestoredMsg": "[Full-screen program exited abnormally; switched back to the main screen so scrollback is available]",
       "unknownReason": "Unknown reason",
       "unknownSshError": "Unknown SSH error",
       "genericErrorMsg": "Error: {message}",

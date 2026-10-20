@@ -638,6 +638,7 @@
       "reconnectingMsg": "再接続を試行中...",
       "reconnectedMsg": "セッションが正常に再接続されました",
       "disconnectMsg": "[接続が切断されました: {reason}]",
+      "altScreenRestoredMsg": "[全画面プログラムが異常終了したため、メイン画面に戻してスクロールバックを復元しました]",
       "unknownReason": "不明な理由",
       "unknownSshError": "不明なSSHエラー",
       "genericErrorMsg": "エラー: {message}",

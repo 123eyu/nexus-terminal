@@ -498,6 +498,7 @@
       "reconnectingMsg": "正在尝试重新连接...",
       "reconnectedMsg": "会话已重新连接",
       "disconnectMsg": "[已断开连接: {reason}]",
+      "altScreenRestoredMsg": "[全屏程序异常退出，已切回主屏恢复回滚历史]",
       "unknownReason": "未知原因",
       "unknownSshError": "未知 SSH 错误",
       "genericErrorMsg": "发生错误: {message}",
