@@ -1486,6 +1486,14 @@
     "collapse": "收起",
     "send": "发送"
   },
+  "virtualKeyboard": {
+    "space": "空格",
+    "enter": "回车",
+    "shift": "Shift（下一个字符大写）",
+    "backspace": "退格",
+    "ctrl": "Ctrl（与字母组合）",
+    "alt": "Alt（发送 ESC 前缀）"
+  },
   "term": {
     "sshSuspend": "SSH挂起",
     "unknownError": "未知错误"

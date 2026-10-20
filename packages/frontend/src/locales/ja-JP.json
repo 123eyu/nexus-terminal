@@ -90,6 +90,14 @@
     "collapse": "折りたたむ",
     "send": "送信"
   },
+  "virtualKeyboard": {
+    "space": "スペース",
+    "enter": "Enter",
+    "shift": "Shift（次の1文字を大文字）",
+    "backspace": "バックスペース",
+    "ctrl": "Ctrl（英字と組み合わせ）",
+    "alt": "Alt（ESC を前置）"
+  },
   "common": {
     "confirm": "確認",
     "confirmationTitle": "確認",

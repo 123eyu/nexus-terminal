@@ -1487,6 +1487,14 @@
     "collapse": "Collapse",
     "send": "Send"
   },
+  "virtualKeyboard": {
+    "space": "Space",
+    "enter": "Enter",
+    "shift": "Shift (next char uppercase)",
+    "backspace": "Backspace",
+    "ctrl": "Ctrl (combine with a letter)",
+    "alt": "Alt (send ESC prefix)"
+  },
   "term": {
     "sshSuspend": "SSH Suspend",
     "unknownError": "Unknown error"
