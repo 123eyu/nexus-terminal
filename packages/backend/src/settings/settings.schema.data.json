@@ -23,6 +23,7 @@
     "fileManagerShowDeleteConfirmation": { "type": "boolean", "default": "true", "writable": true },
     "fileManagerDoubleClickToOpen": { "type": "boolean", "default": "false", "writable": true },
     "fileManagerHighlightChanges": { "type": "boolean", "default": "true", "writable": true },
+    "fileManagerSearchFixed": { "type": "boolean", "default": "false", "writable": true },
     "quickCommandRowSizeMultiplier": { "type": "number", "default": "1.0", "writable": true },
     "quickCommandsCompactMode": { "type": "boolean", "default": "false", "writable": true },
     "commandInputSyncTarget": { "type": "string", "default": "none", "writable": true },

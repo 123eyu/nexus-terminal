@@ -66,6 +66,7 @@ interface SettingsState {
   fileManagerShowDeleteConfirmation?: string;
   fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
   fileManagerHighlightChanges?: string; // 'true' or 'false' - 文件列表增量变动(新增/修改)时高亮闪烁 (默认 true)
+  fileManagerSearchFixed?: string; // 'true' or 'false' - 文件管理器搜索栏固定（跨端同步，默认 false）
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
   terminalRightClickBehavior?: string; // 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none'
   terminalContextMenuItems?: string; // JSON string of TerminalContextMenuSettings

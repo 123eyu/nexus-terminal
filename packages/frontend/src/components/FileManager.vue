@@ -18,7 +18,7 @@ import { useFileManagerColumnResize } from '../composables/file-manager/useFileM
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import { useFileManagerWorkspaceBridge } from '../composables/file-manager/useFileManagerWorkspaceBridge';
 import { openRemoteFile } from '../composables/file-manager/useFileOpenMode';
-import { isSearchFixed, setSearchFixed } from '../composables/file-manager/useSearchFixState';
+import { isSearchFixed, setSearchFixed, initSearchFixedSync } from '../composables/file-manager/useSearchFixState';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
@@ -1777,10 +1777,11 @@ const desktopSearchInputRef = ref<HTMLInputElement | null>(null);
 
 /**
  * 搜索栏「固定」：固定后搜索栏常驻，不用每次点顶栏的搜索按钮来激活。
- * 属于纯界面的个人习惯，存 localStorage（不进设置表，也不进工作区快照）。
- * 状态本身在 useSearchFixState 里做成了模块级单例：布局里可能同时挂多份 FileManager，
+ * 状态存在设置表 `fileManagerSearchFixed`，跟着设置一起跨端同步；
+ * 单例本身在 useSearchFixState 里：布局里可能同时挂多份 FileManager，
  * 各实例各存一份的话会各点各的、互相看不见。
  */
+initSearchFixedSync();
 
 /**
  * 只有桌面端才认"已固定"。移动端不提供这个功能：
