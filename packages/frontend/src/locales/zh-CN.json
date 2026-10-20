@@ -419,7 +419,7 @@
       "errorDelete": "删除连接失败：{error}"
     },
     "test": {
-      "success": "连接测试成功！",
+      "success": "已用系统默认程序打开（保存后自动同步回远程）",
       "failed": "连接测试失败: {error}",
       "latencyTooltip": "此延迟测量建立全新 SSH 连接所需的时间（包括 TCP 连接、代理协商、SSH 握手、认证等步骤），通常高于已建立连接上的交互延迟。",
       "errorMissingFields": "请填写主机、端口、用户名并选择认证方式。",
@@ -594,6 +594,25 @@
     "highlightSetSuccess": "已标记高亮颜色",
     "highlightCleared": "已清除高亮颜色",
     "highlightColorFailed": "标记颜色失败",
+    "externalSync": {
+      "synced": "已同步回远程服务器",
+      "reloaded": "已用远程版本覆盖本地副本",
+      "failed": "同步回远程失败",
+      "conflictTitle": "远程文件已被修改",
+      "conflictMessage": "你正在外部编辑器里修改的文件，远程版本在此期间也被改过了。要用你的本地修改覆盖远程，还是放弃本地改动、重新拉取远程版本？",
+      "overwriteRemote": "覆盖远程",
+      "discardLocal": "放弃本地改动",
+      "overwriteDone": "已用本地修改覆盖远程",
+      "discardDone": "已放弃本地改动，本地副本已更新为远程版本",
+      "resolveFailed": "处理失败"
+    },
+    "openExternal": {
+      "success": "已用系统默认程序打开（本地临时副本）",
+      "preparing": "正在准备本地副本…",
+      "failed": "外部程序打开失败",
+      "missingConnection": "无法确定连接信息，已改用内置编辑器打开",
+      "noLocalPath": "服务器没有返回本地副本路径，已改用内置编辑器打开"
+    },
     "headers": {
       "type": "类型",
       "name": "名称",
@@ -1111,6 +1130,11 @@
       "fileManagerHighlightChangesDescription": "目录内容发生变化时，新增加的文件显示绿色、被修改的显示琥珀色并短暂闪烁；关闭后不再高亮提示",
       "fileManagerHighlightChangesSuccess": "文件列表变动高亮设置已保存。",
       "fileManagerHighlightChangesError": "保存文件列表变动高亮设置失败。",
+      "fileOpenModeTitle": "打开文件的方式",
+      "fileOpenModeDescription": "选择在文件管理器里打开文件时使用内置编辑器还是系统默认程序。选择「系统默认程序」后，远程文件会先下载成本地临时副本再交给外部程序；在外部程序里保存后会自动同步回远程，若远程在此期间也被修改过，会先询问你是覆盖远程还是保留远程版本。",
+      "fileOpenModeBuiltin": "内置编辑器",
+      "fileOpenModeExternal": "系统默认程序",
+      "fileOpenModeExternalHint": "外部程序里保存后会自动同步回远程；若远程在此期间也被修改，会弹窗询问覆盖还是保留远程。",
       "terminalNoWrapTitle": "不换行",
       "terminalNoWrapDescription": "开启后终端长行内容不自动折行，超出视口宽度时支持水平横向滑动查看；关闭时自适应视口自动折行",
       "terminalNoWrapSuccess": "终端不换行设置已保存。",

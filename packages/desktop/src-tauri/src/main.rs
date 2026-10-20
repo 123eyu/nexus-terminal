@@ -231,6 +231,62 @@ fn exit_desktop_app(app: AppHandle, state: tauri::State<AppState>) -> Result<(),
     Ok(())
 }
 
+/// 用系统默认程序打开一个**本地**文件 —— 桌面端"外部程序打开远程文件"的最后一公里。
+///
+/// 分工：远程文件由后端（/api/v1/sftp/open-external）下载成本地临时副本并返回路径，
+/// 前端拿到 `localPath` 后再调用这里把它交给系统。
+///
+/// 实现选择：直接借 shell 插件的 open（内部走 open crate，Windows 上是 ShellExecute/explorer，
+/// macOS 是 open、Linux 是 xdg-open），比自己在 Rust 里拼 `cmd /c start` 更稳。从 Rust 侧调用
+/// 不经过 IPC 白名单校验，所以不受 capabilities 里 open scope 的限制。
+#[tauri::command]
+#[allow(deprecated)] // shell 的 open 官方建议迁去 opener 插件；为一个"交给系统"的动作再加插件不划算
+fn open_local_path(app: AppHandle, path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        open_path_trace("ERR\t路径为空");
+        return Err("打开失败：路径为空".into());
+    }
+    if !Path::new(trimmed).exists() {
+        open_path_trace(&format!("ERR\t文件不存在\t{}", trimmed));
+        return Err(format!("打开失败：文件不存在 ({})", trimmed));
+    }
+
+    match app.shell().open(trimmed, None) {
+        Ok(()) => {
+            open_path_trace(&format!("OK\t{}", trimmed));
+            Ok(())
+        }
+        Err(e) => {
+            open_path_trace(&format!("ERR\t系统关联启动失败\t{}\t{}", trimmed, e));
+            Err(format!("打开失败：无法启动系统默认程序 ({})", e))
+        }
+    }
+}
+
+/// 把「外部程序打开」的结果落到临时目录的日志里。
+///
+/// 为什么需要：桌面端 release 构建是 GUI 子系统，没有控制台，Rust 侧的 eprintln 和
+/// 前端 console 都看不到。用户报"外部程序打开失败"时只能靠这份日志定位是
+/// 路径问题、文件不存在，还是系统没有可用关联程序（ShellExecute 报错）。
+fn open_path_trace(line: &str) {
+    use std::io::Write;
+    let path = std::env::temp_dir().join("nexus-desktop-open.log");
+    // 每次打开追加一行，长期用会慢慢变大：超过 64 KB 就重置一次，避免变成没人清的垃圾
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 64 * 1024 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{}] {}", ts, line);
+    }
+}
+
 /// 智能寻找后端服务入口脚本 dist/index.js
 
 /// 移除 Windows 上的 UNC 扩展长路径前缀 (\\?\ 或 \\?\UNC\)，规避 Node.js 的 EISDIR 路径解析缺陷
@@ -385,7 +441,8 @@ fn main() {
             get_desktop_settings,
             set_desktop_settings,
             hide_main_window,
-            exit_desktop_app
+            exit_desktop_app,
+            open_local_path
         ])
         .setup(move |app| {
             let handle: AppHandle = app.handle().clone();

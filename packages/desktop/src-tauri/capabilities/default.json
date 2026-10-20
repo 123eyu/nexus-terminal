@@ -10,6 +10,7 @@
     "core:default",
     "shell:default",
     "shell:allow-execute",
-    "process:default"
+    "process:default",
+    "allow-desktop-commands"
   ]
 }

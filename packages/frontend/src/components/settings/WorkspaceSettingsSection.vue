@@ -291,6 +291,48 @@
           error-key="settings.workspace.fileManagerHighlightChangesError"
         />
 
+        <!-- 打开文件的方式 (仅桌面客户端；Web/移动端没有"外部程序"这一概念) -->
+        <div
+          v-if="isDesktop"
+          class="px-6 py-4.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-muted/15 transition-colors"
+        >
+          <div class="flex-1 pr-2">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[15px] sm:text-base font-medium text-foreground">
+                {{ $t('settings.workspace.fileOpenModeTitle', '打开文件的方式') }}
+              </span>
+              <HelpTooltip :text="$t('settings.workspace.fileOpenModeDescription', '选择在文件管理器里打开文件时使用内置编辑器还是系统默认程序。选择「系统默认程序」后，远程文件会先下载成本地临时副本再交给外部程序；在外部程序里保存后会自动同步回远程，若远程在此期间也被修改过，会先询问你是覆盖远程还是保留远程版本。')" />
+            </div>
+            <p v-if="fileOpenModeLocal === 'external'" class="mt-1 text-xs text-text-secondary flex items-center gap-1.5">
+              <i class="fas fa-info-circle text-[11px] shrink-0"></i>
+              <span>{{ $t('settings.workspace.fileOpenModeExternalHint', '外部程序里保存后会自动同步回远程；若远程在此期间也被修改，会弹窗询问覆盖还是保留远程。') }}</span>
+            </p>
+          </div>
+          <div class="flex items-center gap-3 shrink-0">
+            <span v-if="!fileOpenModeSuccess && fileOpenModeMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
+              <i class="fas fa-exclamation-circle text-xs"></i>
+              {{ fileOpenModeMessage }}
+            </span>
+            <div class="grid grid-cols-2 sm:flex p-1 bg-header/40 border border-border/80 rounded-lg gap-1 select-none">
+              <button
+                v-for="opt in fileOpenModeOptions"
+                :key="opt.value"
+                type="button"
+                :disabled="fileOpenModeLoading"
+                @click="handleSelectFileOpenMode(opt.value)"
+                class="h-8 sm:h-7.5 px-2.5 rounded-md text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer outline-none disabled:opacity-50"
+                :class="fileOpenModeLocal === opt.value
+                  ? 'bg-primary text-primary-foreground shadow-2xs font-semibold'
+                  : 'text-text-secondary hover:text-foreground hover:bg-muted/40'"
+                :title="opt.label"
+              >
+                <i :class="[opt.icon, 'text-xs shrink-0']"></i>
+                <span class="truncate">{{ opt.label }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         <!-- Markdown 默认视图模式 (整合在同一个设置项中，两行标签胶囊，移动端自适应) -->
         <div class="px-6 py-4.5 flex flex-col xl:flex-row xl:items-center justify-between gap-4 hover:bg-muted/15 transition-colors">
           <div class="flex-1 pr-2">
@@ -521,6 +563,10 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useWorkspaceSettings } from '../../composables/settings/useWorkspaceSettings';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
+import { useStringSettingControl } from '../../composables/settings/useSettingControl';
+import { SETTING_DEFAULTS } from '../../stores/settings.schema.generated';
+import { isDesktopApp } from '../../utils/platform';
+import type { DesktopFileOpenMode } from '../../stores/settings.store';
 import ToggleSwitch from '../common/ToggleSwitch.vue';
 import HelpTooltip from '../common/HelpTooltip.vue';
 import SettingToggle from './SettingToggle.vue';
@@ -583,6 +629,35 @@ const handleSelectMarkdownDefaultViewMode = async (mode: 'preview' | 'split' | '
 const handleSelectMarkdownDefaultViewModeMobile = async (mode: 'preview' | 'split' | 'edit') => {
   if (markdownDefaultViewModeMobileLocal.value === mode) return;
   markdownDefaultViewModeMobileLocal.value = mode;
+};
+
+// --- 桌面客户端：打开文件的方式（内置编辑器 / 系统默认程序） ---
+// Web 与移动端没有"外部程序"这一概念，这一块只在桌面客户端渲染。
+const isDesktop = computed(() => isDesktopApp());
+
+const fileOpenModeOptions = computed(() => [
+  { value: 'builtin' as const, label: t('settings.workspace.fileOpenModeBuiltin', '内置编辑器'), icon: 'fas fa-window-maximize' },
+  { value: 'external' as const, label: t('settings.workspace.fileOpenModeExternal', '系统默认程序'), icon: 'fas fa-external-link-alt' },
+]);
+
+const {
+  local: fileOpenModeLocal,
+  loading: fileOpenModeLoading,
+  message: fileOpenModeMessage,
+  success: fileOpenModeSuccess,
+  save: saveFileOpenMode,
+} = useStringSettingControl({
+  key: 'desktopFileOpenMode',
+  defaultValue: SETTING_DEFAULTS.desktopFileOpenMode ?? 'builtin',
+  successMessage: () => t('common.saved', '已保存'),
+  errorMessage: () => t('common.saveFailed', '保存失败'),
+  clearMessageAfterMs: 2500,
+});
+
+const handleSelectFileOpenMode = async (mode: DesktopFileOpenMode) => {
+  if (fileOpenModeLocal.value === mode) return;
+  fileOpenModeLocal.value = mode;
+  await saveFileOpenMode();
 };
 
 const contextMenuItemDefinitions = computed(() => [

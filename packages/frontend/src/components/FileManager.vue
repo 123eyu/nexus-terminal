@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { createSftpActionsManager, type WebSocketDependencies } from '../composables/useSftpActions';
 import { useFileUploader } from '../composables/useFileUploader';
-import { useFileEditorStore, type FileInfo } from '../stores/fileEditor.store';
+import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSessionStore } from '../stores/session.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
@@ -17,6 +17,7 @@ import { useFileManagerVirtualScroll } from '../composables/file-manager/useFile
 import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import { useFileManagerWorkspaceBridge } from '../composables/file-manager/useFileManagerWorkspaceBridge';
+import { openRemoteFile } from '../composables/file-manager/useFileOpenMode';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
@@ -183,8 +184,9 @@ const handleSetHighlightColor = async (item: FileListItem, color: string | null)
 };
  
 // 从 Settings Store 获取共享设置
+// 注：shareFileEditorTabs / showPopupFileEditor 的打开分流已经收敛到 composables/file-manager/useFileOpenMode.ts，
+// 这里只保留模板真正要用的那一项。
 const {
-  shareFileEditorTabsBoolean,
   fileManagerRowSizeMultiplierNumber,
   fileManagerColWidthsObject,
   showPopupFileEditorBoolean,
@@ -485,17 +487,14 @@ const handleTreeSelectDirectory = (path: string) => {
 };
 
 const handleTreeSelectFile = (filePath: string, fileName: string) => {
-  const fileInfo: FileInfo = { name: fileName, fullPath: filePath };
-
-  if (settingsStore.showPopupFileEditorBoolean) {
-    fileEditorStore.triggerPopup(filePath, props.sessionId);
-  }
-
-  if (shareFileEditorTabsBoolean.value) {
-    fileEditorStore.openFile(filePath, props.sessionId, props.instanceId);
-  } else {
-    sessionStore.openFileInSession(props.sessionId, fileInfo);
-  }
+  // 打开方式（内置编辑器 / 系统默认程序）由 openRemoteFile 按桌面端设置统一分流
+  void openRemoteFile({
+    sessionId: props.sessionId,
+    instanceId: props.instanceId,
+    path: filePath,
+    fileName,
+    connectionId: props.dbConnectionId,
+  });
 
   // 同步右侧表格定位到该文件的父目录并高亮此文件
   const lastSlash = filePath.lastIndexOf('/');
@@ -763,7 +762,6 @@ const handleItemAction = (item: FileListItem) => {
         currentSftpManager.value.loadDirectory(realPath);
       } else if (targetType === 'file') {
         const targetFilename = realPath.substring(realPath.lastIndexOf('/') + 1) || originalLinkItem.filename; // Get filename from realPath
-        const fileInfo: FileInfo = { name: targetFilename, fullPath: realPath };
 
         // Preserve mobile multi-select behavior for the original link item
         if (props.isMobile && isMultiSelectMode.value) {
@@ -775,27 +773,24 @@ const handleItemAction = (item: FileListItem) => {
           return;
         }
 
-        if (settingsStore.showPopupFileEditorBoolean) {
-          fileEditorStore.triggerPopup(realPath, props.sessionId);
-        }
-        if (shareFileEditorTabsBoolean.value) {
-          fileEditorStore.openFile(realPath, props.sessionId, props.instanceId);
-        } else {
-          sessionStore.openFileInSession(props.sessionId, fileInfo);
-        }
+        void openRemoteFile({
+          sessionId: props.sessionId,
+          instanceId: props.instanceId,
+          path: realPath,
+          fileName: targetFilename,
+          connectionId: props.dbConnectionId,
+        });
       } else { // targetType is 'unknown' or not provided as expected
         console.warn(`[FileManager ${props.sessionId}-${props.instanceId}] Symlink target '${realPath}' has an unknown type from server ('${targetType}'). Defaulting to open as file.`);
         // Fallback: attempt to open as file, or display an error
         const targetFilename = realPath.substring(realPath.lastIndexOf('/') + 1) || originalLinkItem.filename;
-        const fileInfo: FileInfo = { name: targetFilename, fullPath: realPath };
-        if (settingsStore.showPopupFileEditorBoolean) {
-          fileEditorStore.triggerPopup(realPath, props.sessionId);
-        }
-        if (shareFileEditorTabsBoolean.value) {
-          fileEditorStore.openFile(realPath, props.sessionId, props.instanceId);
-        } else {
-          sessionStore.openFileInSession(props.sessionId, fileInfo);
-        }
+        void openRemoteFile({
+          sessionId: props.sessionId,
+          instanceId: props.instanceId,
+          path: realPath,
+          fileName: targetFilename,
+          connectionId: props.dbConnectionId,
+        });
       }
     };
 
@@ -872,17 +867,14 @@ const handleItemAction = (item: FileListItem) => {
       return;
     }
     const filePath = itemPath; // itemPath is already calculated
-    const fileInfo: FileInfo = { name: item.filename, fullPath: filePath };
 
-    if (settingsStore.showPopupFileEditorBoolean) {
-      fileEditorStore.triggerPopup(filePath, props.sessionId);
-    }
-
-    if (shareFileEditorTabsBoolean.value) {
-      fileEditorStore.openFile(filePath, props.sessionId, props.instanceId);
-    } else {
-      sessionStore.openFileInSession(props.sessionId, fileInfo);
-    }
+    void openRemoteFile({
+      sessionId: props.sessionId,
+      instanceId: props.instanceId,
+      path: filePath,
+      fileName: item.filename,
+      connectionId: props.dbConnectionId,
+    });
   }
 };
 
@@ -1767,17 +1759,14 @@ const handleWheel = (event: WheelEvent) => {
 // --- 面包屑直接打开文件处理 ---
 const handleBreadcrumbOpenFile = (fileItem: FileListItem, fullPath?: string) => {
   const filePath = fullPath || (currentSftpManager.value ? currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, fileItem.filename) : fileItem.filename);
-  const fileInfo: FileInfo = { name: fileItem.filename, fullPath: filePath };
 
-  if (settingsStore.showPopupFileEditorBoolean) {
-    fileEditorStore.triggerPopup(filePath, props.sessionId);
-  }
-
-  if (shareFileEditorTabsBoolean.value) {
-    fileEditorStore.openFile(filePath, props.sessionId, props.instanceId);
-  } else {
-    sessionStore.openFileInSession(props.sessionId, fileInfo);
-  }
+  void openRemoteFile({
+    sessionId: props.sessionId,
+    instanceId: props.instanceId,
+    path: filePath,
+    fileName: fileItem.filename,
+    connectionId: props.dbConnectionId,
+  });
 };
 
 // --- 桌面端独立搜索栏状态与操作 ---

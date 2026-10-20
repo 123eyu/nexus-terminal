@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { clientStates } from '../websocket';
 import * as archiver from 'archiver';
 import { SFTPWrapper, Stats } from 'ssh2';
@@ -16,6 +17,16 @@ import {
 } from '../websocket/types';
 import { parseLsLine } from './services/scp-file.service';
 import { isSftpNotFoundError } from './services/sftp-helper';
+import {
+    buildLocalCopyPath,
+    cleanupExternalOpenDir,
+    getExternalOpenDir,
+} from './services/external-open.util';
+import {
+    downloadRemoteFileToLocal,
+    getRemoteMtimeSeconds,
+} from './services/external-open.transfer';
+import { externalOpenWatcher } from './services/external-open.watcher';
 
 /**
  * 处理文件下载请求 (GET /api/v1/sftp/download)
@@ -633,4 +644,147 @@ export const handleDecompressRequest = async (ws: AuthenticatedWebSocket, payloa
         console.error(`[WS SFTP Decompress ${sessionId}] Unexpected error setting up exec (ID: ${requestId}):`, execError);
         sendDecompressError(ws, `执行解压时发生意外错误: ${execError.message}`, requestId);
     }
+};
+
+
+/**
+ * 处理「在桌面客户端用外部程序打开远程文件」的准备工作 (POST /api/v1/sftp/open-external)
+ *
+ * 为什么由后端来做这件事：
+ *   远程文件只能通过已建立的 SFTP/SCP 连接读取（连接由后端持有），而"用系统默认程序打开"
+ *   需要的是一个**本地**文件路径。桌面端的数据目录与后端 sidecar 在同一台机器上，
+ *   所以后端把远程文件落到本地临时目录、把路径回给前端，前端再交给 Tauri 打开即可。
+ *
+ * 落盘之后会登记到 externalOpenWatcher：外部程序保存后本地副本 mtime 变化，
+ * 会自动传回远程（带远程 mtime 冲突检测）。
+ */
+export const prepareExternalOpen = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.session.userId;
+    const connectionId = (req.body?.connectionId ?? req.query.connectionId) as string | number | undefined;
+    const remotePath = (req.body?.remotePath ?? req.query.remotePath) as string | undefined;
+
+    if (!userId) {
+        res.status(401).json({ message: '未授权：需要登录。' });
+        return;
+    }
+    if (connectionId === undefined || connectionId === null || !remotePath) {
+        res.status(400).json({ message: '缺少必要参数 (connectionId, remotePath)。' });
+        return;
+    }
+
+    const targetDbConnectionId = typeof connectionId === 'number' ? connectionId : parseInt(String(connectionId), 10);
+    if (isNaN(targetDbConnectionId)) {
+        res.status(400).json({ message: '无效的 connectionId。' });
+        return;
+    }
+
+    // 复用与 downloadFile 相同的会话定位规则：同一用户 + 同一数据库连接 + 已建立 sftp/scp
+    let targetSessionId: string | null = null;
+    let targetState: ClientState | null = null;
+    for (const [sessionId, state] of clientStates.entries()) {
+        if (state.ws.userId === userId
+            && state.dbConnectionId === targetDbConnectionId
+            && (state.sftp || state.activeFileProtocol === 'scp')) {
+            targetSessionId = sessionId;
+            targetState = state;
+            break;
+        }
+    }
+
+    if (!targetState || !targetSessionId) {
+        res.status(404).json({ message: '未找到指定的活动文件传输会话。请先打开该连接的文件管理器。' });
+        return;
+    }
+
+    const dir = getExternalOpenDir();
+    try {
+        await fs.promises.mkdir(dir, { recursive: true });
+        cleanupExternalOpenDir(dir);
+
+        const localPath = buildLocalCopyPath(dir, targetDbConnectionId, remotePath);
+
+        // 已经打开过、本地副本还在：**不要重新下载**，否则会覆盖用户在外部程序里
+        // 还没回传的修改。远程被改过的情况由 watcher 在回传时做冲突检测。
+        if (externalOpenWatcher.has(localPath) && fs.existsSync(localPath)) {
+            const existing = fs.statSync(localPath);
+            console.log(`外部打开复用已有本地副本：${remotePath} -> ${localPath}`);
+            res.json({
+                success: true,
+                localPath,
+                fileName: path.basename(remotePath),
+                size: existing.size,
+                remoteMtimeS: await getRemoteMtimeSeconds(targetState, remotePath),
+                syncBack: true,
+                reused: true,
+            });
+            return;
+        }
+
+        const size = await downloadRemoteFileToLocal(targetState, remotePath, localPath);
+        const remoteMtimeS = await getRemoteMtimeSeconds(targetState, remotePath);
+        const localMtimeMs = fs.statSync(localPath).mtimeMs;
+
+        // 登记回传监听：会话每次 tick 重新解析，连接关了就自动摘掉
+        externalOpenWatcher.register({
+            userId,
+            connectionId: targetDbConnectionId,
+            remotePath,
+            localPath,
+            remoteMtimeS,
+            localMtimeMs,
+            resolveSession: () => clientStates.get(targetSessionId!) ?? null,
+        });
+
+        console.log(`外部打开准备完成：用户 ${userId}, 连接 ${targetDbConnectionId}, ${remotePath} -> ${localPath} (${size} 字节)`);
+        res.json({
+            success: true,
+            localPath,
+            fileName: path.basename(remotePath),
+            size,
+            remoteMtimeS,
+            /** 后台会自动把外部程序里的修改传回远程；冲突时推送 external-open:conflict */
+            syncBack: true,
+        });
+    } catch (error: any) {
+        console.error(`外部打开准备失败 (用户 ${userId}, 路径 ${remotePath}):`, error);
+        if (error?.message === 'NOT_A_FILE') {
+            res.status(400).json({ message: '指定的路径不是一个文件。' });
+            return;
+        }
+        if (isSftpNotFoundError(error)) {
+            res.status(404).json({ message: '远程文件未找到。' });
+            return;
+        }
+        res.status(500).json({ message: `准备外部打开时出错: ${error?.message || error}` });
+    }
+};
+
+/**
+ * 处理外部编辑器回传冲突 (POST /api/v1/sftp/open-external/resolve)
+ *
+ * 本地副本被外部程序改过、但远程在此期间也被别人改过时，watcher 不会擅自覆盖，
+ * 而是推 external-open:conflict 给前端；用户选择后调这个接口：
+ *   action = 'overwrite' —— 用本地副本覆盖远程
+ *   action = 'reload'    —— 丢掉本地改动，重新拉取远程内容
+ */
+export const resolveExternalOpen = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.session.userId;
+    const localPath = req.body?.localPath as string | undefined;
+    const action = req.body?.action as string | undefined;
+
+    if (!userId) {
+        res.status(401).json({ message: '未授权：需要登录。' });
+        return;
+    }
+    if (!localPath || (action !== 'overwrite' && action !== 'reload')) {
+        res.status(400).json({ message: '缺少必要参数 (localPath, action=overwrite|reload)。' });
+        return;
+    }
+
+    const result = await externalOpenWatcher.resolve(localPath, action);
+    if (!result.ok) {
+        res.status(409).json({ message: result.message || '同步失败' });
+        return;
+    }
+    res.json({ success: true, remoteMtimeS: result.remoteMtimeS ?? null });
 };

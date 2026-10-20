@@ -420,7 +420,7 @@
       "errorDelete": "Failed to delete connection: {error}"
     },
     "test": {
-      "success": "Connection test successful!",
+      "success": "Opened with the system default application (saves sync back automatically)",
       "failed": "Connection test failed: {error}",
       "latencyTooltip": "This measures the time to establish a new SSH connection (TCP, Proxy, SSH Handshake, Auth). It's typically higher than interaction latency on an already established connection.",
       "errorMissingFields": "Please fill in Host, Port, Username, and select an Auth Method.",
@@ -595,6 +595,25 @@
     "highlightSetSuccess": "Color highlight set",
     "highlightCleared": "Color highlight cleared",
     "highlightColorFailed": "Failed to update highlight color",
+    "externalSync": {
+      "synced": "Synced back to the remote server",
+      "reloaded": "Local copy replaced with the remote version",
+      "failed": "Failed to sync back to the remote server",
+      "conflictTitle": "The remote file has changed",
+      "conflictMessage": "The file you are editing in an external application was also changed on the remote side. Overwrite the remote file with your local changes, or discard your local changes and reload the remote version?",
+      "overwriteRemote": "Overwrite remote",
+      "discardLocal": "Discard local changes",
+      "overwriteDone": "Remote file overwritten with your local changes",
+      "discardDone": "Local changes discarded; local copy updated to the remote version",
+      "resolveFailed": "Failed to resolve the conflict"
+    },
+    "openExternal": {
+      "success": "Opened with the system default application (local temporary copy)",
+      "preparing": "Preparing the local copy…",
+      "failed": "Failed to open with an external application",
+      "missingConnection": "Could not determine the connection, opened with the built-in editor instead",
+      "noLocalPath": "The server did not return a local copy path, opened with the built-in editor instead"
+    },
     "headers": {
       "type": "Type",
       "name": "Name",
@@ -1117,6 +1136,11 @@
       "fileManagerHighlightChangesDescription": "When the directory changes, newly added files flash green and modified ones flash amber; disable to turn off the highlight entirely",
       "fileManagerHighlightChangesSuccess": "Highlight setting saved successfully.",
       "fileManagerHighlightChangesError": "Failed to save highlight setting.",
+      "fileOpenModeTitle": "How to open files",
+      "fileOpenModeDescription": "Choose whether files opened from the file manager use the built-in editor or the system default application. With the system default application, the remote file is downloaded to a local temporary copy first; saving in the external app syncs it back to the remote automatically, and if the remote was also modified in the meantime you will be asked whether to overwrite it.",
+      "fileOpenModeBuiltin": "Built-in editor",
+      "fileOpenModeExternal": "System default app",
+      "fileOpenModeExternalHint": "Saving in the external app syncs back to the remote automatically; if the remote changed in the meantime you will be asked to overwrite or keep the remote version.",
       "terminalNoWrapTitle": "No Wrap",
       "terminalNoWrapDescription": "When enabled, terminal text will not soft-wrap and can be scrolled horizontally; when disabled, lines wrap to fit terminal width",
       "terminalNoWrapSuccess": "Terminal no wrap setting saved successfully.",

@@ -1,0 +1,16 @@
+# 桌面端自身命令的 ACL 白名单
+#
+# 为什么要这个文件：便携版/安装版的页面是从 http://127.0.0.1:18111 加载的（remote 源），
+# Tauri v2 对 remote 源会严格套用 ACL —— 应用自己在 invoke_handler 里注册的命令同样需要
+# 在这里显式 allow，否则报 `Command xxx not allowed by ACL`（前端只会看到一句"打开失败"）。
+[[permission]]
+identifier = "allow-desktop-commands"
+description = "允许桌面端页面调用应用自身的命令（打开外部程序、读写桌面设置、窗口控制等）"
+commands.allow = [
+    "get_server_info",
+    "get_desktop_settings",
+    "set_desktop_settings",
+    "hide_main_window",
+    "exit_desktop_app",
+    "open_local_path",
+]

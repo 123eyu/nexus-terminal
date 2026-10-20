@@ -74,6 +74,7 @@ interface SettingsState {
   quickCommandsCompactMode?: string; // +++ 快捷指令视图紧凑模式 (e.g., 'false') +++
   fileEditorModalWidth?: string; // 文本编辑器弹窗宽度 (px)
   fileEditorModalHeight?: string; // 文本编辑器弹窗高度 (px)
+  desktopFileOpenMode?: string; // 'builtin' | 'external' - 桌面客户端打开文件的方式
   markdownDefaultViewMode?: string; // 'preview' | 'split' | 'edit'
   markdownDefaultViewModeMobile?: string; // 'preview' | 'split' | 'edit'
   rememberLastRoute?: string; // 'true' or 'false' - 记住上次停留页面
@@ -83,6 +84,14 @@ interface SettingsState {
 
 
 export type TerminalRightClickBehavior = 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none';
+
+/**
+ * 桌面客户端打开文件的方式：
+ *   builtin  —— 走内置编辑器（弹窗 / 共享标签页 / 会话内标签页，原有的三分支逻辑）
+ *   external —— 下载成本地临时副本后交给系统默认程序（Tauri 侧用默认程序打开）
+ * Web / 移动端不受此设置影响，永远走内置编辑器。
+ */
+export type DesktopFileOpenMode = 'builtin' | 'external';
 
 export interface TerminalContextMenuSettings {
   copy: boolean;
@@ -586,6 +595,11 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.shareFileEditorTabs !== 'false';
   });
 
+  // 桌面客户端打开文件的方式（默认内置编辑器；external 只在桌面端生效）
+  const desktopFileOpenModeString = computed<DesktopFileOpenMode>(() => {
+      return settings.value.desktopFileOpenMode === 'external' ? 'external' : 'builtin';
+  });
+
   // Getter for IP Whitelist enabled status
   const ipWhitelistEnabled = computed(() => settings.value.ipWhitelistEnabled === 'true');
 
@@ -859,6 +873,7 @@ export const useSettingsStore = defineStore('settings', () => {
     showPopupFileEditorBoolean,
     showPopupFileManagerBoolean, // +++ 暴露弹窗文件管理器 getter +++
     shareFileEditorTabsBoolean,
+    desktopFileOpenModeString, // 桌面端文件打开方式 getter
     ipWhitelistEnabled, // 暴露 IP 白名单启用状态
     ipBlacklistEnabledBoolean, // <-- NEW: 暴露 IP 黑名单启用状态 getter
     autoCopyOnSelectBoolean,

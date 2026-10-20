@@ -1,10 +1,8 @@
 import { ref, type Ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import type { Terminal } from 'xterm';
-import type { FileInfo } from '../../stores/fileEditor.store';
 import { useSettingsStore } from '../../stores/settings.store';
-import { useSessionStore } from '../../stores/session.store';
-import { useFileEditorStore } from '../../stores/fileEditor.store';
+import { openRemoteFile } from '../file-manager/useFileOpenMode';
 import { useWorkspaceEventEmitter } from '../workspaceEvents';
 
 /**
@@ -26,8 +24,6 @@ export interface TerminalContextMenuDeps {
 
 export function useTerminalContextMenu(deps: TerminalContextMenuDeps) {
   const settingsStore = useSettingsStore();
-  const sessionStore = useSessionStore();
-  const fileEditorStore = useFileEditorStore();
   const emitWorkspaceEvent = useWorkspaceEventEmitter();
   const { terminalRightClickBehaviorString } = storeToRefs(settingsStore);
 
@@ -74,18 +70,15 @@ export function useTerminalContextMenu(deps: TerminalContextMenuDeps) {
     const cleanPath = stripQuotes(filePathText);
     if (!cleanPath) return;
     const fileName = cleanPath.substring(cleanPath.lastIndexOf('/') + 1) || cleanPath;
-    const fileInfo: FileInfo = { name: fileName, fullPath: cleanPath };
     const sessionId = deps.getSessionId();
 
-    if (settingsStore.showPopupFileEditorBoolean) {
-      fileEditorStore.triggerPopup(cleanPath, sessionId);
-    }
-
-    if (settingsStore.shareFileEditorTabsBoolean) {
-      fileEditorStore.openFile(cleanPath, sessionId, 'terminal');
-    } else {
-      sessionStore.openFileInSession(sessionId, fileInfo);
-    }
+    // 与文件管理器共用同一套分流：桌面端可能走"系统默认程序打开"
+    void openRemoteFile({
+      sessionId,
+      instanceId: 'terminal',
+      path: cleanPath,
+      fileName,
+    });
   };
 
   const executeSaveQuickCommand = (cmdText: string) => {

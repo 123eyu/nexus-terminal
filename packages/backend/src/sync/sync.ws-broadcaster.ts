@@ -1,6 +1,12 @@
 // packages/backend/src/sync/sync.ws-broadcaster.ts
 import { WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
+import {
+  broadcastFrontendEvent,
+  getFrontendEventClientCount,
+  registerFrontendEventClient,
+  unregisterFrontendEventClient,
+} from '../websocket/frontend-events';
 
 /**
  * 已连接并鉴权成功的同步客户端连接池 (如桌面端后台连到云端)
@@ -95,22 +101,19 @@ export function broadcastSyncInvalidated(maxSeq?: number): void {
   }
 }
 
-/**
- * 已连接的前端 UI 实时事件客户端连接池 (当前打开的 Web / 桌面端页面)
- */
-const frontendEventClients = new Set<WebSocket>();
+/* 前端 UI 实时事件连接池已抽到 websocket/frontend-events.ts（leaf 模块，供 sftp 等其他层推事件） */
 
 /**
  * 处理通过 /ws/events 连接的前端 UI 全局事件订阅
  */
 export function handleFrontendEventsConnection(ws: WebSocket, req: IncomingMessage): void {
-  frontendEventClients.add(ws);
+  registerFrontendEventClient(ws);
   (ws as any).isAlive = true;
   (ws as any).isSyncOrEventChannel = true;
   (ws as any).channelType = 'events';
   (ws as any).missedPongs = 0;
 
-  console.log(`[FrontendEvents] 新增前端 UI 事件订阅长连接，当前活跃页面数: ${frontendEventClients.size}`);
+  console.log(`[FrontendEvents] 新增前端 UI 事件订阅长连接，当前活跃页面数: ${getFrontendEventClientCount()}`);
 
   // 连接握手成功后立即向前端发送 welcome 确认
   try {
@@ -142,12 +145,12 @@ export function handleFrontendEventsConnection(ws: WebSocket, req: IncomingMessa
   });
 
   ws.on('close', () => {
-    frontendEventClients.delete(ws);
-    console.log(`[FrontendEvents] 前端 UI 事件连接关闭，当前活跃页面数: ${frontendEventClients.size}`);
+    unregisterFrontendEventClient(ws);
+    console.log(`[FrontendEvents] 前端 UI 事件连接关闭，当前活跃页面数: ${getFrontendEventClientCount()}`);
   });
 
   ws.on('error', (err) => {
-    frontendEventClients.delete(ws);
+    unregisterFrontendEventClient(ws);
   });
 }
 
@@ -163,19 +166,8 @@ export function notifyLocalFrontendSyncDone(stats?: { pushed: number; pulled: nu
     timestamp: Date.now()
   });
 
-  let notifiedCount = 0;
-
   // 1. 优先通知所有订阅了 /ws/events 的前端 UI 页面
-  for (const client of frontendEventClients) {
-    if (client.readyState === WebSocket.OPEN) {
-      try {
-        client.send(msg);
-        notifiedCount++;
-      } catch (err: any) {
-        console.warn('[FrontendEvents] 向前端页面发送 sync:completed 异常:', err.message);
-      }
-    }
-  }
+  let notifiedCount = broadcastFrontendEvent({ type: 'sync:completed', payload: stats || { pushed: 0, pulled: 0 } });
 
   // 2. 同时通知所有处于活动状态的终端会话连接
   for (const [_sessionId, state] of clientStates) {
@@ -201,5 +193,5 @@ export function getActiveSyncClientsCount(): number {
  * 获取当前活跃前端事件连接数
  */
 export function getActiveFrontendClientsCount(): number {
-  return frontendEventClients.size;
+  return getFrontendEventClientCount();
 }

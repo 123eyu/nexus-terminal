@@ -25,6 +25,7 @@ import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
 import { initGlobalSyncListener } from './composables/useGlobalSyncListener';
+import { initExternalOpenSync } from './composables/file-manager/useExternalOpenSync';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -73,6 +74,8 @@ const updateUnderline = async () => {
 onMounted(() => {
   // 启动全局实时同步长连接监听器，实现全工作区面板无感自动刷新
   initGlobalSyncListener();
+  // 订阅「外部编辑器已回传 / 远程被改过」事件（桌面端外部打开功能的反馈）
+  initExternalOpenSync();
 
   // Initial position update
   // Use setTimeout to ensure styles are applied and elements have dimensions

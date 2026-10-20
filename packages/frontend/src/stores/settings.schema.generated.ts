@@ -54,6 +54,7 @@ export const SETTINGS_SCHEMA = {
   terminalSwitchPaneShortcut: { type: 'string', default: 'Alt+`' },
   fileEditorModalWidth: { type: 'string' },
   fileEditorModalHeight: { type: 'string' },
+  desktopFileOpenMode: { type: 'string', default: 'builtin' },
   markdownDefaultViewMode: { type: 'string', default: 'split' },
   markdownDefaultViewModeMobile: { type: 'string', default: 'preview' },
   rememberLastRoute: { type: 'boolean' },
@@ -106,6 +107,7 @@ export const WRITABLE_SETTING_KEYS = [
   'terminalSwitchPaneShortcut',
   'fileEditorModalWidth',
   'fileEditorModalHeight',
+  'desktopFileOpenMode',
   'markdownDefaultViewMode',
   'markdownDefaultViewModeMobile',
   'rememberLastRoute',
@@ -156,6 +158,7 @@ export const SETTING_DEFAULTS: Readonly<Record<string, string>> = {
   terminalEnableRightClickPaste:      'true',
   terminalNoWrap:                     'false',
   terminalSwitchPaneShortcut:         'Alt+`',
+  desktopFileOpenMode:                'builtin',
   markdownDefaultViewMode:            'split',
   markdownDefaultViewModeMobile:      'preview',
 };

@@ -11,6 +11,35 @@ let isInitialized = false;
 
 const isConnected = ref(false);
 
+type GlobalEventHandler = (message: any) => void;
+
+/**
+ * /ws/events 上自定义类型事件的订阅表。
+ *
+ * 这个通道原本只推 sync:completed，现在还要推「外部编辑器已回传 / 远程被改过」这类
+ * 跟同步无关的界面通知。与其让每个功能都来改这个文件的 onmessage，不如开一个通用订阅口。
+ */
+const customEventHandlers = new Map<string, Set<GlobalEventHandler>>();
+
+/**
+ * 订阅某类全局事件（返回取消订阅函数）。
+ * 需要在 initGlobalSyncListener 之前或之后调用都可以 —— 订阅表是模块级的。
+ */
+export function subscribeGlobalEvent(type: string, handler: GlobalEventHandler): () => void {
+  let handlers = customEventHandlers.get(type);
+  if (!handlers) {
+    handlers = new Set();
+    customEventHandlers.set(type, handlers);
+  }
+  handlers.add(handler);
+  return () => {
+    const current = customEventHandlers.get(type);
+    if (!current) return;
+    current.delete(handler);
+    if (current.size === 0) customEventHandlers.delete(type);
+  };
+}
+
 /**
  * 触发无感防抖全量 Store 重绘
  */
@@ -80,6 +109,18 @@ function connect() {
           scheduleStoreRefresh();
         } else if (msg.type === 'frontend:connected') {
           console.log('[GlobalSyncListener] 后端确认事件通道就绪:', msg.message);
+        } else {
+          // 自定义事件（如 external-open:synced / external-open:conflict）
+          const handlers = customEventHandlers.get(msg.type);
+          if (handlers) {
+            for (const handler of handlers) {
+              try {
+                handler(msg);
+              } catch (err) {
+                console.warn(`[GlobalSyncListener] 处理事件 ${msg.type} 失败:`, err);
+              }
+            }
+          }
         }
       } catch (err) {
         // 忽略非 JSON 消息
