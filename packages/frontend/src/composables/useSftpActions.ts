@@ -38,7 +38,11 @@ export interface SftpManagerInstance {
    deleteItems: (items: FileListItem[]) => void;
    renameItem: (item: FileListItem, newName: string) => void;
    changePermissions: (item: FileListItem, mode: number) => void;
-   readFile: (path: string, encoding?: string) => Promise<SftpReadFileSuccessPayload>;
+   readFile: (
+     path: string,
+     encoding?: string,
+     options?: { onProgress?: (loaded: number, total: number) => void }
+   ) => Promise<SftpReadFileSuccessPayload>;
    writeFile: (path: string, content: string, encoding?: string) => Promise<void>;
    stat: (path: string) => Promise<FileAttributes>;
    copyItems: (sourcePaths: string[], destinationDir: string) => void;
@@ -395,8 +399,18 @@ export function createSftpActionsManager(
     };
 
     // readFile 和 writeFile 仍然返回 Promise，并在内部处理自己的消息监听器注销
+    // 大文件读取的两种超时：
+    //   空闲超时 —— 连续这么久没收到任何进度/结果，才算真的卡住（数据在流就一直续命）
+    //   硬上限   —— 防止"永远有零星进度"的病态连接把 Promise 吊死
+    const READ_IDLE_TIMEOUT_MS = 30000;
+    const READ_HARD_TIMEOUT_MS = 15 * 60 * 1000;
+
     // --- 修改：接受可选 encoding 参数，返回包含 content 和 encodingUsed 的 Payload ---
-    const readFile = (path: string, encoding?: string): Promise<SftpReadFileSuccessPayload> => {
+    const readFile = (
+        path: string,
+        encoding?: string,
+        options?: { onProgress?: (loaded: number, total: number) => void }
+    ): Promise<SftpReadFileSuccessPayload> => {
         return new Promise(async (resolve, reject) => {
             // 如果 SFTP 尚未就绪但连接可能正在建立中，优雅等待就绪（最多等待 10 秒）
             if (!isSftpReady.value) {
@@ -430,22 +444,61 @@ export function createSftpActionsManager(
             const requestId = generateRequestId();
             let unregisterSuccess: (() => void) | null = null;
             let unregisterError: (() => void) | null = null;
+            let unregisterProgress: (() => void) | null = null;
+            let idleTimer: ReturnType<typeof setTimeout> | null = null;
+            let settled = false;
 
-            const timeoutId = setTimeout(() => {
+            const cleanup = () => {
+                if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+                clearTimeout(hardTimer);
                 unregisterSuccess?.();
                 unregisterError?.();
+                unregisterProgress?.();
+                unregisterSuccess = null;
+                unregisterError = null;
+                unregisterProgress = null;
+            };
+
+            const fail = (msg: string) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(new Error(msg));
+            };
+
+            // 每次收到进度都重置；以前是写死 20 秒总超时，大文件数据还在流就被判死了
+            const armIdle = () => {
+                if (idleTimer) clearTimeout(idleTimer);
+                idleTimer = setTimeout(() => {
+                    const errMsg = t('fileManager.errors.readFileTimeout');
+                    uiNotificationsStore.showError(errMsg);
+                    fail(errMsg);
+                }, READ_IDLE_TIMEOUT_MS);
+            };
+
+            const hardTimer = setTimeout(() => {
                 const errMsg = t('fileManager.errors.readFileTimeout');
                 uiNotificationsStore.showError(errMsg);
-                reject(new Error(errMsg));
-            }, 20000); // 20 秒超时
+                fail(errMsg);
+            }, READ_HARD_TIMEOUT_MS);
+            armIdle();
+
+            // 后端每 250ms 推一次已读字节数：既用来续命，也给编辑器显示百分比
+            unregisterProgress = onMessage('sftp:readfile:progress', (payload: MessagePayload, message: WebSocketMessage) => {
+                if (message.requestId !== requestId || message.path !== path) return;
+                armIdle();
+                try {
+                    options?.onProgress?.(Number(payload?.loaded) || 0, Number(payload?.total) || 0);
+                } catch { /* 进度回调抛错不能影响读取本身 */ }
+            });
 
             unregisterSuccess = onMessage('sftp:readfile:success', (payload: MessagePayload, message: WebSocketMessage) => {
                 // +++ 修改：处理包含 rawContentBase64 和 encodingUsed 的新 payload +++
                 const successPayload = payload as SftpReadFileSuccessPayload; // Type assertion remains valid
                 if (message.requestId === requestId && message.path === path) {
-                    clearTimeout(timeoutId);
-                    unregisterSuccess?.();
-                    unregisterError?.();
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
                     // Resolve with the new payload structure
                     resolve({ rawContentBase64: successPayload.rawContentBase64, encodingUsed: successPayload.encodingUsed });
                 }
@@ -454,12 +507,11 @@ export function createSftpActionsManager(
             unregisterError = onMessage('sftp:readfile:error', (payload: MessagePayload, message: WebSocketMessage) => {
                  const errorPayload = payload as string;
                 if (message.requestId === requestId && message.path === path) {
-                    clearTimeout(timeoutId);
-                    unregisterSuccess?.();
-                    unregisterError?.();
                     const errorMsg = errorPayload || t('fileManager.errors.readFileFailed');
-                    uiNotificationsStore.showError(`${t('fileManager.errors.readFileError')}: ${errorMsg}`);
-                    reject(new Error(errorMsg));
+                    if (!settled) {
+                        uiNotificationsStore.showError(`${t('fileManager.errors.readFileError')}: ${errorMsg}`);
+                    }
+                    fail(errorMsg);
                 }
             });
 

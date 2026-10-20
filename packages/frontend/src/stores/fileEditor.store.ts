@@ -36,6 +36,7 @@ export interface FileTab {
     remoteMtime?: number; // 最近一次已知的远端修改时间戳 (ms)
     remoteSize?: number; // 最近一次已知的远端文件大小 (bytes)
     hasExternalConflict?: boolean; // 远端变动且本地有未保存编辑时的冲突标记
+    loadProgress?: { loaded: number; total: number } | null; // 读取中进度（后端每 250ms 推一次，用于大文件显示百分比）
 }
 
 // --- 辅助函数 (移到外部并导出) ---
@@ -250,7 +251,14 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
         // 读取文件内容
         try {
             // 调用 sftpManager.readFile 获取原始数据和编码
-            const fileData: SftpReadFileSuccessPayload = await sftpManager.readFile(targetFilePath);
+            // 大文件会持续推进度：这里顺手记到 tab 上，界面显示"正在读取 45%"，
+            // 也避免用户以为卡死（超时判定在后端有进度时会被不断续命，不会半路切断）
+            const fileData: SftpReadFileSuccessPayload = await sftpManager.readFile(targetFilePath, undefined, {
+                onProgress: (loaded, total) => {
+                    const cur = tabs.value.get(tabId);
+                    if (cur && cur.isLoading) cur.loadProgress = { loaded, total };
+                },
+            });
             console.log(`[文件编辑器 Store] 文件 ${targetFilePath} 原始数据读取成功。后端使用编码: ${fileData.encodingUsed}`);
 
             const tabToUpdate = tabs.value.get(tabId);
@@ -272,6 +280,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
                 isLoading: false,
                 isModified: false,
                 loadingError: null,
+                loadProgress: null,
             };
             tabs.value.set(tabId, updatedTab); // 替换以确保响应性
 
@@ -298,6 +307,7 @@ export const useFileEditorStore = defineStore('fileEditor', () => {
             const tabToUpdate = tabs.value.get(tabId);
             if (tabToUpdate) {
                 tabToUpdate.isLoading = false;
+                tabToUpdate.loadProgress = null;
                 tabToUpdate.loadingError = errorMsg;
                 tabToUpdate.content = `// ${errorMsg}`; // 在编辑器中显示错误
             }

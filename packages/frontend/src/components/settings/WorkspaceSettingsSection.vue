@@ -258,6 +258,17 @@
           error-key="settings.shareEditorTabs.error.saveFailed"
         />
 
+        <!-- 打开大文件前二次确认 (纯开关) -->
+        <SettingToggle
+          setting-key="fileEditorLargeFileConfirm"
+          title-key="settings.workspace.largeFileConfirmTitle"
+          title-fallback="打开大文件前提示"
+          desc-key="settings.workspace.largeFileConfirmDescription"
+          desc-fallback="打开超过 3MB 的文件时先弹窗确认，避免误点大文件把编辑器卡住。在弹窗里勾选「记住」后会自动关闭此项。"
+          success-key="settings.workspace.largeFileConfirmSuccess"
+          error-key="settings.workspace.largeFileConfirmError"
+        />
+
         <!-- 文件管理器删除确认 (纯开关) -->
         <SettingToggle
           setting-key="fileManagerShowDeleteConfirmation"

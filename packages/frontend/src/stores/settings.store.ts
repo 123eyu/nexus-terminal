@@ -40,6 +40,7 @@ interface SettingsState {
   showPopupFileEditor?: string; // 'true' or 'false'
   showPopupFileManager?: string; // 'true' or 'false' - NEW: 弹窗文件管理器
   shareFileEditorTabs?: string; // 'true' or 'false'
+  fileEditorLargeFileConfirm?: string; // 'true' or 'false' - 打开大文件前是否二次确认（记住后置 false）
   ipWhitelistEnabled?: string; // 添加 IP 白名单启用状态 'true' or 'false'
   autoCopyOnSelect?: string; // 'true' or 'false' - 终端选中自动复制
   dockerStatusIntervalSeconds?: string; //  Docker 状态刷新间隔 (秒)
@@ -595,6 +596,11 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.shareFileEditorTabs !== 'false';
   });
 
+  // 打开大文件前是否二次确认（默认 true；用户在弹窗里勾"记住"后写成 false）
+  const fileEditorLargeFileConfirmBoolean = computed(() => {
+      return settings.value.fileEditorLargeFileConfirm !== 'false';
+  });
+
   // 桌面客户端打开文件的方式（默认内置编辑器；external 只在桌面端生效）
   const desktopFileOpenModeString = computed<DesktopFileOpenMode>(() => {
       return settings.value.desktopFileOpenMode === 'external' ? 'external' : 'builtin';
@@ -873,6 +879,7 @@ export const useSettingsStore = defineStore('settings', () => {
     showPopupFileEditorBoolean,
     showPopupFileManagerBoolean, // +++ 暴露弹窗文件管理器 getter +++
     shareFileEditorTabsBoolean,
+    fileEditorLargeFileConfirmBoolean,
     desktopFileOpenModeString, // 桌面端文件打开方式 getter
     ipWhitelistEnabled, // 暴露 IP 白名单启用状态
     ipBlacklistEnabledBoolean, // <-- NEW: 暴露 IP 黑名单启用状态 getter

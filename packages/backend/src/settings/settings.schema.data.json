@@ -8,6 +8,7 @@
     "showPopupFileEditor": { "type": "boolean", "default": "true", "writable": true },
     "showPopupFileManager": { "type": "boolean", "default": "false", "writable": true },
     "shareFileEditorTabs": { "type": "boolean", "default": "true", "writable": true },
+    "fileEditorLargeFileConfirm": { "type": "boolean", "default": "true", "writable": true },
     "ipWhitelistEnabled": { "type": "boolean", "default": "false", "writable": true },
     "ipBlacklistEnabled": { "type": "boolean", "default": "true", "writable": true },
     "autoCopyOnSelect": { "type": "boolean", "default": "false", "writable": true },

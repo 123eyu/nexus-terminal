@@ -18,6 +18,7 @@ import { useFileManagerColumnResize } from '../composables/file-manager/useFileM
 import { useFileManagerOperations } from '../composables/file-manager/useFileManagerOperations';
 import { useFileManagerWorkspaceBridge } from '../composables/file-manager/useFileManagerWorkspaceBridge';
 import { openRemoteFile } from '../composables/file-manager/useFileOpenMode';
+import { isSearchFixed, setSearchFixed } from '../composables/file-manager/useSearchFixState';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
@@ -874,6 +875,7 @@ const handleItemAction = (item: FileListItem) => {
       path: filePath,
       fileName: item.filename,
       connectionId: props.dbConnectionId,
+      size: item.attrs?.size,
     });
   }
 };
@@ -1766,6 +1768,7 @@ const handleBreadcrumbOpenFile = (fileItem: FileListItem, fullPath?: string) => 
     path: filePath,
     fileName: fileItem.filename,
     connectionId: props.dbConnectionId,
+    size: fileItem.attrs?.size,
   });
 };
 
@@ -1775,18 +1778,19 @@ const desktopSearchInputRef = ref<HTMLInputElement | null>(null);
 /**
  * 搜索栏「固定」：固定后搜索栏常驻，不用每次点顶栏的搜索按钮来激活。
  * 属于纯界面的个人习惯，存 localStorage（不进设置表，也不进工作区快照）。
+ * 状态本身在 useSearchFixState 里做成了模块级单例：布局里可能同时挂多份 FileManager，
+ * 各实例各存一份的话会各点各的、互相看不见。
  */
-const SEARCH_FIX_STORAGE_KEY = 'nexus:file_manager_search_fixed';
-const isSearchFixed = ref(false);
-try {
-  isSearchFixed.value = localStorage.getItem(SEARCH_FIX_STORAGE_KEY) === '1';
-} catch { /* 隐私模式下 localStorage 可能不可用，当作未固定 */ }
+
+/**
+ * 只有桌面端才认"已固定"。移动端不提供这个功能：
+ *   - 不显示固定按钮
+ *   - localStorage 里残留的固定状态也不让搜索栏常驻（否则手机上会莫名其妙一直有一条搜索栏）
+ */
+const searchFixActive = computed(() => isSearchFixed.value && !isMobileComputed.value);
 
 const toggleSearchFix = () => {
-  isSearchFixed.value = !isSearchFixed.value;
-  try {
-    localStorage.setItem(SEARCH_FIX_STORAGE_KEY, isSearchFixed.value ? '1' : '0');
-  } catch { /* 写不进去也不影响本次会话 */ }
+  setSearchFixed(!isSearchFixed.value);
 
   if (isSearchFixed.value) {
     // 固定的那一刻就把焦点放进去，符合"我马上要打字"的预期
@@ -1804,7 +1808,7 @@ const currentDirectoryName = computed(() => {
 
 const closeDesktopSearch = () => {
   // 固定时"关闭"只清空内容并退出焦点，搜索栏本身留着（否则固定就没意义了）
-  if (isSearchFixed.value) {
+  if (searchFixActive.value) {
     searchQuery.value = '';
     isSearchActive.value = false;
     desktopSearchInputRef.value?.blur();
@@ -1897,11 +1901,13 @@ defineExpose({ focusSearchInput, startPathEdit });
     <!-- 第三层：桌面端独立搜索栏（点击顶栏搜索按钮后在下方新建一行，支持当前选中目录即时搜索）
          固定后常驻显示，关闭按钮只清空内容、不收起整条搜索栏 -->
     <div
-      v-if="!props.isMobile && (isSearchActive || isSearchFixed)"
+      v-if="!props.isMobile && (isSearchActive || searchFixActive)"
       class="px-3 py-1.5 bg-header/90 border-b border-border/50 flex items-center gap-2.5 text-xs flex-shrink-0 animate-in slide-in-from-top-1 duration-150 shadow-sm"
     >
-      <!-- 固定：固定后搜索栏常驻，不必每次点顶栏搜索按钮 -->
+      <!-- 固定：固定后搜索栏常驻，不必每次点顶栏搜索按钮。
+           移动端不提供这个功能（别按 UA/窄屏判定，props.isMobile 在某些挂载点是缺省的） -->
       <button
+        v-if="!isMobileComputed"
         type="button"
         @click="toggleSearchFix"
         class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer"
@@ -1952,7 +1958,7 @@ defineExpose({ focusSearchInput, startPathEdit });
           type="button"
           @click="closeDesktopSearch"
           class="w-6 h-6 rounded flex items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 text-text-secondary hover:text-foreground transition-colors cursor-pointer"
-          :title="isSearchFixed ? '清空搜索内容' : '关闭搜索栏 (Esc)'"
+          :title="searchFixActive ? '清空搜索内容' : '关闭搜索栏 (Esc)'"
         >
           <i class="fas fa-times text-xs"></i>
         </button>

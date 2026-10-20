@@ -7,6 +7,7 @@ import { useSettingsStore } from '../../stores/settings.store';
 import { useSessionStore } from '../../stores/session.store';
 import { useFileEditorStore, type FileInfo } from '../../stores/fileEditor.store';
 import { useUiNotificationsStore } from '../../stores/uiNotifications.store';
+import { promptLargeFileOpen, LARGE_FILE_CONFIRM_BYTES } from './useLargeFilePrompt';
 
 /**
  * 「点开一个远程文件」这一件事的**唯一入口**。
@@ -34,6 +35,8 @@ export interface OpenRemoteFileOptions {
   fileName?: string;
   /** 数据库连接 id：外部打开需要它定位后端会话；不传则从 sessions store 反查 */
   connectionId?: number | string | null;
+  /** 文件大小（bytes）：调用方手里通常有 attrs.size，传了就不用再 stat 一次 */
+  size?: number;
 }
 
 /** 纯函数：这次点击最终走哪条路（实现在 utils/fileOpenMode.ts，便于单测） */
@@ -104,12 +107,13 @@ async function openWithExternalProgram(opts: OpenRemoteFileOptions): Promise<boo
       notifications.showInfo(t('fileManager.openExternal.preparing', '正在准备本地副本…'));
     }, 800);
 
-    // 远程文件可能不小，默认 10s 超时不够用
+    // 远程文件可能不小（几百 MB 也有），默认 10s 超时不够用；
+    // 后端会先把文件完整落盘再回包，慢链路下 2 分钟也可能不够 → 给到 10 分钟。
     const res = await apiClient
       .post(
         '/sftp/open-external',
         { connectionId, remotePath: opts.path },
-        { timeout: 120000 }
+        { timeout: 600000 }
       )
       .finally(() => clearTimeout(slowHint));
     const localPath: string | undefined = res.data?.localPath;
@@ -139,6 +143,25 @@ async function openWithExternalProgram(opts: OpenRemoteFileOptions): Promise<boo
 }
 
 /**
+ * 取文件大小（bytes）。
+ * 优先用调用方给的 attrs.size，没有再 stat 一次；都拿不到就返回 null（当作未知，不弹窗）。
+ */
+async function resolveRemoteFileSize(opts: OpenRemoteFileOptions): Promise<number | null> {
+  if (typeof opts.size === 'number' && Number.isFinite(opts.size) && opts.size >= 0) return opts.size;
+  try {
+    const sessionStore = useSessionStore();
+    // instanceId 缺省用 sessionId 兜底：非布局实例（终端右键）没有实例 id，但 stat 只依赖会话
+    const manager = sessionStore.getOrCreateSftpManager(opts.sessionId, opts.instanceId || opts.sessionId);
+    const stats = await manager?.stat(opts.path);
+    return typeof stats?.size === 'number' ? stats.size : null;
+  } catch (error) {
+    // 拿不到大小不影响打开，只是跳过大文件确认
+    console.warn('[FileOpenMode] 取远端文件大小失败，跳过大文件确认:', error);
+    return null;
+  }
+}
+
+/**
  * 打开远程文件的统一入口。FileManager 与终端右键菜单都调它。
  * 外部打开失败会自动降级到内置编辑器，保证"点了总能看到文件"。
  */
@@ -148,6 +171,26 @@ export async function openRemoteFile(opts: OpenRemoteFileOptions): Promise<void>
     isDesktop: isDesktopApp(),
     preference: settingsStore.desktopFileOpenModeString,
   });
+
+  // 大文件确认：只对内置编辑器生效。
+  // 内置编辑器是把整个文件读进内存再塞给 Monaco/CodeMirror，几十 MB 点一下要等很久；
+  // 外部程序走的是流式落盘 + 系统程序打开，本来就不怕大文件，不必多问一句。
+  if (mode === 'builtin' && settingsStore.fileEditorLargeFileConfirmBoolean) {
+    const size = await resolveRemoteFileSize(opts);
+    if (size !== null && size >= LARGE_FILE_CONFIRM_BYTES) {
+      const fileName = opts.fileName || opts.path.substring(opts.path.lastIndexOf('/') + 1) || opts.path;
+      const decision = await promptLargeFileOpen({ fileName, sizeBytes: size });
+      if (!decision.confirmed) return;
+      if (decision.remember) {
+        try {
+          // 记住 = 以后不再提示；想恢复提示去设置页把开关打开
+          await settingsStore.updateSetting('fileEditorLargeFileConfirm', 'false');
+        } catch (error) {
+          console.warn('[FileOpenMode] 记住"不再提示"失败（不影响本次打开）:', error);
+        }
+      }
+    }
+  }
 
   if (mode === 'external') {
     const opened = await openWithExternalProgram(opts);

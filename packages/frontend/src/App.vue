@@ -21,6 +21,7 @@ import RemoteDesktopModal from './components/RemoteDesktopModal.vue';
 import VncModal from './components/VncModal.vue';
 import ConfirmDialog from './components/common/ConfirmDialog.vue';
 import QuickCommandVariableDialog from './components/QuickCommandVariableDialog.vue';
+import LargeFileOpenDialog from './components/LargeFileOpenDialog.vue';
 import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
@@ -408,6 +409,9 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
 
     <!-- +++ 快捷指令变量补填弹窗（桌面/移动共用一个，挂全局避免各视图重复挂载） +++ -->
     <QuickCommandVariableDialog />
+
+    <!-- +++ 打开大文件前的确认弹窗（openRemoteFile 会 await 它的结果，同样只挂一次） +++ -->
+    <LargeFileOpenDialog />
 
   </div>
 </template>

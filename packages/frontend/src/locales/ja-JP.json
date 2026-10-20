@@ -559,6 +559,13 @@
     "searchPlaceholder": "ファイルを検索...",
     "fixSearchBar": "検索バーを固定（閉じても表示）",
     "unfixSearchBar": "固定を解除（閉じたら非表示）",
+    "largeFile": {
+      "title": "大きなファイルを開く",
+      "fileName": "ファイル名",
+      "fileSize": "サイズ",
+      "remember": "記憶する（今後は表示しない）",
+      "openAnyway": "それでも開く"
+    },
     "selectFileToEdit": "ファイルマネージャーから編集するファイルを選択してください。",
     "uploadStatus": {
       "cancelled": "キャンセルされました",
@@ -1343,6 +1350,10 @@
       "fileManagerHighlightChangesDescription": "ディレクトリの内容が変わると、追加されたファイルは緑、変更されたファイルは琥珀色で一時的にハイライトされます。無効にするとハイライトしません",
       "fileManagerHighlightChangesSuccess": "ハイライト設定が保存されました。",
       "fileManagerHighlightChangesError": "ハイライト設定の保存に失敗しました。",
+      "largeFileConfirmTitle": "大きなファイルを開く前に確認",
+      "largeFileConfirmDescription": "3MB を超えるファイルを開く前に確認します。大きなファイルを誤って開いてエディタが固まるのを防ぎます。ダイアログで「記憶する」を選ぶと自動的にオフになります。",
+      "largeFileConfirmSuccess": "大きなファイルの確認設定を保存しました。",
+      "largeFileConfirmError": "大きなファイルの確認設定の保存に失敗しました。",
       "fileOpenModeTitle": "ファイルを開く方法",
       "fileOpenModeDescription": "ファイルマネージャーからファイルを開くときに、内蔵エディタとシステムの既定アプリのどちらを使うかを選択します。「システムの既定アプリ」を選ぶと、リモートファイルはまずローカルの一時コピーとしてダウンロードされ、外部アプリで保存すると自動的にリモートへ同期されます。その間にリモート側も変更されていた場合は、上書きするかリモートを残すかを確認します。",
       "fileOpenModeBuiltin": "内蔵エディタ",

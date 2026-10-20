@@ -79,6 +79,13 @@ const activeTab = computed((): FileTab | null => {
   return props.tabs.find(tab => tab.id === props.activeTabId) ?? null;
 });
 
+// 读取进度百分比（只在大文件读取时出现，total 未知则不显示）
+const loadPercent = computed(() => {
+  const p = activeTab.value?.loadProgress;
+  if (!p || !p.total || p.total <= 0) return null;
+  return Math.min(100, Math.round((p.loaded / p.total) * 100));
+});
+
 // 本地编辑器内容缓冲
 const localContent = ref('');
 const encodingSelectRef = ref<HTMLSelectElement | null>(null);
@@ -420,7 +427,10 @@ defineExpose({
 
     <!-- 3. 编辑器内容区域 -->
     <div class="editor-content-area">
-      <div v-if="activeTab?.isLoading" class="editor-loading">{{ t('fileManager.loadingFile') }}</div>
+      <div v-if="activeTab?.isLoading" class="editor-loading">
+        {{ t('fileManager.loadingFile') }}
+        <span v-if="loadPercent !== null" class="ml-1 opacity-70">({{ loadPercent }}%)</span>
+      </div>
       <div v-else-if="activeTab?.loadingError" class="editor-error">{{ activeTab.loadingError }}</div>
 
       <!-- 图片专用视图 -->

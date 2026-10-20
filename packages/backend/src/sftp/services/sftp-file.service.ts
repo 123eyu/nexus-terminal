@@ -77,12 +77,42 @@ export class SftpFileService {
             return;
         }
         console.debug(`[SFTP ${sessionId}] Received readFile request for ${path} (ID: ${requestId}, Requested Encoding: ${requestedEncoding ?? 'auto'})`);
+        const sftp = state.sftp;
         try {
-            const readStream = state.sftp.createReadStream(path);
-            let fileData = Buffer.alloc(0);
-            let errorOccurred = false;
+            // 大文件必须发进度：前端靠它把「固定 20 秒超时」降级成「空闲超时」，
+            // 否则数据明明还在流，请求也会被一刀切判死（表现就是"下载正常但被超时截断"）。
+            // 顺带取一次文件大小，进度里能带上百分比；取不到就退化成只报已读字节数。
+            const expectedSize = await new Promise<number>((resolve) => {
+                sftp.stat(path, (err, stats) => resolve(err || !stats ? 0 : stats.size));
+            });
 
-            readStream.on('data', (chunk: Buffer) => { fileData = Buffer.concat([fileData, chunk]); });
+            const readStream = sftp.createReadStream(path);
+            // 不要每个 chunk 都 Buffer.concat：那是 O(n²)（50MB 文件要拷贝几十 GB 内存），
+            // 光这一步就能把读取拖过超时线。先攒数组，最后 concat 一次。
+            const chunks: Buffer[] = [];
+            let totalBytes = 0;
+            let errorOccurred = false;
+            let lastProgressAt = 0;
+
+            const sendProgress = () => {
+                const now = Date.now();
+                if (now - lastProgressAt < 250) return;
+                lastProgressAt = now;
+                try {
+                    state.ws.send(JSON.stringify({
+                        type: 'sftp:readfile:progress',
+                        path: path,
+                        payload: { loaded: totalBytes, total: expectedSize },
+                        requestId: requestId,
+                    }));
+                } catch { /* 连接已断，忽略 */ }
+            };
+
+            readStream.on('data', (chunk: Buffer) => {
+                chunks.push(chunk);
+                totalBytes += chunk.length;
+                sendProgress();
+            });
             readStream.on('error', (err: Error) => {
                 if (errorOccurred) return; errorOccurred = true;
                 console.error(`[SFTP ${sessionId}] readFile ${path} stream error (ID: ${requestId}):`, err);
@@ -90,6 +120,7 @@ export class SftpFileService {
             });
             readStream.on('end', () => {
                 if (errorOccurred) return;
+                const fileData = Buffer.concat(chunks, totalBytes);
 
                 console.log(`[SFTP ${sessionId}] readFile ${path} success, size: ${fileData.length} bytes (ID: ${requestId}). Processing content...`);
                 let encodingUsed: string = 'utf-8';
@@ -111,7 +142,10 @@ export class SftpFileService {
                         }
                     } else {
                         console.log(`[SFTP ${sessionId}] Detecting encoding for ${path} (ID: ${requestId})`);
-                        const detection = jschardet.detect(fileData);
+                        // 只拿前 256KB 做探测：jschardet 是逐字节统计，喂整个大文件会白白烧掉几秒到几十秒，
+                        // 而编码判定只需要开头一小段就有结论（大文件也用同样的编码）。
+                        const detectSample = fileData.length > 256 * 1024 ? fileData.subarray(0, 256 * 1024) : fileData;
+                        const detection = jschardet.detect(detectSample);
                         const detectedEncodingRaw = detection.encoding ? detection.encoding.toLowerCase() : 'utf-8';
                         const confidence = detection.confidence || 0;
                         console.log(`[SFTP ${sessionId}] Detected encoding: ${detectedEncodingRaw} (confidence: ${confidence})`);
