@@ -851,9 +851,11 @@ const handleItemAction = (item: FileListItem) => {
   }
 
   if (item.attrs.isDirectory) {
-    if (currentSftpManager.value.isLoading.value) {
-      return;
-    }
+    // 注意：这里不再因为 isLoading 就直接 return。
+    // 拖拽移动完成会立刻触发一次当前目录的刷新，刷新窗口里点击文件夹如果被丢弃，
+    // 用户的感觉就是"文件夹刚高亮完，点它没反应，必须等一会再点"。
+    // loadDirectory 内部会把新目标塞进 pendingDirectoryToLoad（只保留最后一个），
+    // 当前读目录一结束就无缝执行，所以这里直接交给它排队即可。
     navigatingTargetName.value = item.filename;
     const newPath = item.filename === '..'
       ? currentSftpManager.value.currentPath.value.substring(0, currentSftpManager.value.currentPath.value.lastIndexOf('/')) || '/'
@@ -2124,11 +2126,15 @@ defineExpose({ focusSearchInput, startPathEdit });
           </tbody>
 
           <!-- 正常文件列表渲染 (切换与进入文件夹时保留原有条目，绝不整体消失) -->
+          <!--
+            注意：这里**不能**因为在加载就加 pointer-events-none。
+            移动/删除/刷新完成后会做一次 isLoading=true 的就地刷新（列表内容照旧保留），
+            一旦整块 tbody 失去命中，用户在刷新窗口内的点击会被整个吞掉 ——
+            典型表现就是"刚把文件拖进文件夹，想马上点进去却点不动，要等一下才行"。
+            点击的排队/合并由 sftpManager.loadDirectory 的 pendingDirectoryToLoad 负责。
+          -->
           <tbody
             v-else
-            :class="{
-              'pointer-events-none': currentSftpManager?.isLoading.value
-            }"
           >
             <!-- '..' Entry (固定顶部，直观返回：只要当前不是根目录，即便空文件夹也常驻保留) -->
             <tr v-if="hasParentLink"
@@ -2267,12 +2273,10 @@ defineExpose({ focusSearchInput, startPathEdit });
           </div>
 
           <!-- 平铺网格卡片容器 -->
+          <!-- 同列表视图：加载中不禁用命中，否则刷新窗口内的点击会被吞掉 -->
           <div
             v-else
             class="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2"
-            :class="{
-              'pointer-events-none': currentSftpManager?.isLoading.value
-            }"
           >
             <!-- '..' Entry 返回上一级 -->
             <div

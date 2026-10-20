@@ -126,6 +126,13 @@ export function createSftpActionsManager(
     const pendingCopyRequestIds = new Set<string>();
     const pendingDirectoryToLoad = ref<{ path: string; forceRefresh: boolean; silent?: boolean } | null>(null);
 
+    // 导航代际：每发生一次"用户主动切目录"就 +1。
+    // 读目录是异步的，请求飞行期间用户可能又点了别的目录（例如拖放移动后立刻点进目标文件夹，
+    // 那条路径命中文件树缓存、不发请求）。等旧请求回来时若无条件把 currentPath 改回旧目录，
+    // 用户看到的就是"点了没反应/又弹回原目录"。所以响应落地前校验代际是否还是发起时那一代。
+    let navigationEpoch = 0;
+    let loadingNavigationEpoch = 0;
+
     // *** 响应式文件树 ***
     const fileTree = reactive<FileTreeNode>({
         filename: '/', // 根节点代表根目录
@@ -265,6 +272,7 @@ export function createSftpActionsManager(
             console.log(`[SFTP ${instanceSessionId}] 使用文件树缓存加载目录: ${path}`);
             // fileList 将通过 computed 属性更新，这里只需更新 currentPathRef
             isLoading.value = false;
+            navigationEpoch += 1; // 用户已经切到新目录，飞行中的旧请求不得再改回来
             currentPathRef.value = path;
             return; // 子节点已加载且非强制刷新，无需请求
         }
@@ -304,12 +312,15 @@ export function createSftpActionsManager(
                 return;
             }
             console.log(`[SFTP ${instanceSessionId}] 当前正在加载目录，已将最新目标目录加入排队: ${path} (forceRefresh=${forceRefresh})`);
+            navigationEpoch += 1;
             pendingDirectoryToLoad.value = { path, forceRefresh, silent };
             return;
         }
 
         console.log(`[SFTP ${instanceSessionId}] ${forceRefresh ? '刷新' : '加载'}目录: ${path}`);
         isLoading.value = true;
+        navigationEpoch += 1;
+        loadingNavigationEpoch = navigationEpoch;
         const requestId = generateRequestId();
         loadingRequestId.value = requestId;
         sendMessage({ type: 'sftp:readdir', requestId: requestId, payload: { path } });
@@ -855,7 +866,13 @@ export function createSftpActionsManager(
         targetNode.childrenLoaded = true;
 
         if (!isSilent) {
-            currentPathRef.value = path;
+            // 只有"发起这次请求之后用户没有再切目录"才允许把 currentPath 落回本次请求的 path。
+            // 否则会把用户刚刚点进去的目录顶掉（拖放移动后立刻点文件夹就是这个场景）。
+            if (loadingNavigationEpoch === navigationEpoch) {
+                currentPathRef.value = path;
+            } else {
+                console.log(`[SFTP ${instanceSessionId}] 目录 ${path} 的响应已过期（用户已切换到 ${currentPathRef.value}），仅更新文件树，不改当前路径`);
+            }
             isLoading.value = false;
             loadingRequestId.value = null;
             checkAndExecutePendingDirectoryLoad();
