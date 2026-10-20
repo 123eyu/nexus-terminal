@@ -1585,6 +1585,16 @@
       "warningUndefinedVariables": "警告：指令模板中存在未定义的变量: {variables}",
       "errorNoActiveSession": "没有活动的SSH会话可执行指令。"
     },
+    "variablePrompt": {
+      "title": "填写指令变量",
+      "untitled": "未命名指令",
+      "description": "{count} 个变量还没填值",
+      "valuePlaceholder": "输入变量值",
+      "previewLabel": "将要执行的指令",
+      "fillAllHint": "填完所有变量才能发送",
+      "send": "发送",
+      "filledCounter": "已填 {filled}/{total}"
+    },
     "untagged": "未标记",
     "tags": {
       "clickToEditTag": "点击编辑标签名称",

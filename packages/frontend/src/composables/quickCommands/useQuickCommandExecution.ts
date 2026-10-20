@@ -53,6 +53,30 @@ export function extractVariableNames(template: string): string[] {
   return names;
 }
 
+/**
+ * 取出"当前还缺值"的变量名（模板里出现、但没值或只有空白）。
+ *
+ * 判空规则刻意收得比较严：`''`、纯空格、`null`/`undefined` 都算没填。
+ * 原因很实际 —— `${path}` 填成空串，拼出来的就是 `rm -rf ` 这种残废命令，
+ * 与其发一条不确定的命令，不如让用户先补一个字符。
+ */
+export function getMissingVariableNames(
+  template: string,
+  savedVariables: Record<string, string> | null | undefined
+): string[] {
+  const vars = savedVariables || {};
+  return extractVariableNames(template).filter((name) => {
+    if (!Object.prototype.hasOwnProperty.call(vars, name)) return true;
+    const value = vars[name];
+    return typeof value !== 'string' || value.trim() === '';
+  });
+}
+
+/** 用户点击发送、但模板变量还没值时，用来请他补填的回调（返回 null = 取消发送） */
+export type QuickCommandVariablePrompter = (
+  command: QuickCommandFE
+) => Promise<Record<string, string> | null>;
+
 export interface QuickCommandExecutionContext {
   /** 使用次数 +1 */
   incrementUsage: (id: number) => void;
@@ -66,20 +90,48 @@ export interface QuickCommandExecutionContext {
   onNoActiveSession: () => void;
   /** 执行完的附加回调（桌面版用来 emit 给父组件） */
   onExecuted?: (processedCommand: string) => void;
+  /**
+   * 变量为空时弹窗让用户补填，返回补全后的变量表；返回 null 表示用户取消。
+   * 不传就保持老行为（占位符原样发出去）。
+   */
+  promptVariables?: QuickCommandVariablePrompter;
 }
 
 export function useQuickCommandExecution(ctx: QuickCommandExecutionContext) {
-  function executeCommand(cmd: QuickCommandFE) {
-    ctx.incrementUsage(cmd.id);
-
-    const processedCommand = resolveCommandVariables(cmd.command, cmd.variables);
-
+  /**
+   * 执行一条快捷指令。
+   *
+   * 变量补填是异步的（要等弹窗），所以这里是 async：调用点直接 `executeCommand(cmd)`
+   * 不 await 也没问题，取消/异常都不会往外抛。
+   *
+   * 顺序有意为之：先确认有会话（没会话弹窗让用户填完再报错很蠢），再补变量，
+   * 最后才 `incrementUsage` —— 让"使用次数"只统计真正发出去的。
+   */
+  async function executeCommand(cmd: QuickCommandFE) {
     const activeSessionId = ctx.getActiveSessionId();
     if (!activeSessionId) {
       ctx.onNoActiveSession();
       return;
     }
 
+    let variables = cmd.variables || {};
+    if (cmd.command) {
+      const missing = getMissingVariableNames(cmd.command, variables);
+      if (missing.length > 0 && ctx.promptVariables) {
+        try {
+          const filled = await ctx.promptVariables(cmd);
+          if (!filled) return; // 用户取消：不发、不计数
+          variables = { ...variables, ...filled };
+        } catch (error) {
+          console.error('[QuickCommand] 变量补填弹窗异常，已取消本次执行:', error);
+          return;
+        }
+      }
+    }
+
+    const processedCommand = resolveCommandVariables(cmd.command, variables);
+
+    ctx.incrementUsage(cmd.id);
     ctx.emitProcessed({ command: processedCommand, sessionId: activeSessionId });
     ctx.onExecuted?.(processedCommand);
   }

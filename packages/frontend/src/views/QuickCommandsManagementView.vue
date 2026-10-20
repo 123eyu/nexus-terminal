@@ -603,6 +603,8 @@ import { resolveEffectiveColor, getItemColoredCardStyle } from '../utils/colorUt
 import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
+import { resolveCommandVariables } from '../composables/quickCommands/useQuickCommandExecution';
+import { promptQuickCommandVariables } from '../composables/quickCommands/useQuickCommandVariablePrompt';
 
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
@@ -935,14 +937,17 @@ const handleDeleteCommand = async (cmd: QuickCommandFE) => {
   }
 };
 
-const executeCommand = (cmd: QuickCommandFE) => {
+const executeCommand = async (cmd: QuickCommandFE) => {
   const activeSessionId = sessionStore.activeSessionId;
   if (!activeSessionId) {
     uiNotificationsStore.showWarning(t('quickCommands.noActiveSession', '当前没有活动终端会话，请先在终端工作区打开连接'));
     return;
   }
+  // 变量没填值就先弹窗补填（同时把 ${var} 真正替换掉 —— 以前这里是直接发原始模板）
+  const variables = await promptQuickCommandVariables(cmd);
+  if (!variables) return;
   emitWorkspaceEvent('quickCommand:executeProcessed', {
-    command: cmd.command,
+    command: resolveCommandVariables(cmd.command, variables),
     sessionId: activeSessionId
   });
   uiNotificationsStore.showSuccess(t('quickCommands.executed', '指令已发送执行'));

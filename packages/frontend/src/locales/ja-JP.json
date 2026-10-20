@@ -863,6 +863,16 @@
       "warningUndefinedVariables": "警告：コマンドテンプレートに未定義の変数があります: {variables}",
       "errorNoActiveSession": "コマンドを実行するためのアクティブなSSHセッションがありません。"
     },
+    "variablePrompt": {
+      "title": "コマンドの変数を入力",
+      "untitled": "名称未設定のコマンド",
+      "description": "{count} 個の変数が未入力です",
+      "valuePlaceholder": "値を入力",
+      "previewLabel": "実行するコマンド",
+      "fillAllHint": "すべての変数を入力すると送信できます",
+      "send": "送信",
+      "filledCounter": "入力済み {filled}/{total}"
+    },
     "untagged": "タグなし",
     "tags": {
       "clickToEditTag": "クリックしてタグ名を編集"

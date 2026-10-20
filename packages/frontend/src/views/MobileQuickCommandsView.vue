@@ -734,6 +734,7 @@ import { useI18n } from 'vue-i18n';
 import { copyToClipboard } from '../utils/clipboard';
 import { resolveFolderColor, resolveCommandFolderColor, countCommandsInFolder } from '../utils/quickCommandDisplay';
 import { useQuickCommandExecution } from '../composables/quickCommands/useQuickCommandExecution';
+import { promptQuickCommandVariables } from '../composables/quickCommands/useQuickCommandVariablePrompt';
 import { useQuickCommandFolderEditing } from '../composables/quickCommands/useQuickCommandFolderEditing';
 import { useQuickCommandMenuActions, type QuickCommandMenuAction } from '../composables/quickCommands/useQuickCommandMenuActions';
 import { useQuickCommandSearchNavigation } from '../composables/quickCommands/useQuickCommandSearchNavigation';
@@ -1141,6 +1142,7 @@ const { executeCommand } = useQuickCommandExecution({
   noActiveSessionMessage: () => t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。'),
   onNoActiveSession: () => uiNotificationsStore.showError(t('quickCommands.form.errorNoActiveSession', '没有活动的SSH会话可执行指令。')),
   onExecuted: (processed) => emit('execute-command', processed),
+  promptVariables: promptQuickCommandVariables,
 });
 
 // +++ 聚焦搜索框的方法 +++
