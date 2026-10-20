@@ -151,8 +151,10 @@ dist-scripts/
 # Sub-package specific ignores
 /packages/backend/node_modules/
 /packages/backend/dist/
+/packages/backend/dist.bak*
 /packages/frontend/node_modules/
 /packages/frontend/dist/
+/packages/frontend/dist.bak*
 /packages/frontend/.vite/
 
 # Ignore specific generated file in root
@@ -187,3 +189,4 @@ packages/backend/src/sync/__test_e2e_sync.ts
 **/.debug/
 .workbuddy-ai/
 doc/FRONTEND_DEBUGGING.md
+doc/CUSTOM_PANEL_PLAN.md
