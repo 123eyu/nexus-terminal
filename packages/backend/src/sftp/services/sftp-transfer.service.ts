@@ -4,6 +4,7 @@ import { ClientState } from '../../websocket/types';
 import {
     ensureDirectoryExists,
     getStats,
+    isSftpNotFoundError,
     listDirectory,
     performRename,
     formatStatsToFileListItem
@@ -117,7 +118,7 @@ export class SftpTransferService {
                         await getStats(sftp, newPath);
                         targetExists = true;
                     } catch (statErr: any) {
-                        if (!(statErr.code === 'ENOENT' || (statErr.message && statErr.message.includes('No such file')))) {
+                        if (!isSftpNotFoundError(statErr)) {
                             throw new Error(`检查目标路径 ${newPath} 状态时出错: ${statErr.message}`);
                         }
                     }

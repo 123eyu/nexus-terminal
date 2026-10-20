@@ -15,6 +15,7 @@ import {
     SftpDecompressErrorPayload
 } from '../websocket/types';
 import { parseLsLine } from './services/scp-file.service';
+import { isSftpNotFoundError } from './services/sftp-helper';
 
 /**
  * 处理文件下载请求 (GET /api/v1/sftp/download)
@@ -174,7 +175,7 @@ export const downloadFile = async (req: Request, res: Response): Promise<void> =
     } catch (error: any) {
         console.error(`SFTP 下载处理失败 (用户 ${userId}, 路径 ${remotePath}):`, error);
         if (!res.headersSent) {
-            if (error.message?.includes('No such file')) {
+            if (isSftpNotFoundError(error)) {
                  res.status(404).json({ message: '远程文件未找到。' });
             } else {
                  res.status(500).json({ message: `处理下载请求时出错: ${error.message}` });
@@ -331,7 +332,7 @@ export const downloadDirectory = async (req: Request, res: Response): Promise<vo
     } catch (error: any) {
         console.error(`SFTP 文件夹下载处理失败 (用户 ${userId}, 路径 ${remotePath}):`, error);
         if (!res.headersSent) {
-            if (error.code === 'ENOENT' || error.message?.includes('No such file')) { // 检查 SFTP 错误码或消息
+            if (isSftpNotFoundError(error)) { // SFTP STATUS 2 / ENOENT / 服务端 "no such file" 文本
                  res.status(404).json({ message: '远程目录未找到。' });
             } else {
                  res.status(500).json({ message: `处理文件夹下载请求时出错: ${error.message}` });

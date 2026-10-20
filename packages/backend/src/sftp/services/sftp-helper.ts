@@ -8,6 +8,21 @@ export interface SftpDirEntry {
 }
 
 /**
+ * 判断一个 SFTP 错误是否表示“路径不存在”。
+ *
+ * ssh2 客户端把 SFTP STATUS 码原样塞进 `err.code`（数值 2 = NO_SUCH_FILE），
+ * 并不会转成 Node 的 'ENOENT'；而 `err.message` 是服务端给的自由文本
+ * （OpenSSH 是 "No such file"，其它实现/本地化环境可能是别的写法）。
+ * 所以三路任一命中都算“不存在”，否则重命名前的目标探测会把正常情况误判成故障。
+ */
+export function isSftpNotFoundError(err: any): boolean {
+    if (!err) return false;
+    if (err.code === 2 || err.code === 'NO_SUCH_FILE') return true;
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') return true;
+    return typeof err.message === 'string' && /no such file|not found|不存在/i.test(err.message);
+}
+
+/**
  * 获取文件或目录的 Stats 属性
  */
 export function getStats(sftp: SFTPWrapper, targetPath: string): Promise<Stats> {
@@ -35,7 +50,7 @@ export async function ensureDirectoryExists(sftp: SFTPWrapper, dirPath: string):
         await getStats(sftp, normalizedPath);
         return;
     } catch (statError: any) {
-        if (statError.code === 'ENOENT' || (statError.message && statError.message.includes('No such file'))) {
+        if (isSftpNotFoundError(statError)) {
             try {
                 await new Promise<void>((resolveMkdir, rejectMkdir) => {
                     // @ts-ignore - 部分 ssh2 实现支持 recursive 参数
