@@ -557,6 +557,8 @@
     "saveSuccess": "保存に成功しました",
     "saving": "保存中",
     "searchPlaceholder": "ファイルを検索...",
+    "fixSearchBar": "検索バーを固定（閉じても表示）",
+    "unfixSearchBar": "固定を解除（閉じたら非表示）",
     "selectFileToEdit": "ファイルマネージャーから編集するファイルを選択してください。",
     "uploadStatus": {
       "cancelled": "キャンセルされました",

@@ -694,6 +694,8 @@
     "noOpenFile": "No file open",
     "selectFileToEdit": "Select a file from the file manager to start editing.",
     "searchPlaceholder": "Search files...",
+    "fixSearchBar": "Fix search bar (stays visible when closed)",
+    "unfixSearchBar": "Unfix (collapse search bar on close)",
     "dropFilesHere": "Drop files here to upload",
     "changeEncodingTooltip": "Change file encoding",
     "loadingEncoding": "Loading...",

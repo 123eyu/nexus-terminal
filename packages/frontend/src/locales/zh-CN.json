@@ -693,6 +693,8 @@
     "noOpenFile": "未打开文件",
     "selectFileToEdit": "请从文件管理器中选择文件以开始编辑。",
     "searchPlaceholder": "搜索文件...",
+    "fixSearchBar": "固定搜索栏（关闭后仍常驻显示）",
+    "unfixSearchBar": "取消固定（关闭后收起搜索栏）",
     "dropFilesHere": "将文件拖拽到此处上传",
     "changeEncodingTooltip": "更改文件编码",
     "loadingEncoding": "加载中...",
