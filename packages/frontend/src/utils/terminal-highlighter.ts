@@ -347,9 +347,21 @@ export function highlightPlainTextSegmentWithSpans(text: string, matchers: Compi
 }
 
 /**
- * ANSI 转义字符序列正则，涵盖标准 CSI、OSC 以及常见控制字符
+ * ANSI 转义字符序列正则。
+ *
+ * 必须覆盖「所有」VT 序列形态，否则漏掉的序列会被当成纯文本参与高亮匹配，
+ * 高亮注入的 SGR 会把控制序列从中间劈开（典型的受害者是 OSC 8 超链接：
+ * `\x1b]8;;https://…` 里塞进一段 SGR 后，终端提前结束 OSC，链接地址就变成
+ * 画面上多出来的一行字）。
+ *
+ *   CSI  : ESC [ 参数(0x30-0x3F) 中间字节(0x20-0x2F) 终止字节(0x40-0x7E)
+ *          —— 覆盖 `\x1b[38;2;…m`、`\x1b[>4;2m`、`\x1b[?1049h`、`\x1b[1;1H` …
+ *   OSC  : ESC ] … BEL | ST
+ *   DCS/PM/APC/SOS : ESC P|^|_|X … ST
+ *   其余 : ESC + 单字节（ESC 7 / ESC = / ESC M / 字符集指定 ESC ( B …）
  */
-const ANSI_PATTERN = /\x1b(?:\[[0-9;?]*[a-zA-Z]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+const ANSI_PATTERN =
+  /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[PX^_][^\x1b]*\x1b\\|[@-Z\\-_]|[()*+\-./#%].)/g;
 
 /**
  * 对终端输出字符串进行 ANSI 保护并执行 Span 仲裁语法着色

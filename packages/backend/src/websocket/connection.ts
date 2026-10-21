@@ -1,5 +1,6 @@
 import WebSocket, { WebSocketServer, RawData } from 'ws';
 import { Request } from 'express';
+import { StringDecoder } from 'node:string_decoder';
 import {
     AuthenticatedWebSocket,
     SshSuspendStartRequest,
@@ -209,16 +210,19 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                     });
 
                                     // 1. 第一步：先向前端发送挂起与历史日志数据块 SSH_OUTPUT_CACHED_CHUNK
+                                    //    日志里存的是 PTY 原始字节，原样回放，不要再做 `\n` → `\r\n`
+                                    //    的"规范化"——TUI 里只用 LF 换行时会被顶到第 0 列，画面错位后
+                                    //    它按行重绘就会留下重复行。
                                     console.log(`[SSH Suspend Backend] 准备发送恢复日志数据给前端 (长度: ${result.logData?.length || 0})`);
-                                    const normalizedLogData = (result.logData || '').replace(/\r?\n/g, '\r\n');
-                                    if (normalizedLogData) {
+                                    const logData = result.logData || '';
+                                    if (logData) {
                                         if (!newSessionState.recentOutputBuffer) newSessionState.recentOutputBuffer = [];
-                                        newSessionState.recentOutputBuffer.push(normalizedLogData);
-                                        newSessionState.recentOutputBytes = Buffer.byteLength(normalizedLogData);
+                                        newSessionState.recentOutputBuffer.push(logData);
+                                        newSessionState.recentOutputBytes = Buffer.byteLength(logData);
                                     }
                                     const logChunkResponse: SshOutputCachedChunk = {
                                         type: 'SSH_OUTPUT_CACHED_CHUNK',
-                                        payload: { frontendSessionId: newFrontendSessionId, data: normalizedLogData, isLastChunk: true }
+                                        payload: { frontendSessionId: newFrontendSessionId, data: logData, isLastChunk: true }
                                     };
                                     if (ws.readyState === WebSocket.OPEN) {
                                         ws.send(JSON.stringify(logChunkResponse));
@@ -229,15 +233,16 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                         const pendingBuffers: Buffer[] = (result as any).getPendingResumeData();
                                         if (pendingBuffers && pendingBuffers.length > 0) {
                                             console.log(`[SSH Suspend Backend] 正在回放恢复过渡期间暂存的数据块 (${pendingBuffers.length} 块)`);
+                                            const pendingDecoder = new StringDecoder('utf8');
                                             for (const buf of pendingBuffers) {
-                                                const utf8Str = buf.toString('utf-8');
+                                                const utf8Str = pendingDecoder.write(buf);
                                                 if (!newSessionState.recentOutputBuffer) newSessionState.recentOutputBuffer = [];
                                                 newSessionState.recentOutputBuffer.push(utf8Str);
                                                 newSessionState.recentOutputBytes = (newSessionState.recentOutputBytes || 0) + Buffer.byteLength(utf8Str);
                                                 if (ws.readyState === WebSocket.OPEN) {
                                                     ws.send(JSON.stringify({
                                                         type: 'ssh:output',
-                                                        payload: Buffer.from(utf8Str, 'utf8').toString('base64'),
+                                                        payload: buf.toString('base64'),
                                                         encoding: 'base64'
                                                     }));
                                                 }
@@ -247,8 +252,9 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
 
                                     // 3. 第三步：重新设置实时事件监听器，将后续数据流导向新前端会话并维护环形缓冲
                                     result.channel.removeAllListeners('data');
+                                    const liveDecoder = new StringDecoder('utf8');
                                     result.channel.on('data', (data: Buffer) => {
-                                        const utf8Data = data.toString('utf8');
+                                        const utf8Data = liveDecoder.write(data);
                                         if (!newSessionState.recentOutputBuffer) {
                                             newSessionState.recentOutputBuffer = [];
                                             newSessionState.recentOutputBytes = 0;
@@ -263,7 +269,7 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                                         if (ws.readyState === WebSocket.OPEN) {
                                             ws.send(JSON.stringify({
                                                 type: 'ssh:output',
-                                                payload: Buffer.from(utf8Data, 'utf8').toString('base64'),
+                                                payload: data.toString('base64'),
                                                 encoding: 'base64'
                                             }));
                                         }

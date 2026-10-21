@@ -15,6 +15,7 @@ import {
     type TerminalSearchMatch,
     type TerminalSearchOptions,
 } from '../utils/terminalSearch';
+import { createTerminalStreamFilter, type TerminalStreamFilter } from '../utils/terminal-stream';
 
 // 定义与 WebSocket 相关的依赖接口
 export interface SshTerminalDependencies {
@@ -74,6 +75,32 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     const terminalOutputBuffer = ref<(string | Uint8Array)[]>([]); // 缓冲 WebSocket 消息直到终端准备好
     const isSshConnected = ref(false); // 跟踪 SSH 连接状态
     const hasConnectedBefore = ref(false); // 跟踪是否曾经连接过（用于识别重连事件）
+
+    /**
+     * 输出写入过滤器（每个终端一份）。
+     *
+     * PTY 的分块边界是随机的，一条 OSC 8 超链接 / 一段 24bit SGR / 一个中文字符
+     * 都可能被切成两半。逐块单独做高亮，会把半截的控制序列当纯文本、往中间插 SGR，
+     * 终端把序列提前截断 → 画面上多出肉眼可见的地址/参数文本，光标位置也偏，
+     * 之后 TUI 每帧按错位的行数重绘，就表现为「偶尔重复出几行」。
+     * 过滤器把跨块的尾巴攒到下一块，保证高亮只作用于纯文本。
+     */
+    const paneWriteFilters = new Map<string, TerminalStreamFilter>();
+    const createWriteFilter = () =>
+        createTerminalStreamFilter({
+            highlight: (text) => highlightStore.highlight(text) as string,
+            // 退出备用屏后补 SGR/清屏（见 sanitizeTuiTransition 注释）
+            sanitize: (text) => sanitizeTuiTransition(text),
+        });
+    const mainWriteFilter = createWriteFilter();
+    const getPaneWriteFilter = (paneId: string): TerminalStreamFilter => {
+        let filter = paneWriteFilters.get(paneId);
+        if (!filter) {
+            filter = createWriteFilter();
+            paneWriteFilters.set(paneId, filter);
+        }
+        return filter;
+    };
 
     // 终端数据流防抖同步至云端工作区 (输出停歇 1.5s 后触发，命令执行中自动延后)
     let terminalSyncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -161,8 +188,10 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // 1. 处理 SessionState.pendingOutput (来自 SSH_OUTPUT_CACHED_CHUNK 的早期数据)
             if (currentSessionState && currentSessionState.pendingOutput && currentSessionState.pendingOutput.length > 0) {
                 currentSessionState.pendingOutput.forEach(data => {
-                    const normalizedData = typeof data === 'string' ? data.replace(/\r?\n/g, '\r\n') : data;
-                    term.write(sanitizeTuiTransition(highlightStore.highlight(normalizedData)));
+                    // 回放数据是 PTY 原始字节，必须原样写入：以前这里做 `\n` → `\r\n`
+                    // 的"规范化"，会把 TUI 里只用 LF 换行的行首顶到第 0 列，
+                    // 画出来就是错位/重复的行。
+                    term.write(mainWriteFilter.write(data));
                 });
                 currentSessionState.pendingOutput = []; // 清空
                 if (currentSessionState.isResuming) {
@@ -173,7 +202,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             // 2. 将此管理器内部缓冲的输出 (terminalOutputBuffer, 来自 ssh:output) 写入终端
             if (terminalOutputBuffer.value.length > 0) {
                 terminalOutputBuffer.value.forEach(data => {
-                    term.write(sanitizeTuiTransition(highlightStore.highlight(data)));
+                    term.write(mainWriteFilter.write(data));
                 });
                 terminalOutputBuffer.value = []; // 清空内部缓冲区
             }
@@ -199,8 +228,8 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             }
             if (cachedPaneBuffer && typeof cachedPaneBuffer === 'string' && cachedPaneBuffer.length > 0) {
                 console.log(`[会话 ${sessionId}][SSH终端模块] 正在为分屏副终端 ${effectivePaneId} 回放云端同步历史缓冲 (长度: ${cachedPaneBuffer.length})...`);
-                const normalized = cachedPaneBuffer.replace(/\r?\n/g, '\r\n').replace(/(\r\n)+$/, '');
-                term.write(sanitizeTuiTransition(highlightStore.highlight(normalized)));
+                const paneFilter = getPaneWriteFilter(effectivePaneId);
+                term.write(paneFilter.write(cachedPaneBuffer.replace(/(\r\n)+$/, '')) + paneFilter.flush());
                 // 消费掉这段缓存：workspaceSync 里还有一条"panes 已就绪时立即回放"的路径，
                 // 不清掉会写第二遍，表现为刷新后终端里多出好几个重复的提示符。
                 usedKeys.forEach((k) => {
@@ -272,6 +301,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         console.log(`[会话 ${sessionId}][SSH终端模块] 收到终端注销请求: ${paneId}`);
         if (terminalPanes.value.has(paneId)) {
             terminalPanes.value.delete(paneId);
+            paneWriteFilters.delete(paneId);
             if (paneId !== primaryPaneId.value) {
                 sendMessage({ type: 'ssh:pane_close', sessionId, payload: { sessionId, paneId } });
             } else {
@@ -410,7 +440,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // --------------------
 
         if (terminalInstance.value) {
-            terminalInstance.value.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
+            terminalInstance.value.write(mainWriteFilter.write(outputData));
             // 终端数据输出写入后安排 1.5s 防抖同步至云端工作区
             scheduleTerminalSync(2500);
         } else {
@@ -487,7 +517,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // 清空可能存在的旧缓冲（虽然理论上此时应该已经 ready 了）
         if (terminalOutputBuffer.value.length > 0) {
              console.warn(`[会话 ${sessionId}][SSH终端模块] SSH 连接时仍有缓冲数据，正在写入...`);
-             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(sanitizeTuiTransition(highlightStore.highlight(data))));
+             terminalOutputBuffer.value.forEach(data => terminalInstance.value?.write(mainWriteFilter.write(data)));
              terminalOutputBuffer.value = [];
         }
     };
@@ -600,7 +630,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
             }
         }
 
-        paneEntry.terminal.write(sanitizeTuiTransition(highlightStore.highlight(outputData)));
+        paneEntry.terminal.write(getPaneWriteFilter(paneId).write(outputData));
         scheduleTerminalSync(2500);
     };
 
@@ -684,6 +714,7 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         // terminalInstance.value?.dispose(); // 终端实例的销毁由 TerminalComponent 负责
         terminalInstance.value = null;
         terminalPanes.value.clear();
+        paneWriteFilters.clear();
         primaryPaneId.value = null;
         console.log(`[会话 ${sessionId}][SSH终端模块] 已清理。`);
     };

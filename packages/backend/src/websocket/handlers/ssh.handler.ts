@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { StringDecoder } from 'node:string_decoder';
 import { AuthenticatedWebSocket, ClientState } from '../types';
 import { clientStates, sftpService, statusMonitorService, auditLogService, notificationService } from '../state';
 import * as SshService from '../../services/ssh.service';
@@ -122,10 +123,16 @@ export async function handleSshConnect(
                     delete newState.pendingDimensions;
                 }
 
+                // ⚠️ 输出必须按**原始字节**转发（base64）。
+                // 以前这里是 `data.toString('utf8')` 再转回 base64：PTY 的分块边界
+                // 会随机把一个中文字符 / emoji 切成两半，逐块 toString 就会把它变成
+                // U+FFFD（"�"），agy 这类中文输出多的 CLI 尤其明显。
+                // 日志与环形缓冲需要文本，交给 StringDecoder 跨块拼接。
+                const outDecoder = new StringDecoder('utf8');
                 stream.on('data', (data: Buffer) => {
-                    const utf8Data = data.toString('utf8');
+                    const utf8Data = outDecoder.write(data);
                     if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'ssh:output', payload: Buffer.from(utf8Data, 'utf8').toString('base64'), encoding: 'base64' }));
+                        ws.send(JSON.stringify({ type: 'ssh:output', payload: data.toString('base64'), encoding: 'base64' }));
                     }
 
                     const currentState = clientStates.get(newSessionId);
@@ -150,11 +157,11 @@ export async function handleSshConnect(
                         }
                     }
                 });
+                const errDecoder = new StringDecoder('utf8');
                 stream.stderr.on('data', (data: Buffer) => {
-                    console.error(`SSH Stderr (会话: ${newSessionId}): ${data.toString('utf8').substring(0, 100)}...`);
-                    const utf8ErrData = data.toString('utf8');
+                    const utf8ErrData = errDecoder.write(data);
                     if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'ssh:output', payload: Buffer.from(utf8ErrData, 'utf8').toString('base64'), encoding: 'base64' }));
+                        ws.send(JSON.stringify({ type: 'ssh:output', payload: data.toString('base64'), encoding: 'base64' }));
                     }
 
                     const currentState = clientStates.get(newSessionId);
@@ -369,14 +376,14 @@ export function openPaneShell(
         state.paneStreams!.set(paneId, paneState);
 
         stream.on('data', (data: Buffer) => {
-            const utf8Data = data.toString('utf8');
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'ssh:pane_output',
                     sessionId,
                     payload: {
                         paneId,
-                        data: Buffer.from(utf8Data, 'utf8').toString('base64')
+                        // 原始字节直传，避免分块切断多字节字符（详见主终端的说明）
+                        data: data.toString('base64')
                     },
                     encoding: 'base64'
                 }));
@@ -384,14 +391,13 @@ export function openPaneShell(
         });
 
         stream.stderr.on('data', (data: Buffer) => {
-            const utf8ErrData = data.toString('utf8');
             if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'ssh:pane_output',
                     sessionId,
                     payload: {
                         paneId,
-                        data: Buffer.from(utf8ErrData, 'utf8').toString('base64')
+                        data: data.toString('base64')
                     },
                     encoding: 'base64'
                 }));
@@ -448,14 +454,13 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
             existingPane.stream.removeAllListeners('error');
 
             existingPane.stream.on('data', (data: Buffer) => {
-                const utf8Data = data.toString('utf8');
                 if (ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({
                         type: 'ssh:pane_output',
                         sessionId,
                         payload: {
                             paneId,
-                            data: Buffer.from(utf8Data, 'utf8').toString('base64')
+                            data: data.toString('base64')
                         },
                         encoding: 'base64'
                     }));
@@ -465,14 +470,13 @@ export async function handleSshPaneOpen(ws: AuthenticatedWebSocket, payload: any
             if (existingPane.stream.stderr) {
                 existingPane.stream.stderr.removeAllListeners('data');
                 existingPane.stream.stderr.on('data', (data: Buffer) => {
-                    const utf8ErrData = data.toString('utf8');
                     if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({
                             type: 'ssh:pane_output',
                             sessionId,
                             payload: {
                                 paneId,
-                                data: Buffer.from(utf8ErrData, 'utf8').toString('base64')
+                                data: data.toString('base64')
                             },
                             encoding: 'base64'
                         }));

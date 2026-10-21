@@ -25,6 +25,7 @@ import { closeSession as closeSessionAction, activateSession as activateSessionA
 import { useConnectionsStore } from '../../connections.store'; 
 import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 import { useTerminalHighlightStore } from '../../terminal-highlight.store'; 
+import { createTerminalStreamFilter } from '../../../utils/terminal-stream';
 import type { SuspendedSshSession } from '../../../types/ssh-suspend.types'; 
 import i18n from '../../../i18n'; 
 import type { ComposerTranslation } from 'vue-i18n'; 
@@ -700,28 +701,25 @@ const handleSshSuspendResumedNotif = async (payload: SshSuspendResumedNotifPaylo
 const handleSshOutputCachedChunk = (payload: SshOutputCachedChunkPayload): void => {
   const session = sessions.value.get(payload.frontendSessionId) as SessionState | undefined;
   if (session && session.terminalManager) {
-    // 规范化换行符：确保回放数据中的换行使用标准 CRLF (\r\n)，避免由于缺失 \r 触发 VT100 阶梯效应
+    // 原样回放：这里是 PTY 的原始字节，绝不能做 `\n` → `\r\n` 之类的"规范化"，
+    // TUI（agy / btop）里只用 LF 换行时那样会把行首顶到第 0 列，画面错位后
+    // 它自己按行重绘就会留下重复行。
     const rawData = payload.data;
-    const normalizedData = typeof rawData === 'string'
-      ? rawData.replace(/\r?\n/g, '\r\n')
-      : rawData;
-
     const highlightStore = useTerminalHighlightStore();
-    const highlightedData: string = typeof normalizedData === 'string'
-      ? (highlightStore.highlight(normalizedData) as string)
-      : String(highlightStore.highlight(normalizedData));
+    const filter = createTerminalStreamFilter({
+      highlight: (text) => highlightStore.highlight(text) as string,
+    });
+    const writeData = filter.write(rawData) + filter.flush();
 
     if (session.terminalManager.terminalInstance.value) {
       // 终端实例已就绪，高亮写入
-      console.log('[SSH Suspend Frontend] Received cached chunk data (writing to terminal with highlight):', highlightedData);
-      session.terminalManager.terminalInstance.value.write(highlightedData);
+      session.terminalManager.terminalInstance.value.write(writeData);
     } else {
       // 终端实例尚未就绪，暂存输出
       if (!session.pendingOutput) {
         session.pendingOutput = [];
       }
-      console.log('[SSH Suspend Frontend] Received cached chunk data (buffering):', highlightedData);
-      session.pendingOutput.push(highlightedData);
+      session.pendingOutput.push(writeData);
       // console.log(`[${t('term.sshSuspend')}] (会话: ${payload.frontendSessionId}) 终端实例未就绪，已暂存数据块 (长度: ${normalizedData.length})。当前暂存块数: ${session.pendingOutput.length}`);
     }
 
