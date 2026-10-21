@@ -70,7 +70,8 @@ jobs:
       - name: 配置 Node.js 运行时环境
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 别写 22：桌面端会把 runner 的 node.exe 打进安装包，且 build-sidecar.js 有 22.23.4 硬闸门
+          node-version: '22.23.4'
           cache: 'npm'
 
       - name: 配置 Rust 稳定版编译工具链
