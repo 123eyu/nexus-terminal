@@ -5,6 +5,26 @@ import { WebSocketServer } from 'ws';
 import { AuthenticatedWebSocket } from './types';
 import { handleSyncWsConnection, handleFrontendEventsConnection } from '../sync/sync.ws-broadcaster';
 import { getServerSyncApiKey } from '../sync/sync.middleware';
+import { consumeTicket } from '../remote/remote-session.store';
+import { handleRdpTunnel } from '../remote/rdp-tunnel';
+import { handleVncTunnel } from '../remote/vnc-tunnel';
+
+/**
+ * 给远程桌面隧道补上心跳应答处理。
+ *
+ * 所有 WebSocket 都挂在同一个 wss 上，心跳定时器轮询的是 `wss.clients`；
+ * 但标准连接是走 `wss.emit('connection')` 注册的，而隧道是 `handleUpgrade` 里
+ * 直接交出去的，因此拿不到 `isAlive = true` 初始化和 `pong` 处理器。
+ * 结果就是心跳每 15s 把 `isAlive` 置 false 却永远没人置回 true，
+ * 累计 2 次（30s）后判定"客户端无响应"直接 `terminate()` ——
+ * 表现为远程桌面 / VNC 连上一会儿就自己断了。这里补齐同样的握手。
+ */
+function attachTunnelHeartbeat(ws: AuthenticatedWebSocket): void {
+    ws.isAlive = true;
+    ws.on('pong', () => {
+        ws.isAlive = true;
+    });
+}
 
 export function initializeUpgradeHandler(
     server: http.Server,
@@ -103,37 +123,42 @@ export function initializeUpgradeHandler(
             }
             console.log(`WebSocket 认证成功 (Path: ${pathname})：用户 ${request.session.username} (ID: ${request.session.userId})`);
 
-            // --- 根据路径处理升级 ---
-            // 本地调试用/rdp-proxy，nginx反代用/ws/rdp-proxy
-            if (pathname === '/rdp-proxy' || pathname === '/ws/rdp-proxy') {
-                // RDP 代理路径 - 直接处理升级，连接逻辑在 'connection' 事件中处理
-                console.log(`WebSocket: Handling RDP proxy upgrade for user ${request.session.username}`);
+            // --- 远程桌面（RDP / VNC）隧道：凭据只认一次性票据，不认 URL 参数 ---
+            if (pathname === '/ws/remote/rdp' || pathname === '/ws/remote/vnc') {
+                const ticket = String(parsedUrl.query.ticket || '');
+                const session = consumeTicket(ticket, Number(request.session.userId));
+                if (!session) {
+                    console.warn(`[Remote] 票据无效或已过期 (Path: ${pathname}, IP: ${ipAddress})`);
+                    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
+                const expected = pathname.endsWith('/rdp') ? 'rdp' : 'vnc';
+                if (session.protocol !== expected) {
+                    console.warn(`[Remote] 票据协议(${session.protocol})与端点(${expected})不一致`);
+                    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+                    socket.destroy();
+                    return;
+                }
+                (request as any).clientIpAddress = ipAddress;
                 wss.handleUpgrade(request, socket, head, (ws) => {
-                    const extWs = ws as AuthenticatedWebSocket;
-                    extWs.userId = request.session.userId;
-                    extWs.username = request.session.username;
-                    // 传递必要信息给 connection 事件
-                    (request as any).clientIpAddress = ipAddress;
-                    (request as any).isRdpProxy = true; // 标记为 RDP 代理连接
-                    // 传递 RDP token 和其他参数
-                    (request as any).rdpToken = parsedUrl.query.token;
-                    (request as any).rdpWidth = parsedUrl.query.width;
-                    (request as any).rdpHeight = parsedUrl.query.height;
-                    (request as any).rdpDpi = parsedUrl.query.dpi;
-                    wss.emit('connection', extWs, request);
+                    attachTunnelHeartbeat(ws as AuthenticatedWebSocket);
+                    if (session.protocol === 'rdp') handleRdpTunnel(ws, session);
+                    else handleVncTunnel(ws, session);
                 });
-            } else {
-                // 默认路径 (SSH, SFTP, Docker etc.) - 按原逻辑处理
-                console.log(`WebSocket: Handling standard upgrade for user ${request.session.username}`);
-                wss.handleUpgrade(request, socket, head, (ws) => {
-                    const extWs = ws as AuthenticatedWebSocket;
-                    extWs.userId = request.session.userId;
-                    extWs.username = request.session.username;
-                    (request as any).clientIpAddress = ipAddress;
-                    (request as any).isRdpProxy = false; // 标记为非 RDP 代理连接
-                    wss.emit('connection', extWs, request);
-                });
+                return;
             }
+
+            // --- 其余路径 (SSH, SFTP, Docker etc.) ---
+            // RDP / VNC 已改走 /ws/remote/* 的字节隧道，不再有 /rdp-proxy 转发到 guacd 的分支
+            console.log(`WebSocket: Handling standard upgrade for user ${request.session.username}`);
+            wss.handleUpgrade(request, socket, head, (ws) => {
+                const extWs = ws as AuthenticatedWebSocket;
+                extWs.userId = request.session.userId;
+                extWs.username = request.session.username;
+                (request as any).clientIpAddress = ipAddress;
+                wss.emit('connection', extWs, request);
+            });
         });
     });
     console.log('WebSocket upgrade handler initialized.');

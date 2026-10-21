@@ -153,16 +153,8 @@ const initializeEnvironment = async () => {
         keysGenerated = true;
     }
 
-    // 4. 检查 GUACD_HOST 和 GUACD_PORT
-    if (!process.env.GUACD_HOST) {
-        console.warn('[ENV Init] GUACD_HOST 未设置，将使用默认值 "localhost"');
-        process.env.GUACD_HOST = 'localhost';
-    }
-    if (!process.env.GUACD_PORT) {
-        console.warn('[ENV Init] GUACD_PORT 未设置，将使用默认值 "4822"');
-        process.env.GUACD_PORT = '4822';
-    }
-
+    // 4. 远程桌面（RDP / VNC）不再依赖 guacd：RDP 走自研 RDCleanPath 代理，
+    //    VNC 走纯 WebSocket→TCP 桥，所以这里不再需要 GUACD_HOST / GUACD_PORT。
 
     // 5. 如果生成了新密钥或添加了默认值，则追加到 .env 文件
     if (keysGenerated) {

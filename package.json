@@ -64,9 +64,6 @@
     "brace-expansion": "^1.1.21",
     "braces": "^3.0.3",
     "@tootallnate/once": "^2.0.1",
-    "guacamole-lite": {
-      "ws": "^8.18.2"
-    },
     "monaco-editor": "0.52.2"
   }
 }

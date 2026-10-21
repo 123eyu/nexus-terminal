@@ -30,7 +30,6 @@ import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage
 import { workspaceSyncService } from '../workspace-sync/workspace-sync.service'; 
 
 // Handlers
-import { handleRdpProxyConnection } from './handlers/rdp.handler';
 import {
     handleSshConnect,
     handleSshInput,
@@ -56,16 +55,13 @@ import {
 export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendService: SshSuspendService, sftpService: SftpService): void { // +++ Add sftpService parameter +++
     wss.on('connection', (ws: AuthenticatedWebSocket, request: Request) => {
         ws.isAlive = true;
-        const isRdpProxy = (request as any).isRdpProxy;
         const clientIp = (request as any).clientIpAddress || 'unknown'; // Preserved from upgrade handler
 
-        console.log(`WebSocket：客户端 ${ws.username} (ID: ${ws.userId}, IP: ${clientIp}, RDP Proxy: ${isRdpProxy}) 已连接。`);
+        console.log(`WebSocket：客户端 ${ws.username} (ID: ${ws.userId}, IP: ${clientIp}) 已连接。`);
 
         ws.on('pong', () => { ws.isAlive = true; });
 
-        if (isRdpProxy) {
-            handleRdpProxyConnection(ws, request);
-        } else {
+        {
             workspaceSyncService.registerSocket(ws.userId || 1, ws);
             // Standard SSH/SFTP/Docker connection
             ws.on('message', async (message: RawData) => {

@@ -19,7 +19,7 @@
 ## ✨ 功能特性
 
 *   多标签页管理 SSH 与 SFTP 连接  
-*   支持 RDP/VNC 协议
+*   支持 RDP/VNC 协议（和 SSH 一样开在会话标签里，画面占满工作区，支持双向剪贴板同步）
 *   支持 PWA
 *   采用 Monaco Editor，支持在线编辑文件  
 *   集成多重登录安全机制，包括人机验证（hCaptcha、Google reCAPTCHA）与双因素认证（2FA）  
@@ -80,8 +80,9 @@ wget https://raw.githubusercontent.com/Heavrnl/nexus-terminal/refs/heads/main/do
 ```
 > ⚠️ **注意：**
 >
-> * **arm64 用户**请将 `docker-compose.yml` 中的镜像 `guacamole/guacd:latest` 替换为 `guacamole/guacd:1.6.0-RC1`。
-> * **armv7 用户**请参考下方注意事项。
+> 现在的 `docker-compose.yml` 只有**一个容器**（后端同时托管前端静态资源），
+> 不再需要 `guacd` / `remote-gateway` / `nginx` 这些额外镜像，arm64、armv7 都能直接跑，
+> RDP 与 VNC 也不再依赖任何外部容器。
 
 
 
@@ -181,7 +182,7 @@ docker compose up -d
 
 1.  **双文件管理器**：可以在布局中添加两个文件管理器组件（实验性功能，可能存在不稳定情况）。
 2.  **多文本编辑器**：在同一布局中添加多个文本编辑器的功能尚未实现。
-3. ARMv7 用户请使用此处的 [docker-compose.yml](https://github.com/Heavrnl/nexus-terminal/blob/main/doc/arm/docker-compose.yml)。由于 Apache Guacamole 未提供 guacd 的 ARMv7 架构镜像，所以禁用 RDP 功能，相关镜像暂时不再拉取。
+3. RDP / VNC 全部在浏览器内实现（RDP 用 IronRDP 的 WASM 客户端，VNC 用 noVNC），后端只做 RDCleanPath 代理与 WebSocket→TCP 字节桥，因此任何架构都不需要额外容器。
 4. 关于数据备份，请自行备份目录下的 data 文件夹，本项目不提供相关备份功能。
 5. 由于浏览器限制，非https或者localhost无法复制终端内容，请使用https访问
 

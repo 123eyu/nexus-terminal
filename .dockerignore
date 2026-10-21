@@ -1,0 +1,18 @@
+# 构建上下文里只留源码，别把本机的 node_modules / 产物 / 数据塞进镜像
+node_modules
+**/node_modules
+**/dist
+**/dist-bundle
+dist-desktop
+data
+uploads
+temp-data-test
+doc
+tools
+scripts
+.git
+.github
+*.log
+packages/frontend/dist.bak*
+packages/backend/public*
+src-tauri/target

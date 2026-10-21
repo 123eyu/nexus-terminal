@@ -10,6 +10,14 @@ export default defineConfig({
     // @ts-ignore because the plugin type might not perfectly match Vite's expected PluginOption type
     (monacoEditorPlugin as any).default({})
   ],
+  build: {
+    // IronRDP 的 WASM 打包产物里有顶层 await（探测 WebCodecs H.264 支持），
+    // 默认 target(es2020) 不支持 TLA，会直接构建失败。
+    target: 'es2022'
+  },
+  optimizeDeps: {
+    esbuildOptions: { target: 'es2022' }
+  },
   server: {
     proxy: {
       // 将所有 /api 开头的请求代理到后端服务器

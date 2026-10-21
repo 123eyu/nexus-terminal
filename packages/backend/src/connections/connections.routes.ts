@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'; 
 import { isAuthenticated } from '../auth/auth.middleware';
+import { createRemoteSession } from '../remote/remote.controller';
 import multer from 'multer'; 
 import {
     createConnection,
@@ -11,8 +12,6 @@ import {
     testUnsavedConnection,
     exportConnections,
     importConnections,
-    getRdpSessionToken, 
-    getVncSessionToken, 
     cloneConnection, 
     
     addTagToConnections 
@@ -81,11 +80,8 @@ router.post('/:id/test', testConnection);
 // POST /api/v1/connections/test-unsaved - 测试未保存的连接信息
 router.post('/test-unsaved', testUnsavedConnection);
 
-// POST /api/v1/connections/:id/rdp-session - Get RDP session token via backend
-router.post('/:id/rdp-session', getRdpSessionToken);
-
-// POST /api/v1/connections/:id/vnc-session - Get VNC session token
-router.post('/:id/vnc-session', getVncSessionToken);
+// POST /api/v1/connections/:id/remote-session - 签发一次性远程桌面票据（RDP / VNC 共用）
+router.post('/:id/remote-session', createRemoteSession);
 
 // +++ POST /api/v1/connections/:id/clone - 克隆连接 +++
 router.post('/:id/clone', cloneConnection);
