@@ -8,7 +8,9 @@
 #   docker run -d -p 18111:3001 -v $(pwd)/data:/app/data --env-file .env nexus-terminal
 
 # ---------- 构建阶段 ----------
-FROM --platform=$BUILDPLATFORM node:20 AS builder
+# 固定到「已修复 2026-10 安全公告」的补丁版本：v22.23.4（2026-10-20）
+# 涉及 CVE-2026-111497（Brotli 越界写可 RCE）/ CVE-2026-106069 / CVE-2026-105482 等
+FROM --platform=$BUILDPLATFORM node:22.23.4 AS builder
 
 WORKDIR /app
 
@@ -34,7 +36,7 @@ COPY .env ./.env
 RUN npm run build --workspace=@nexus-terminal/frontend
 
 # ---------- 运行阶段 ----------
-FROM node:20-alpine
+FROM node:22.23.4-alpine
 
 # node-gyp / sqlite3 需要编译工具，装完即删
 RUN apk add --no-cache --virtual .build-deps python3 py3-setuptools make g++

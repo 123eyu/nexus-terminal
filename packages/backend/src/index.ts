@@ -214,6 +214,38 @@ const server = http.createServer(app);
 app.set('trust proxy', true);
 
 // --- 中间件 ---
+
+/**
+ * 请求体压缩格式白名单。
+ *
+ * `express.json()` 默认 `inflate: true`，会按 `Content-Encoding` 解压请求体，
+ * 而 body-parser 2.x 支持 `br` —— 也就是任何匿名请求都能把任意 Brotli 数据喂给
+ * Node 的 Brotli 解码器。2026-10 的安全公告里 CVE-2026-111497 正是解码器越界写
+ * （可导致 RCE），而 /api/v1/auth/login 这类接口在鉴权之前就会走到这里。
+ *
+ * 我们只在前端上传工作区快照时用到 `Content-Encoding: gzip`（见 utils/compression.ts），
+ * 从来不需要 `br`，所以直接在应用层挡掉：即使运行时 Node 没升级，也走不到解码器。
+ * 这和「升级 Node 到 22.23.4+」是两道独立的保险。
+ */
+const ALLOWED_CONTENT_ENCODINGS = new Set(['identity', 'gzip', 'x-gzip', 'deflate']);
+app.use((req, res, next) => {
+    const raw = String(req.headers['content-encoding'] || '').trim().toLowerCase();
+    if (!raw) {
+        next();
+        return;
+    }
+    const unsupported = raw
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .find((item) => !ALLOWED_CONTENT_ENCODINGS.has(item));
+    if (unsupported) {
+        res.status(415).json({ message: `不支持的请求体压缩格式: ${unsupported}` });
+        return;
+    }
+    next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 

@@ -12,6 +12,34 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+/**
+ * 桌面端会把 **构建机的 node.exe 原样打进安装包**（见文件末尾拷贝 process.execPath 的逻辑），
+ * 用户装完就再也换不掉它。所以这里必须拦住版本过旧的 Node —— 2026-10 的安全公告里
+ * Brotli 解码器越界写（CVE-2026-111497，可 RCE）、TLS 主机名校验绕过等，只要 Node
+ * 低于 22.23.4 就会被打进发布包。
+ */
+const MIN_NODE = [22, 23, 4];
+function assertNodeVersion() {
+  const cur = process.versions.node.split('.').map((n) => Number(n));
+  for (let i = 0; i < 3; i += 1) {
+    if ((cur[i] || 0) > MIN_NODE[i]) return;
+    if ((cur[i] || 0) < MIN_NODE[i]) {
+      const msg =
+        `当前 Node ${process.versions.node} 低于桌面端要求的最低版本 ${MIN_NODE.join('.')}。\n` +
+        `桌面端会把构建机的 Node 运行时打进安装包（用户装完换不掉），\n` +
+        `低于该版本缺少 2026-10 安全公告的修复（Brotli 解码器越界写可 RCE 等）。\n` +
+        `请先升级 Node：nvm install ${MIN_NODE.join('.')} && nvm use ${MIN_NODE.join('.')}`;
+      if (process.env.ALLOW_OLD_NODE === '1') {
+        console.warn(`\n⚠️  ${msg}\n   已通过 ALLOW_OLD_NODE=1 跳过检查，产物不可用于发布。\n`);
+        return;
+      }
+      console.error(`\n❌ ${msg}\n   （仅本地调试且不发版时，可临时设 ALLOW_OLD_NODE=1）\n`);
+      process.exit(1);
+    }
+  }
+}
+assertNodeVersion();
+
 function getHostTargetTriple() {
   const platform = process.platform;
   const arch = process.arch;

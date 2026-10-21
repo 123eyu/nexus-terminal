@@ -3,6 +3,9 @@
   "version": "0.9.10",
   "main": "index.js",
   "private": true,
+  "engines": {
+    "node": ">=22.23.4"
+  },
   "workspaces": [
     "packages/*"
   ],
