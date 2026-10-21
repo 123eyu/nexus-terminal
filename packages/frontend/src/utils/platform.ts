@@ -43,10 +43,10 @@ export function isDesktopApp(): boolean {
 /**
  * 检查当前运行环境是否支持 RDP / VNC 图形远程桌面功能
  * 说明：
- * RDP 与 VNC 依赖外部 Docker 独立容器 (Guacamole guacd / websockify 等)。
- * 在桌面独立客户端环境下当前不具备此容器，因此暂时关闭对应 UI 入口与连接处理。
- * 未来若针对桌面端适配原生客户端引擎，仅需在此处开启即可无缝恢复。
+ * 改造后 RDP 由浏览器内的 IronRDP(WASM) 说协议、VNC 由 noVNC 说协议，
+ * 后端只做 RDCleanPath 代理 / TCP 字节桥，不再依赖 guacd、websockify 等外部容器。
+ * 因此 Web、Docker 单容器、桌面端（自带后端 sidecar）三处能力完全一致，全部开启。
  */
 export function isRemoteDesktopSupported(): boolean {
-  return !isDesktopApp();
+  return true;
 }

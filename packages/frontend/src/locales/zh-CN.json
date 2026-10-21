@@ -1465,7 +1465,7 @@
     "cannotDeleteFromUntagged": "不能使用此选项从“未标记”分组中删除连接。",
     "someConnectionsInGroupDeleteFailed": "分组 '{groupName}' 中的 {count} 个连接未能删除。"
   },
-  "remoteDesktopModal": {
+  "remoteDesktop": {
     "title": "远程桌面",
     "titlePlaceholder": "远程桌面连接",
     "status": {
@@ -1480,7 +1480,8 @@
       "connected": "已连接",
       "disconnecting": "正在断开连接...",
       "disconnected": "已断开连接",
-      "unknownState": "未知状态"
+      "unknownState": "未知状态",
+      "loadingCore": "正在加载远程内核..."
     },
     "errors": {
       "missingInfo": "连接信息或显示元素丢失。",
@@ -1489,17 +1490,61 @@
       "connectionFailed": "连接失败",
       "inputError": "设置输入监听器时出错。",
       "noConnection": "未提供连接信息。",
-      "tokenError": "获取令牌失败"
+      "tokenError": "获取令牌失败",
+      "sessionRequest": "申请远程会话失败",
+      "coreLoad": "远程内核加载失败：{error}",
+      "vncAuth": "VNC 认证失败：密码不正确",
+      "vncSecurity": "VNC 安全握手失败：{reason}",
+      "sessionEnded": "远程会话已结束",
+      "sessionDropped": "远程会话被服务器断开",
+      "rdp": {
+        "general": "RDP 会话建立失败（通用错误，详情见浏览器控制台）",
+        "wrongPassword": "用户名或密码错误",
+        "logonFailure": "登录被拒绝（账户、权限或登录时段限制）",
+        "accessDenied": "访问被拒绝",
+        "rdcLeanPath": "RDP 代理握手失败",
+        "proxyConnect": "无法连接到目标主机",
+        "negotiationFailure": "RDP 协商失败（服务器可能要求 NLA 之外的认证方式）",
+        "unknown": "RDP 错误（{kind}）"
+      }
     },
-    "reconnectTooltip": "重新连接到远程桌面"
-  },
-  "vncModal": {
-    "title": "VNC 会话",
-    "textInputPlaceholder": "在此输入文本以发送到 VNC",
-    "sendButtonTitle": "将文本发送到 VNC (模拟键盘输入)",
-    "errors": {
-      "simulateInputError": "模拟键盘输入时出错: {error}"
-    }
+    "clipboard": {
+      "button": "剪贴板",
+      "buttonTooltip": "剪贴板同步（本机 ↔ 远端）",
+      "placeholder": "要发送的文本，留空则用系统剪贴板",
+      "readLocal": "读取本机",
+      "send": "发送到远端",
+      "receive": "取回远端",
+      "sentOk": "已发送到远端",
+      "receivedOk": "已把远端剪贴板同步到本机",
+      "failed": "剪贴板同步失败",
+      "readLocalFailed": "读取本机剪贴板失败：{error}",
+      "sendFailed": "发送到远端失败：{error}",
+      "receiveFailed": "写入本机剪贴板失败：{error}",
+      "nothingReceived": "远端还没有发来剪贴板内容",
+      "empty": "剪贴板是空的",
+      "unsupported": "当前浏览器不支持剪贴板读写（需要 HTTPS 或 localhost）",
+      "needFocus": "请先点一下画面，让页面获得焦点"
+    },
+    "typeText": {
+      "button": "输入",
+      "buttonTooltip": "向远端发送文字（逐个字符模拟按键）",
+      "placeholder": "输入文字，回车发送",
+      "send": "发送",
+      "sentOk": "已敲入 {count} 个字符",
+      "failed": "发送失败：{error}",
+      "empty": "没有可发送的文字",
+      "notConnected": "还没有连上远端",
+      "unsupported": "当前协议不支持模拟键盘输入，请改用剪贴板"
+    },
+    "pane": {
+      "noLayoutConfig": "远程桌面会话使用专用布局（画面占满工作区），不支持自定义分屏"
+    },
+    "fullscreen": "全屏",
+    "exitFullscreen": "退出全屏",
+    "fullscreenFailed": "切换全屏失败：{error}",
+    "reconnectTooltip": "重新连接到远程桌面",
+    "ctrlAltDelTooltip": "发送 Ctrl+Alt+Del"
   },
   "commandInputBar": {
     "placeholder": "在此输入命令后按 Enter 发送到终端...",

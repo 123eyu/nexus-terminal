@@ -25,10 +25,30 @@ export type DockerManagerInstance = OriginalDockerManagerInstance;
 // 重新导出 FileTab 类型，使其可用于其他模块
 export type FileTab = OriginalFileTab;
 
+/**
+ * 会话类型。
+ *
+ * ssh 走终端（WebSocket + xterm）；rdp / vnc 是浏览器内直接跑的远程桌面，
+ * 不建立任何 SSH 通道，画面由 RemoteSessionPane 占满整个工作区。
+ */
+export type SessionKind = 'ssh' | 'rdp' | 'vnc';
+
+/** 远程画面自己的连接状态（SSH 会话用 wsManager.connectionStatus，远程会话用这个） */
+export type RemoteLinkStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
+
 export interface SessionState {
   sessionId: string;
   connectionId: string; // 数据库中的连接 ID
   connectionName: string; // 用于显示
+  kind: SessionKind;
+  /**
+   * rdp / vnc 专用：标签栏指示灯读这里。
+   *
+   * 远程会话也照常创建 wsManager / terminalManager 等骨架（不 connect()），
+   * 这样 closeSession、标签栏、文件管理器清理这些既有流程全都不用特判；
+   * 但它们的 wsManager 永远停在 disconnected，不能用来显示状态。
+   */
+  remoteStatus?: Ref<RemoteLinkStatus>;
   wsManager: WsManagerInstance;
   sftpManagers: Map<string, SftpManagerInstance>; // 使用 Map 管理多个实例
   terminalManager: SshTerminalInstance;
@@ -59,4 +79,5 @@ export interface SessionTabInfoWithStatus {
   connectionName: string;
   status: WsConnectionStatus; // 添加状态字段
   isMarkedForSuspend?: boolean; // +++ 用于UI指示会话是否已标记待挂起 +++
+  kind: SessionKind; // 会话类型：标签栏据此决定渲染终端还是远程画面
 }

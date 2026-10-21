@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import { useConnectionsStore, type ConnectionInfo } from '../../connections.store'; 
 import { sessions, activeSessionId, sessionOrder, lastUserSwitchAt } from '../state';
 import { generateSessionId } from '../utils';
-import type { SessionState, SshTerminalInstance, StatusMonitorInstance, DockerManagerInstance, SftpManagerInstance, WsManagerInstance } from '../types';
+import type { SessionState, SessionKind, RemoteLinkStatus, SshTerminalInstance, StatusMonitorInstance, DockerManagerInstance, SftpManagerInstance, WsManagerInstance } from '../types';
 
 
 import { createWebSocketConnectionManager } from '../../../composables/useWebSocketConnection';
@@ -14,8 +14,6 @@ import { createSshTerminalManager, type SshTerminalDependencies } from '../../..
 import { createStatusMonitorManager, type StatusMonitorDependencies } from '../../../composables/useStatusMonitor';
 import { createDockerManager, type DockerManagerDependencies } from '../../../composables/useDockerManager';
 import { registerSshSuspendHandlers } from './sshSuspendActions'; 
-import { isRemoteDesktopSupported } from '../../../utils/platform';
-import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 import apiClient from '../../../utils/apiClient';
 import { useWorkspaceSyncStore, markSessionRemovedPendingSync } from '../../workspaceSync.store';
 
@@ -23,6 +21,15 @@ import { useWorkspaceSyncStore, markSessionRemovedPendingSync } from '../../work
 // --- 辅助函数 (特定于此模块的 actions) ---
 const findConnectionInfo = (connectionId: number | string, connectionsStore: ReturnType<typeof useConnectionsStore>): ConnectionInfo | undefined => {
   return connectionsStore.connections.find(c => c.id === Number(connectionId));
+};
+
+/** 找出"这个连接的某个远程桌面会话"（远程会话不按连接去重 SSH 那套逻辑） */
+const findSessionByConnection = (connectionId: number | string, kind: SessionKind): string | null => {
+  const target = String(connectionId);
+  for (const [sessionId, session] of sessions.value.entries()) {
+    if (session.kind === kind && session.connectionId === target) return sessionId;
+  }
+  return null;
 };
 
 // --- Actions ---
@@ -57,6 +64,15 @@ export const openNewSession = (
   const newSessionId = existingSessionId || generateSessionId();
   const dbConnId = String(connInfo.id); // connInfo is now guaranteed to be defined here
 
+  /**
+   * 会话类型由连接类型决定。
+   * RDP / VNC 不再走浮动窗口，而是和 SSH 一样开一个会话标签，
+   * 区别只是工作区里渲染的是占满整块的远程画面（RemoteSessionPane）。
+   */
+  const kind: SessionKind =
+    connInfo.type === 'RDP' ? 'rdp' : connInfo.type === 'VNC' ? 'vnc' : 'ssh';
+  const isRemoteSession = kind === 'rdp' || kind === 'vnc';
+
   // 1. 创建管理器实例
   const isResume = !!existingSessionId; // 如果提供了 existingSessionId，则为恢复流程
 
@@ -65,6 +81,8 @@ export const openNewSession = (
       sessionId: newSessionId,
       connectionId: dbConnId,
       connectionName: connInfo.name || connInfo.host,
+      kind,
+      remoteStatus: isRemoteSession ? ref<RemoteLinkStatus>('connecting') : undefined,
       editorTabs: ref([]),
       activeEditorTabId: ref(null),
       commandInputContent: ref(''),
@@ -207,6 +225,15 @@ export const openNewSession = (
 
 
   // 4. 启动 WebSocket 连接
+  //
+  // RDP / VNC 会话只借用会话骨架（标签、顺序、清理流程），画面由浏览器内的
+  // IronRDP / noVNC 自己连后端的远程隧道，跟 /ws/ 这条 SSH 通道无关——
+  // 这里连了会白白把 RDP 端口当成 SSH 去握手，后端直接报错。
+  if (isRemoteSession) {
+    console.log(`[SessionActions] 会话 ${newSessionId} 是 ${kind.toUpperCase()} 远程桌面会话，跳过 SSH WebSocket 连接。`);
+    return newSessionId;
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsHostAndPort = window.location.host;
   const wsUrl = `${protocol}//${wsHostAndPort}/ws/`;
@@ -251,6 +278,10 @@ export const closeSession = (sessionId: string, options?: { recordRemoval?: bool
     return;
   }
 
+  // 远程桌面会话从来没有进过云端快照（RDP/VNC 不参与刷新恢复），
+  // 所以既不需要记"待清理"，也不需要调后端原子销毁接口。
+  const isRemoteSession = sessionToClose.kind === 'rdp' || sessionToClose.kind === 'vnc';
+
   // 0. 先判断本次关闭能不能碰云端。
   //    接管遮罩里的 cleanupAllSessions() 会逐个走这里，那时候正在"准备从云端恢复"，
   //    不能删快照、也不能保存（否则接管回来一个会话都不剩）。
@@ -272,7 +303,7 @@ export const closeSession = (sessionId: string, options?: { recordRemoval?: bool
   //     恢复刚结束（isRestoring 仍为 true）时关掉会话，网络请求会被跳过，
   //     若不记账，云端快照里还留着它，下次刷新就又打开了。
   //     只有"整页批量拆解"（卸载 / 接管前清场）才传 recordRemoval: false。
-  if (options?.recordRemoval !== false) {
+  if (options?.recordRemoval !== false && !isRemoteSession) {
     markSessionRemovedPendingSync(sessionId);
   }
 
@@ -328,7 +359,7 @@ export const closeSession = (sessionId: string, options?: { recordRemoval?: bool
   // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘（仅针对该 sessionId）
   //
   // 注意：接管/恢复/卸载期间不能动云端（canTouchCloud 在第 0 步已判定）。
-  if (canTouchCloud) {
+  if (canTouchCloud && !isRemoteSession) {
     apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
       console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
     }).catch((err) => {
@@ -352,32 +383,30 @@ export const handleConnectRequest = (
     dependencies: {
         connectionsStore: ReturnType<typeof useConnectionsStore>;
         router: ReturnType<typeof useRouter>;
-        openRdpModalAction: (connection: ConnectionInfo) => void; // 来自 modalActions
-        openVncModalAction: (connection: ConnectionInfo) => void; // 来自 modalActions
         t: ReturnType<typeof useI18n>['t'];
     }
 ) => {
-  const { connectionsStore, router, openRdpModalAction, openVncModalAction, t } = dependencies;
+  const { connectionsStore, router, t } = dependencies;
 
-  if (connection.type === 'RDP') {
-    if (!isRemoteDesktopSupported()) {
-      useUiNotificationsStore().addNotification({
-        type: 'warning',
-        message: '当前桌面客户端暂不支持 RDP 远程桌面，请使用 Web 端或 Docker 部署环境访问。'
-      });
-      return;
+  // 用户主动点连接 = 明确的操作意图。云端恢复是异步的，可能还在跑，
+  // 不在这里打个时间戳，恢复收尾会把你刚打开的会话顶掉（远程桌面尤其明显：画面刚连上就变黑）。
+  lastUserSwitchAt.value = Date.now();
+
+  if (connection.type === 'RDP' || connection.type === 'VNC') {
+    const kind: SessionKind = connection.type === 'RDP' ? 'rdp' : 'vnc';
+    // 同一个连接已经开着？直接把标签切回来，别再拉第二条远程通道
+    const existing = findSessionByConnection(connection.id, kind);
+    if (existing) {
+      console.log(`[SessionActions] 连接 ${connection.id} 已有 ${kind.toUpperCase()} 会话 ${existing}，直接激活。`);
+      activateSession(existing);
+    } else {
+      openNewSession(connection, { connectionsStore, t });
     }
-    openRdpModalAction(connection);
-  } else if (connection.type === 'VNC') {
-    if (!isRemoteDesktopSupported()) {
-      useUiNotificationsStore().addNotification({
-        type: 'warning',
-        message: '当前桌面客户端暂不支持 VNC 远程桌面，请使用 Web 端或 Docker 部署环境访问。'
-      });
-      return;
-    }
-    openVncModalAction(connection);
-  } else {
+    router.push({ name: 'Workspace' });
+    return;
+  }
+
+  {
     const connIdStr = String(connection.id);
     let activeAndDisconnected = false;
 
@@ -416,6 +445,7 @@ export const handleOpenNewSession = (
     }
 ) => {
   console.log(`[SessionActions] handleOpenNewSession called for ID: ${connectionId}`);
+  lastUserSwitchAt.value = Date.now(); // 同上：用户主动打开，别被恢复流程顶掉
   openNewSession(connectionId, dependencies); // existingSessionId 将为 undefined，因此会生成新的
 };
 

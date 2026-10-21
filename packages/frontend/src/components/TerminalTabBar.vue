@@ -86,11 +86,8 @@ const handlePopupConnect = (connectionId: number) => {
     return;
   }
 
-  if (connectionInfo.type === 'RDP') {
-    sessionStore.openRdpModal(connectionInfo);
-  } else {
-    sessionStore.handleConnectRequest(connectionInfo);
-  }
+  // SSH / RDP / VNC 一律走同一个入口：远程桌面现在是普通会话标签，不再弹窗
+  sessionStore.handleConnectRequest(connectionInfo);
   showConnectionListPopup.value = false;
 };
 

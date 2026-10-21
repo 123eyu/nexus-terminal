@@ -930,17 +930,9 @@
       "noActiveSshSessions": "コマンドを送信するアクティブな SSH セッションはありません。"
     }
   },
-  "remoteDesktopModal": {
-    "errors": {
-      "clientError": "クライアントエラー",
-      "connectionFailed": "接続に失敗しました",
-      "inputError": "入力リスナーの設定中にエラーが発生しました。",
-      "missingInfo": "接続情報または表示要素がありません。",
-      "noConnection": "接続情報が提供されていません。",
-      "tokenError": "トークンの取得に失敗しました",
-      "tunnelError": "トンネルエラー"
-    },
-    "reconnectTooltip": "リモートデスクトップに再接続",
+  "remoteDesktop": {
+    "title": "リモートデスクトップ",
+    "titlePlaceholder": "リモートデスクトップ接続",
     "status": {
       "connected": "接続済み",
       "connecting": "接続中...",
@@ -952,18 +944,71 @@
       "fetchingToken": "接続トークンを取得中...",
       "idle": "アイドル",
       "unknownState": "不明な状態",
-      "waiting": "サーバーの応答を待機中..."
+      "waiting": "サーバーの応答を待機中...",
+      "loadingCore": "リモートコアを読み込み中..."
     },
-    "title": "リモートデスクトップ",
-    "titlePlaceholder": "リモートデスクトップ接続"
-  },
-  "vncModal": {
-    "title": "VNCセッション",
-    "textInputPlaceholder": "VNC に送信するテキストをここに入力",
-    "sendButtonTitle": "VNC にテキストを送信 (キーボード入力をシミュレート)",
     "errors": {
-      "simulateInputError": "キーボード入力のシミュレート中にエラーが発生しました: {error}"
-    }
+      "clientError": "クライアントエラー",
+      "connectionFailed": "接続に失敗しました",
+      "inputError": "入力リスナーの設定中にエラーが発生しました。",
+      "missingInfo": "接続情報または表示要素がありません。",
+      "noConnection": "接続情報が提供されていません。",
+      "tokenError": "トークンの取得に失敗しました",
+      "tunnelError": "トンネルエラー",
+      "sessionRequest": "リモートセッションの要求に失敗しました",
+      "coreLoad": "リモートコアの読み込みに失敗しました: {error}",
+      "vncAuth": "VNC 認証に失敗しました: パスワードが正しくありません",
+      "vncSecurity": "VNC セキュリティハンドシェイクに失敗しました: {reason}",
+      "sessionEnded": "リモートセッションが終了しました",
+      "sessionDropped": "リモートセッションがサーバーによって切断されました",
+      "rdp": {
+        "general": "RDP セッションの確立に失敗しました (詳細はブラウザのコンソールを参照)",
+        "wrongPassword": "ユーザー名またはパスワードが正しくありません",
+        "logonFailure": "ログオンが拒否されました (アカウント・権限・時間制限)",
+        "accessDenied": "アクセスが拒否されました",
+        "rdcLeanPath": "RDP プロキシのハンドシェイクに失敗しました",
+        "proxyConnect": "対象ホストに接続できません",
+        "negotiationFailure": "RDP のネゴシエーションに失敗しました (別の認証方式が必要な可能性があります)",
+        "unknown": "RDP エラー ({kind})"
+      }
+    },
+    "clipboard": {
+      "button": "クリップボード",
+      "buttonTooltip": "クリップボード同期（ローカル ↔ リモート）",
+      "placeholder": "送信するテキスト（空欄ならシステムクリップボード）",
+      "readLocal": "ローカルを読み取る",
+      "send": "リモートへ送信",
+      "receive": "リモートから取得",
+      "sentOk": "リモートへ送信しました",
+      "receivedOk": "リモートのクリップボードをローカルに同期しました",
+      "failed": "クリップボードの同期に失敗しました",
+      "readLocalFailed": "ローカルのクリップボードを読み取れませんでした: {error}",
+      "sendFailed": "リモートへの送信に失敗しました: {error}",
+      "receiveFailed": "ローカルのクリップボードに書き込めませんでした: {error}",
+      "nothingReceived": "リモートからまだクリップボードの内容が届いていません",
+      "empty": "クリップボードが空です",
+      "unsupported": "このブラウザではクリップボードを利用できません（HTTPS または localhost が必要）",
+      "needFocus": "まず画面をクリックしてフォーカスを当ててください"
+    },
+    "typeText": {
+      "button": "入力",
+      "buttonTooltip": "リモートへ文字を送信（1文字ずつキーイベントとして送信）",
+      "placeholder": "送る文字を入力（Enter で送信）",
+      "send": "送信",
+      "sentOk": "{count} 文字を入力しました",
+      "failed": "送信に失敗しました：{error}",
+      "empty": "送信する文字がありません",
+      "notConnected": "まだ接続していません",
+      "unsupported": "このプロトコルはキー入力の送信に対応していません（クリップボードをご利用ください）"
+    },
+    "pane": {
+      "noLayoutConfig": "リモートデスクトップは専用レイアウト（画面がワークスペース全体を占めます）のため、分割はできません"
+    },
+    "fullscreen": "全画面",
+    "exitFullscreen": "全画面を終了",
+    "fullscreenFailed": "全画面の切り替えに失敗しました: {error}",
+    "reconnectTooltip": "リモートデスクトップに再接続",
+    "ctrlAltDelTooltip": "Ctrl+Alt+Del を送信"
   },
   "settings": {
     "popupFileManager": {

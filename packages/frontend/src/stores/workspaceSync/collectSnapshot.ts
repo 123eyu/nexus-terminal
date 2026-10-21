@@ -38,9 +38,17 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
   const connectionsStore = useConnectionsStore();
 
   // 1. 收集会话信息（严格按照当前标签栏真实的排布顺序收集！）
+  //
+  // RDP / VNC 会话**不进快照**：它们没有 SSH 通道、没有终端 buffer，
+  // 票据是每次连接现签的一次性凭据，恢复时也不可能"续上"。
+  // 若照原样写进快照，刷新后 restoreSessions 会拿 RDP 端口去开 SSH 会话。
+  const isRemoteSession = (s: { kind?: string } | undefined) => s?.kind === 'rdp' || s?.kind === 'vnc';
+
   const orderedTabs = sessionStore.sessionTabsWithStatus || [];
   const orderedSessionIds = orderedTabs.map((t) => t.sessionId);
-  const allSessionIds = Array.from(sessionStore.sessions.keys());
+  const allSessionIds = Array.from(sessionStore.sessions.keys()).filter(
+    (id) => !isRemoteSession(sessionStore.sessions.get(id))
+  );
   const sortedSessionIds = [
     ...orderedSessionIds.filter((id) => allSessionIds.includes(id)),
     ...allSessionIds.filter((id) => !orderedSessionIds.includes(id)),
@@ -49,7 +57,7 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
   const sessionsList: SyncedSessionInfo[] = [];
   sortedSessionIds.forEach((sId) => {
     const s = sessionStore.sessions.get(sId);
-    if (!s) return;
+    if (!s || isRemoteSession(s)) return;
     // 终端屏幕缓冲区：优先用 SerializeAddon（带完整 ANSI 转义、RGB 真彩与格式）
     let terminalBuffer = '';
     if (s.terminalManager && typeof (s.terminalManager as any).serializeTerminal === 'function') {
@@ -231,9 +239,20 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
     }
   }
 
+  /**
+   * 快照里的"当前活动会话"必须是快照里真实存在的那个。
+   *
+   * 远程桌面会话不进快照，如果它恰好是当前标签，直接写它的 id 会让恢复时
+   * 所有会话都判定为"非目标"（shouldActivate=false），恢复完一个焦点都没有。
+   */
+  const activeSessionSnapshotId =
+    sessionStore.activeSessionId && !isRemoteSession(sessionStore.sessions.get(sessionStore.activeSessionId))
+      ? sessionStore.activeSessionId
+      : (sortedSessionIds[0] ?? null);
+
   return {
     syncEnabled: deps.syncEnabled,
-    activeSessionId: sessionStore.activeSessionId,
+    activeSessionId: activeSessionSnapshotId,
     sessions: sessionsList,
     sessionOrder: sortedSessionIds,
     layout: {

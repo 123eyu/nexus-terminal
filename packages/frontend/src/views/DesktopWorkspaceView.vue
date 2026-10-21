@@ -3,6 +3,7 @@ import { watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
+import RemoteSessionPane from '../components/remote/RemoteSessionPane.vue';
 import { useSessionStore } from '../stores/session.store';
 import { useLayoutStore } from '../stores/layout.store';
 import { storeToRefs } from 'pinia';
@@ -77,6 +78,13 @@ const getSessionLayoutTree = (sessionId: string): LayoutNode => {
   return layoutStore.getLayoutTreeForSession(sessionId, session?.connectionId);
 };
 
+/** RDP / VNC 会话不参与分屏布局：整块工作区就是它的画面 */
+const isRemoteSession = (sessionId: string | null): boolean => {
+  if (!sessionId) return false;
+  const kind = sessionStore.sessions.get(sessionId)?.kind;
+  return kind === 'rdp' || kind === 'vnc';
+};
+
 /**
  * 聚焦校正跟着"当前可见的会话树"走。
  *
@@ -86,11 +94,14 @@ const getSessionLayoutTree = (sessionId: string): LayoutNode => {
  * 手动点一下终端才恢复"。这里在会话切换（以及会话树被刷新）时重新校准。
  */
 watch(
-  () => (props.activeSessionId ? getSessionLayoutTree(props.activeSessionId) : null),
+  () => (props.activeSessionId && !isRemoteSession(props.activeSessionId)
+    ? getSessionLayoutTree(props.activeSessionId)
+    : null),
   (tree) => {
     const sid = props.activeSessionId;
-    const connId = sid ? sessionStore.sessions.get(sid)?.connectionId : null;
-    layoutStore.syncActiveTerminalPaneFromTree(tree, sid ?? null, connId ?? null);
+    if (!sid || isRemoteSession(sid)) return;
+    const connId = sessionStore.sessions.get(sid)?.connectionId;
+    layoutStore.syncActiveTerminalPaneFromTree(tree, sid, connId ?? null);
   },
   { immediate: true }
 );
@@ -120,7 +131,15 @@ watch(
           v-show="sessionTab.sessionId === props.activeSessionId"
           class="layout-renderer-wrapper w-full h-full flex flex-col overflow-hidden"
         >
+          <!-- 远程桌面：专用布局（占满工作区，不可编辑、不可分屏） -->
+          <RemoteSessionPane
+            v-if="sessionTab.kind === 'rdp' || sessionTab.kind === 'vnc'"
+            :session-id="sessionTab.sessionId"
+            :active="sessionTab.sessionId === props.activeSessionId"
+            class="w-full h-full"
+          />
           <LayoutRenderer
+            v-else
             :is-root-renderer="true"
             :layout-node="getSessionLayoutTree(sessionTab.sessionId)"
             :active-session-id="sessionTab.sessionId"

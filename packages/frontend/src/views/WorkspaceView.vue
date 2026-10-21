@@ -21,6 +21,7 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useFileEditorStore, type FileTab } from '../stores/fileEditor.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useCommandHistoryStore } from '../stores/commandHistory.store';
+import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import type { Terminal as XtermTerminal } from 'xterm';
 import type { ISearchOptions } from '@xterm/addon-search';
 import {
@@ -44,7 +45,7 @@ const { isHeaderVisible } = storeToRefs(layoutStore);
 const { isMobile } = useDeviceDetection();
 
 // --- 从 Store 获取响应式状态和 Getters ---
-const { sessionTabsWithStatus, activeSessionId, activeSession, isRdpModalOpen, rdpConnectionInfo, isVncModalOpen, vncConnectionInfo } = storeToRefs(sessionStore); // 使用 storeToRefs 获取 RDP 和 VNC 状态
+const { sessionTabsWithStatus, activeSessionId, activeSession } = storeToRefs(sessionStore);
 const { shareFileEditorTabsBoolean, layoutLockedBoolean } = storeToRefs(settingsStore); // +++ Add layoutLockedBoolean +++
 const { orderedTabs: globalEditorTabs, activeTabId: globalActiveEditorTabId } = storeToRefs(fileEditorStore);
 const { layoutTree } = storeToRefs(layoutStore); // 只获取布局树
@@ -487,6 +488,15 @@ const offAllWs = () => {
 
  // 处理打开和关闭布局配置器
  const handleOpenLayoutConfigurator = () => {
+   // 远程桌面会话用的是专用布局（画面占满工作区、不可编辑），配置器对它没有意义
+   const active = activeSessionId.value ? sessionStore.sessions.get(activeSessionId.value) : null;
+   if (active && (active.kind === 'rdp' || active.kind === 'vnc')) {
+     useUiNotificationsStore().addNotification({
+       type: 'info',
+       message: t('remoteDesktop.pane.noLayoutConfig'),
+     });
+     return;
+   }
    showLayoutConfigurator.value = true;
  };
  const handleCloseLayoutConfigurator = () => {

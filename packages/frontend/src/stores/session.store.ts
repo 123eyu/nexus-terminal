@@ -9,11 +9,6 @@ import { useConnectionsStore, type ConnectionInfo } from './connections.store';
 import {
   sessions,
   activeSessionId,
-  isRdpModalOpen,
-  rdpConnectionInfo,
-  isVncModalOpen,
-  vncConnectionInfo,
-  
   suspendedSshSessions,
   isLoadingSuspendedSessions,
   sessionOrder,
@@ -31,7 +26,6 @@ import {
 import * as sessionActions from './session/actions/sessionActions';
 import * as editorActions from './session/actions/editorActions';
 import * as sftpManagerActions from './session/actions/sftpManagerActions';
-import * as modalActions from './session/actions/modalActions';
 import * as commandInputActions from './session/actions/commandInputActions';
 import * as sshSuspendActions from './session/actions/sshSuspendActions'; 
 
@@ -48,12 +42,6 @@ export const useSessionStore = defineStore('session', () => {
   const router = useRouter();
 
   // --- 包装 Actions 以注入依赖 ---
-
-  // Modal Actions (这些可能被其他 actions 依赖，所以先定义)
-  const openRdpModal = (connection: ConnectionInfo) => modalActions.openRdpModal(connection);
-  const closeRdpModal = () => modalActions.closeRdpModal();
-  const openVncModal = (connection: ConnectionInfo) => modalActions.openVncModal(connection);
-  const closeVncModal = () => modalActions.closeVncModal();
 
   // Session Actions
   const openNewSession = (
@@ -73,8 +61,6 @@ export const useSessionStore = defineStore('session', () => {
     sessionActions.handleConnectRequest(connection, {
       connectionsStore,
       router,
-      openRdpModalAction: openRdpModal, // 传递包装后的 action
-      openVncModalAction: openVncModal,   // 传递包装后的 action
       t,
     });
   const handleOpenNewSession = (connectionId: number | string) =>
@@ -163,10 +149,6 @@ export const useSessionStore = defineStore('session', () => {
     sessions,
     activeSessionId,
     sessionOrder,
-    isRdpModalOpen,
-    rdpConnectionInfo,
-    isVncModalOpen,
-    vncConnectionInfo,
     // SSH Suspend Mode State
     suspendedSshSessions,
     isLoadingSuspendedSessions,
@@ -201,10 +183,6 @@ export const useSessionStore = defineStore('session', () => {
     closeTabsToTheRightInSession,
     closeTabsToTheLeftInSession,
     updateTabScrollPositionInSession,
-    openRdpModal,
-    closeRdpModal,
-    openVncModal,
-    closeVncModal,
     updateSessionCommandInput,
 
     // SSH Suspend Actions (直接从模块导出，Pinia 会处理)

@@ -4,10 +4,20 @@ import { computed } from 'vue';
 import { sessions, activeSessionId, sessionOrder } from './state';
 import type { SessionState, SessionTabInfoWithStatus } from './types';
 
+const toTabInfo = (session: SessionState): SessionTabInfoWithStatus => ({
+  sessionId: session.sessionId,
+  connectionName: session.connectionName,
+  // 远程会话没有 SSH 通道，状态取画面自己的 remoteStatus
+  status: session.remoteStatus ? session.remoteStatus.value : session.wsManager.connectionStatus.value,
+  isMarkedForSuspend: session.isMarkedForSuspend,
+  kind: session.kind,
+});
+
 export const sessionTabs = computed(() => {
   return Array.from(sessions.value.values()).map(session => ({
     sessionId: session.sessionId,
     connectionName: session.connectionName,
+    kind: session.kind,
   }));
 });
 
@@ -28,23 +38,13 @@ export const sessionTabsWithStatus = computed((): SessionTabInfoWithStatus[] => 
         if (indexB === -1) return -1;
         return indexA - indexB;
       })
-      .map(session => ({
-        sessionId: session.sessionId,
-        connectionName: session.connectionName,
-        status: session.wsManager.connectionStatus.value, // 从 wsManager 获取状态
-        isMarkedForSuspend: session.isMarkedForSuspend,
-      }));
+      .map(toTabInfo);
   } else {
     // 如果没有自定义顺序，则按照创建时间排序
     return sessionList
       .slice()
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map(session => ({
-        sessionId: session.sessionId,
-        connectionName: session.connectionName,
-        status: session.wsManager.connectionStatus.value, // 从 wsManager 获取状态
-        isMarkedForSuspend: session.isMarkedForSuspend,
-      }));
+      .map(toTabInfo);
   }
 });
 

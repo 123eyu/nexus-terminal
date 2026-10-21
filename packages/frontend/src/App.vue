@@ -17,8 +17,6 @@ import FileEditorOverlay from './components/FileEditorOverlay.vue';
 import StyleCustomizer from './components/StyleCustomizer.vue';
 import MobileStyleCustomizerModal from './components/MobileStyleCustomizerModal.vue';
 import FocusSwitcherConfigurator from './components/FocusSwitcherConfigurator.vue';
-import RemoteDesktopModal from './components/RemoteDesktopModal.vue';
-import VncModal from './components/VncModal.vue';
 import ConfirmDialog from './components/common/ConfirmDialog.vue';
 import QuickCommandVariableDialog from './components/QuickCommandVariableDialog.vue';
 import LargeFileOpenDialog from './components/LargeFileOpenDialog.vue';
@@ -43,7 +41,6 @@ const { showPopupFileEditorBoolean } = storeToRefs(settingsStore);
 const { isStyleCustomizerVisible } = storeToRefs(appearanceStore);
 const { isLayoutVisible, isHeaderVisible } = storeToRefs(layoutStore); // 添加 isHeaderVisible
 const { isConfiguratorVisible: isFocusSwitcherVisible } = storeToRefs(focusSwitcherStore);
-const { isRdpModalOpen, rdpConnectionInfo, isVncModalOpen, vncConnectionInfo } = storeToRefs(sessionStore); // +++ 获取 RDP 和 VNC 状态 +++
 const { isMobile } = useDeviceDetection();
 
 const route = useRoute();
@@ -372,20 +369,6 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
       v-show="isFocusSwitcherVisible"
       :isVisible="isFocusSwitcherVisible"
       @close="focusSwitcherStore.toggleConfigurator(false)"
-    />
-
-    <!-- +++ 条件渲染 RDP 模态框 +++ -->
-    <RemoteDesktopModal
-      v-if="isRdpModalOpen"
-      :connection="rdpConnectionInfo"
-      @close="sessionStore.closeRdpModal()"
-    />
-
-    <!-- +++ 条件渲染 VNC 模态框 +++ -->
-    <VncModal
-      v-if="isVncModalOpen"
-      :connection="vncConnectionInfo"
-      @close="sessionStore.closeVncModal()"
     />
 
     <!-- +++ 全局确认对话框 +++ -->

@@ -5,6 +5,7 @@ import TerminalTabBar from '../components/TerminalTabBar.vue';
 import CommandInputBar from '../components/CommandInputBar.vue';
 import VirtualKeyboard from '../components/VirtualKeyboard.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
+import RemoteSessionPane from '../components/remote/RemoteSessionPane.vue';
 import { useSessionStore } from '../stores/session.store';
 import { useLayoutStore } from '../stores/layout.store';
 import type { LayoutNode } from '../stores/layout.store';
@@ -35,6 +36,18 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const sessionStore = useSessionStore();
 const layoutStore = useLayoutStore();
+
+/**
+ * 当前会话是不是 RDP / VNC。
+ *
+ * 远程桌面在移动端也占满整块视口，且没有终端可言 ——
+ * 命令输入栏、虚拟键盘、焦点切换这些 SSH 专用件都要一起收起来。
+ */
+const activeSessionKind = computed(() => {
+  if (!props.activeSessionId) return null;
+  return sessionStore.sessions.get(props.activeSessionId)?.kind ?? null;
+});
+const isActiveRemoteSession = computed(() => activeSessionKind.value === 'rdp' || activeSessionKind.value === 'vnc');
 
 // 移动端专用单终端视口布局节点
 const mobileLayoutNodeForTerminal = computed((): LayoutNode | null => {
@@ -109,8 +122,15 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
   <div class="mobile-workspace-view flex flex-col flex-grow overflow-hidden">
     <!-- 移动端终端视口区域 -->
     <div class="mobile-content-area">
+      <RemoteSessionPane
+        v-if="isActiveRemoteSession && props.activeSessionId"
+        :session-id="props.activeSessionId"
+        :active="true"
+        :is-mobile="true"
+        class="layout-renderer-wrapper flex-grow"
+      />
       <LayoutRenderer
-        v-if="props.activeSessionId && mobileLayoutNodeForTerminal"
+        v-else-if="props.activeSessionId && mobileLayoutNodeForTerminal"
         :layout-node="mobileLayoutNodeForTerminal"
         :active-session-id="props.activeSessionId"
         :is-root-renderer="false"
@@ -139,8 +159,9 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
       @close-sessions-to-left="handleCloseSessionsToLeft"
     />
 
-    <!-- 移动端命令工具栏 -->
+    <!-- 移动端命令工具栏（远程桌面会话用不到终端输入） -->
     <CommandInputBar
+      v-if="!isActiveRemoteSession"
       class="mobile-command-bar"
       :is-mobile="true"
       @send-command="(cmd: string) => emit('send-command', cmd)"
@@ -155,7 +176,7 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
 
     <!-- 移动端软键盘 -->
     <VirtualKeyboard
-      v-show="isVirtualKeyboardVisible"
+      v-show="isVirtualKeyboardVisible && !isActiveRemoteSession"
       class="mobile-virtual-keyboard"
       @send-key="handleVirtualKeyPress"
     />

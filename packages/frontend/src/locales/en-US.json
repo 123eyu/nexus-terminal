@@ -1466,7 +1466,7 @@
     "cannotDeleteFromUntagged": "Cannot use this option to delete connections from the 'Untagged' group.",
     "someConnectionsInGroupDeleteFailed": "{count} connections in group '{groupName}' failed to delete."
   },
-  "remoteDesktopModal": {
+  "remoteDesktop": {
     "title": "Remote Desktop",
     "titlePlaceholder": "Remote Desktop Connection",
     "status": {
@@ -1481,7 +1481,8 @@
       "disconnected": "Disconnected",
       "unknownState": "Unknown State",
       "connecting": "Connecting...",
-      "error": "Error"
+      "error": "Error",
+      "loadingCore": "Loading remote core..."
     },
     "errors": {
       "missingInfo": "Connection info or display element missing.",
@@ -1490,17 +1491,61 @@
       "connectionFailed": "Connection Failed",
       "inputError": "Error setting up input listeners.",
       "noConnection": "No connection information provided.",
-      "tokenError": "Failed to retrieve token"
+      "tokenError": "Failed to retrieve token",
+      "sessionRequest": "Failed to request the remote session",
+      "coreLoad": "Failed to load the remote core: {error}",
+      "vncAuth": "VNC authentication failed: wrong password",
+      "vncSecurity": "VNC security handshake failed: {reason}",
+      "sessionEnded": "The remote session has ended",
+      "sessionDropped": "The remote session was closed by the server",
+      "rdp": {
+        "general": "Failed to establish the RDP session (see the browser console for details)",
+        "wrongPassword": "Wrong username or password",
+        "logonFailure": "Logon rejected (account, permission or logon-hours restriction)",
+        "accessDenied": "Access denied",
+        "rdcLeanPath": "RDP proxy handshake failed",
+        "proxyConnect": "Cannot reach the target host",
+        "negotiationFailure": "RDP negotiation failed (the server may require another auth method)",
+        "unknown": "RDP error ({kind})"
+      }
     },
-    "reconnectTooltip": "Reconnect to the remote desktop"
-  },
-  "vncModal": {
-    "title": "VNC Session",
-    "textInputPlaceholder": "Enter text here to send to VNC",
-    "sendButtonTitle": "Send text to VNC (simulates keyboard input)",
-    "errors": {
-      "simulateInputError": "Error simulating keyboard input: {error}"
-    }
+    "clipboard": {
+      "button": "Clipboard",
+      "buttonTooltip": "Clipboard sync (local <-> remote)",
+      "placeholder": "Text to send — leave empty for the system clipboard",
+      "readLocal": "Read local",
+      "send": "Send to remote",
+      "receive": "Pull from remote",
+      "sentOk": "Sent to the remote",
+      "receivedOk": "Remote clipboard copied to this device",
+      "failed": "Clipboard sync failed",
+      "readLocalFailed": "Failed to read the local clipboard: {error}",
+      "sendFailed": "Failed to send to the remote: {error}",
+      "receiveFailed": "Failed to write the local clipboard: {error}",
+      "nothingReceived": "The remote has not sent any clipboard content yet",
+      "empty": "The clipboard is empty",
+      "unsupported": "This browser does not allow clipboard access (HTTPS or localhost required)",
+      "needFocus": "Click on the screen first so the page gets focus"
+    },
+    "typeText": {
+      "button": "Type",
+      "buttonTooltip": "Send text to the remote as key events",
+      "placeholder": "Type text, press Enter to send",
+      "send": "Send",
+      "sentOk": "Typed {count} characters",
+      "failed": "Send failed: {error}",
+      "empty": "Nothing to send",
+      "notConnected": "Not connected yet",
+      "unsupported": "This protocol cannot simulate typing — use the clipboard instead"
+    },
+    "pane": {
+      "noLayoutConfig": "Remote desktop sessions use a fixed full-workspace layout and cannot be split"
+    },
+    "fullscreen": "Fullscreen",
+    "exitFullscreen": "Exit fullscreen",
+    "fullscreenFailed": "Failed to toggle fullscreen: {error}",
+    "reconnectTooltip": "Reconnect to the remote desktop",
+    "ctrlAltDelTooltip": "Send Ctrl+Alt+Del"
   },
   "commandInputBar": {
     "placeholder": "Enter command and press Enter to send...",

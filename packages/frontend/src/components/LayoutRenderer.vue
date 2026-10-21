@@ -118,12 +118,23 @@ const currentRightSidebarComponent = computed(() => {
 const hasSshSessions = computed(() => {
  // Check if any session has a terminalManager (indicates SSH)
  for (const [_, sessionState] of sessionStore.sessions) {
-   if (sessionState.terminalManager) {
+   if (sessionState.kind === 'ssh' && sessionState.terminalManager) {
      return true;
    }
  }
  return false;
 });
+
+/**
+ * 只保留 SSH 会话。
+ *
+ * 文件管理器 / 状态监控这些面板都是"一个会话一份实例"地常驻渲染的，
+ * RDP/VNC 会话没有 SSH 通道也没有 SFTP，把它们算进来会凭空挂一个
+ * 连不上的文件管理器（每次切到远程标签都在后台报错）。
+ */
+const sshSessions = computed(() =>
+  Array.from(sessionStore.sessions.entries()).filter(([, sessionState]) => sessionState.kind === 'ssh')
+);
 
 // 判断侧栏面板是否必须依赖活动会话（仅 editor 和 fileManager 依赖具体会话，其余如连接列表、快捷指令等均为全局独立面板）
 const isSessionDependentSidebarPane = (paneName: PaneName | null): boolean => {
@@ -836,7 +847,7 @@ onBeforeUnmount(() => {
                          导致 pane 串味、primary 指向错误分屏、命令发到别的会话。
                          保活由外层 LayoutRenderer 的 v-show 负责，无需内层循环。
                        -->
-                       <template v-if="activeSessionId && sessionStore.sessions.get(activeSessionId)?.terminalManager">
+                       <template v-if="activeSessionId && sessionStore.sessions.get(activeSessionId)?.kind === 'ssh'">
                            <keep-alive>
                                <component
                                    :is="componentMap.terminal"
@@ -868,7 +879,7 @@ onBeforeUnmount(() => {
                   <!-- FileManager (支持多会话并行常驻渲染，切走时后台不间断初始化) -->
                   <template v-else-if="layoutNode.component === 'fileManager'">
                     <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
-                      <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                      <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                         <component
                           :is="componentMap.fileManager"
                           v-show="sessionId === activeSessionId"
@@ -884,7 +895,7 @@ onBeforeUnmount(() => {
                           class="flex-grow min-h-0 overflow-auto"
                         />
                       </template>
-                      <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
+                      <div v-if="!activeSessionId || sshSessions.length === 0" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
                         <div class="flex flex-col items-center justify-center p-8 w-full h-full">
                           <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                           <span class="text-lg font-medium text-text-secondary mb-2">{{ t('layout.noActiveSession.title') }}</span>
@@ -951,7 +962,7 @@ onBeforeUnmount(() => {
                 <!-- 侧边栏如果激活了 fileManager，多会话并行常驻 -->
                 <template v-if="activeLeftSidebarPane === 'fileManager'">
                   <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
-                    <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                    <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                       <component
                         :is="componentMap.fileManager"
                         v-show="sessionId === activeSessionId"
@@ -967,7 +978,7 @@ onBeforeUnmount(() => {
                         class="flex flex-col flex-grow min-h-0 overflow-auto"
                       />
                     </template>
-                    <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                    <div v-if="!activeSessionId || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
@@ -1008,7 +1019,7 @@ onBeforeUnmount(() => {
                 <!-- 侧边栏如果激活了 fileManager，多会话并行常驻 -->
                 <template v-if="activeRightSidebarPane === 'fileManager'">
                   <div class="relative w-full h-full flex flex-col min-h-0 overflow-hidden">
-                    <template v-for="[sessionId, sessionState] in sessionStore.sessions" :key="sessionId">
+                    <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                       <component
                         :is="componentMap.fileManager"
                         v-show="sessionId === activeSessionId"
@@ -1024,7 +1035,7 @@ onBeforeUnmount(() => {
                         class="flex flex-col flex-grow min-h-0 overflow-auto"
                       />
                     </template>
-                    <div v-if="!activeSessionId || sessionStore.sessions.size === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                    <div v-if="!activeSessionId || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
