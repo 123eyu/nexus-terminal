@@ -1,10 +1,5 @@
 name: Build & Push Docker Image
 
-# 密钥（Settings → Secrets and variables → Actions）：DOCKERHUB_USERNAME / DOCKERHUB_TOKEN（Access Token，非密码）
-# 触发：打 v* tag 自动发；或手动 Run workflow（版本号留空读 package.json）
-# 两个架构各用一台原生 runner 构建，最后合并 manifest —— 不走 QEMU。
-# （QEMU 模拟 arm64 跑 node 会在 npm install 阶段 SIGILL：qemu: uncaught target signal 4）
-
 on:
   push:
     tags:
