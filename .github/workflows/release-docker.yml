@@ -1,0 +1,137 @@
+name: Build & Push Docker Image
+
+# 密钥（Settings → Secrets and variables → Actions）：DOCKERHUB_USERNAME / DOCKERHUB_TOKEN（Access Token，非密码）
+# 触发：打 v* tag 自动发；或手动 Run workflow（版本号留空读 package.json）
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空读 package.json）'
+        required: false
+        default: ''
+      latest:
+        description: '同时更新 latest'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-docker-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: heavrnl/nexus-terminal
+
+jobs:
+  publish:
+    name: Build multi-arch & Push to Docker Hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出仓库源码
+        uses: actions/checkout@v4
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+
+      - name: 解析版本号
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw="${{ inputs.version }}"
+          raw="${raw#v}"
+          if [ -z "$raw" ]; then
+            if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              raw="${GITHUB_REF_NAME#v}"
+            else
+              raw="$(node -p "require('./package.json').version")"
+            fi
+          fi
+          printf '%s' "$raw" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
+            || { echo "❌ 版本号格式不对: '$raw'"; exit 1; }
+          echo "version=$raw" >> "$GITHUB_OUTPUT"
+          echo "📦 $raw"
+
+      - name: 准备构建期 .env
+        run: '[ -f .env ] || cp .env.example .env'
+
+      - name: 检查凭据
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ] \
+            || { echo "❌ 缺少 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"; exit 1; }
+
+      - name: 配置 QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 生成标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=v${{ steps.version.outputs.version }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || inputs.latest }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: 校验 manifest
+        run: |
+          set -euo pipefail
+          out="$(docker buildx imagetools inspect "${{ env.IMAGE }}:${{ steps.version.outputs.version }}")"
+          echo "$out"
+          echo "$out" | grep -q 'linux/amd64' || { echo "❌ 缺少 linux/amd64"; exit 1; }
+          echo "$out" | grep -q 'linux/arm64' || { echo "❌ 缺少 linux/arm64"; exit 1; }
+          echo "✅ amd64 + arm64 均已发布"
+
+      - name: 输出发布摘要
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### 🐳 Docker 镜像已发布"
+            echo ""
+            echo "版本：\`${{ steps.version.outputs.version }}\`"
+            echo ""
+            echo "| 标签 |"
+            echo "| --- |"
+            printf '%s\n' "$TAGS" | while read -r t; do
+              [ -n "$t" ] && echo "| \`$t\` |"
+            done
+            echo ""
+            echo "拉取：\`docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.version }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
