@@ -6,8 +6,8 @@ import { useAddConnectionForm } from '../composables/useAddConnectionForm';
 import MobileConnectionFormBasicInfo from './connection/mobile/MobileConnectionFormBasicInfo.vue';
 import MobileConnectionFormAuth from './connection/mobile/MobileConnectionFormAuth.vue';
 import MobileConnectionFormAdvanced from './connection/mobile/MobileConnectionFormAdvanced.vue';
+import ScriptImportPanel from './connection/ScriptImportPanel.vue';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
-import { getTranslation } from '../utils/languageUtils';
 
 // 定义 Props 与 Emits
 interface Props {
@@ -19,8 +19,7 @@ const props = withDefaults(defineProps<Props>(), {
 });
 const emit = defineEmits(['close', 'connection-added', 'connection-updated', 'connection-deleted']);
 
-const { t, locale } = useI18n();
-const scriptModeFormatInfo = ref(getTranslation('connections.form.scriptModeFormatInfo', locale.value));
+const { t } = useI18n();
 
 const {
   formData,
@@ -130,10 +129,7 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
         <!-- 3. 脚本导入模式 (仅在添加模式下可用) -->
         <div v-if="!isEditMode" class="surface-raised border border-border/60 rounded-2xl p-4 shadow-2xs space-y-3">
           <div class="flex justify-between items-center">
-            <div>
-              <h4 class="text-xs font-semibold text-foreground">{{ t('connections.form.sectionScriptMode', '脚本批量导入模式') }}</h4>
-              <p class="text-[11px] text-text-secondary/70">快速粘贴 SSH 命令批量解析导入</p>
-            </div>
+            <h4 class="text-xs font-semibold text-foreground">{{ t('connections.form.sectionScriptMode', '脚本批量导入模式') }}</h4>
             <button
               type="button"
               @click="isScriptModeActive = !isScriptModeActive"
@@ -149,18 +145,8 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
             </button>
           </div>
 
-          <div v-if="isScriptModeActive" class="mt-2 space-y-2">
-            <textarea
-              id="m-conn-script-input"
-              v-model="scriptInputText"
-              rows="6"
-              wrap="off"
-              class="w-full p-3 border border-border/60 rounded-xl bg-muted/20 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
-              :placeholder="t('connections.form.scriptModePlaceholder')"
-            ></textarea>
-            <p class="text-[11px] text-text-secondary/80 whitespace-pre-line leading-relaxed">
-              {{ scriptModeFormatInfo }}
-            </p>
+          <div v-if="isScriptModeActive" class="mt-2">
+            <ScriptImportPanel v-model="scriptInputText" compact />
           </div>
         </div>
 

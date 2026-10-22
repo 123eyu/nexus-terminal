@@ -27,7 +27,7 @@ type AddConnectionFormEmits = {
 export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddConnectionFormEmits) {
   const { connectionToEdit } = toRefs(props);
 
-  const { t } = useI18n();
+  const { t, te } = useI18n();
   const { showConfirmDialog } = useConfirmDialog();
   const { showAlertDialog } = useAlertDialog();
   const connectionsStore = useConnectionsStore();
@@ -282,6 +282,22 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     return ips;
   };
 
+  /**
+   * 脚本模式的报错翻译：解析器只给错误码 + 参数，文案在这里落地。
+   * 语言包里没有对应 key 时退回解析器自带的中文兜底。
+   */
+  const scriptErrorText = (
+    code?: string,
+    params?: Record<string, string | number>,
+    fallback?: string
+  ): string => {
+    if (code) {
+      const key = `connections.script.err.${code}`;
+      if (te(key)) return t(key, params ?? {});
+    }
+    return fallback || t('errors.unknown', '未知错误');
+  };
+
   // 脚本模式批量添加处理
   const handleScriptModeSubmit = async () => {
     const rawText = scriptInputText.value.trim();
@@ -290,23 +306,33 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
       return;
     }
 
-    const { validConnections, errors } = parseScriptText(rawText);
+    const { validConnections, rows } = parseScriptText(rawText);
+    const errorRows = rows.filter((r) => !!r.errorCode);
 
     if (validConnections.length === 0) {
-      if (errors.length > 0) {
-        uiNotificationsStore.showError(t('connections.form.scriptErrorInLine', { 
-          line: errors[0].line, 
-          error: errors[0].error 
-        }));
+      if (errorRows.length > 0) {
+        uiNotificationsStore.showError(
+          t('connections.script.errorInLine', {
+            line: errorRows[0].lineIndex,
+            error: scriptErrorText(errorRows[0].errorCode, errorRows[0].errorParams, errorRows[0].error),
+          })
+        );
       } else {
         uiNotificationsStore.showError(t('connections.form.scriptModeEmpty', '没有找到可导入的有效连接配置。'));
       }
       return;
     }
 
-    // 若存在部分格式解析失败的行，给予用户明确提示
-    if (errors.length > 0) {
-      uiNotificationsStore.showWarning(`检测到 ${errors.length} 行格式有误已被跳过（第一处错误：第 ${errors[0].lineIndex} 行 "${errors[0].line}" - ${errors[0].error}），将继续导入其余 ${validConnections.length} 个连接。`);
+    // 有格式错误的行：明确说清跳过几行、还剩多少能导
+    if (errorRows.length > 0) {
+      uiNotificationsStore.showWarning(
+        t('connections.script.partialSkipped', {
+          errors: errorRows.length,
+          ok: validConnections.length,
+          line: errorRows[0].lineIndex,
+          error: scriptErrorText(errorRows[0].errorCode, errorRows[0].errorParams, errorRows[0].error),
+        })
+      );
     }
 
     uiNotificationsStore.showInfo(t('connections.form.scriptModeAddingConnections', { count: validConnections.length }));
@@ -314,6 +340,27 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     let successCount = 0;
     let errorCount = 0;
     let firstErrorEncountered: string | null = null;
+
+    // 文件夹按名字懒建，且一次批量内只建一次
+    const tagIdCache = new Map<string, number>();
+    const resolveFolderId = async (name: string): Promise<number | null> => {
+      const cached = tagIdCache.get(name);
+      if (cached !== undefined) return cached;
+      let found = tags.value.find((x) => x.name === name) || null;
+      if (!found) {
+        const created = await tagsStore.addTag(name);
+        if (created) {
+          found = created;
+          await tagsStore.fetchTags();
+        }
+      }
+      if (!found) return null;
+      tagIdCache.set(name, found.id);
+      return found.id;
+    };
+
+    const jumpIdByName = new Map<string, number>();
+    for (const c of connections.value) jumpIdByName.set(c.name, c.id);
 
     for (const parsed of validConnections) {
       try {
@@ -324,57 +371,87 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           port: parsed.port,
           username: parsed.username,
           notes: parsed.note || '',
-          file_protocol: 'auto',
+          file_protocol: parsed.fileProtocol || 'auto',
         };
 
-        // 处理标签关联
+        if (parsed.backgroundColor) {
+          connectionData.background_color = parsed.backgroundColor;
+        }
+
+        // 文件夹（脚本里 -tags 给了多个时都建上）
         if (parsed.tags && parsed.tags.length > 0) {
           const tagIds: number[] = [];
           for (const tagName of parsed.tags) {
-            let foundTag = tags.value.find(t_ => t_.name === tagName);
-            if (!foundTag) {
-              const newTag = await tagsStore.addTag(tagName);
-              if (newTag) {
-                foundTag = newTag;
-                await tagsStore.fetchTags();
-              }
-            }
-            if (foundTag) {
-              tagIds.push(foundTag.id);
-            }
+            const id = await resolveFolderId(tagName);
+            if (id) tagIds.push(id);
           }
           connectionData.tag_ids = tagIds;
         } else {
           connectionData.tag_ids = [];
         }
 
-        // 处理代理关联
+        // 网络代理（按名称）
         if (parsed.proxyName) {
-          const foundProxy = proxies.value.find(p => p.name === parsed.proxyName);
+          const foundProxy = proxies.value.find((p) => p.name === parsed.proxyName);
           if (foundProxy) {
             connectionData.proxy_id = foundProxy.id;
+            connectionData.proxy_type = 'proxy';
+          } else {
+            errorCount++;
+            if (!firstErrorEncountered) {
+              firstErrorEncountered = t('connections.script.err.proxyNotFound', { name: parsed.proxyName });
+            }
+            continue;
           }
         }
 
-        // 处理认证方式与密钥/密码
+        // 跳板机链（按连接名，仅 SSH）
+        if (parsed.jumpNames && parsed.jumpNames.length > 0) {
+          if (parsed.type !== 'SSH') {
+            errorCount++;
+            if (!firstErrorEncountered) {
+              firstErrorEncountered = t('connections.script.err.jumpSshOnly', '跳板机链只支持 SSH 连接');
+            }
+            continue;
+          }
+          const jumpIds: number[] = [];
+          let missing: string | null = null;
+          for (const name of parsed.jumpNames) {
+            const id = jumpIdByName.get(name);
+            if (id === undefined) {
+              missing = name;
+              break;
+            }
+            jumpIds.push(id);
+          }
+          if (missing) {
+            errorCount++;
+            if (!firstErrorEncountered) {
+              firstErrorEncountered = t('connections.script.err.jumpNotFound', { name: missing });
+            }
+            continue;
+          }
+          connectionData.proxy_type = 'jump';
+          connectionData.jump_chain = jumpIds;
+        }
+
+        // 认证方式与密钥/密码
         if (parsed.type === 'SSH') {
           if (parsed.keyName) {
-            const foundKey = sshKeys.value.find(k => k.name === parsed.keyName);
+            const foundKey = sshKeys.value.find((k) => k.name === parsed.keyName);
             if (foundKey) {
               connectionData.auth_method = 'key';
               connectionData.ssh_key_id = foundKey.id;
+            } else if (parsed.password) {
+              // 找不到密钥但有密码：退回密码模式
+              connectionData.auth_method = 'password';
+              connectionData.password = parsed.password;
             } else {
-              // 密钥不存在时若有密码则退回密码模式，否则警告跳过
-              if (parsed.password) {
-                connectionData.auth_method = 'password';
-                connectionData.password = parsed.password;
-              } else {
-                errorCount++;
-                if (!firstErrorEncountered) {
-                  firstErrorEncountered = `未找到名为 "${parsed.keyName}" 的 SSH 密钥`;
-                }
-                continue;
+              errorCount++;
+              if (!firstErrorEncountered) {
+                firstErrorEncountered = t('connections.script.err.keyNotFound', { name: parsed.keyName });
               }
+              continue;
             }
           } else {
             connectionData.auth_method = 'password';
@@ -396,16 +473,19 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
       } catch (err: any) {
         errorCount++;
         if (!firstErrorEncountered) {
-          firstErrorEncountered = err?.message || '添加异常';
+          firstErrorEncountered = err?.message || t('errors.unknown', '未知错误');
         }
       }
     }
 
-    if (errorCount > 0 || errors.length > 0) {
+    if (errorCount > 0 || errorRows.length > 0) {
       const message = t('connections.form.errorBatchAddResult', {
         successCount,
-        errorCount: errorCount + errors.length,
-        firstErrorEncountered: firstErrorEncountered || (errors.length > 0 ? errors[0].error : t('errors.unknown', '未知错误'))
+        errorCount: errorCount + errorRows.length,
+        firstErrorEncountered:
+          firstErrorEncountered ||
+          scriptErrorText(errorRows[0]?.errorCode, errorRows[0]?.errorParams, errorRows[0]?.error) ||
+          t('errors.unknown', '未知错误'),
       });
       if (successCount > 0) {
         uiNotificationsStore.showWarning(message);
@@ -415,14 +495,15 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     }
 
     if (successCount > 0) {
-      if (errorCount === 0 && errors.length === 0) {
+      if (errorCount === 0 && errorRows.length === 0) {
         uiNotificationsStore.showSuccess(t('connections.form.successBatchAddResult', { successCount }));
       }
       emit('connection-added');
-      if (errorCount === 0 && errors.length === 0) {
+      if (errorCount === 0 && errorRows.length === 0) {
         scriptInputText.value = '';
       }
     }
+    // 一条都没建成时保留输入，用户改完可以直接重试
   };
 
   // --- 内联新建 SSH 密钥（在「SSH 密钥」字段里就地粘贴私钥的那条路径，没有保存按钮） ---

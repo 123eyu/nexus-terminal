@@ -6,7 +6,7 @@ import { useAddConnectionForm } from '../composables/useAddConnectionForm';
 import AddConnectionFormBasicInfo from './AddConnectionFormBasicInfo.vue';
 import AddConnectionFormAuth from './AddConnectionFormAuth.vue';
 import AddConnectionFormAdvanced from './AddConnectionFormAdvanced.vue';
-import { getTranslation } from '../utils/languageUtils';
+import ScriptImportPanel from './connection/ScriptImportPanel.vue';
 
 // 定义组件发出的事件
 const emit = defineEmits(['close', 'connection-added', 'connection-updated', 'connection-deleted']);
@@ -17,8 +17,7 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const { t, locale } = useI18n();
-const scriptModeFormatInfo = ref(getTranslation('connections.form.scriptModeFormatInfo', locale.value));
+const { t } = useI18n();
 
 const {
   formData,
@@ -165,17 +164,7 @@ onUnmounted(() => {
               <h4 class="text-xs font-semibold text-foreground tracking-wide uppercase">{{ t('connections.form.sectionScriptMode', '脚本模式批量导入') }}</h4>
             </div>
           </div>
-          <textarea
-            id="conn-script-input"
-            v-model="scriptInputText"
-            rows="10"
-            wrap="off"
-            class="w-full px-3 py-2.5 border border-border/60 rounded-xl font-mono text-xs shadow-2xs text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
-            :placeholder="t('connections.form.scriptModePlaceholder')"
-          ></textarea>
-          <p class="text-xs text-text-secondary whitespace-pre-line leading-relaxed font-mono">
-            {{ scriptModeFormatInfo }}
-          </p>
+          <ScriptImportPanel v-model="scriptInputText" />
         </div>
       </form>
 
