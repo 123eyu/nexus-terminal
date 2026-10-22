@@ -3,12 +3,59 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 
+/**
+ * NSIS 模板版本守卫
+ *
+ * `src-tauri/nsis/installer.nsi` 是从 Tauri 上游整份复制出来的（为了把升级流程改成
+ * 原地覆盖安装）。Tauri 会持续往这个模板里加安装器修复，所以 CLI 一升级就必须重新
+ * 同步，否则会静默用一份过期模板打包。这里只告警，不阻断构建。
+ */
+function checkNsisTemplateVersion(desktopDir) {
+  const tplPath = path.join(desktopDir, 'src-tauri', 'nsis', 'installer.nsi');
+  if (!fs.existsSync(tplPath)) {
+    console.warn('⚠️ 未找到自定义 NSIS 模板 src-tauri/nsis/installer.nsi —— tauri.conf.json 已引用它，打包会直接失败');
+    return;
+  }
+
+  let cliVersion = '';
+  for (const candidate of [
+    path.join(desktopDir, 'node_modules', '@tauri-apps', 'cli', 'package.json'),
+    path.join(desktopDir, '..', '..', 'node_modules', '@tauri-apps', 'cli', 'package.json'),
+  ]) {
+    if (fs.existsSync(candidate)) {
+      try { cliVersion = JSON.parse(fs.readFileSync(candidate, 'utf8')).version || ''; } catch (_) {}
+      if (cliVersion) break;
+    }
+  }
+
+  const head = fs.readFileSync(tplPath, 'utf8').slice(0, 4096);
+  const matched = head.match(/Upstream:\s*tauri-cli v([\d.]+)/);
+  if (!matched) {
+    console.warn('⚠️ NSIS 模板里找不到 "Upstream: tauri-cli vX.Y.Z" 标记，跳过版本校验');
+    return;
+  }
+
+  const tplVersion = matched[1];
+  if (cliVersion && cliVersion !== tplVersion) {
+    console.warn('');
+    console.warn(`⚠️ NSIS 模板基于 tauri-cli v${tplVersion}，当前安装的是 v${cliVersion}`);
+    console.warn('   请重新从上游下载 installer.nsi 并重新应用 NEXUS PATCH 改动，');
+    console.warn('   否则可能丢掉 Tauri 新版本里的安装器修复。见该文件头注释。');
+    console.warn('');
+  } else {
+    console.log(`✅ NSIS 模板版本与 @tauri-apps/cli 一致 (v${tplVersion})`);
+  }
+}
+
 async function main() {
   console.log('🚀 [Desktop Packager] 开始全量构建 Nexus Terminal 桌面端 (Tauri v2 + Node Sidecar)...');
 
   const desktopDir = path.resolve(__dirname, '..');
   const rootDir = path.resolve(desktopDir, '../..');
   const portableDir = path.join(rootDir, 'dist-desktop', 'portable');
+
+  // 0. 自定义 NSIS 模板版本校验（模板是整份复制自 Tauri 上游的）
+  checkNsisTemplateVersion(desktopDir);
 
   // 1. 确保 Cargo/Rust 与 Node 环境在 PATH 中
   const userProfile = process.env.USERPROFILE || process.env.HOME || '';

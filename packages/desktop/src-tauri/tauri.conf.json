@@ -52,7 +52,22 @@
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
-      "timestampUrl": ""
+      "timestampUrl": "",
+      "nsis": {
+        "template": "nsis/installer.nsi",
+        "languages": [
+          "SimpChinese",
+          "TradChinese",
+          "English",
+          "Japanese",
+          "Korean",
+          "German",
+          "French",
+          "Spanish",
+          "Russian"
+        ],
+        "displayLanguageSelector": false
+      }
     }
   },
   "plugins": {
