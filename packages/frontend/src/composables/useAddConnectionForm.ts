@@ -52,6 +52,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     password: '',
     private_key: '',
     passphrase: '',
+    /** 内联新建密钥时的名称（留空自动取名），随连接一起提交 */
+    ssh_key_name: '',
     selected_ssh_key_id: null as number | null,
     proxy_id: null as number | null,
     jump_chain: null as Array<any> | null, 
@@ -64,6 +66,16 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     file_protocol: 'auto' as 'auto' | 'sftp' | 'scp',
   };
   const formData = reactive({ ...initialFormData });
+
+  /**
+   * 用户在「SSH 密钥」卡片里就地粘了私钥（而不是选已有密钥）。
+   * 这种模式下提交时要先把私钥存成一把正式密钥，再带着它的 id 去建连接。
+   */
+  const hasInlineSshKey = computed(
+    () => formData.type === 'SSH'
+      && formData.auth_method === 'key'
+      && (formData.private_key || '').trim().length > 0
+  );
 
   const formError = ref<string | null>(null); // 表单级别的错误信息
   const advancedConnectionMode = ref<'proxy' | 'jump'>('proxy');
@@ -152,6 +164,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           formData.password = '';
           formData.private_key = '';
           formData.passphrase = '';
+          formData.ssh_key_name = '';
           if (newVal.type !== 'VNC') {
                formData.vncPassword = '';
           } else {
@@ -412,6 +425,55 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     }
   };
 
+  // --- 内联新建 SSH 密钥（在「SSH 密钥」字段里就地粘贴私钥的那条路径，没有保存按钮） ---
+
+  /** 留空时用的兜底密钥名：连接名 → 主机 → 用户名，后缀 `-key` */
+  function resolveInlineKeyName(): string {
+    const explicit = (formData.ssh_key_name || '').trim();
+    if (explicit) return explicit;
+    const base = (formData.name || '').trim()
+      || (formData.host || '').trim()
+      || (formData.username || '').trim()
+      || 'ssh';
+    return `${base}-key`;
+  }
+
+  /**
+   * 提交前把内联表单里的私钥落库成一把正式密钥。
+   * 成功后把 `selected_ssh_key_id` 指向它并清空明文 —— 这样后续（重试、批量循环）
+   * 都走「已选密钥」的老路径，不会因为重试又建出第二把重复密钥。
+   */
+  async function persistInlineSshKey(): Promise<{ ok: boolean; id: number | null; name: string }> {
+    if (!hasInlineSshKey.value) return { ok: true, id: null, name: '' };
+
+    const name = resolveInlineKeyName();
+    const created = await sshKeysStore.createSshKey({
+      name,
+      private_key: (formData.private_key || '').trim(),
+      ...(formData.passphrase ? { passphrase: formData.passphrase } : {}),
+    });
+
+    if (!created) {
+      uiNotificationsStore.showError(
+        t('connections.form.inlineKeySaveFailed', { error: sshKeysStore.error || t('errors.unknown', '未知错误') })
+      );
+      return { ok: false, id: null, name };
+    }
+
+    formData.selected_ssh_key_id = created.id;
+    formData.private_key = '';
+    formData.passphrase = '';
+    formData.ssh_key_name = '';
+    return { ok: true, id: created.id, name: created.name };
+  }
+
+  /** 连接一个都没建成时回收刚自动创建的密钥，别在密钥库里留孤儿 */
+  async function rollbackInlineSshKey(keyId: number | null) {
+    if (!keyId) return;
+    await sshKeysStore.deleteSshKey(keyId);
+    if (formData.selected_ssh_key_id === keyId) formData.selected_ssh_key_id = null;
+  }
+
   /**
    * 提交入口：只负责维护「提交态」这一件事。
    * 真正的校验/请求拆到 submitConnection()，这样任何一条 early return（校验不通过）
@@ -456,7 +518,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                 uiNotificationsStore.showError(t('connections.form.errorPasswordRequired'));
                 return;
             }
-            if (formData.auth_method === 'key' && !formData.selected_ssh_key_id && !formData.host.includes('~')) {
+            if (formData.auth_method === 'key' && !formData.selected_ssh_key_id && !hasInlineSshKey.value && !formData.host.includes('~')) {
                 uiNotificationsStore.showError(t('connections.form.errorSshKeyRequired'));
                 return;
             }
@@ -465,7 +527,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                 uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredOnSwitch'));
                 return;
             }
-            if (formData.auth_method === 'key' && !formData.selected_ssh_key_id && connectionToEdit.value?.auth_method !== 'key') {
+            if (formData.auth_method === 'key' && !formData.selected_ssh_key_id && !hasInlineSshKey.value && connectionToEdit.value?.auth_method !== 'key') {
                  uiNotificationsStore.showError(t('connections.form.errorSshKeyRequiredOnSwitch'));
                  return;
              }
@@ -487,7 +549,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
 
         if (Array.isArray(parsedIpsResult)) {
             const ips = parsedIpsResult;
-            if (formData.type === 'SSH' && formData.auth_method === 'key' && !formData.selected_ssh_key_id) {
+            if (formData.type === 'SSH' && formData.auth_method === 'key' && !formData.selected_ssh_key_id && !hasInlineSshKey.value) {
                 uiNotificationsStore.showError(t('connections.form.errorSshKeyRequiredForBatch', '批量添加 SSH (密钥认证) 连接时，必须选择一个 SSH 密钥。'));
                 return;
             }
@@ -507,6 +569,10 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
             let successCount = 0;
             let errorCount = 0;
             let firstErrorEncountered: string | null = null;
+
+            // 内联粘贴的私钥先落库（整批共用同一把），失败就直接终止
+            const inlineKey = await persistInlineSshKey();
+            if (!inlineKey.ok) return;
 
             for (let i = 0; i < ips.length; i++) {
                 const currentIp = ips[i];
@@ -556,6 +622,15 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                 }
             }
 
+            // 内联密钥收尾：一个都没建成 → 回收；有建成的 → 提醒一句已自动保存
+            if (successCount === 0) {
+                await rollbackInlineSshKey(inlineKey.id);
+            } else if (inlineKey.id) {
+                uiNotificationsStore.showSuccess(
+                    t('connections.form.inlineKeySaved', { name: inlineKey.name })
+                );
+            }
+
             if (errorCount > 0) {
                 const message = t('connections.form.errorBatchAddResult', { successCount, errorCount, firstErrorEncountered: firstErrorEncountered || t('errors.unknown', '未知错误') });
                 if (successCount > 0) {
@@ -578,6 +653,10 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         uiNotificationsStore.showError(t('connections.form.errorIpRangeNotAllowedInEditMode', '编辑模式下不支持 IP 范围。请使用单个 IP 地址。'));
         return;
     }
+
+    // 内联粘贴的私钥先落库，拿到 id 再建/改连接
+    const inlineKey = await persistInlineSshKey();
+    if (!inlineKey.ok) return;
 
     const dataToSend: any = {
         type: formData.type,
@@ -630,6 +709,17 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         } else {
             uiNotificationsStore.showError(t('connections.form.errorAdd', { error: connectionsStore.error || '未知错误' }));
         }
+    }
+
+    // 内联密钥收尾：建成 → 提醒一句已自动保存；没建成 → 把它删掉，别留孤儿
+    if (success) {
+        if (inlineKey.id) {
+            uiNotificationsStore.showSuccess(
+                t('connections.form.inlineKeySaved', { name: inlineKey.name })
+            );
+        }
+    } else {
+        await rollbackInlineSshKey(inlineKey.id);
     }
   }
 
@@ -701,6 +791,13 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
             password: formData.auth_method === 'password' ? formData.password : undefined,
             proxy_id: formData.proxy_id || null,
             ssh_key_id: formData.auth_method === 'key' ? formData.selected_ssh_key_id : undefined,
+            // 内联刚粘贴、还没落库的私钥直接送去测（后端 test-unsaved 支持 private_key）
+            private_key: formData.auth_method === 'key' && hasInlineSshKey.value
+                ? (formData.private_key || '').trim()
+                : undefined,
+            passphrase: formData.auth_method === 'key' && hasInlineSshKey.value
+                ? (formData.passphrase || undefined)
+                : undefined,
         };
 
         if (!dataToSend.host || !dataToSend.port || !dataToSend.auth_method) {
@@ -709,7 +806,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         if (dataToSend.auth_method === 'password' && !formData.password) {
            throw new Error(t('connections.form.errorPasswordRequired'));
        }
-       if (dataToSend.auth_method === 'key' && !dataToSend.ssh_key_id) {
+       if (dataToSend.auth_method === 'key' && !dataToSend.ssh_key_id && !dataToSend.private_key) {
           throw new Error(t('connections.form.errorSshKeyRequired'));
        }
         response = await apiClient.post('/connections/test-unsaved', dataToSend);

@@ -92,7 +92,7 @@ const handleHostIconMouseLeave = () => {
 
   <!-- 基础配置卡片：立体卡片 -->
   <div
-    class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-4 shadow-sm"
+    class="rounded-2xl border border-border/70 surface-raised p-4 md:p-5 space-y-4 shadow-sm"
   >
     <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
       <div class="flex items-center gap-2">
@@ -261,4 +261,4 @@ const handleHostIconMouseLeave = () => {
       </div>
     </div>
   </div>
-</template>
+</template>

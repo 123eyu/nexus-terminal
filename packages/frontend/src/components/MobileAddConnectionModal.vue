@@ -128,7 +128,7 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
         </template>
 
         <!-- 3. 脚本导入模式 (仅在添加模式下可用) -->
-        <div v-if="!isEditMode" class="bg-background border border-border/60 rounded-2xl p-4 shadow-2xs space-y-3">
+        <div v-if="!isEditMode" class="surface-raised border border-border/60 rounded-2xl p-4 shadow-2xs space-y-3">
           <div class="flex justify-between items-center">
             <div>
               <h4 class="text-xs font-semibold text-foreground">{{ t('connections.form.sectionScriptMode', '脚本批量导入模式') }}</h4>

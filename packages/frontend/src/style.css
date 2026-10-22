@@ -295,6 +295,24 @@ select:not([multiple]):not([size]):not(.encoding-select):not(.mobile-encoding-se
    而「没有层」的普通 CSS 会无条件压过所有分层样式（跟特异性无关，之前用 :where 也压不住），
    结果把 h-8 / text-xs / rounded-xl 这些全顶掉了。进 base 层之后工具类照常生效，
    这里只给「什么都没写」的 select 一个像样的外观。 */
+@layer components {
+    /* 表单分区卡片（添加连接弹窗里的「基本信息 / 认证凭据 / 高级设置」）。
+       为什么不用 bg-muted/15：--muted-bg-color 默认就等于 --app-bg-color，
+       半透明叠在同样颜色的弹窗外壳上 = 完全看不出边界。
+       这里把正文色按 4% 叠到背景上，浅色主题得到极浅的灰、深色主题得到略亮的面，
+       两种主题都能和外壳区分开，也不依赖某个具体主题配了 muted 色。 */
+    .surface-raised {
+        background-color: color-mix(in srgb, var(--text-color) 5%, var(--app-bg-color));
+    }
+
+    /* 再往里一层的面板（分区卡片里的小块，如「就地新建密钥」）。
+       raised 叠在 raised 上几乎看不出边界，所以这一层把正文色提到 10%：
+       浅色主题更暗一点（像凹槽）、深色主题更亮一点（像浮层），两种主题都能分层。 */
+    .surface-inset {
+        background-color: color-mix(in srgb, var(--text-color) 10%, var(--app-bg-color));
+    }
+}
+
 @layer base {
     select:not([multiple]):not([size]):not(.encoding-select):not(.mobile-encoding-select) {
         border: 1px solid var(--border-color);

@@ -59,7 +59,7 @@ const selectPresetColor = (color: string) => {
 </script>
 
 <template>
-  <div class="space-y-3.5 bg-background border border-border/60 rounded-2xl p-4 shadow-2xs">
+  <div class="space-y-3.5 surface-raised border border-border/60 rounded-2xl p-4 shadow-2xs">
     <!-- 头部卡片标题 -->
     <div class="flex items-center justify-between pb-2.5 border-b border-border/40">
       <div class="flex items-center gap-2">

@@ -112,7 +112,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
 </script>
 
 <template>
-  <div class="bg-background border border-border/60 rounded-2xl shadow-2xs overflow-hidden">
+  <div class="surface-raised border border-border/60 rounded-2xl shadow-2xs overflow-hidden">
     <!-- 折叠标题栏 -->
     <button
       type="button"

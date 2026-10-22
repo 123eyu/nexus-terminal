@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import SshKeySelector from './SshKeySelector.vue'; // Assuming SshKeySelector is used here
+import SshKeySelector from './SshKeySelector.vue';
+import SshKeyInlineField from './connection/SshKeyInlineField.vue';
 
 // Define Props. formData is expected to be a reactive object from the parent composable.
 const props = defineProps<{
@@ -11,6 +12,12 @@ const props = defineProps<{
     password?: string; // Optional because it might not be set or sent
     selected_ssh_key_id: number | null; // SSH specific
     vncPassword?: string; // VNC specific, optional for the same reasons as password
+    // 内联新建密钥（随连接一起提交，见 SshKeyInlineField）
+    private_key?: string;
+    passphrase?: string;
+    ssh_key_name?: string;
+    host?: string;
+    name?: string;
   };
   isEditMode: boolean; // To determine if fields are required
 }>();
@@ -21,7 +28,7 @@ const { t } = useI18n();
 <template>
   <!-- 认证凭据卡片：立体卡片 -->
   <div
-    class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-4 shadow-sm"
+    class="rounded-2xl border border-border/70 surface-raised p-4 md:p-5 space-y-4 shadow-sm"
   >
     <div class="flex items-center justify-between pb-2.5 border-b border-border/50">
       <div class="flex items-center gap-2">
@@ -88,10 +95,9 @@ const { t } = useI18n();
         />
       </div>
 
-      <div v-if="props.formData.auth_method === 'key'" class="space-y-2">
-        <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.sshKey') }}</label>
+      <SshKeyInlineField v-if="props.formData.auth_method === 'key'" :form-data="props.formData">
         <SshKeySelector v-model="props.formData.selected_ssh_key_id" />
-      </div>
+      </SshKeyInlineField>
     </template>
 
     <!-- RDP 认证 -->

@@ -154,7 +154,7 @@ onUnmounted(() => {
         <!-- 脚本批量导入卡片 -->
         <div
           v-else
-          class="rounded-2xl border border-border/70 bg-muted/15 p-4 md:p-5 space-y-3 shadow-sm"
+          class="rounded-2xl border border-border/70 surface-raised p-4 md:p-5 space-y-3 shadow-sm"
         >
           <div class="flex items-center justify-between pb-2 border-b border-border/50">
             <div class="flex items-center gap-2">

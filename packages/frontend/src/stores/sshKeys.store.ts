@@ -52,25 +52,29 @@ export const useSshKeysStore = defineStore('sshKeys', () => {
         }
     }
 
-    // Add a new SSH key
-    async function addSshKey(keyInput: SshKeyInput): Promise<boolean> {
+    /**
+     * 创建密钥并**返回创建出来的对象**（需要 id 的场景：添加连接时顺手建密钥）。
+     */
+    async function createSshKey(keyInput: SshKeyInput): Promise<SshKeyBasicInfo | null> {
         isLoading.value = true;
         error.value = null;
         try {
             const response = await apiClient.post<{ message: string, key: SshKeyBasicInfo }>('/ssh-keys', keyInput);
-            // Add the new key to the local list
             sshKeys.value.push(response.data.key);
-            // Sort keys by name
             sshKeys.value.sort((a, b) => a.name.localeCompare(b.name));
-            return true;
+            return response.data.key;
         } catch (err: any) {
             console.error('Failed to add SSH key:', err);
             error.value = err.response?.data?.message || err.message || '添加 SSH 密钥失败。';
-             // Ensure error.value is not null before passing
-            return false;
+            return null;
         } finally {
             isLoading.value = false;
         }
+    }
+
+    // Add a new SSH key
+    async function addSshKey(keyInput: SshKeyInput): Promise<boolean> {
+        return (await createSshKey(keyInput)) !== null;
     }
 
      // Fetch decrypted details for a single key (used for editing)
@@ -147,6 +151,7 @@ export const useSshKeysStore = defineStore('sshKeys', () => {
         hasLoaded,
         fetchSshKeys,
         addSshKey,
+        createSshKey,
         fetchDecryptedSshKey,
         updateSshKey,
         deleteSshKey,

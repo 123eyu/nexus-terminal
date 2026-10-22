@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MobileSshKeySelector from './MobileSshKeySelector.vue';
+import SshKeyInlineField from '../SshKeyInlineField.vue';
 
 // 定义 Props
 const props = defineProps<{
@@ -12,6 +13,12 @@ const props = defineProps<{
     password?: string;
     selected_ssh_key_id: number | null;
     vncPassword?: string;
+    // 内联新建密钥（随连接一起提交，见 SshKeyInlineField）
+    private_key?: string;
+    passphrase?: string;
+    ssh_key_name?: string;
+    host?: string;
+    name?: string;
   };
   isEditMode: boolean;
 }>();
@@ -24,7 +31,7 @@ const showVncPassword = ref(false);
 </script>
 
 <template>
-  <div class="space-y-3.5 bg-background border border-border/60 rounded-2xl p-4 shadow-2xs">
+  <div class="space-y-3.5 surface-raised border border-border/60 rounded-2xl p-4 shadow-2xs">
     <!-- 头部卡片标题 -->
     <div class="flex items-center justify-between pb-2.5 border-b border-border/40">
       <div class="flex items-center gap-2">
@@ -130,15 +137,14 @@ const showVncPassword = ref(false);
         </div>
       </div>
 
-      <!-- 密钥选择框 -->
-      <div v-if="props.formData.auth_method === 'key'" class="space-y-1.5">
-        <label class="block text-xs font-medium text-text-secondary">
-          {{ t('connections.form.sshKey', 'SSH 密钥') }} <span class="text-red-400">*</span>
-        </label>
-        <div class="w-full">
-          <MobileSshKeySelector v-model="props.formData.selected_ssh_key_id" />
-        </div>
-      </div>
+      <!-- 密钥：选已有 / 就地新建 -->
+      <SshKeyInlineField
+        v-if="props.formData.auth_method === 'key'"
+        :form-data="props.formData"
+        compact
+      >
+        <MobileSshKeySelector v-model="props.formData.selected_ssh_key_id" />
+      </SshKeyInlineField>
     </template>
 
     <!-- 3. RDP 专属认证模式 -->

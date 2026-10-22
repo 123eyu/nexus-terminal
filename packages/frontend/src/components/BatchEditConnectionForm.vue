@@ -222,7 +222,7 @@ onMounted(() => {
 
         <form @submit.prevent="handleSave" class="flex-grow overflow-y-auto pr-2 space-y-4">
           <!-- Port Section -->
-          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
+          <div class="p-4 border border-border/60 rounded-xl surface-raised">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.table.port', '端口') }}</h4>
               <input type="checkbox" v-model="enablePortEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -238,7 +238,7 @@ onMounted(() => {
           </div>
 
           <!-- Auth Section -->
-          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
+          <div class="p-4 border border-border/60 rounded-xl surface-raised">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.form.sectionAuth', '认证信息') }}</h4>
               <input type="checkbox" v-model="enableAuthEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
@@ -264,7 +264,7 @@ onMounted(() => {
           </div>
 
           <!-- Advanced Section (Now includes Notes) -->
-          <div class="p-4 border border-border/60 rounded-xl bg-muted/15">
+          <div class="p-4 border border-border/60 rounded-xl surface-raised">
             <div class="flex justify-between items-center mb-2">
               <h4 class="text-base font-semibold">{{ t('connections.form.sectionAdvanced', '高级选项') }}</h4>
               <input type="checkbox" v-model="enableAdvancedEdit" class="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary" />
