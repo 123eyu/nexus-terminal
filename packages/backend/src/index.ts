@@ -101,6 +101,7 @@ import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
 import syncV2Router from './sync/sync.v2.routes';
 import fileColorHighlightsRouter from './file-color-highlights/file-color-highlights.routes';
+import dataTransferRouter from './data-transfer/data-transfer.routes';
 import debugRouter from './debug/debug.routes';
 import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
@@ -337,6 +338,7 @@ const startServer = () => {
     app.use('/api/sync/v2', syncV2Router);
     app.use('/api/v1/connections/:connectionId/file-color-highlights', fileColorHighlightsRouter);
     app.use('/api/v1/file-color-highlights', fileColorHighlightsRouter);
+    app.use('/api/v1/data-transfer', dataTransferRouter);
 
     // 开发期前端日志接收（生产环境不挂载，也不暴露任何调试面）
     if (process.env.NODE_ENV !== 'production') {

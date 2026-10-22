@@ -53,7 +53,11 @@ export type AuditLogActionType =
 
   // System/Error
   | 'DATABASE_MIGRATION'
-  | 'ADMIN_SETUP_COMPLETE';
+  | 'ADMIN_SETUP_COMPLETE'
+
+  // Data transfer (导出包含全部凭据，必须留痕)
+  | 'DATA_EXPORTED'
+  | 'DATA_IMPORTED';
 
 // 审计日志条目的结构 (从数据库读取时)
 export interface AuditLogEntry {

@@ -1,4 +1,12 @@
 
+/**
+ * ⚠️ 这是早期的连接导出实现，只导出「每行一条 CLI 脚本」的 connections.txt，
+ * 和本文件的 importConnections（吃 JSON 数组）格式互不兼容 —— 导出的包导不回来。
+ *
+ * 新的数据管理（勾选数据集 + 加密包 + 预览/冲突策略）在 ../data-transfer/ 下，
+ * 请勿在此基础上继续加功能。这里保留只是为了不破坏已有的 API 调用方。
+ */
+
 import * as ConnectionRepository from '../connections/connection.repository';
 import * as ProxyRepository from '../proxies/proxy.repository';
 import * as TagService from '../tags/tag.service'; 
