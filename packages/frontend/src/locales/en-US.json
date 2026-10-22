@@ -1927,6 +1927,12 @@
   },
   "transferProgressModal": {
     "title": "File Transfer Progress",
+    "subtitle": "Recent file transfers",
+    "subtitleTruncated": "Showing the latest {shown} of {total}",
+    "runningTasks": "{count} active",
+    "localSource": "This device",
+    "progressUnknown": "In progress",
+    "autoRefreshHint": "Auto-refreshes every 5s",
     "loading": "Loading transfer tasks...",
     "errorLoadingTitle": "Loading Error",
     "errorLoading": "Failed to load transfer tasks: {error}",
@@ -1935,6 +1941,7 @@
       "cancelFailed": "Failed to cancel task."
     },
     "noTasks": "There are no active transfer tasks currently.",
+    "noTasksTip": "Progress shows up here when you send or download files from the file manager.",
     "task": {
       "idLabel": "Task",
       "createdAt": "Created at",

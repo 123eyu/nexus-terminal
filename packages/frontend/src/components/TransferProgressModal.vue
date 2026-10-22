@@ -1,10 +1,11 @@
-
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '../utils/apiClient';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
+import { resolveTransferTone, isBusyTransferStatus } from '../utils/transfer-status';
+import TransferStatusBadge from './common/TransferStatusBadge.vue';
 import MobileTransferProgressModal from './MobileTransferProgressModal.vue';
 
 interface Props {
@@ -19,6 +20,9 @@ const emit = defineEmits(['update:visible']);
 const { t, locale } = useI18n();
 const connectionsStore = useConnectionsStore();
 const { isMobile: detectedMobile } = useDeviceDetection();
+
+/** 一次最多展示多少条任务（后端可能留着历史记录） */
+const MAX_VISIBLE_TASKS = 5;
 
 // 视口尺寸响应式监听
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -42,36 +46,13 @@ const isMobileMode = computed(() => {
 });
 
 // Helper function to get connection name by ID
-// 注意: 此函数假设 'connectionsStore.connections' 是一个包含连接对象的数组，
-// 每个对象至少有 'id' 和 'name' 属性。请根据实际 store 结构调整。
 const getConnectionName = (connectionId: number): string => {
   const connection = connectionsStore.connections?.find((c: any) => c.id === connectionId);
   if (connection && connection.name) {
     return connection.name;
   }
-  return `连接ID: ${connectionId}`; // 未找到连接或名称时的回退显示
+  return t('transferProgressModal.connectionIdFallback', { connectionId }, `连接ID: ${connectionId}`);
 };
-
-// Helper function to format the task title
-const formatTaskTitle = (task: TransferTask): string => {
-  const fileName = (task.subTasks && task.subTasks.length > 0)
-    ? task.subTasks[0].sourceItemName
-    : "[文件名未知]";
-  
-  const sourceServerName = task.sourceConnectionId
-    ? getConnectionName(task.sourceConnectionId)
-    : "[源服务器名]"; // 占位符，如果 sourceConnectionId 未提供
-    
-  const targetPath = task.remoteTargetPath || "[目标路径]"; // 占位符，如果 remoteTargetPath 未提供
-
-  // 如果 sourceConnectionId, remoteTargetPath 都未提供，且没有子任务（无法获取文件名），则退回显示原始任务ID
-  if (!task.sourceConnectionId && !task.remoteTargetPath && (!task.subTasks || task.subTasks.length === 0)) {
-    return `任务ID: ${task.taskId}`;
-  }
-  
-  return `${sourceServerName} (${fileName} -> ${targetPath})`;
-};
-
 
 // 数据结构参考
 interface TransferSubTask {
@@ -91,13 +72,15 @@ interface TransferTask {
   updatedAt: string | Date;
   subTasks: TransferSubTask[];
   overallProgress?: number;
-  sourceConnectionId?: number; 
-  remoteTargetPath?: string; 
+  sourceConnectionId?: number;
+  remoteTargetPath?: string;
 }
 
 const transferTasks = ref<TransferTask[]>([]);
 const isLoading = ref(false);
 const errorLoading = ref<string | null>(null);
+/** 至少成功拉取过一次 —— 轮询期间的 isLoading 不能被当成「空态」 */
+const hasLoadedOnce = ref(false);
 const pollingIntervalId = ref<number | null>(null);
 
 // Computed property for sorted and limited tasks
@@ -110,20 +93,31 @@ const displayedTasks = computed(() => {
       const dateB = new Date(b.createdAt);
       return dateB.getTime() - dateA.getTime(); // For descending order (newest first)
     })
-    .slice(0, 5); // Limit to the 5 newest tasks
+    .slice(0, MAX_VISIBLE_TASKS); // Limit to the 5 newest tasks
 });
 
 // 计算正在进行中的任务数量
 const activeTasksCount = computed(() => {
-  return transferTasks.value.filter(t => ['queued', 'in-progress', 'connecting', 'transferring', 'cancelling'].includes(t.status)).length;
+  return transferTasks.value.filter(t => isBusyTransferStatus(t.status)).length;
+});
+
+/** 头部副标题：有多少条就明说，别让用户以为旧任务丢了 */
+const subtitleText = computed(() => {
+  const total = transferTasks.value.length;
+  if (total > MAX_VISIBLE_TASKS) {
+    return t(
+      'transferProgressModal.subtitleTruncated',
+      { shown: MAX_VISIBLE_TASKS, total },
+      `显示最近 ${MAX_VISIBLE_TASKS} 条（共 ${total} 条）`
+    );
+  }
+  return t('transferProgressModal.subtitle', '最近的文件传输任务');
 });
 
 const fetchTransferTasks = async () => {
   isLoading.value = true;
   errorLoading.value = null;
   try {
-    // 假设后端API路径为 /api/v1/transfers/status，且返回数据结构为 { data: TransferTask[] }
-    // 请根据实际API调整这里的类型和数据访问
     const response = await apiClient.get<{ data: TransferTask[] }>('/transfers/status');
     const rawTasks = Array.isArray(response.data.data) ? response.data.data : (Array.isArray(response.data) ? response.data : []);
     transferTasks.value = rawTasks.map(task => {
@@ -147,6 +141,14 @@ const fetchTransferTasks = async () => {
       }
       return task;
     });
+    hasLoadedOnce.value = true;
+
+    // 失败的任务自动展开子任务：错误信息藏在折叠区里等于没报错
+    for (const task of transferTasks.value) {
+      if (!isFailedLike(task.status) || autoOpenedTaskIds.includes(task.taskId)) continue;
+      autoOpenedTaskIds.push(task.taskId);
+      if (!openTaskIds.value.includes(task.taskId)) openTaskIds.value.push(task.taskId);
+    }
   } catch (error: any) {
     console.error("Failed to fetch transfer tasks:", error);
     errorLoading.value = error.response?.data?.message || error.message || t('transferProgressModal.error.unknown', '未知错误');
@@ -154,6 +156,8 @@ const fetchTransferTasks = async () => {
     isLoading.value = false;
   }
 };
+
+const isFailedLike = (status: string) => status === 'failed' || status === 'partially-completed';
 
 const getDisplayStatus = (status: string): string => {
   const statusKeyMap: Record<string, string> = {
@@ -165,7 +169,7 @@ const getDisplayStatus = (status: string): string => {
     'connecting': 'transferProgressModal.status.connecting',
     'transferring': 'transferProgressModal.status.transferring',
     'cancelling': 'transferProgressModal.status.cancelling',
-    'cancelled': 'transferProgressModal.status.cancelled', 
+    'cancelled': 'transferProgressModal.status.cancelled',
   };
   // 提供一个默认的回退文本，以防i18n key缺失
   const defaultText = status.charAt(0).toUpperCase() + status.slice(1).replace('-', ' ');
@@ -181,7 +185,69 @@ const formatDate = (dateInput: string | Date): string => {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
   } catch (e) {
-    return String(dateInput); 
+    return String(dateInput);
+  }
+};
+
+// --- 卡片展示用的小工具 ---
+
+/** 主标题：优先取第一个子任务的条目名（通常就是用户点的那一项） */
+const getTaskFileName = (task: TransferTask): string => {
+  if (task.subTasks && task.subTasks.length > 0 && task.subTasks[0].sourceItemName) {
+    return task.subTasks[0].sourceItemName;
+  }
+  return t('transferProgressModal.unknownFileName', '[文件名未知]');
+};
+
+/** 源服务器名（无 sourceConnectionId 时视为本机） */
+const getTaskSourceName = (task: TransferTask): string => {
+  if (task.sourceConnectionId) {
+    return getConnectionName(task.sourceConnectionId);
+  }
+  return t('transferProgressModal.localSource', '本机');
+};
+
+/** 目标路径（空则回退提示） */
+const getTaskTargetPath = (task: TransferTask): string => {
+  return task.remoteTargetPath || t('transferProgressModal.unknownTargetPath', '[目标路径未知]');
+};
+
+const getTaskIcon = (task: TransferTask): string => {
+  if (task.subTasks && task.subTasks.length > 1) return 'fa-layer-group';
+  return 'fa-file-alt';
+};
+
+/** 一条任务里用到的方法（rsync / scp），去重后展示成小徽标 */
+const getTaskMethods = (task: TransferTask): string[] => {
+  const methods = new Set<string>();
+  for (const st of task.subTasks || []) {
+    if (st.transferMethodUsed) methods.add(st.transferMethodUsed);
+  }
+  return [...methods];
+};
+
+const pctValue = (value?: number): number => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+};
+
+const pctLabel = (value?: number): string => `${Math.round(pctValue(value))}%`;
+
+/** 进度条填充色只取决于色调，和状态徽标保持同一套语义 */
+const barToneClass = (status: string): string => `tp-fill--${resolveTransferTone(status)}`;
+
+// --- 子任务折叠状态（失败任务会在轮询时自动展开一次） ---
+const openTaskIds = ref<string[]>([]);
+const autoOpenedTaskIds: string[] = [];
+
+const isTaskOpen = (taskId: string): boolean => openTaskIds.value.includes(taskId);
+
+const toggleTask = (taskId: string) => {
+  const index = openTaskIds.value.indexOf(taskId);
+  if (index >= 0) {
+    openTaskIds.value.splice(index, 1);
+  } else {
+    openTaskIds.value.push(taskId);
   }
 };
 
@@ -202,7 +268,6 @@ onUnmounted(() => {
 });
 
 watch(() => props.visible, (newVisible) => {
-  // internalVisible.value = newVisible; // 由下面的watch处理
   if (newVisible) {
     fetchTransferTasks(); // 模态框可见时立即获取一次数据
     if (pollingIntervalId.value === null) { // 只有在没有定时器时才启动
@@ -214,7 +279,7 @@ watch(() => props.visible, (newVisible) => {
       pollingIntervalId.value = null;
     }
   }
-}, { immediate: false }); // immediate: false 避免在组件初始化时立即执行，onMounted已处理首次加载
+}, { immediate: false });
 
 // --- 模态框可见性控制 ---
 const internalVisible = ref(props.visible);
@@ -235,6 +300,22 @@ const handleClose = () => {
   internalVisible.value = false;
 };
 
+// ESC 关闭（只在桌面端弹窗可见时生效，别把快捷键泄漏给终端）
+const onKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape' && internalVisible.value) {
+    event.stopPropagation();
+    handleClose();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown);
+});
+
 const isTaskCancellable = (taskStatus: TransferTask['status']): boolean => {
   return ['queued', 'in-progress', 'connecting', 'transferring', 'cancelling'].includes(taskStatus);
 };
@@ -244,23 +325,13 @@ const isTaskCancelling = (taskStatus: TransferTask['status']): boolean => {
 };
 
 const handleCancelTask = async (taskId: string) => {
-  // 可以在这里添加一个确认对话框
-  // const confirmed = window.confirm(t('transferProgressModal.confirmCancel', '您确定要终止此传输任务吗？'));
-  // if (!confirmed) return;
-
   try {
-    // 更新UI，将任务状态临时设置为 'cancelling' 或禁用按钮
-    const task = transferTasks.value.find(t => t.taskId === taskId);
-    if (task) {
-
-    }
-
     await apiClient.post(`/transfers/cancel/${taskId}`);
     const taskBeingCancelled = transferTasks.value.find(t => t.taskId === taskId);
     if (taskBeingCancelled && ['queued', 'in-progress', 'connecting', 'transferring'].includes(taskBeingCancelled.status)) {
       taskBeingCancelled.status = 'cancelling';
     }
-    
+
     // 立即刷新一次列表，或者等待下一次轮询
     fetchTransferTasks();
   } catch (error: any) {
@@ -289,123 +360,225 @@ const handleCancelTask = async (taskId: string) => {
     @cancel-task="handleCancelTask"
   />
 
-  <!-- ==================== 桌面端原有视图 (居中固定模态框) ==================== -->
+  <!-- ==================== 桌面端视图 (居中固定模态框) ==================== -->
   <Teleport v-else to="body">
     <div
       v-if="internalVisible"
       class="fixed inset-0 bg-overlay flex justify-center items-center z-50 p-4"
       @click.self="handleClose"
     >
-      <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border w-full max-w-3xl max-h-[85vh] flex flex-col" :style="{ borderColor: 'var(--border-color)' }">
+      <div
+        class="tp-modal bg-background text-foreground"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tp-modal-title"
+        :style="{ borderColor: 'var(--border-color)' }"
+      >
         <!-- Header -->
-        <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">
-          {{ t('transferProgressModal.title', '文件传输进度') }}
-        </h3>
-
-        <!-- Content Area -->
-        <div class="flex-grow overflow-y-auto mb-6 pr-2 space-y-4 custom-scrollbar">
-          <div v-if="isLoading && transferTasks.length === 0" class="text-center text-text-secondary py-10">
-            <svg class="animate-spin h-8 w-8 text-primary mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            {{ t('transferProgressModal.loading', '正在加载传输任务...') }}
+        <header class="tp-head">
+          <div class="tp-head__icon">
+            <i class="fas fa-exchange-alt"></i>
           </div>
-          <div v-else-if="errorLoading" class="text-center text-red-500 bg-red-50 p-4 rounded-md">
-            <p class="font-semibold">{{ t('transferProgressModal.errorLoadingTitle', '加载错误') }}</p>
-            <p>{{ t('transferProgressModal.errorLoading', { error: errorLoading }) }}</p>
+          <div class="tp-head__text">
+            <h3 id="tp-modal-title" class="tp-head__title">{{ t('transferProgressModal.title', '文件传输进度') }}</h3>
+            <p class="tp-head__subtitle">{{ subtitleText }}</p>
           </div>
-          <div v-else-if="!isLoading && transferTasks.length === 0" class="text-center text-text-secondary py-10">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-400 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            {{ t('transferProgressModal.noTasks', '当前没有活动的传输任务。') }}
+
+          <span v-if="activeTasksCount > 0" class="tp-live">
+            <span class="tp-live__dot"></span>
+            {{ t('transferProgressModal.runningTasks', { count: activeTasksCount }, `${activeTasksCount} 进行中`) }}
+          </span>
+
+          <div class="tp-head__actions">
+            <button
+              type="button"
+              class="tp-iconbtn"
+              :disabled="isLoading"
+              :title="t('common.refresh', '刷新')"
+              @click="fetchTransferTasks"
+            >
+              <i :class="['fas fa-sync-alt', { 'fa-spin': isLoading }]"></i>
+            </button>
+            <button
+              type="button"
+              class="tp-iconbtn"
+              :title="t('common.close', '关闭')"
+              @click="handleClose"
+            >
+              <i class="fas fa-times"></i>
+            </button>
           </div>
-          <div v-else class="space-y-3">
-            <div v-for="task in displayedTasks" :key="task.taskId" class="bg-background-alt p-3 rounded-lg border shadow-sm hover:shadow-md transition-shadow" :style="{ borderColor: 'var(--border-color)' }">
-              <div class="flex justify-between items-start mb-2">
-                <div>
-                  <span class="font-semibold text-md block">{{ t('transferProgressModal.task.idLabel', '任务') }}: {{ formatTaskTitle(task) }}</span>
-                  <span class="text-xs text-text-muted">{{ t('transferProgressModal.task.createdAt', '创建于') }}: {{ formatDate(task.createdAt) }}</span>
-                </div>
-                <div class="flex items-center space-x-2">
-                  <span :class="['px-2.5 py-1 text-xs font-semibold rounded-full',
-                    { 'bg-green-100 text-green-700': task.status === 'completed' },
-                    { 'bg-red-100 text-red-700': task.status === 'failed' },
-                    { 'bg-yellow-100 text-yellow-700': task.status === 'partially-completed' || task.status === 'queued' || task.status === 'cancelling' },
-                    { 'bg-blue-100 text-blue-700': task.status === 'in-progress' },
-                    { 'bg-gray-100 text-gray-700': task.status === 'cancelled' }
-                  ]">
-                    {{ getDisplayStatus(task.status) }}
-                  </span>
-                  <button
-                    v-if="isTaskCancellable(task.status)"
-                    @click="handleCancelTask(task.taskId)"
-                    :disabled="isTaskCancelling(task.status)"
-                    class="px-2 py-0.5 text-xs bg-red-500 hover:bg-red-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    :title="isTaskCancelling(task.status) ? t('transferProgressModal.cancellingTooltip', '终止中...') : t('transferProgressModal.cancelTaskTooltip', '终止任务')"
-                  >
-                    <i v-if="isTaskCancelling(task.status)" class="fas fa-spinner fa-spin mr-1"></i>
-                    {{ isTaskCancelling(task.status) ? t('transferProgressModal.cancellingButton', '终止中') : t('transferProgressModal.cancelButton', '终止') }}
-                  </button>
-                </div>
-              </div>
+        </header>
 
-              <div v-if="task.overallProgress !== undefined" class="mb-2">
-                <div class="flex justify-between text-xs text-text-secondary mb-0.5">
-                  <span>{{ t('transferProgressModal.task.overallProgress', '整体进度') }}</span>
-                  <span>{{ task.overallProgress }}%</span>
-                </div>
-                <div class="w-full bg-border rounded-full h-1.5">
-                  <div class="bg-primary h-1.5 rounded-full" :style="{ width: task.overallProgress + '%' }"></div>
-                </div>
-              </div>
-
-              <details v-if="task.subTasks && task.subTasks.length > 0" class="mt-2 group">
-                <summary class="text-xs font-medium text-primary hover:underline cursor-pointer list-none">
-                  {{ t('transferProgressModal.subTasks.titleToggle', { count: task.subTasks.length }) }}
-                  <span class="group-open:hidden">+</span><span class="hidden group-open:inline">-</span>
-                </summary>
-                <ul class="mt-2 space-y-1.5 pl-3 border-l ml-1" :style="{ borderLeftColor: 'var(--border-color)' }">
-                  <li v-for="subTask in task.subTasks" :key="subTask.subTaskId" class="text-xs p-1.5 rounded bg-background border" :style="{ borderColor: 'var(--border-color)' }">
-                    <p><strong>{{ t('transferProgressModal.subTask.source', '源文件') }}:</strong> {{ subTask.sourceItemName }}</p>
-                    <p><strong>{{ t('transferProgressModal.subTask.connectionId', '目标连接') }}:</strong> {{ getConnectionName(subTask.connectionId) }}</p>
-                    <div class="flex items-center">
-                      <strong class="mr-1">{{ t('transferProgressModal.subTask.status', '状态') }}:</strong>
-                      <span :class="['px-2 py-0.5 text-xs font-semibold rounded-full',
-                        { 'bg-green-100 text-green-700': subTask.status === 'completed' },
-                        { 'bg-red-100 text-red-700': subTask.status === 'failed' },
-                        { 'bg-yellow-100 text-yellow-700': subTask.status === 'queued' || subTask.status === 'cancelling' },
-                        { 'bg-blue-100 text-blue-700': subTask.status === 'transferring' || subTask.status === 'connecting' },
-                        { 'bg-gray-100 text-gray-700': subTask.status === 'cancelled' }
-                      ]">
-                        {{ getDisplayStatus(subTask.status) }}
-                      </span>
-                      <span v-if="subTask.progress !== undefined" class="ml-1 text-xs text-text-secondary"> ({{ subTask.progress }}%)</span>
-                    </div>
-                    <p v-if="subTask.transferMethodUsed"><strong>{{ t('transferProgressModal.subTask.method', '方法') }}:</strong> {{ subTask.transferMethodUsed }}</p>
-                    <p v-if="subTask.status === 'failed' && subTask.message" class="text-red-600">
-                      <strong>{{ t('transferProgressModal.subTask.error', '错误') }}:</strong> {{ subTask.message }}
-                    </p>
-                  </li>
-                </ul>
-              </details>
-              <div v-else-if="task.subTasks && task.subTasks.length === 0" class="mt-2 text-xs text-text-muted">
-                 {{ t('transferProgressModal.subTasks.noSubTasks', '没有子任务。') }}
-              </div>
+        <!-- Content -->
+        <div class="tp-body custom-scrollbar">
+          <!-- 首次加载：骨架屏，避免先闪一下空态 -->
+          <div v-if="!hasLoadedOnce && isLoading" class="tp-stack">
+            <div v-for="i in 3" :key="i" class="tp-card tp-card--skeleton">
+              <div class="tp-skeleton__line" style="width: 34%"></div>
+              <div class="tp-skeleton__line tp-skeleton__line--sm" style="width: 62%"></div>
+              <div class="tp-skeleton__line tp-skeleton__line--bar" style="width: 100%"></div>
             </div>
           </div>
+
+          <!-- 加载失败且一条都没有 -->
+          <div v-else-if="errorLoading && displayedTasks.length === 0" class="tp-state tp-state--error">
+            <div class="tp-state__icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <p class="tp-state__title">{{ t('transferProgressModal.errorLoadingTitle', '加载错误') }}</p>
+            <p class="tp-state__text">{{ t('transferProgressModal.errorLoading', { error: errorLoading }) }}</p>
+            <button type="button" class="tp-btn tp-btn--ghost" @click="fetchTransferTasks">
+              <i class="fas fa-sync-alt mr-1.5"></i>{{ t('common.retry', '重试') }}
+            </button>
+          </div>
+
+          <!-- 空态 -->
+          <div v-else-if="displayedTasks.length === 0" class="tp-state">
+            <div class="tp-state__icon"><i class="fas fa-exchange-alt"></i></div>
+            <p class="tp-state__title">{{ t('transferProgressModal.noTasks', '当前没有活动的传输任务') }}</p>
+            <p class="tp-state__text">{{ t('transferProgressModal.noTasksTip', '在文件管理器中发送或下载文件时会在此显示进度') }}</p>
+          </div>
+
+          <template v-else>
+            <!-- 轮询失败但还有旧数据：降级成一条细提示，不要把列表清空 -->
+            <div v-if="errorLoading" class="tp-inline-error">
+              <i class="fas fa-exclamation-triangle"></i>
+              <span class="truncate">{{ t('transferProgressModal.errorLoading', { error: errorLoading }) }}</span>
+              <button type="button" class="tp-inline-error__retry" @click="fetchTransferTasks">
+                {{ t('common.retry', '重试') }}
+              </button>
+            </div>
+
+            <div class="tp-stack">
+              <article v-for="task in displayedTasks" :key="task.taskId" class="tp-card">
+                <!-- 第一行：条目名 + 状态 + 终止 -->
+                <div class="tp-card__head">
+                  <div class="tp-card__icon" :class="`tp-card__icon--${resolveTransferTone(task.status)}`">
+                    <i :class="['fas', getTaskIcon(task)]"></i>
+                  </div>
+
+                  <div class="tp-card__ident">
+                    <div class="tp-card__name-row">
+                      <span class="tp-card__name" :title="getTaskFileName(task)">{{ getTaskFileName(task) }}</span>
+                      <TransferStatusBadge
+                        :status="task.status"
+                        :label="getDisplayStatus(task.status)"
+                        size="xs"
+                      />
+                    </div>
+                    <div class="tp-route">
+                      <span class="tp-route__part" :title="getTaskSourceName(task)">{{ getTaskSourceName(task) }}</span>
+                      <i class="fas fa-arrow-right tp-route__arrow"></i>
+                      <span class="tp-route__part tp-route__part--path" :title="getTaskTargetPath(task)">{{ getTaskTargetPath(task) }}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    v-if="isTaskCancellable(task.status)"
+                    type="button"
+                    class="tp-cancel"
+                    :disabled="isTaskCancelling(task.status)"
+                    :title="isTaskCancelling(task.status) ? t('transferProgressModal.cancellingTooltip', '正在终止......') : t('transferProgressModal.cancelTaskTooltip', '终止任务')"
+                    @click="handleCancelTask(task.taskId)"
+                  >
+                    <i :class="['fas', isTaskCancelling(task.status) ? 'fa-spinner fa-spin' : 'fa-stop']"></i>
+                    <span>{{ isTaskCancelling(task.status) ? t('transferProgressModal.cancellingButton', '正在终止...') : t('transferProgressModal.cancelButton', '终止') }}</span>
+                  </button>
+                </div>
+
+                <!-- 整体进度：没有数值且仍在跑时给不确定态动画 -->
+                <div class="tp-progress">
+                  <div class="tp-progress__meta">
+                    <span>{{ t('transferProgressModal.task.overallProgress', '整体进度') }}</span>
+                    <span class="tp-progress__pct">
+                      {{ task.overallProgress !== undefined ? pctLabel(task.overallProgress) : t('transferProgressModal.progressUnknown', '进行中') }}
+                    </span>
+                  </div>
+                  <div class="tp-bar">
+                    <div
+                      v-if="task.overallProgress !== undefined"
+                      class="tp-bar__fill"
+                      :class="barToneClass(task.status)"
+                      :style="{ width: pctLabel(task.overallProgress) }"
+                    ></div>
+                    <div
+                      v-else-if="isBusyTransferStatus(task.status)"
+                      class="tp-bar__fill tp-bar__fill--indeterminate"
+                      :class="barToneClass(task.status)"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- 元信息行 -->
+                <div class="tp-meta">
+                  <span class="tp-meta__item" :title="formatDate(task.createdAt)">
+                    <i class="far fa-clock"></i>
+                    {{ formatDate(task.createdAt) }}
+                  </span>
+                  <span v-for="method in getTaskMethods(task)" :key="method" class="tp-method">{{ method }}</span>
+                  <span class="tp-meta__spacer"></span>
+                  <button
+                    v-if="task.subTasks && task.subTasks.length > 0"
+                    type="button"
+                    class="tp-toggle"
+                    @click="toggleTask(task.taskId)"
+                  >
+                    {{ t('transferProgressModal.subTasks.titleToggle', { count: task.subTasks.length }) }}
+                    <i :class="['fas fa-chevron-down tp-toggle__chevron', { 'is-open': isTaskOpen(task.taskId) }]"></i>
+                  </button>
+                  <span v-else class="tp-meta__muted">{{ t('transferProgressModal.subTasks.noSubTasks', '没有子任务') }}</span>
+                </div>
+
+                <!-- 子任务 -->
+                <div v-if="task.subTasks && task.subTasks.length > 0 && isTaskOpen(task.taskId)" class="tp-subs">
+                  <div v-for="subTask in task.subTasks" :key="subTask.subTaskId" class="tp-sub">
+                    <div class="tp-sub__head">
+                      <span class="tp-sub__name" :title="subTask.sourceItemName">{{ subTask.sourceItemName }}</span>
+                      <TransferStatusBadge
+                        :status="subTask.status"
+                        :label="getDisplayStatus(subTask.status)"
+                        size="xs"
+                      />
+                    </div>
+                    <div v-if="subTask.progress !== undefined" class="tp-sub__progress">
+                      <div class="tp-bar tp-bar--thin">
+                        <div
+                          class="tp-bar__fill"
+                          :class="barToneClass(subTask.status)"
+                          :style="{ width: pctLabel(subTask.progress) }"
+                        ></div>
+                      </div>
+                      <span class="tp-sub__pct">{{ pctLabel(subTask.progress) }}</span>
+                    </div>
+                    <div class="tp-sub__meta">
+                      <span class="tp-sub__target" :title="getConnectionName(subTask.connectionId)">
+                        <i class="fas fa-server"></i>{{ getConnectionName(subTask.connectionId) }}
+                      </span>
+                      <span v-if="subTask.transferMethodUsed" class="tp-method tp-method--sm">{{ subTask.transferMethodUsed }}</span>
+                    </div>
+                    <p
+                      v-if="subTask.message"
+                      class="tp-sub__msg"
+                      :class="{ 'tp-sub__msg--error': subTask.status === 'failed' }"
+                    >
+                      {{ subTask.message }}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </template>
         </div>
 
         <!-- Footer -->
-        <div class="flex justify-end items-center pt-4 mt-auto flex-shrink-0 border-t" :style="{ borderTopColor: 'var(--border-color)' }">
-          <button
-            @click="handleClose"
-            class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out"
-          >
+        <footer class="tp-foot">
+          <span class="tp-foot__hint">
+            <i class="fas fa-arrows-rotate"></i>
+            {{ t('transferProgressModal.autoRefreshHint', '每 5 秒自动刷新') }}
+          </span>
+          <button type="button" class="tp-btn" @click="handleClose">
             {{ t('common.close', '关闭') }}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   </Teleport>
@@ -413,9 +586,680 @@ const handleCancelTask = async (taskId: string) => {
 
 <style scoped>
 .bg-overlay {
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: var(--overlay-bg-color, rgba(0, 0, 0, 0.6));
 }
 
+/* ⚠️ style.css 第 168 行的 `i, .fas, .far, .fab { color: var(--icon-color) }` 是**未分层**的
+   普通 CSS，会无条件盖过继承来的颜色（cascade layers 规则），所以需要跟文字同色的图标
+   必须在这里显式 inherit，否则永远是那一枚灰图标。 */
+.tp-iconbtn i,
+.tp-head__icon i,
+.tp-card__icon i,
+.tp-cancel i,
+.tp-route i,
+.tp-meta i,
+.tp-toggle i,
+.tp-sub i,
+.tp-state__icon i,
+.tp-inline-error i,
+.tp-foot__hint i {
+  color: inherit;
+}
+
+/* ===== 模态框外壳 ===== */
+.tp-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: 85vh;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+/* ===== 头部 ===== */
+.tp-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: none;
+  padding: 0.9rem 1rem 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--border-color);
+  background-color: color-mix(in oklab, var(--header-bg-color, var(--app-bg-color)) 70%, var(--app-bg-color));
+}
+
+.tp-head__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  color: var(--link-active-color);
+  background-color: color-mix(in oklab, var(--link-active-color) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--link-active-color) 26%, transparent);
+}
+
+.tp-head__text {
+  min-width: 0;
+}
+
+.tp-head__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-head__subtitle {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: none;
+  margin-left: auto;
+  padding: 0.15rem 0.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+  color: var(--link-active-color);
+  background-color: color-mix(in oklab, var(--link-active-color) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--link-active-color) 28%, transparent);
+}
+
+.tp-live__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background-color: var(--link-active-color);
+  animation: tp-breathe 1.6s ease-in-out infinite;
+}
+
+.tp-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+
+/* .tp-live 也用了 margin-left:auto，两者共存时由 DOM 顺序决定谁先靠右 */
+.tp-live + .tp-head__actions {
+  margin-left: 0.5rem;
+}
+
+.tp-iconbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.75rem;
+  border-radius: 8px;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tp-iconbtn:hover:not(:disabled) {
+  color: var(--text-color);
+  background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
+}
+
+.tp-iconbtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ===== 主体 ===== */
+.tp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.85rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* ===== 任务卡片 ===== */
+.tp-card {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background-color: color-mix(in oklab, var(--text-color) 3%, var(--app-bg-color));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tp-card:hover {
+  border-color: color-mix(in oklab, var(--text-color) 18%, var(--border-color));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tp-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.tp-card__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: none;
+  border-radius: 9px;
+  font-size: 0.72rem;
+  color: var(--text-color-secondary);
+  background-color: color-mix(in oklab, var(--text-color) 7%, transparent);
+}
+
+.tp-card__icon--success {
+  color: var(--color-success);
+  background-color: color-mix(in oklab, var(--color-success) 12%, transparent);
+}
+.tp-card__icon--danger {
+  color: var(--color-error);
+  background-color: color-mix(in oklab, var(--color-error) 12%, transparent);
+}
+.tp-card__icon--warning {
+  color: var(--color-warning);
+  background-color: color-mix(in oklab, var(--color-warning) 14%, transparent);
+}
+.tp-card__icon--info {
+  color: var(--link-active-color);
+  background-color: color-mix(in oklab, var(--link-active-color) 12%, transparent);
+}
+
+.tp-card__ident {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tp-card__name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tp-card__name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-route {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 2px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-color-secondary);
+}
+
+.tp-route__part {
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-route__part--path {
+  max-width: 56%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: color-mix(in oklab, var(--text-color) 78%, var(--app-bg-color));
+}
+
+.tp-route__arrow {
+  flex: none;
+  font-size: 8px;
+  opacity: 0.5;
+}
+
+/* 终止按钮 */
+.tp-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+  padding: 0.22rem 0.5rem;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--color-error);
+  background-color: color-mix(in oklab, var(--color-error) 10%, transparent);
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.tp-cancel:hover:not(:disabled) {
+  background-color: color-mix(in oklab, var(--color-error) 18%, transparent);
+}
+
+.tp-cancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ===== 进度 ===== */
+.tp-progress {
+  margin-top: 0.55rem;
+}
+
+.tp-progress__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  font-size: 10.5px;
+  color: var(--text-color-secondary);
+}
+
+.tp-progress__pct {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.tp-bar {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background-color: color-mix(in oklab, var(--text-color) 12%, transparent);
+}
+
+.tp-bar--thin {
+  height: 3px;
+}
+
+.tp-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--link-active-color);
+  transition: width 0.35s ease, background-color 0.2s ease;
+}
+
+.tp-fill--success {
+  background-color: var(--color-success);
+}
+.tp-fill--danger {
+  background-color: var(--color-error);
+}
+.tp-fill--warning {
+  background-color: var(--color-warning);
+}
+.tp-fill--info {
+  background-color: var(--link-active-color);
+}
+.tp-fill--neutral {
+  background-color: var(--text-color-secondary);
+}
+
+/* 宽度未知时的不确定态：一条来回扫动的滑块 */
+.tp-bar__fill--indeterminate {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  opacity: 0.85;
+  animation: tp-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes tp-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+
+/* ===== 元信息行 ===== */
+.tp-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+  font-size: 10.5px;
+  color: var(--text-color-secondary);
+}
+
+.tp-meta__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-meta__spacer {
+  flex: 1 1 auto;
+}
+
+.tp-meta__muted {
+  opacity: 0.7;
+}
+
+.tp-method {
+  padding: 0.05rem 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+  border-radius: 5px;
+  color: color-mix(in oklab, var(--text-color) 80%, var(--app-bg-color));
+  background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
+}
+
+.tp-method--sm {
+  font-size: 9.5px;
+}
+
+.tp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 10.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--link-active-color);
+  transition: background-color 0.15s ease;
+}
+
+.tp-toggle:hover {
+  background-color: color-mix(in oklab, var(--link-active-color) 10%, transparent);
+}
+
+.tp-toggle__chevron {
+  font-size: 9px;
+  transition: transform 0.2s ease;
+}
+
+.tp-toggle__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+/* ===== 子任务 ===== */
+.tp-subs {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  padding-left: 0.55rem;
+  border-top: 1px solid color-mix(in oklab, var(--border-color) 70%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.tp-sub {
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background-color: color-mix(in oklab, var(--text-color) 4%, var(--app-bg-color));
+  border: 1px solid color-mix(in oklab, var(--border-color) 75%, transparent);
+}
+
+.tp-sub__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.tp-sub__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-sub__progress {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.tp-sub__pct {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-color-secondary);
+}
+
+.tp-sub__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  font-size: 10px;
+  color: var(--text-color-secondary);
+}
+
+.tp-sub__target {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tp-sub__msg {
+  margin-top: 0.3rem;
+  font-size: 10px;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-color-secondary);
+  word-break: break-word;
+}
+
+.tp-sub__msg--error {
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  color: color-mix(in oklab, var(--color-error) 82%, var(--text-color));
+  background-color: color-mix(in oklab, var(--color-error) 9%, transparent);
+}
+
+/* ===== 状态页（空 / 错误） ===== */
+.tp-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.tp-state__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.75rem;
+  border-radius: 14px;
+  font-size: 1.15rem;
+  color: var(--text-color-secondary);
+  background-color: color-mix(in oklab, var(--text-color) 7%, transparent);
+}
+
+.tp-state--error .tp-state__icon {
+  color: var(--color-error);
+  background-color: color-mix(in oklab, var(--color-error) 12%, transparent);
+}
+
+.tp-state__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.tp-state__text {
+  margin-top: 0.25rem;
+  max-width: 26rem;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-color-secondary);
+  word-break: break-word;
+}
+
+.tp-state .tp-btn {
+  margin-top: 0.85rem;
+}
+
+.tp-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 11px;
+  border-radius: 8px;
+  color: color-mix(in oklab, var(--color-error) 80%, var(--text-color));
+  background-color: color-mix(in oklab, var(--color-error) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-error) 22%, transparent);
+}
+
+.tp-inline-error__retry {
+  flex: none;
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  color: inherit;
+  background-color: color-mix(in oklab, var(--color-error) 14%, transparent);
+}
+
+/* ===== 骨架屏 ===== */
+.tp-card--skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.tp-skeleton__line {
+  height: 10px;
+  border-radius: 5px;
+  background-color: color-mix(in oklab, var(--text-color) 10%, transparent);
+  animation: tp-shimmer 1.4s ease-in-out infinite;
+}
+
+.tp-skeleton__line--sm {
+  height: 8px;
+}
+
+.tp-skeleton__line--bar {
+  height: 5px;
+}
+
+@keyframes tp-shimmer {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ===== 底部 ===== */
+.tp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex: none;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--border-color);
+  background-color: color-mix(in oklab, var(--header-bg-color, var(--app-bg-color)) 70%, var(--app-bg-color));
+}
+
+.tp-foot__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 10.5px;
+  color: var(--text-color-secondary);
+  opacity: 0.85;
+}
+
+.tp-btn {
+  padding: 0.35rem 1rem;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--button-text-color);
+  background-color: var(--button-bg-color);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.tp-btn:hover {
+  background-color: var(--button-hover-bg-color, var(--button-bg-color));
+}
+
+.tp-btn:active {
+  transform: translateY(0.5px);
+}
+
+.tp-btn--ghost {
+  color: var(--text-color);
+  background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
+}
+
+.tp-btn--ghost:hover {
+  background-color: color-mix(in oklab, var(--text-color) 14%, transparent);
+}
+
+@keyframes tp-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.72);
+  }
+}
+
+/* ===== 滚动条 ===== */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
@@ -434,5 +1278,18 @@ const handleCancelTask = async (taskId: string) => {
 .custom-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(128, 128, 128, 0.3) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-bar__fill,
+  .tp-toggle__chevron,
+  .tp-card {
+    transition: none;
+  }
+  .tp-live__dot,
+  .tp-skeleton__line,
+  .tp-bar__fill--indeterminate {
+    animation: none;
+  }
 }
 </style>

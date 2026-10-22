@@ -1894,6 +1894,12 @@
   },
   "transferProgressModal": {
     "title": "文件传输进度",
+    "subtitle": "最近的文件传输任务",
+    "subtitleTruncated": "显示最近 {shown} 条（共 {total} 条）",
+    "runningTasks": "{count} 个进行中",
+    "localSource": "本机",
+    "progressUnknown": "进行中",
+    "autoRefreshHint": "每 5 秒自动刷新",
     "loading": "正在加载传输任务...",
     "errorLoadingTitle": "加载错误",
     "errorLoading": "加载传输任务失败：{error}",
@@ -1902,6 +1908,7 @@
       "cancelFailed": "终止任务失败。"
     },
     "noTasks": "当前没有活动的传输任务。",
+    "noTasksTip": "在文件管理器中发送或下载文件时会在此显示进度。",
     "task": {
       "idLabel": "任务",
       "createdAt": "创建于",
