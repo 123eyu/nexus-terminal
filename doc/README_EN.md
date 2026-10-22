@@ -180,14 +180,6 @@ You can right-click in the SSH tab to select "Suspend Session" (long-press on mo
 1. **On mobile devices, you can zoom in or out on the terminal font using a two-finger gesture.**
 2. To enable Passkey login, set the `RP_ID` and `RP_ORIGIN` environment variables in the `.env` file.
 
-## ⚠️ Notes
-
-1.  **Dual File Managers**: You can add two file manager components in the layout (experimental feature, may be unstable).
-2.  **Multiple Text Editors**: The functionality to add multiple text editors in the same layout has not yet been implemented.
-3. For **ARMv7** users, please use the [docker-compose.yml](https://github.com/Heavrnl/nexus-terminal/blob/main/doc/arm/docker-compose.yml) provided here.
-Since Apache Guacamole does not provide an ARMv7-compatible image for `guacd`, the RDP/VNC feature has been disabled, and related images will not be pulled for now.
-4. Since I don't have an ARM machine on hand, I haven't conducted actual testing, so unexpected bugs may occur during runtime.
-5. For data backup, please back up the **data** folder in the directory yourself. This project does not provide any backup functionality.
 
 
 ## 💐 Acknowledgements
