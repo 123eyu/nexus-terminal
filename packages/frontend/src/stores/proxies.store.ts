@@ -30,7 +30,9 @@ export const useProxiesStore = defineStore('proxies', {
     actions: {
         // 获取代理列表 Action
         async fetchProxies() {
-            this.isLoading = true;
+            // 已有列表时不要翻 isLoading：切屏回来 / 云端同步会后台静默重拉，
+            // 翻一下就让表单里「加载代理列表中...」闪一次，移动端还会把下拉短暂禁用
+            if (this.proxies.length === 0) this.isLoading = true;
             this.error = null;
             try {
                 const response = await apiClient.get<ProxyInfo[]>('/proxies'); // 使用 apiClient

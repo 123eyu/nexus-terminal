@@ -31,7 +31,8 @@ export const useSshKeysStore = defineStore('sshKeys', () => {
 
     // Fetch all SSH key names
     async function fetchSshKeys() {
-        isLoading.value = true;
+        // 已有数据时静默重拉：切屏回来/云端同步会触发它，不该让列表闪一下 loading
+        if (sshKeys.value.length === 0) isLoading.value = true;
         error.value = null;
         try {
             const response = await apiClient.get<SshKeyBasicInfo[]>('/ssh-keys');

@@ -231,11 +231,11 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             :options="proxyOptions"
             title="选择代理服务器"
             placeholder="点击选择代理服务器 (支持直连)"
-            :disabled="props.isProxyLoading"
+            :disabled="props.isProxyLoading && props.proxies.length === 0"
             icon="fas fa-globe"
             :allow-clear="true"
           />
-          <div v-if="props.isProxyLoading" class="text-[11px] text-text-secondary">{{ t('proxies.loading', '加载代理列表中...') }}</div>
+          <div v-if="props.isProxyLoading && props.proxies.length === 0" class="text-[11px] text-text-secondary">{{ t('proxies.loading', '加载代理列表中...') }}</div>
           <div v-if="props.proxyStoreError" class="text-[11px] text-red-400">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
         </div>
 
@@ -315,7 +315,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
           @delete-tag="handleDeleteTagEvent"
           :placeholder="t('tags.inputPlaceholder', '添加或点选标签...')"
         />
-        <div v-if="props.isTagLoading" class="text-[11px] text-text-secondary">{{ t('tags.loading', '加载标签中...') }}</div>
+        <div v-if="props.isTagLoading && props.tags.length === 0" class="text-[11px] text-text-secondary">{{ t('tags.loading', '加载标签中...') }}</div>
         <div v-if="props.tagStoreError" class="text-[11px] text-red-400">{{ t('tags.error', { error: props.tagStoreError }) }}</div>
       </div>
 

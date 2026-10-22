@@ -63,7 +63,8 @@ export const useConnectionsStore = defineStore('connections', {
             }
 
             // 2. 后台获取最新数据
-            this.isLoading = true; // 标记正在后台获取
+            // 已有数据时不翻 isLoading：切屏回来 / 云端同步会后台静默重拉，翻一下列表就会闪 loading
+            if (this.connections.length === 0) this.isLoading = true;
             try {
                 const response = await apiClient.get<ConnectionInfo[]>('/connections');
                 const freshData = response.data;

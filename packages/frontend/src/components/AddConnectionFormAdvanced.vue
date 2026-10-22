@@ -106,7 +106,9 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         @create-folder="handleCreateTagEvent"
         :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
       />
-      <div v-if="props.isTagLoading" class="mt-1 text-xs text-text-secondary">{{ t('common.loading') }}</div>
+      <!-- 只有真的还没有任何文件夹时才提示加载中：后台静默刷新（切屏回来/云端同步）
+           会让 isTagLoading 瞬间为 true，这里跟着闪一下「加载中...」很刺眼 -->
+      <div v-if="props.isTagLoading && props.tags.length === 0" class="mt-1 text-xs text-text-secondary">{{ t('common.loading') }}</div>
       <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ props.tagStoreError }}</div>
     </div>
     
@@ -190,7 +192,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           {{ proxy.name }} ({{ proxy.type }} - {{ proxy.host }}:{{ proxy.port }})
         </option>
       </select>
-      <div v-if="props.isProxyLoading" class="mt-1 text-xs text-text-secondary">{{ t('proxies.loading') }}</div>
+      <div v-if="props.isProxyLoading && props.proxies.length === 0" class="mt-1 text-xs text-text-secondary">{{ t('proxies.loading') }}</div>
       <div v-if="props.proxyStoreError" class="mt-1 text-xs text-error">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
     </div>
 

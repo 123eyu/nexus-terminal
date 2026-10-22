@@ -69,8 +69,17 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   const advancedConnectionMode = ref<'proxy' | 'jump'>('proxy');
 
   // 合并所有 store 的加载和错误状态
+  // ⚠️ 这个只表示「表单依赖的数据（连接/代理/标签/密钥）是否在拉取」，**不是**提交态。
+  // 切屏回来、或别的设备改动了数据时，全局同步会后台刷新这些 store（isLoading 闪一下 true），
+  // 如果拿它当提交态，底部按钮就会瞬间变成「正在添加…」并把自己置灰。
   const isLoading = computed(() => isConnLoading.value || isProxyLoading.value || isTagLoading.value || isSshKeyLoading.value); // +++ Include SSH Key loading +++
   const storeError = computed(() => connStoreError.value || proxyStoreError.value || tagStoreError.value || sshKeyStoreError.value); // +++ Include SSH Key error +++
+
+  /**
+   * 表单自己的提交态：只有用户点「确认添加 / 保存」真正在等后端时才为 true。
+   * 提交按钮的禁用、转圈、文案都必须只看这个，不能看 store 的 isLoading。
+   */
+  const isSubmitting = ref(false);
 
   // 测试连接状态
   const testStatus = ref<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -98,7 +107,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
 
   // 计算属性动态设置提交按钮文本
   const submitButtonText = computed(() => {
-      if (isLoading.value) {
+      // 只看提交态：store 的后台刷新不能把按钮文案顶成「正在添加…」
+      if (isSubmitting.value) {
           return isEditMode.value ? t('connections.form.saving') : t('connections.form.adding');
       }
       return isEditMode.value ? t('connections.form.confirmEdit') : t('connections.form.confirm');
@@ -402,7 +412,22 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     }
   };
 
+  /**
+   * 提交入口：只负责维护「提交态」这一件事。
+   * 真正的校验/请求拆到 submitConnection()，这样任何一条 early return（校验不通过）
+   * 都能靠 finally 把按钮恢复原样，不会卡在「正在添加…」。
+   */
   const handleSubmit = async () => {
+    if (isSubmitting.value) return; // 防连点（也防脚本模式重入）
+    isSubmitting.value = true;
+    try {
+      await submitConnection();
+    } finally {
+      isSubmitting.value = false;
+    }
+  };
+
+  async function submitConnection() {
     if (isScriptModeActive.value) {
       await handleScriptModeSubmit();
       return;
@@ -606,7 +631,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
             uiNotificationsStore.showError(t('connections.form.errorAdd', { error: connectionsStore.error || '未知错误' }));
         }
     }
-  };
+  }
 
   // 处理删除连接
   const handleDeleteConnection = async () => {
@@ -751,6 +776,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   return {
     formData,
     isLoading,
+    /** 表单提交态：按钮的禁用 / 转圈 / 文案只看它 */
+    isSubmitting,
     testStatus,
     testResult,
     testLatency,

@@ -22,7 +22,7 @@ const scriptModeFormatInfo = ref(getTranslation('connections.form.scriptModeForm
 
 const {
   formData,
-  isLoading,
+  isSubmitting,
   testStatus,
   testResult,
   isScriptModeActive,
@@ -55,7 +55,7 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
 
 // 监听 Esc 键快速关闭弹窗
 const onKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && !isLoading.value && testStatus.value !== 'testing') {
+  if (e.key === 'Escape' && !isSubmitting.value && testStatus.value !== 'testing') {
     emit('close');
   }
 };
@@ -186,7 +186,7 @@ onUnmounted(() => {
             <button
               type="button"
               @click="handleTestConnection"
-              :disabled="isLoading || testStatus === 'testing'"
+              :disabled="isSubmitting || testStatus === 'testing'"
               class="px-3 py-1.5 border border-border/60 rounded-xl text-xs font-medium text-text-secondary hover:text-foreground bg-muted/40 hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
             >
               <i v-if="testStatus === 'testing'" class="fas fa-spinner fa-spin text-primary text-xs"></i>
@@ -222,7 +222,7 @@ onUnmounted(() => {
           <button
             type="button"
             @click="emit('close')"
-            :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+            :disabled="isSubmitting || (formData.type === 'SSH' && testStatus === 'testing')"
             class="px-3.5 py-1.5 text-xs font-medium text-text-secondary hover:text-foreground hover:bg-muted/60 rounded-xl border border-border/70 transition-colors cursor-pointer"
           >
             {{ t('connections.form.cancel', '取消') }}
@@ -232,7 +232,7 @@ onUnmounted(() => {
             v-if="isEditMode && !isScriptModeActive"
             type="button"
             @click="handleDeleteConnection"
-            :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+            :disabled="isSubmitting || (formData.type === 'SSH' && testStatus === 'testing')"
             class="px-3.5 py-1.5 text-xs font-medium text-error hover:bg-error/10 rounded-xl border border-error/40 transition-colors cursor-pointer disabled:opacity-50"
           >
             <i class="fas fa-trash-alt mr-1"></i>
@@ -242,10 +242,10 @@ onUnmounted(() => {
           <button
             type="button"
             @click="handleSubmit"
-            :disabled="isLoading || (formData.type === 'SSH' && testStatus === 'testing')"
+            :disabled="isSubmitting || (formData.type === 'SSH' && testStatus === 'testing')"
             class="px-4 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-hover active:scale-95 rounded-xl shadow-xs hover:shadow-primary/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <i v-if="isLoading" class="fas fa-spinner fa-spin text-xs"></i>
+            <i v-if="isSubmitting" class="fas fa-spinner fa-spin text-xs"></i>
             <i v-else-if="isEditMode" class="fas fa-check text-xs"></i>
             <i v-else class="fas fa-plus text-xs"></i>
             <span>{{ submitButtonText }}</span>

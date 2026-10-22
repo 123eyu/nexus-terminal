@@ -37,7 +37,10 @@ export const useTagsStore = defineStore('tags', () => {
         }
 
         // 2. 后台获取最新数据
-        isLoading.value = true; // 标记正在后台获取
+        // ⚠️ 已有数据（缓存/上次结果）时不要翻 isLoading：这个 fetch 会被「切屏回来」「云端同步完成」
+        // 这类后台静默刷新反复触发，翻一下就让「所属文件夹」下面的「加载中...」闪一次。
+        // 只有真的还没数据（首次加载）才值得给用户看 loading。
+        if (tags.value.length === 0) isLoading.value = true;
         try {
             const response = await apiClient.get<TagInfo[]>('/tags');
             const freshData = response.data;
