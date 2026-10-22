@@ -66,6 +66,8 @@ export const useSessionStore = defineStore('session', () => {
   const handleOpenNewSession = (connectionId: number | string) =>
     sessionActions.handleOpenNewSession(connectionId, { connectionsStore, t }); // 移除了 router 和不正确的 registerSshSuspendHandlers
   const cleanupAllSessions = () => sessionActions.cleanupAllSessions();
+  const disconnectSession = (sessionId: string) => sessionActions.disconnectSession(sessionId);
+  const reconnectSession = (sessionId: string) => sessionActions.reconnectSession(sessionId);
 
   // SFTP Manager Actions
   const getOrCreateSftpManager = (sessionId: string, instanceId: string) =>
@@ -166,6 +168,8 @@ export const useSessionStore = defineStore('session', () => {
     handleConnectRequest,
     handleOpenNewSession,
     cleanupAllSessions,
+    disconnectSession,
+    reconnectSession,
     getOrCreateSftpManager,
     removeSftpManager,
     openFileInSession,

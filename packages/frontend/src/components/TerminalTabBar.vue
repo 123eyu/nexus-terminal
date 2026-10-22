@@ -162,6 +162,13 @@ const handleContextMenuAction = (payload: { action: string; targetId: string | n
       }
       break;
     }
+    case 'disconnect':
+      // 只断通道、保留标签：SSH 由 WorkspaceView 处理，RDP/VNC 由 RemoteSessionPane 处理
+      emitWorkspaceEvent('session:disconnect', { sessionId: targetId });
+      break;
+    case 'reconnect':
+      emitWorkspaceEvent('session:reconnect', { sessionId: targetId });
+      break;
     case 'mark-for-suspend':
       sessionStore.requestStartSshSuspend(targetId);
       break;
@@ -192,6 +199,17 @@ const contextMenuItems = computed(() => {
     items.push({ label: 'tabs.contextMenu.editConnection', action: 'edit-connection' });
     items.push({ label: '', action: '', isSeparator: true });
   }
+
+  // 断开 / 重连：SSH 看 wsManager，远程桌面看画面自己的 remoteStatus。
+  // 两项常驻，只把当前状态下用不上的那个置灰，菜单不至于忽隐忽现。
+  const linkStatus = targetSessionState.kind === 'ssh'
+    ? targetSessionState.wsManager.connectionStatus.value
+    : (targetSessionState.remoteStatus?.value ?? 'disconnected');
+  const canDisconnect = linkStatus === 'connected' || linkStatus === 'connecting';
+  const canReconnect = linkStatus === 'disconnected' || linkStatus === 'error';
+  items.push({ label: 'tabs.contextMenu.disconnect', action: 'disconnect', disabled: !canDisconnect });
+  items.push({ label: 'tabs.contextMenu.reconnect', action: 'reconnect', disabled: !canReconnect });
+  items.push({ label: '', action: '', isSeparator: true });
 
   if (connectionInfo && connectionInfo.type === 'SSH') {
     const isActiveSession = targetSessionState.wsManager.isConnected.value;

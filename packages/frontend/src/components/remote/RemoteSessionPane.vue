@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n';
 import { useSessionStore } from '../../stores/session.store';
 import { useConnectionsStore } from '../../stores/connections.store';
+import { useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../../composables/workspaceEvents';
 import RdpView from './RdpView.vue';
 import VncView from './VncView.vue';
 
@@ -29,6 +30,9 @@ const props = withDefaults(
 const { t } = useI18n();
 const sessionStore = useSessionStore();
 const connectionsStore = useConnectionsStore();
+// 标签栏的「断开 / 重连」通过 workspace 事件广播，这里按 sessionId 认领
+const onWorkspaceEvent = useWorkspaceEventSubscriber();
+const offWorkspaceEvent = useWorkspaceEventOff();
 
 const session = computed(() => sessionStore.sessions.get(props.sessionId) ?? null);
 const protocol = computed<'rdp' | 'vnc'>(() => (session.value?.kind === 'vnc' ? 'vnc' : 'rdp'));
@@ -251,6 +255,38 @@ function reconnect() {
   void viewRef.value?.reconnect();
 }
 
+/**
+ * 标签栏右键菜单的「断开」。
+ *
+ * 只拆隧道，面板不卸载：status 交给子组件的 disconnected 事件回写，
+ * 遮罩里会出现「重试」，也可以直接从标签栏再点「重连」。
+ */
+function disconnect() {
+  viewRef.value?.disconnect?.();
+  openPanel.value = 'none';
+}
+
+/**
+ * 标签栏发的是广播事件（每个远程会话都挂着一个面板），
+ * 所以两件事都要过一遍：sessionId 对上、且确实还没断开。
+ */
+function onTabDisconnect(payload: { sessionId: string }) {
+  if (payload.sessionId !== props.sessionId) return;
+  if (status.value === 'disconnected') return;
+  disconnect();
+}
+
+function onTabReconnect(payload: { sessionId: string }) {
+  if (payload.sessionId !== props.sessionId) return;
+  if (status.value === 'connecting') return;
+  // 还没被激活过（标签一直在后台）：画面根本没挂出来，直接切过去让它自己建连
+  if (!started.value) {
+    sessionStore.activateSession(props.sessionId);
+    return;
+  }
+  reconnect();
+}
+
 /* ------------------------------------------------------------------ *
  * 生命周期
  * ------------------------------------------------------------------ */
@@ -263,6 +299,8 @@ onMounted(async () => {
     resizeObserver.observe(stageRef.value);
   }
   document.addEventListener('fullscreenchange', onFullscreenChange);
+  onWorkspaceEvent('session:disconnect', onTabDisconnect);
+  onWorkspaceEvent('session:reconnect', onTabReconnect);
   tryStart();
 });
 
@@ -272,6 +310,9 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
   document.removeEventListener('fullscreenchange', onFullscreenChange);
+  // mitt 的 off 要靠同一个函数引用，on 的时候就把命名函数传进去了
+  offWorkspaceEvent('session:disconnect', onTabDisconnect);
+  offWorkspaceEvent('session:reconnect', onTabReconnect);
   if (toastTimer) clearTimeout(toastTimer);
 });
 

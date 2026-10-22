@@ -314,7 +314,13 @@ function sendCtrlAltDel() {
  */
 function resizeTo() { /* noVNC 自行处理 */ }
 
-defineExpose({ reconnect: connect, sendCtrlAltDel, resizeTo, pushLocalClipboard, pullRemoteClipboard, sendText });
+/** 主动断开：关掉 RFB 通道并清空容器，reconnect() 会重新建连 */
+function disconnect() {
+  teardown();
+  emit('status', { status: 'disconnected' });
+}
+
+defineExpose({ reconnect: connect, disconnect, sendCtrlAltDel, resizeTo, pushLocalClipboard, pullRemoteClipboard, sendText });
 
 onMounted(() => {
   void nextTick().then(() => connect());

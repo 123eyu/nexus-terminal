@@ -62,6 +62,10 @@ export type WorkspaceEventPayloads = {
   'session:closeOthers': { targetSessionId: string };
   'session:closeToRight': { targetSessionId: string };
   'session:closeToLeft': { targetSessionId: string };
+  /** 只断开通道、保留标签：SSH 由 WorkspaceView 处理，RDP/VNC 由 RemoteSessionPane 自己处理 */
+  'session:disconnect': { sessionId: string };
+  /** 重新连接已断开的会话，同样是 SSH / 远程桌面各自响应 */
+  'session:reconnect': { sessionId: string };
 
   // UI Interaction Events
   'ui:openLayoutConfigurator': void;

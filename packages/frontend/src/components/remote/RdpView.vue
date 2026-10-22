@@ -387,7 +387,16 @@ function sendCtrlAltDel() {
   }
 }
 
-defineExpose({ reconnect: connect, sendCtrlAltDel, resizeTo, pushLocalClipboard, pullRemoteClipboard });
+/**
+ * 主动断开：拆掉 Web Component（内部会 shutdown 掉 RDP 会话），
+ * 但组件本身保持挂载，reconnect() 能原地重建。
+ */
+function disconnect() {
+  teardownElement();
+  emit('status', { status: 'disconnected' });
+}
+
+defineExpose({ reconnect: connect, disconnect, sendCtrlAltDel, resizeTo, pushLocalClipboard, pullRemoteClipboard });
 
 onMounted(() => {
   void nextTick().then(() => connect());

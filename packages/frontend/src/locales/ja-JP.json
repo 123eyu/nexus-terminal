@@ -1447,6 +1447,8 @@
   "tabs": {
     "contextMenu": {
       "editConnection": "接続を編集",
+      "disconnect": "切断",
+      "reconnect": "再接続",
       "close": "タブを閉じる",
       "closeOthers": "他のタブを閉じる",
       "closeRight": "右側のタブを閉じる",

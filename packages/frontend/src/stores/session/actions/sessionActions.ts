@@ -437,6 +437,46 @@ export const handleConnectRequest = (
   }
 };
 
+/** 会话 WebSocket 的统一入口（与自动重连 / handleConnectRequest 用同一套规则） */
+const buildSessionWsUrl = (): string => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/`;
+};
+
+/**
+ * 主动断开一个 SSH 会话：只关掉 WebSocket / SSH 通道，会话实例和标签都保留。
+ * 远程桌面（RDP/VNC）不走这里 —— 它们的隧道由 RemoteSessionPane 自己管。
+ * @returns 是否真的处理了（非 SSH 会话返回 false）
+ */
+export const disconnectSession = (sessionId: string): boolean => {
+  const session = sessions.value.get(sessionId);
+  if (!session || session.kind !== 'ssh') return false;
+  // disconnect() 内部会置 intentionalDisconnect，onclose 不会再去指数退避重连
+  session.wsManager.disconnect();
+  console.log(`[SessionActions] 已手动断开会话 ${sessionId}`);
+  return true;
+};
+
+/**
+ * 重新连接一个已断开的 SSH 会话。
+ *
+ * 复用同一个 sessionId / wsManager 实例（后端按 sessionId 续上新连接），
+ * 所以终端历史、分屏布局都不用重建，连上后 useSshTerminal 会打一条重连分割线。
+ * @returns 是否发起了连接（已连接 / 非 SSH 会话返回 false）
+ */
+export const reconnectSession = (sessionId: string): boolean => {
+  const session = sessions.value.get(sessionId);
+  if (!session || session.kind !== 'ssh') return false;
+  const status = session.wsManager.connectionStatus.value;
+  if (status === 'connected' || status === 'connecting') {
+    console.log(`[SessionActions] 会话 ${sessionId} 当前状态 ${status}，无需重连`);
+    return false;
+  }
+  session.wsManager.connect(buildSessionWsUrl());
+  console.log(`[SessionActions] 已发起会话 ${sessionId} 的重连`);
+  return true;
+};
+
 export const handleOpenNewSession = (
     connectionId: number | string,
     dependencies: {

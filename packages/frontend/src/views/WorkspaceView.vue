@@ -363,6 +363,9 @@ onMounted(() => {
   onWs('session:closeOthers', (payload) => handleCloseOtherSessions(payload.targetSessionId));
   onWs('session:closeToRight', (payload) => handleCloseSessionsToRight(payload.targetSessionId));
   onWs('session:closeToLeft', (payload) => handleCloseSessionsToLeft(payload.targetSessionId));
+  // 断开 / 重连只对 SSH 生效（远程桌面由 RemoteSessionPane 自己响应同一个事件）
+  onWs('session:disconnect', (payload) => sessionStore.disconnectSession(payload.sessionId));
+  onWs('session:reconnect', (payload) => sessionStore.reconnectSession(payload.sessionId));
   onWs('ui:openLayoutConfigurator', handleOpenLayoutConfigurator);
   onWs('ui:openTransferProgressModal', handleOpenTransferProgressModal);
   onWs('fileManager:openModalRequest', handleFileManagerOpenRequest); // +++ 订阅文件管理器打开请求 +++
