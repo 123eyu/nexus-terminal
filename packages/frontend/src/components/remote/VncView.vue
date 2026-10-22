@@ -53,6 +53,8 @@ const hostRef = ref<HTMLDivElement | null>(null);
 let rfb: any = null;
 let sessionInfo: RemoteSessionInfo | null = null;
 let disposed = false;
+/** 用户主动断开：noVNC 自己也会抛 disconnect 事件，据它决定提示文案 */
+let manualClose = false;
 
 /* ------------------------------------------------------------------ *
  * 剪贴板
@@ -256,6 +258,11 @@ async function connect() {
 
     rfb.addEventListener('disconnect', (ev: any) => {
       if (disposed) return;
+      if (manualClose) {
+        manualClose = false;
+        emit('status', { status: 'disconnected' });
+        return;
+      }
       const clean = ev?.detail?.clean;
       emit('status', {
         status: clean ? 'disconnected' : 'error',
@@ -316,6 +323,7 @@ function resizeTo() { /* noVNC 自行处理 */ }
 
 /** 主动断开：关掉 RFB 通道并清空容器，reconnect() 会重新建连 */
 function disconnect() {
+  manualClose = true;
   teardown();
   emit('status', { status: 'disconnected' });
 }

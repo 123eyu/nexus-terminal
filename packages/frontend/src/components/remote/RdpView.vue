@@ -112,6 +112,8 @@ let element: any = null;
 let interaction: any = null;
 let sessionInfo: RemoteSessionInfo | null = null;
 let disposed = false;
+/** 用户主动断开（不是服务端踢的）：run() 收尾时据此改写提示文案 */
+let manualClose = false;
 let backendModule: any = null;
 /** WASM 初始化只跑一次，多开会话共享 */
 let ironRdpReady: Promise<any> | null = null;
@@ -342,6 +344,11 @@ async function connect() {
         .run()
         .then((result: any) => {
           if (disposed) return;
+          if (manualClose) {
+            manualClose = false;
+            emit('status', { status: 'disconnected' });
+            return;
+          }
           const reason = String(result?.reason?.() ?? '');
           emit('status', {
             status: 'disconnected',
@@ -392,6 +399,7 @@ function sendCtrlAltDel() {
  * 但组件本身保持挂载，reconnect() 能原地重建。
  */
 function disconnect() {
+  manualClose = true;
   teardownElement();
   emit('status', { status: 'disconnected' });
 }
