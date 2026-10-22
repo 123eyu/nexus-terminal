@@ -39,7 +39,9 @@ export const useQuickCommandTagsStore = defineStore('quickCommandTags', () => {
         }
 
         // 2. 后台获取最新数据
-        isLoading.value = true;
+        // ⚠️ 已有数据时不要翻 isLoading：切屏回来 / 云端同步会反复调这个 fetch，
+        // 翻一下就让「快捷指令标签」闪一次 loading（与 tags.store 保持同一套写法）
+        if (tags.value.length === 0) isLoading.value = true;
         try {
             // 使用新的 API 端点
             const response = await apiClient.get<QuickCommandTag[]>('/quick-command-tags');

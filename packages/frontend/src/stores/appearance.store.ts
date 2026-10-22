@@ -274,11 +274,16 @@ export const useAppearanceStore = defineStore('appearance', () => {
         } catch (err: any) {
             console.error('加载外观数据失败:', err);
             error.value = err.response?.data?.message || err.message || '加载外观数据失败';
-            appearanceSettings.value = {};
-            allTerminalThemes.value = [];
-            initialAppearanceDataLoaded.value = false;
-            applyUiTheme(defaultUiTheme);
-            applyPageBackground();
+            // ⚠️ 只有「从来没成功加载过」才回落到默认主题 / 清空主题列表。
+            // 切屏回来、云端同步完成都会重调这个函数，一次网络抖动就把 appearanceSettings 清空、
+            // 再把整站 CSS 变量刷成默认值 —— 看起来就是「切回标签页，界面闪一下变白/变灰」；
+            // 而且 initialAppearanceDataLoaded 被置 false 后，Terminal.vue 也不再给终端套主题。
+            if (!initialAppearanceDataLoaded.value) {
+                appearanceSettings.value = {};
+                allTerminalThemes.value = [];
+                applyUiTheme(defaultUiTheme);
+                applyPageBackground();
+            }
         } finally {
             isLoading.value = false;
         }

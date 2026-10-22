@@ -87,7 +87,8 @@ export const useFavoritePathsStore = defineStore('favoritePaths', {
       await this.fetchFavoritePaths(t);
     },
     async fetchFavoritePaths(t: (key: string, defaultMessage: string) => string) {
-      this.isLoading = true;
+      // 已有数据时静默重拉：切屏回来 / 云端同步完成都会调它，别让收藏列表闪一下 loading
+      if (this.favoritePaths.length === 0) this.isLoading = true;
       this.error = null;
       const notificationsStore = useUiNotificationsStore();
       try {
