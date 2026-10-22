@@ -102,7 +102,10 @@ watch(activeSessionId, (newId) => {
 }, { immediate: true });
 
 // 保持 fileManagerPropsMap 与活跃 sessions 严格双向同步并预加载
-const syncFileManagerProps = () => {
+// ⚠️ 必须是 function 声明而不是 const 箭头函数：上面的 watch(..., { immediate: true })
+// 在 setup 阶段就会调用它，const 还在 TDZ 里 → ReferenceError，整个工作区渲染不出来。
+// 移动端 shouldPreloadFileManager 恒为 true，所以这条路径是移动端每次激活会话都会走的。
+function syncFileManagerProps() {
   if (!shouldPreloadFileManager.value) {
     return;
   }
@@ -199,7 +202,7 @@ const syncFileManagerProps = () => {
   if (hasChanged) {
     fileManagerPropsMap.value = nextMap;
   }
-};
+}
 
 // 监听会话列表变化、活跃会话数量与预加载开关状态
 watch(
