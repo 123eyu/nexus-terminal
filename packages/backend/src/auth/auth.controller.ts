@@ -11,7 +11,7 @@ import { settingsService } from '../settings/settings.service';
 import { passkeyService } from '../passkey/passkey.service'; // +++ Passkey Service
 import { passkeyRepository } from '../passkey/passkey.repository'; // +++ Passkey Repository
 import { userRepository } from '../user/user.repository'; // For passkey auth success
-import { isPasswordSet, isLocalRequest } from './desktop-bootstrap';
+import { isPasswordSet, isLocalRequest, isDesktopRuntime, shouldPersistSession, DESKTOP_SESSION_MAX_AGE_MS, NO_PASSWORD } from './desktop-bootstrap';
 
 const notificationService = new NotificationService();
 const auditLogService = new AuditLogService();
@@ -435,7 +435,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             req.session.userId = user.id;
             req.session.username = user.username;
             req.session.requiresTwoFactor = false;
-            req.session.cookie.maxAge = rememberMe ? 315360000000 : undefined;
+            req.session.cookie.maxAge = (rememberMe || shouldPersistSession(req))
+                ? DESKTOP_SESSION_MAX_AGE_MS
+                : undefined;
             res.status(200).json({
                 message: '登录成功。',
                 user: { id: user.id, username: user.username, isTwoFactorEnabled: false },
@@ -472,8 +474,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             req.session.username = user.username;
             req.session.requiresTwoFactor = false; 
 
-            if (rememberMe) {
-                req.session.cookie.maxAge = 315360000000;
+            // 桌面端本机默认写持久 cookie：关掉应用再打开不该重新登录
+            if (rememberMe || shouldPersistSession(req)) {
+                req.session.cookie.maxAge = DESKTOP_SESSION_MAX_AGE_MS;
             } else {
                 req.session.cookie.maxAge = undefined;
             }
@@ -573,8 +576,8 @@ export const verifyLogin2FA = async (req: Request, res: Response): Promise<void>
             req.session.username = user.username;
             req.session.requiresTwoFactor = false; 
 
-            if (req.session.rememberMe) {
-                req.session.cookie.maxAge = 315360000000; 
+            if (req.session.rememberMe || shouldPersistSession(req)) {
+                req.session.cookie.maxAge = DESKTOP_SESSION_MAX_AGE_MS;
             } else {
                 req.session.cookie.maxAge = undefined; 
             }
@@ -933,6 +936,52 @@ export const setupAdmin = async (req: Request, res: Response): Promise<void> => 
     } catch (error: any) {
         console.error('初始设置过程中发生内部错误:', error);
         res.status(500).json({ message: error.message || '初始设置过程中发生内部服务器错误。' });
+    }
+};
+
+/**
+ * 桌面端自动登录 (POST /api/v1/auth/auto-login)
+ *
+ * 只对「桌面端 + 本机 + 账号没有密码」成立：打开软件直接就是登录状态，不弹登录页。
+ * 设了密码的账号不走这里——它们登录过一次之后靠持久 cookie 常驻。
+ */
+export const desktopAutoLogin = async (req: Request, res: Response): Promise<void> => {
+    // 非桌面端不暴露这个入口，免得 Web 部署被当成后门
+    if (!isDesktopRuntime()) {
+        res.status(404).json({ message: 'Not Found' });
+        return;
+    }
+    if (!isLocalRequest(req)) {
+        res.status(403).json({ autoLogin: false, message: '仅限本机。' });
+        return;
+    }
+
+    try {
+        const db = await getDbInstance();
+        const user = await getDb<User>(db,
+            `SELECT id, username, hashed_password, two_factor_secret FROM users
+             WHERE hashed_password = ? ORDER BY id LIMIT 1`,
+            [NO_PASSWORD]);
+
+        // 没有免密账号，或该账号还开着 2FA → 老老实实走登录页
+        if (!user || user.two_factor_secret) {
+            res.status(200).json({ autoLogin: false });
+            return;
+        }
+
+        req.session.userId = user.id;
+        req.session.username = user.username;
+        req.session.requiresTwoFactor = false;
+        req.session.cookie.maxAge = DESKTOP_SESSION_MAX_AGE_MS;
+
+        console.log(`[Desktop] 已自动登录免密账号: ${user.username}`);
+        res.status(200).json({
+            autoLogin: true,
+            user: { id: user.id, username: user.username, isTwoFactorEnabled: false, hasPassword: false },
+        });
+    } catch (error: any) {
+        console.error('桌面端自动登录失败:', error);
+        res.status(500).json({ autoLogin: false, message: '自动登录失败。' });
     }
 };
 

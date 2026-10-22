@@ -9,6 +9,7 @@ import {
   getAuthStatus,
   needsSetup,
   setupAdmin,
+  desktopAutoLogin,
   logout,
   getPublicCaptchaConfig,
   // Passkey handlers
@@ -40,6 +41,9 @@ router.post('/setup', setupAdmin);
 
 // POST /api/v1/auth/login - 用户登录接口 (添加黑名单检查)
 router.post('/login', ipBlacklistCheckMiddleware, login);
+
+// POST /api/v1/auth/auto-login - 桌面端免密账号自动登录 (公开访问；控制器内部判桌面端 + 本机)
+router.post('/auto-login', ipBlacklistCheckMiddleware, desktopAutoLogin);
 
 // PUT /api/v1/auth/password - 修改密码接口 (需要认证)
 router.put('/password', isAuthenticated, changePassword);

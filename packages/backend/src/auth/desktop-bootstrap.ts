@@ -17,6 +17,20 @@ import { AuditLogService } from '../audit/audit.service';
 /** hashed_password 为空串 == 该账号没有设置密码 */
 export const NO_PASSWORD = '';
 
+/**
+ * 桌面端本机会话的有效期：1 年。
+ * 桌面端应该「常驻登录」——关掉应用再打开不该重新登录一遍。
+ */
+export const DESKTOP_SESSION_MAX_AGE_MS = 315360000000;
+
+/**
+ * 当前登录是否要写成持久 cookie（关掉 WebView 也保留）。
+ * 桌面端 + 本机请求：默认持久；其他部署仍然尊重「记住我」勾选项。
+ */
+export function shouldPersistSession(req: Request): boolean {
+    return isDesktopRuntime() && isLocalRequest(req);
+}
+
 export function isPasswordSet(hashedPassword: string | null | undefined): boolean {
     return typeof hashedPassword === 'string' && hashedPassword.length > 0;
 }

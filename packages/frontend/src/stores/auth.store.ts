@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import apiClient from '../utils/apiClient'; 
 import router from '../router'; 
 import { setLocale } from '../i18n'; 
+import { isDesktopApp } from '../utils/platform';
 
 function getLoginRedirectTarget(): string {
     const lastRoute = localStorage.getItem('nexus_last_route');
@@ -248,6 +249,23 @@ export const useAuthStore = defineStore('auth', {
                     this.loginRequires2FA = false;
                 }
             }
+
+            // 桌面端：没设置密码的账号打开软件就是登录状态，不弹登录页
+            if (!this.isAuthenticated && isDesktopApp()) {
+                try {
+                    const res = await apiClient.post<{ autoLogin: boolean; user?: UserInfo }>('/auth/auto-login');
+                    if (res.data?.autoLogin && res.data.user) {
+                        this.isAuthenticated = true;
+                        this.user = res.data.user;
+                        this.loginRequires2FA = false;
+                        console.log('[AuthStore] 桌面端已自动登录:', this.user);
+                    }
+                } catch (autoErr: any) {
+                    // 后端还没就绪 / 非桌面端 / 账号有密码，都按未登录处理即可
+                    console.log('[AuthStore] 桌面端自动登录未生效:', autoErr?.message);
+                }
+            }
+
             this.isLoading = false;
         },
 
