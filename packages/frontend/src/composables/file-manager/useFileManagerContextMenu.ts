@@ -303,11 +303,13 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
 
     // Use nextTick to allow the DOM to update and the menu to render
     nextTick(() => {
-        // Access the DOM element via $el from the component instance ref
-        const menuElement = contextMenuRef.value?.$el as HTMLDivElement | undefined;
+        // 组件根是 <Teleport> 时 `$el` 是注释节点或数组，直接调 getBoundingClientRect 会抛
+        // "menuElement.getBoundingClientRect is not a function"。拿不到真实元素就走 fallback（只挂关闭监听）。
+        const raw = contextMenuRef.value?.$el as unknown;
+        const candidate = (Array.isArray(raw) ? raw[0] : raw) as HTMLElement | undefined;
+        const menuElement = typeof candidate?.getBoundingClientRect === 'function' ? candidate : undefined;
         if (menuElement && contextMenuVisible.value) {
-            // const menuElement = contextMenuRef.value; // Old way
-            const menuRect = menuElement.getBoundingClientRect(); // Now should work
+            const menuRect = menuElement.getBoundingClientRect();
             const menuWidth = menuRect.width;
             const menuHeight = menuRect.height;
 

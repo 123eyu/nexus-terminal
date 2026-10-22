@@ -256,11 +256,28 @@ export class SftpService {
             const result = await new Promise<{ stderr: string; code: number | null }>((resolve, reject) => {
                 if (!state.sshClient) return reject(new Error('SSH client disconnected'));
                 let stderr = '';
+                let settled = false;
+                // 远端卡在 D 状态 / NFS 挂死时 close 永远不来，不能让前端一直转圈
+                const timer = setTimeout(() => {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error('执行超时（15s），远端可能无响应'));
+                }, 15000);
+                const done = (fn: () => void) => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timer);
+                    fn();
+                };
                 state.sshClient.exec(command, { pty: false }, (err, stream) => {
-                    if (err) return reject(err);
+                    if (err) return done(() => reject(err));
+                    // ⚠️ 必须把 stdout 读掉（或 resume）：chown 正常时没有输出，
+                    // 但 ssh2 的 channel 是 Readable，处于 paused 模式时 'end'/'close' 不会触发，
+                    // 整个 Promise 就永远悬着 —— 前端表现为「一直在改，没有结果」。
+                    stream.on('data', () => { /* chown 成功无输出，丢弃 */ });
                     stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-                    stream.on('close', (code: number | null) => resolve({ stderr, code }));
-                    stream.on('error', (execErr: Error) => reject(execErr));
+                    stream.on('close', (code: number | null) => done(() => resolve({ stderr, code })));
+                    stream.on('error', (execErr: Error) => done(() => reject(execErr)));
                 });
             });
 
