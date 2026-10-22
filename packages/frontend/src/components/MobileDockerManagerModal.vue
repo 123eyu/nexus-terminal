@@ -104,12 +104,17 @@ const handleClose = () => {
 };
 
 // 终端进入容器（点击后发送指令并关闭抽屉以呈现全屏终端）
-const enterContainer = (containerId: string) => {
-  if (activeSession.value?.sessionId) {
-    const command = `docker exec -it ${containerId} sh\n`;
-    emitWorkspaceEvent('terminal:sendCommand', { command, sessionId: activeSession.value.sessionId });
-    handleClose();
-  }
+// 命令由后端按「连接上配置的模板」+「容器里实际可用的 shell」生成（配置留空=自动探测）；
+// 先把抽屉关掉再等结果，避免网络代理/容器无响应时抽屉像卡住一样停在这里。
+const enterContainer = async (containerId: string) => {
+  const sessionId = activeSession.value?.sessionId;
+  if (!sessionId) return;
+  const container = containers.value.find(c => c.id === containerId);
+  const containerName = container?.Names?.[0]?.replace(/^\//, '');
+  handleClose();
+  const command = (await dockerManager.value?.getEnterCommand(containerId, containerName))
+    || `docker exec -it ${containerId} sh`;
+  emitWorkspaceEvent('terminal:sendCommand', { command: `${command}\n`, sessionId });
 };
 
 // 查看容器实时日志（点击后发送指令并关闭抽屉）

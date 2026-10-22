@@ -15,6 +15,8 @@ export interface ConnectionBase {
     jump_chain: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 进入 Docker 容器的命令模板：'' = 自动探测可用 shell；支持 {id}/{name}/{shell} 占位符 */
+    docker_exec_command?: string | null;
 }
 
 export interface ConnectionWithTags extends ConnectionBase {
@@ -40,6 +42,8 @@ export interface CreateConnectionInput {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 进入 Docker 容器的命令模板：'' = 自动探测可用 shell；支持 {id}/{name}/{shell} 占位符 */
+    docker_exec_command?: string | null;
 }
 
 
@@ -61,6 +65,8 @@ export interface UpdateConnectionInput {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 进入 Docker 容器的命令模板：'' = 自动探测可用 shell；支持 {id}/{name}/{shell} 占位符 */
+    docker_exec_command?: string | null;
 }
 
 
@@ -85,6 +91,8 @@ export interface FullConnectionData {
     jump_chain: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 进入 Docker 容器的命令模板：'' = 自动探测可用 shell；支持 {id}/{name}/{shell} 占位符 */
+    docker_exec_command?: string | null;
 }
 
 export interface DecryptedConnectionCredentials {

@@ -19,6 +19,7 @@ const props = defineProps({
       tag_ids: number[];
       notes: string;
       file_protocol?: 'auto' | 'sftp' | 'scp';
+      docker_exec_command?: string;
     }>,
     required: true
   },
@@ -177,6 +178,26 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           <span>SCP</span>
         </button>
       </div>
+    </div>
+
+    <!-- 进入 Docker 容器时的命令（仅 SSH） -->
+    <div v-if="props.formData.type === 'SSH'">
+      <label for="conn-docker-exec" class="block text-xs font-medium text-text-secondary mb-1.5">
+        <i class="fas fa-cube text-sky-400 mr-1"></i>
+        {{ t('connections.form.dockerExecCommand', '进入容器命令') }}
+      </label>
+      <input
+        id="conn-docker-exec"
+        v-model.trim="props.formData.docker_exec_command"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+        :placeholder="t('connections.form.dockerExecCommandPlaceholder', '留空 = 自动探测容器里的 bash / ash / sh')"
+      />
+      <p class="mt-1.5 text-[11px] leading-relaxed text-text-secondary/80">
+        {{ t('connections.form.dockerExecCommandHint', 'Docker 面板「进入容器」时使用。留空即自动选择；填 bash 会执行 docker exec -it <容器> bash；要加 -u root 这类参数请写完整命令并用 {id} 占位，例如 docker exec -it -u root {id} bash。') }}
+      </p>
     </div>
 
     <!-- 代理选择（SSH / RDP / VNC 都支持 SOCKS5 与 HTTP CONNECT） -->

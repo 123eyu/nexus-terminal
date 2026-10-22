@@ -153,7 +153,7 @@ export const syncService = {
         db,
         `SELECT c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method,
                 c.encrypted_password, c.encrypted_private_key, c.encrypted_passphrase,
-                c.proxy_type, c.notes, c.jump_chain, c.background_color, c.file_protocol,
+                c.proxy_type, c.notes, c.jump_chain, c.background_color, c.file_protocol, c.docker_exec_command,
                 c.created_at, c.updated_at,
                 p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
          FROM connections c
@@ -197,6 +197,7 @@ export const syncService = {
             jump_chain: r.jump_chain || null,
             background_color: r.background_color || null,
             file_protocol: r.file_protocol || 'auto',
+            docker_exec_command: r.docker_exec_command || '',
             tag_uuids: tagUuids,
             file_highlights: highlightRows,
             created_at: r.created_at,
@@ -759,8 +760,8 @@ export const syncService = {
             `INSERT INTO connections (uuid, name, type, host, port, username, auth_method,
                                      encrypted_password, encrypted_private_key, encrypted_passphrase,
                                      proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
-                                     file_protocol, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                     file_protocol, docker_exec_command, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               item.uuid,
               item.data.name || null,
@@ -779,6 +780,7 @@ export const syncService = {
               item.data.jump_chain ? JSON.stringify(item.data.jump_chain) : null,
               item.data.background_color || null,
               item.data.file_protocol || 'auto',
+              item.data.docker_exec_command || '',
               item.data.created_at || item.updated_at,
               item.updated_at
             ]
@@ -791,7 +793,7 @@ export const syncService = {
             `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                    encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                    proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?, background_color = ?,
-                                   file_protocol = ?, updated_at = ?
+                                   file_protocol = ?, docker_exec_command = ?, updated_at = ?
              WHERE uuid = ?`,
             [
               item.data.name || null,
@@ -810,6 +812,7 @@ export const syncService = {
               item.data.jump_chain ? JSON.stringify(item.data.jump_chain) : null,
               item.data.background_color || null,
               item.data.file_protocol || 'auto',
+              item.data.docker_exec_command || '',
               item.updated_at,
               item.uuid
             ]

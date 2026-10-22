@@ -28,7 +28,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
       'name', 'type', 'host', 'port', 'username', 'auth_method',
       'encrypted_password', 'encrypted_private_key', 'encrypted_passphrase',
       'proxy_type', 'proxy_id', 'ssh_key_id', 'notes', 'jump_chain', 'background_color',
-      'file_protocol'
+      'file_protocol', 'docker_exec_command'
     ]
   },
   {

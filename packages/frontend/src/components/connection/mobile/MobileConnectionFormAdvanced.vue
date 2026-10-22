@@ -19,6 +19,7 @@ const props = defineProps({
       tag_ids: number[];
       notes: string;
       file_protocol?: 'auto' | 'sftp' | 'scp';
+      docker_exec_command?: string;
     }>,
     required: true
   },
@@ -219,6 +220,26 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
               <span class="truncate">SCP</span>
             </button>
           </div>
+        </div>
+
+        <!-- 进入 Docker 容器时的命令 (仅 SSH 支持) -->
+        <div v-if="props.formData.type === 'SSH'" class="space-y-1.5">
+          <label for="mobile-conn-docker-exec" class="block text-xs font-medium text-text-secondary">
+            <i class="fas fa-cube text-sky-400 mr-1"></i>
+            {{ t('connections.form.dockerExecCommand', '进入容器命令') }}
+          </label>
+          <input
+            id="mobile-conn-docker-exec"
+            v-model.trim="props.formData.docker_exec_command"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            class="w-full px-3 py-2 text-xs font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+            :placeholder="t('connections.form.dockerExecCommandPlaceholderMobile', '留空 = 自动探测 bash / ash / sh')"
+          />
+          <p class="text-[11px] leading-relaxed text-text-secondary/80">
+            {{ t('connections.form.dockerExecCommandHint', 'Docker 面板「进入容器」时使用。留空即自动选择；填 bash 会执行 docker exec -it <容器> bash；要加 -u root 这类参数请写完整命令并用 {id} 占位，例如 docker exec -it -u root {id} bash。') }}
+          </p>
         </div>
 
         <!-- 移动端抽屉式代理选择器 (模式为 proxy 时) -->

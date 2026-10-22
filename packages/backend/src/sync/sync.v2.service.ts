@@ -86,6 +86,7 @@ export interface SnapshotResponseResult {
       jump_chain?: any;
       background_color?: string | null;
       file_protocol?: 'sftp' | 'scp' | 'auto';
+      docker_exec_command?: string | null;
       tag_uuids: string[];
       updated_hlc: string;
     }>;
@@ -409,7 +410,7 @@ export const syncV2Service = {
                   `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                          encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                          proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?,
-                                         background_color = ?, file_protocol = ?, updated_hlc = ?
+                                         background_color = ?, file_protocol = ?, docker_exec_command = ?, updated_hlc = ?
                    WHERE uuid = ?`,
                   [
                     data.name || null,
@@ -428,6 +429,7 @@ export const syncV2Service = {
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
                     data.file_protocol || 'auto',
+                    data.docker_exec_command || '',
                     effectiveHlc,
                     item.row_id
                   ]
@@ -439,8 +441,8 @@ export const syncV2Service = {
                   `INSERT INTO connections (uuid, name, type, host, port, username, auth_method,
                                            encrypted_password, encrypted_private_key, encrypted_passphrase,
                                            proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
-                                           file_protocol, updated_hlc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                           file_protocol, docker_exec_command, updated_hlc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     item.row_id,
                     data.name || null,
@@ -459,6 +461,7 @@ export const syncV2Service = {
                     data.jump_chain ? JSON.stringify(data.jump_chain) : null,
                     data.background_color || null,
                     data.file_protocol || 'auto',
+                    data.docker_exec_command || '',
                     effectiveHlc
                   ]
                 );
@@ -697,6 +700,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
+                docker_exec_command: c.docker_exec_command || '',
                 tag_uuids: tagUuids,
                 file_highlights: highlightRows
               }
@@ -903,6 +907,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
+                docker_exec_command: c.docker_exec_command || '',
                 tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
                 file_highlights: highlightRows
               }
@@ -1299,6 +1304,7 @@ export const syncV2Service = {
         jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
         background_color: c.background_color || null,
         file_protocol: c.file_protocol || 'auto',
+        docker_exec_command: c.docker_exec_command || '',
         tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         file_highlights: highlightRows,
         updated_hlc: c.updated_hlc

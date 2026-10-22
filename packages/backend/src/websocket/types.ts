@@ -21,6 +21,11 @@ export interface ClientState { // 导出以便 Service 可以导入
     fileProtocolConfig?: 'auto' | 'sftp' | 'scp'; // 数据库中配置的文件传输协议选项
     statusIntervalId?: NodeJS.Timeout; // 状态轮询 ID (由 StatusMonitorService 管理)
     dockerStatusIntervalId?: NodeJS.Timeout; //  Docker 状态轮询 ID
+    /**
+     * 容器 → 探测到的交互式 shell（bash/ash/sh/powershell/cmd）。
+     * 「进入容器」的默认命令要自动探测，探测结果在同一次 SSH 会话里不会变，缓存起来避免每次点击都跑一轮 exec。
+     */
+    dockerShellCache?: Map<string, string>;
     ipAddress?: string; //  IP 地址字段
     isShellReady?: boolean; // 标记 Shell 是否已准备好处理输入和调整大小
     isSuspendedByService?: boolean; // 标记此会话是否已被 SshSuspendService 接管

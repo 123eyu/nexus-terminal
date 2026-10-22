@@ -86,11 +86,21 @@ const toggleExpand = (containerId: string) => {
   dockerManager.value?.toggleExpand(containerId);
 };
 
-const enterContainer = (containerId: string) => {
-  if (activeSession.value?.sessionId) {
-    const command = `docker exec -it ${containerId} sh\n`;
-    emitWorkspaceEvent('terminal:sendCommand', { command, sessionId: activeSession.value.sessionId });
-  }
+/**
+ * 进入容器。
+ *
+ * 命令不再写死 `docker exec -it <id> sh`：Alpine 只有 ash/sh、有的镜像只有 bash、
+ * Windows 容器只有 powershell。这里交给后端按「连接上配置的命令模板」生成，
+ * 配置留空就自动探测容器里能用的 shell（结果按容器缓存，不会每次点击都探一遍）。
+ */
+const enterContainer = async (containerId: string) => {
+  const sessionId = activeSession.value?.sessionId;
+  if (!sessionId) return;
+  const container = containers.value.find(c => c.id === containerId);
+  const containerName = container?.Names?.[0]?.replace(/^\//, '');
+  const command = (await dockerManager.value?.getEnterCommand(containerId, containerName))
+    || `docker exec -it ${containerId} sh`;
+  emitWorkspaceEvent('terminal:sendCommand', { command: `${command}\n`, sessionId });
 };
 
 const viewContainerLogs = (containerId: string) => {

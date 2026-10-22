@@ -24,6 +24,8 @@ export interface ConnectionInfo {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 进入 Docker 容器的命令模板：'' = 自动探测；支持 {id}/{name}/{shell} 占位符 */
+    docker_exec_command?: string | null;
 }
 
 // 定义 Store State 的接口

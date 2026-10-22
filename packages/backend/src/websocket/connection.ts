@@ -44,7 +44,8 @@ import {
 import {
     handleDockerGetStatus,
     handleDockerCommand,
-    handleDockerGetStats
+    handleDockerGetStats,
+    handleDockerGetExecCommand
 } from './handlers/docker.handler';
 import {
     handleSftpOperation,
@@ -120,6 +121,9 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             break;
                         case 'docker:get_stats':
                             await handleDockerGetStats(ws, sessionId, payload);
+                            break;
+                        case 'docker:get_exec_command':
+                            await handleDockerGetExecCommand(ws, sessionId, payload);
                             break;
                         
                         // SFTP Cases (generic operations)

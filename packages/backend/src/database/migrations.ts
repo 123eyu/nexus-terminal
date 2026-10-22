@@ -763,6 +763,26 @@ const definedMigrations: Migration[] = [
         execute: async (db: Database): Promise<void> => {
             console.log('[Migrations] Migration 21: favorite_paths 表 is_file 字段迁移完成 (默认 0=目录)。');
         }
+    },
+    {
+        id: 22,
+        name: 'Add docker_exec_command column to connections table',
+        check: async (db: Database): Promise<boolean> => {
+            const exists = await columnExists(db, 'connections', 'docker_exec_command');
+            return !exists;
+        },
+        sql: `
+            ALTER TABLE connections ADD COLUMN docker_exec_command TEXT NOT NULL DEFAULT '';
+        `,
+        execute: async (db: Database): Promise<void> => {
+            await new Promise<void>((resolve, reject) => {
+                db.run("UPDATE connections SET docker_exec_command = '' WHERE docker_exec_command IS NULL", (err) => {
+                    if (err) return reject(err);
+                    resolve();
+                });
+            });
+            console.log('[Migrations] Migration 22: connections 表 docker_exec_command 字段迁移完成 (默认空=自动探测)。');
+        }
     }
 ];
 

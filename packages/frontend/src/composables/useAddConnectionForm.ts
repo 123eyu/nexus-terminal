@@ -62,6 +62,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     custom_background_color: false,
     background_color: '#3b82f6',
     file_protocol: 'auto' as 'auto' | 'sftp' | 'scp',
+    // 进入容器时执行的命令：'' = 自动探测容器里能用的 shell；支持 {id}/{name}/{shell} 占位符
+    docker_exec_command: '',
   };
   const formData = reactive({ ...initialFormData });
 
@@ -165,6 +167,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
               formData.background_color = '#3b82f6';
           }
           formData.file_protocol = newVal.file_protocol ?? 'auto';
+          formData.docker_exec_command = newVal.docker_exec_command ?? '';
      } else {
          Object.assign(formData, initialFormData);
          formData.tag_ids = [];
@@ -176,6 +179,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.custom_background_color = false;
          formData.background_color = '#3b82f6';
          formData.file_protocol = 'auto';
+         formData.docker_exec_command = '';
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');
          advancedConnectionMode.value = 'proxy'; 
     }
@@ -524,6 +528,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     proxy_type: formData.proxy_type,
                     background_color: formData.custom_background_color ? (formData.background_color || null) : null,
                     file_protocol: formData.file_protocol || 'auto',
+                    docker_exec_command: formData.docker_exec_command || '',
                 };
 
                 if (formData.type === 'SSH') {
@@ -592,6 +597,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         jump_chain: formData.jump_chain ? JSON.parse(JSON.stringify(formData.jump_chain)) : null,
         background_color: formData.custom_background_color ? (formData.background_color || null) : null,
         file_protocol: formData.file_protocol || 'auto',
+        docker_exec_command: formData.docker_exec_command || '',
     };
 
     if (formData.type === 'SSH') {
