@@ -18,6 +18,8 @@ interface ProxiesState {
     proxies: ProxyInfo[];
     isLoading: boolean;
     error: string | null;
+    /** 是否已经成功拉过一次（用来区分「首次加载」和「后台静默刷新」） */
+    hasLoaded: boolean;
 }
 
 // 定义 Pinia Store
@@ -26,17 +28,20 @@ export const useProxiesStore = defineStore('proxies', {
         proxies: [],
         isLoading: false,
         error: null,
+        hasLoaded: false,
     }),
     actions: {
         // 获取代理列表 Action
         async fetchProxies() {
-            // 已有列表时不要翻 isLoading：切屏回来 / 云端同步会后台静默重拉，
-            // 翻一下就让表单里「加载代理列表中...」闪一次，移动端还会把下拉短暂禁用
-            if (this.proxies.length === 0) this.isLoading = true;
+            // ⚠️ 判「首次加载」必须用 hasLoaded，**不能用 `proxies.length === 0`**：
+            // 一个代理都没配的用户，列表永远是空的，那样每次切屏回来 / 云端同步完成后
+            // 后台静默重拉都会翻一次 isLoading，表单里「正在加载代理...」就闪一下。
+            if (!this.hasLoaded) this.isLoading = true;
             this.error = null;
             try {
                 const response = await apiClient.get<ProxyInfo[]>('/proxies'); // 使用 apiClient
                 this.proxies = response.data;
+                this.hasLoaded = true;
             } catch (err: any) {
                 console.error('获取代理列表失败:', err);
                 this.error = err.response?.data?.message || err.message || '获取代理列表时发生未知错误。';

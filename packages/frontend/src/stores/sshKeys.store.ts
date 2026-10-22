@@ -26,17 +26,21 @@ export const useSshKeysStore = defineStore('sshKeys', () => {
     const sshKeys = ref<SshKeyBasicInfo[]>([]);
     const isLoading = ref(false);
     const error = ref<string | null>(null);
+    /** 是否已经成功拉过一次（区分「首次加载」和「后台静默刷新」） */
+    const hasLoaded = ref(false);
 
     // --- Actions ---
 
     // Fetch all SSH key names
     async function fetchSshKeys() {
-        // 已有数据时静默重拉：切屏回来/云端同步会触发它，不该让列表闪一下 loading
-        if (sshKeys.value.length === 0) isLoading.value = true;
+        // ⚠️ 用 hasLoaded 判首次加载，不能用 `sshKeys.length === 0`：
+        // 一把密钥都没有的用户列表恒为空，每次切屏回来都会闪一下 loading。
+        if (!hasLoaded.value) isLoading.value = true;
         error.value = null;
         try {
             const response = await apiClient.get<SshKeyBasicInfo[]>('/ssh-keys');
             sshKeys.value = response.data;
+            hasLoaded.value = true;
             console.log('SSH Keys fetched:', sshKeys.value);
         } catch (err: any) {
             console.error('Failed to fetch SSH keys:', err);
@@ -140,6 +144,7 @@ export const useSshKeysStore = defineStore('sshKeys', () => {
         sshKeys,
         isLoading,
         error,
+        hasLoaded,
         fetchSshKeys,
         addSshKey,
         fetchDecryptedSshKey,

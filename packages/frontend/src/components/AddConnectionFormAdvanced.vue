@@ -142,43 +142,6 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       </div>
     </div>
 
-    <!-- 文件传输协议选择 (仅 SSH 支持) -->
-    <div v-if="props.formData.type === 'SSH'">
-      <label class="block text-xs font-medium text-text-secondary mb-1.5">
-        <i class="fas fa-file-export text-blue-400 mr-1"></i>
-        {{ t('connections.form.fileProtocol', '文件传输协议') }}
-      </label>
-      <div class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70 bg-input">
-        <button
-          type="button"
-          @click="props.formData.file_protocol = 'auto'"
-          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
-          :class="(!props.formData.file_protocol || props.formData.file_protocol === 'auto') ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
-        >
-          <i class="fas fa-magic text-[10px]"></i>
-          <span>{{ t('connections.form.fileProtocolAuto', '自动探测') }}</span>
-        </button>
-        <button
-          type="button"
-          @click="props.formData.file_protocol = 'sftp'"
-          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
-          :class="props.formData.file_protocol === 'sftp' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
-        >
-          <i class="fas fa-server text-[10px]"></i>
-          <span>SFTP</span>
-        </button>
-        <button
-          type="button"
-          @click="props.formData.file_protocol = 'scp'"
-          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
-          :class="props.formData.file_protocol === 'scp' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
-        >
-          <i class="fas fa-network-wired text-[10px]"></i>
-          <span>SCP</span>
-        </button>
-      </div>
-    </div>
-
     <!-- 代理选择（SSH / RDP / VNC 都支持 SOCKS5 与 HTTP CONNECT） -->
     <div v-if="props.advancedConnectionMode === 'proxy'">
       <label for="conn-proxy" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.proxy') }}</label>
@@ -238,6 +201,43 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         class="text-xs text-text-secondary p-2.5 border border-border/70 rounded-xl bg-input"
       >
         {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 连接作为跳板机') }}
+      </div>
+    </div>
+
+    <!-- 文件传输协议选择 (仅 SSH 支持) -->
+    <div v-if="props.formData.type === 'SSH'">
+      <label class="block text-xs font-medium text-text-secondary mb-1.5">
+        <i class="fas fa-file-export text-blue-400 mr-1"></i>
+        {{ t('connections.form.fileProtocol', '文件传输协议') }}
+      </label>
+      <div class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70 bg-input">
+        <button
+          type="button"
+          @click="props.formData.file_protocol = 'auto'"
+          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
+          :class="(!props.formData.file_protocol || props.formData.file_protocol === 'auto') ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
+        >
+          <i class="fas fa-magic text-[10px]"></i>
+          <span>{{ t('connections.form.fileProtocolAuto', '自动探测') }}</span>
+        </button>
+        <button
+          type="button"
+          @click="props.formData.file_protocol = 'sftp'"
+          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
+          :class="props.formData.file_protocol === 'sftp' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
+        >
+          <i class="fas fa-server text-[10px]"></i>
+          <span>SFTP</span>
+        </button>
+        <button
+          type="button"
+          @click="props.formData.file_protocol = 'scp'"
+          class="px-2.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer"
+          :class="props.formData.file_protocol === 'scp' ? 'bg-primary text-white shadow-xs font-semibold' : 'text-text-secondary hover:text-foreground hover:bg-muted/60'"
+        >
+          <i class="fas fa-network-wired text-[10px]"></i>
+          <span>SCP</span>
+        </button>
       </div>
     </div>
 

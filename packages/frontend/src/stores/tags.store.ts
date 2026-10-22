@@ -15,32 +15,30 @@ export const useTagsStore = defineStore('tags', () => {
     const tags = ref<TagInfo[]>([]);
     const isLoading = ref(false);
     const error = ref<string | null>(null);
+    /** 是否已经成功拉过一次（区分「首次加载」和「后台静默刷新」） */
+    const hasLoaded = ref(false);
 
     // 获取标签列表 (带缓存)
     async function fetchTags() {
         const cacheKey = 'tagsCache';
         error.value = null; // 重置错误
 
-        // 1. 尝试从 localStorage 加载缓存
+        // 1. 尝试从 localStorage 加载缓存（有缓存就先显示，不闪 loading）
         try {
             const cachedData = localStorage.getItem(cacheKey);
             if (cachedData) {
                 tags.value = JSON.parse(cachedData);
-                isLoading.value = false; // 先显示缓存
-            } else {
-                isLoading.value = true; // 无缓存，初始加载
             }
         } catch (e) {
             console.error('[TagsStore] Failed to load or parse tags cache:', e);
             localStorage.removeItem(cacheKey); // 解析失败则移除缓存
-            isLoading.value = true; // 缓存无效，需要加载
         }
 
         // 2. 后台获取最新数据
-        // ⚠️ 已有数据（缓存/上次结果）时不要翻 isLoading：这个 fetch 会被「切屏回来」「云端同步完成」
-        // 这类后台静默刷新反复触发，翻一下就让「所属文件夹」下面的「加载中...」闪一次。
-        // 只有真的还没数据（首次加载）才值得给用户看 loading。
-        if (tags.value.length === 0) isLoading.value = true;
+        // ⚠️ 判「首次加载」用 hasLoaded，**不能用 `tags.length === 0`**：
+        // 一个标签都没有的用户列表恒为空，那样「切屏回来」「云端同步完成」触发的
+        // 后台静默重拉每次都会翻一次 isLoading，「所属文件夹」下面的「加载中...」就闪一下。
+        if (!hasLoaded.value) isLoading.value = true;
         try {
             const response = await apiClient.get<TagInfo[]>('/tags');
             const freshData = response.data;
@@ -55,6 +53,7 @@ export const useTagsStore = defineStore('tags', () => {
                 console.log('[TagsStore] Tags data is up-to-date.');
             }
             error.value = null; // 清除错误
+            hasLoaded.value = true;
             return true; // 表示获取成功（即使数据未变）
         } catch (err: any) {
             console.error('[TagsStore] Failed to fetch tags:', err);
@@ -166,6 +165,7 @@ export const useTagsStore = defineStore('tags', () => {
         folders: tags, // 文件夹语义别名
         isLoading,
         error,
+        hasLoaded,
         fetchTags,
         fetchFolders: fetchTags,
         addTag,
