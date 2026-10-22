@@ -72,6 +72,19 @@ export async function handleSftpOperation(
                  if (payload?.path && typeof payload?.mode === 'number') sftpService.chmod(sessionId, payload.path, payload.mode, requestId);
                  else throw new Error("Missing 'path' or invalid 'mode' in payload for chmod");
                  break;
+            case 'sftp:chown':
+                 if (payload?.path && (payload?.owner || payload?.group)) {
+                     sftpService.chown(
+                         sessionId,
+                         payload.path,
+                         { owner: typeof payload.owner === 'string' ? payload.owner : undefined,
+                           group: typeof payload.group === 'string' ? payload.group : undefined },
+                         requestId
+                     );
+                 } else {
+                     throw new Error("Missing 'path' or owner/group in payload for chown");
+                 }
+                 break;
             case 'sftp:realpath':
                 if (payload?.path) sftpService.realpath(sessionId, payload.path, requestId);
                 else throw new Error("Missing 'path' in payload for realpath");

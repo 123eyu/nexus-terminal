@@ -475,6 +475,8 @@
       "toggleDirectoryTree": "ディレクトリツリーの切り替え",
       "showDirectoryTree": "ディレクトリツリーを表示",
       "hideDirectoryTree": "ディレクトリツリーを非表示",
+      "showHiddenFiles": "隠しファイル（. で始まる）を表示",
+      "hideHiddenFiles": ". で始まるファイルを非表示",
       "showFiles": "ファイルを表示",
       "hideFiles": "ディレクトリのみ表示",
       "switchToTileView": "タイル表示に切り替え",
@@ -547,6 +549,7 @@
     "emptyDirectory": "ディレクトリは空です",
     "errors": {
       "chmodFailed": "権限の変更に失敗しました",
+      "chownFailed": "所有者の変更に失敗しました",
       "copyFailed": "コピーに失敗しました",
       "createFolderFailed": "フォルダーの作成に失敗しました",
       "deleteFailed": "削除に失敗しました",
@@ -596,7 +599,8 @@
       "moveSuccess": "移動に成功しました",
       "compressSuccess": "{name} を正常に圧縮しました",
       "decompressSuccess": "{name} を正常に解凍しました",
-      "pathCopied": "パスがクリップボードにコピーされました"
+      "pathCopied": "パスがクリップボードにコピーされました",
+      "ownerChanged": "所有者を変更しました"
     },
     "prompts": {
       "confirmDeleteFile": "ファイル \"{name}\" を削除しますか？この操作は元に戻せません。",
@@ -630,6 +634,21 @@
     "uploadTasks": "アップロードタスク",
     "warnings": {
       "moveSameDirectory": "同じディレクトリ内で切り取りと貼り付けはできません。"
+    },
+    "permissions": {
+      "ownerColumn": "所有者",
+      "groupColumn": "グループ",
+      "otherColumn": "その他",
+      "read": "読み取り",
+      "write": "書き込み",
+      "execute": "実行",
+      "owner": "所有者",
+      "group": "グループ",
+      "ownerPlaceholder": "空欄の場合は変更しません",
+      "groupPlaceholder": "空欄の場合は変更しません",
+      "ownerPlaceholderWithValue": "空欄の場合は変更しません（現在の uid: {uid}）",
+      "groupPlaceholderWithValue": "空欄の場合は変更しません（現在の gid: {gid}）",
+      "chownHint": "ユーザー名または数字の UID を指定できます。他の所有者への変更には通常 root 権限が必要です。"
     },
     "changeEncodingTooltip": "ファイルエンコーディングを変更",
     "loadingEncoding": "読み込み中...",
@@ -1287,6 +1306,17 @@
         "telegramMessagePlaceholder": "デフォルト: Markdown 形式。利用可能:",
         "telegramMessageTemplate": "メッセージテンプレート (オプション)",
         "telegramCustomDomain": "カスタム Telegram API ドメイン",
+        "gotifyServerUrl": "サーバー URL",
+        "gotifyServerUrlHelp": "例: https://gotify.example.com（/message は付けないでください）。",
+        "gotifyToken": "アプリトークン",
+        "gotifyTokenHelp": "Gotify の管理画面「Apps」でアプリを作成し、トークンを取得してください。",
+        "gotifyPriority": "優先度",
+        "gotifyPriorityHelp": "0〜10、既定値は 5。8 以上で高優先度の通知になります。",
+        "gotifyTitle": "固定タイトル（任意）",
+        "gotifyTitlePlaceholder": "空欄の場合はイベント名を使用します",
+        "gotifySkipTlsVerify": "TLS 証明書の検証をスキップ（自己署名証明書向け）",
+        "gotifyMessageTemplate": "メッセージテンプレート（任意）",
+        "gotifyMessagePlaceholder": "デフォルト: Markdown 形式。利用可能:",
         "telegramToken": "ボットトークン:",
         "telegramTokenHelp": "安全に保管してください。環境変数の使用をお勧めします。",
         "templateHelp": "利用可能なプレースホルダー:",
@@ -1305,7 +1335,8 @@
       "types": {
         "email": "メール",
         "telegram": "Telegram",
-        "webhook": "Webhook"
+        "webhook": "Webhook",
+        "gotify": "Gotify"
       }
     },
     "passkey": {

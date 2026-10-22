@@ -194,6 +194,7 @@ const {
   fileManagerShowDeleteConfirmationBoolean,
   fileManagerDoubleClickToOpenBoolean,
   fileManagerHighlightChangesBoolean,
+  fileManagerShowHiddenBoolean,
 } = storeToRefs(settingsStore);
 
 // --- 统一组件实例标识 (跨会话联动核心，避免跟随单独会话隔离) ---
@@ -236,6 +237,18 @@ const showDirectoryTree = ref<boolean>(getInitialDirectoryTreeVisible(instanceSt
 const directoryTreeWidth = ref<number>(getInitialDirectoryTreeWidth(instanceStorageId.value));
 
 const isResizingTree = ref(false);
+
+/**
+ * 显示/隐藏以 `.` 开头的文件。
+ *
+ * 存成设置项（`fileManagerShowHidden`）而不是组件内状态：布局里可能同时挂多份
+ * FileManager，用户点一次眼睛图标，别的面板不该还藏着 `.env`；
+ * 顺带跟着设置表跨端同步。
+ */
+const toggleHiddenFiles = () => {
+  // updateSetting 只收字符串（and 只有白名单里的布尔项走专用端点），所以这里显式转 String
+  void settingsStore.updateSetting('fileManagerShowHidden', String(!fileManagerShowHiddenBoolean.value));
+};
 
 const toggleDirectoryTree = () => {
   const nextVal = !showDirectoryTree.value;
@@ -665,7 +678,12 @@ const generateRequestId = (): string => `req-${Date.now()}-${Math.random().toStr
 // 修改：依赖 currentSftpManager.value.fileList
 const sortedFileList = computed(() => {
     if (!currentSftpManager.value?.fileList.value) return []; // 检查 manager 和 fileList 是否存在
-    const list = [...currentSftpManager.value.fileList.value]; // 从 manager 获取列表
+    const raw = currentSftpManager.value.fileList.value; // 从 manager 获取列表
+    // 隐藏文件（以 . 开头）默认不显示；`..` 是返回上级目录的虚拟项，任何情况下都保留。
+    // 只在展示层过滤，不动 fileList —— 重命名/删除/复制都按 filename 回查原始列表。
+    const list = fileManagerShowHiddenBoolean.value
+        ? [...raw]
+        : raw.filter(item => item.filename === '..' || !item.filename.startsWith('.'));
     const key = sortKey.value;
     const direction = sortDirection.value === 'asc' ? 1 : -1;
 
@@ -1905,9 +1923,11 @@ defineExpose({ focusSearchInput, startPathEdit });
       :view-mode="viewMode"
       :show-popup-file-editor="showPopupFileEditorBoolean"
       :terminal-sync-mode="terminalSyncMode"
+      :show-hidden-files="fileManagerShowHiddenBoolean"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
       @toggle-directory-tree="toggleDirectoryTree"
+      @toggle-hidden-files="toggleHiddenFiles"
       @toggle-view-mode="toggleViewMode"
       @cd-to-terminal="sendCdCommandToTerminal"
       @cycle-terminal-sync-mode="cycleTerminalSyncMode"

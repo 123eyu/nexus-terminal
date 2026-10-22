@@ -4,6 +4,19 @@ import type { FileListItem } from '../../types/sftp.types';
 
 export type FileManagerActionType = 'delete' | 'rename' | 'chmod' | 'newFile' | 'newFolder' | null;
 
+/**
+ * 弹窗确认时回传的数据。
+ *
+ * `chmod` 现在会顺带改所有者，所以不再只是「一个字符串」：
+ * `value` 是八进制权限，`owner`/`group` 为空表示该项不修改。
+ * 其它操作（重命名、新建）仍然只用 `value`。
+ */
+export interface FileManagerActionConfirmPayload {
+  value: string;
+  owner?: string;
+  group?: string;
+}
+
 export interface FileManagerActionModalProps {
   isVisible: boolean;
   actionType: FileManagerActionType;
@@ -28,13 +41,16 @@ export function useFileManagerActionModal(
   props: FileManagerActionModalProps,
   emit: {
     (e: 'close'): void;
-    (e: 'confirm', value?: string): void;
+    (e: 'confirm', payload?: FileManagerActionConfirmPayload): void;
   },
   options: { enableGlobalKeydown?: boolean } = {}
 ) {
   const { t } = useI18n();
   const inputValue = ref('');
   const inputRef = ref<HTMLInputElement | null>(null);
+  /** 所有者 / 所属组，空字符串 = 不修改（chmod 之外的操作用不到） */
+  const ownerValue = ref('');
+  const groupValue = ref('');
 
   const modalTitle = computed(() => {
     switch (props.actionType) {
@@ -118,6 +134,13 @@ export function useFileManagerActionModal(
     ['rename', 'chmod', 'newFile', 'newFolder'].includes(props.actionType || '')
   );
 
+  /** chmod 用专门的权限编辑器（rwx 网格 + 所有者），不再复用单行输入框 */
+  const isChmodAction = computed(() => props.actionType === 'chmod');
+
+  /** 当前所有者的 uid/gid，仅用于编辑器里的 placeholder 提示 */
+  const currentUid = computed(() => (props.item?.attrs?.uid ?? null) as number | null);
+  const currentGid = computed(() => (props.item?.attrs?.gid ?? null) as number | null);
+
   const inputLabel = computed(() => {
     switch (props.actionType) {
       case 'rename':
@@ -170,7 +193,15 @@ export function useFileManagerActionModal(
       console.warn('Invalid chmod format submitted');
       return;
     }
-    emit('confirm', inputValue.value.trim());
+    if (props.actionType === 'chmod') {
+      emit('confirm', {
+        value: inputValue.value.trim(),
+        owner: ownerValue.value.trim(),
+        group: groupValue.value.trim(),
+      });
+      return;
+    }
+    emit('confirm', { value: inputValue.value.trim() });
   };
 
   const handleGlobalKeydown = (event: KeyboardEvent) => {
@@ -195,6 +226,10 @@ export function useFileManagerActionModal(
     (newValue) => {
       if (newValue) {
         inputValue.value = props.initialValue || '';
+        // 所有者/所属组每次打开都从空开始：留空 = 不修改，这样只调权限的人
+        // 不会因为 chown 需要 root 权限而收到一个莫名其妙的错误
+        ownerValue.value = '';
+        groupValue.value = '';
         nextTick(() => {
           inputRef.value?.focus();
           inputRef.value?.select();
@@ -213,6 +248,11 @@ export function useFileManagerActionModal(
   return {
     inputValue,
     inputRef,
+    ownerValue,
+    groupValue,
+    isChmodAction,
+    currentUid,
+    currentGid,
     modalTitle,
     actionIconClass,
     confirmButtonText,

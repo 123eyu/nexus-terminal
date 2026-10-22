@@ -1,6 +1,6 @@
 import eventService, { AppEventType, AppEventPayload } from '../services/event.service';
 import { NotificationSettingsRepository } from '../notifications/notification.repository';
-import { NotificationSetting, NotificationEvent, NotificationChannelType, WebhookConfig, EmailConfig, TelegramConfig, NotificationChannelConfig } from '../types/notification.types';
+import { NotificationSetting, NotificationEvent, NotificationChannelType, WebhookConfig, EmailConfig, TelegramConfig, GotifyConfig, NotificationChannelConfig } from '../types/notification.types';
 import i18next, { i18nInitializationPromise } from '../i18n';
 import { EventEmitter } from 'events';
 
@@ -191,6 +191,8 @@ class NotificationProcessorService extends EventEmitter {
         const genericEmailBody = `<p>事件: {event}</p><p>时间: {timestamp}</p><p>用户ID: {userId}</p><p>详情:</p><pre>{details}</pre>`;
         const genericWebhookBody = JSON.stringify({ event: '{event}', timestamp: '{timestamp}', userId: '{userId}', details: '{details}' });
         const genericTelegramBody = `*{event}*\n时间: {timestamp}\n用户ID: {userId}\n详情:\n\`\`\`\n{details}\n\`\`\``;
+        // Gotify 客户端渲染 Markdown，但手机通知栏只显示纯文本，所以不用 ``` 代码块
+        const genericGotifyBody = `**{event}**\n\n时间: {timestamp}\n用户ID: {userId}\n\n详情:\n{details}`;
 
 
         switch (setting.channel_type) {
@@ -215,6 +217,14 @@ class NotificationProcessorService extends EventEmitter {
                 const telegramConfig = setting.config as TelegramConfig;
                 const telegramTemplate = telegramConfig.messageTemplate || genericTelegramBody;
                 body = this.interpolate(telegramTemplate, baseInterpolationData);
+                break;
+
+            case 'gotify':
+                const gotifyConfig = setting.config as GotifyConfig;
+                // Gotify 有独立的 title 字段，默认用事件名，用户也可以在渠道配置里固定
+                subject = (gotifyConfig.title || '').trim() || translatedEvent;
+                const gotifyTemplate = gotifyConfig.messageTemplate || genericGotifyBody;
+                body = this.interpolate(gotifyTemplate, baseInterpolationData);
                 break;
 
             default:

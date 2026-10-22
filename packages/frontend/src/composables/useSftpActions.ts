@@ -37,7 +37,7 @@ export interface SftpManagerInstance {
    createFile: (newFileName: string) => void;
    deleteItems: (items: FileListItem[]) => void;
    renameItem: (item: FileListItem, newName: string) => void;
-   changePermissions: (item: FileListItem, mode: number) => void;
+   changePermissions: (item: FileListItem, mode: number, targets?: { owner?: string; group?: string }) => void;
    readFile: (
      path: string,
      encoding?: string,
@@ -387,7 +387,21 @@ export function createSftpActionsManager(
         sendMessage({ type: 'sftp:rename', requestId: requestId, payload: { oldPath, newPath } });
     };
 
-    const changePermissions = (item: FileListItem, mode: number) => {
+    /**
+     * 修改权限，顺带（可选）改所有者。
+     *
+     * 为什么拆成两条 ws 消息：chmod 走 SFTP 原生（mode 是协议里的位），chown 走后端
+     * 执行 `chown` 命令（SFTP 的 chown 只认数字 uid/gid）。
+     * 顺序上「先 chmod 成功、再发 chown」：权限都没改成的话，不该出现
+     * 「所有者变了、权限没变」这种半截状态。chmod 失败时会把待发的 chown 丢掉。
+     */
+    const pendingChownTargets = new Map<string, { path: string; owner?: string; group?: string }>();
+
+    const changePermissions = (
+        item: FileListItem,
+        mode: number,
+        targets?: { owner?: string; group?: string }
+    ) => {
         if (!isSftpReady.value) {
             uiNotificationsStore.showError(t('fileManager.errors.sftpNotReady'));
             console.warn(`[SFTP ${instanceSessionId}] 尝试修改 ${item.filename} 的权限但 SFTP 未就绪。`); // 日志改为中文
@@ -395,6 +409,11 @@ export function createSftpActionsManager(
         }
         const targetPath = joinPath(currentPathRef.value, item.filename);
         const requestId = generateRequestId();
+        const owner = (targets?.owner || '').trim();
+        const group = (targets?.group || '').trim();
+        if (owner || group) {
+            pendingChownTargets.set(requestId, { path: targetPath, owner, group });
+        }
         sendMessage({ type: 'sftp:chmod', requestId: requestId, payload: { path: targetPath, mode: mode } });
     };
 
@@ -1162,6 +1181,31 @@ export function createSftpActionsManager(
                 }
             }
         }
+
+        // 权限改完了，如果这次还要求改所有者，接着发 chown
+        const pendingChown = message.requestId ? pendingChownTargets.get(message.requestId) : undefined;
+        if (pendingChown) {
+            pendingChownTargets.delete(message.requestId!);
+            sendMessage({
+                type: 'sftp:chown',
+                requestId: generateRequestId(),
+                payload: { path: pendingChown.path, owner: pendingChown.owner, group: pendingChown.group },
+            });
+        }
+    };
+
+    // 处理修改所有者成功
+    const onChownSuccess = (payload: MessagePayload, message: WebSocketMessage) => {
+        const updatedItem = payload as FileListItem | null;
+        const targetPath = message.path;
+        const parentPath = targetPath?.substring(0, targetPath.lastIndexOf('/')) || '/';
+        console.log(`[SFTP ${instanceSessionId}] 修改所有者成功: ${targetPath}`);
+        if (updatedItem) {
+            addOrUpdateNodeInTree(parentPath, updatedItem);
+        } else if (parentPath === currentPathRef.value) {
+            loadDirectory(currentPathRef.value);
+        }
+        uiNotificationsStore.showSuccess(t('fileManager.notifications.ownerChanged', '所有者已修改'));
     };
 
     // 处理写入文件成功 (新建或修改)
@@ -1351,6 +1395,9 @@ export function createSftpActionsManager(
             const isInitiator = message.requestId ? pendingCopyRequestIds.has(message.requestId) : false;
             if (message.requestId) pendingCopyRequestIds.delete(message.requestId);
             if (!isInitiator) return;
+        } else if (message.type === 'sftp:chmod:error' && message.requestId) {
+            // 权限没改成 → 不再跟 chown，避免出现「所有者变了、权限没变」的半截状态
+            pendingChownTargets.delete(message.requestId);
         }
 
         // 类型断言，因为我们知道这些错误的 payload 是 string
@@ -1362,6 +1409,7 @@ export function createSftpActionsManager(
             'sftp:unlink:error': t('fileManager.errors.deleteFailed'),
             'sftp:rename:error': t('fileManager.errors.renameFailed'),
             'sftp:chmod:error': t('fileManager.errors.chmodFailed'),
+            'sftp:chown:error': t('fileManager.errors.chownFailed', '修改所有者失败'),
             'sftp:writefile:error': t('fileManager.errors.saveFailed'),
             'sftp:copy:error': t('fileManager.errors.copyFailed'), // +++
             'sftp:move:error': t('fileManager.errors.moveFailed'), // +++
@@ -1379,6 +1427,7 @@ export function createSftpActionsManager(
     unregisterCallbacks.push(onMessage('sftp:unlink:success', onRemoveSuccess)); // 使用 onRemoveSuccess
     unregisterCallbacks.push(onMessage('sftp:rename:success', onRenameSuccess));
     unregisterCallbacks.push(onMessage('sftp:chmod:success', onChmodSuccess));
+    unregisterCallbacks.push(onMessage('sftp:chown:success', onChownSuccess));
     unregisterCallbacks.push(onMessage('sftp:writefile:success', onWriteFileSuccess)); // 使用 onWriteFileSuccess
     unregisterCallbacks.push(onMessage('sftp:upload:success', onUploadSuccess)); // *** 监听上传成功 ***
     unregisterCallbacks.push(onMessage('sftp:mkdir:error', onActionError));
@@ -1386,6 +1435,7 @@ export function createSftpActionsManager(
     unregisterCallbacks.push(onMessage('sftp:unlink:error', onActionError));
     unregisterCallbacks.push(onMessage('sftp:rename:error', onActionError));
     unregisterCallbacks.push(onMessage('sftp:chmod:error', onActionError));
+    unregisterCallbacks.push(onMessage('sftp:chown:error', onActionError));
     unregisterCallbacks.push(onMessage('sftp:writefile:error', onActionError));
     // +++ 监听复制/移动错误 +++
     unregisterCallbacks.push(onMessage('sftp:copy:success', onCopySuccess));

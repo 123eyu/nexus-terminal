@@ -1,6 +1,7 @@
 import { ref, type Ref, type ShallowRef } from 'vue';
 import type { FileListItem } from '../../types/sftp.types';
 import type { ClipboardState, CompressFormat } from './useFileManagerContextMenu';
+import type { FileManagerActionConfirmPayload } from './useFileManagerActionModal';
 import type { createSftpActionsManager } from '../useSftpActions';
 import { copyToClipboard } from '../../utils/clipboard';
 
@@ -64,12 +65,16 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
     actionInitialValue.value = '';
   };
 
-  const handleModalConfirm = (value?: string) => {
+  const handleModalConfirm = (payload?: FileManagerActionConfirmPayload | string) => {
     if (!currentSftpManager.value || !currentActionType.value) {
       handleModalClose();
       return;
     }
     const manager = currentSftpManager.value;
+    // 兼容旧调用（理论上只剩字符串）：新代码一律传 { value, owner?, group? }
+    const value = typeof payload === 'string' ? payload : payload?.value;
+    const owner = typeof payload === 'string' ? undefined : payload?.owner;
+    const group = typeof payload === 'string' ? undefined : payload?.group;
 
     switch (currentActionType.value) {
       case 'delete':
@@ -86,7 +91,8 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
       case 'chmod':
         if (actionItem.value && value && /^[0-7]{3,4}$/.test(value)) {
           const newMode = parseInt(value, 8);
-          manager.changePermissions(actionItem.value, newMode);
+          // 所有者/所属组留空表示「不修改」，由 changePermissions 决定要不要跟一次 chown
+          manager.changePermissions(actionItem.value, newMode, { owner, group });
         } else if (value) {
           console.error(`[FileManager ${sessionId}-${instanceId}] Invalid chmod value: ${value}`);
         }

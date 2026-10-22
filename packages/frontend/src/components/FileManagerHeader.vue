@@ -16,6 +16,7 @@ const props = defineProps<{
   isCompactMode?: boolean;
   showDirectoryTree?: boolean;
   viewMode?: 'list' | 'tile';
+  showHiddenFiles?: boolean;
   terminalSyncMode?: TerminalSyncMode;
 }>();
 
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (e: 'update:isSearchActive', value: boolean): void;
   (e: 'toggle-compact-mode'): void;
   (e: 'toggle-directory-tree'): void;
+  (e: 'toggle-hidden-files'): void;
   (e: 'toggle-view-mode'): void;
   (e: 'cd-to-terminal'): void;
   (e: 'cycle-terminal-sync-mode'): void;
@@ -165,9 +167,11 @@ defineExpose({
     :search-query="searchQuery"
     :is-search-active="isSearchActive"
     :terminal-sync-mode="props.terminalSyncMode"
+    :show-hidden-files="props.showHiddenFiles"
     @update:search-query="emit('update:searchQuery', $event)"
     @update:is-search-active="emit('update:isSearchActive', $event)"
     @toggle-compact-mode="emit('toggle-compact-mode')"
+    @toggle-hidden-files="emit('toggle-hidden-files')"
     @toggle-multi-select="emit('toggle-multi-select')"
     @cd-to-terminal="emit('cd-to-terminal')"
     @cycle-terminal-sync-mode="emit('cycle-terminal-sync-mode')"
@@ -232,6 +236,17 @@ defineExpose({
 
         <!-- 分隔微线 -->
         <div class="h-4 w-px bg-border/60 mx-1 flex-shrink-0"></div>
+
+        <!-- 显示/隐藏点文件（.env、.gitignore 等） -->
+        <button
+          type="button"
+          class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 flex-shrink-0"
+          :class="showHiddenFiles ? 'bg-primary/20 text-primary font-medium' : 'text-text-secondary hover:bg-black/10 dark:hover:bg-white/10 hover:text-foreground'"
+          @click.stop="emit('toggle-hidden-files')"
+          :title="showHiddenFiles ? t('fileManager.actions.hideHiddenFiles', '隐藏以 . 开头的文件') : t('fileManager.actions.showHiddenFiles', '显示隐藏文件（以 . 开头）')"
+        >
+          <i :class="showHiddenFiles ? 'fas fa-eye text-xs' : 'fas fa-eye-slash text-xs'"></i>
+        </button>
 
         <!-- 搜索切换按钮（点击在下方新建/收起独立搜索栏） -->
         <button

@@ -604,6 +604,8 @@
       "toggleDirectoryTree": "Toggle Directory Tree",
       "showDirectoryTree": "Show Directory Tree",
       "hideDirectoryTree": "Hide Directory Tree",
+      "showHiddenFiles": "Show hidden files (starting with .)",
+      "hideHiddenFiles": "Hide files starting with .",
       "showFiles": "Show Files",
       "hideFiles": "Directories Only",
       "switchToTileView": "Switch to tile view",
@@ -688,6 +690,7 @@
       "deleteFailed": "Failed to delete",
       "renameFailed": "Failed to rename",
       "chmodFailed": "Failed to change permissions",
+      "chownFailed": "Failed to change ownership",
       "invalidPermissionsFormat": "Invalid permissions format. Please enter 3 or 4 octal digits (e.g., 755 or 0755).",
       "readFileError": "Error reading file",
       "readFileFailed": "Failed to read file",
@@ -725,10 +728,26 @@
       "cdCommandSent": "CD command sent to terminal",
       "compressSuccess": "Compressed {name} successfully",
       "decompressSuccess": "Decompressed {name} successfully",
-      "pathCopied": "Path copied to clipboard"
+      "pathCopied": "Path copied to clipboard",
+      "ownerChanged": "Ownership updated"
     },
     "warnings": {
       "moveSameDirectory": "Cannot cut and paste in the same directory."
+    },
+    "permissions": {
+      "ownerColumn": "Owner",
+      "groupColumn": "Group",
+      "otherColumn": "Other",
+      "read": "Read",
+      "write": "Write",
+      "execute": "Execute",
+      "owner": "Owner",
+      "group": "Group",
+      "ownerPlaceholder": "Leave empty to keep unchanged",
+      "groupPlaceholder": "Leave empty to keep unchanged",
+      "ownerPlaceholderWithValue": "Leave empty to keep unchanged (current uid: {uid})",
+      "groupPlaceholderWithValue": "Leave empty to keep unchanged (current gid: {gid})",
+      "chownHint": "Username or numeric UID. Giving files to another owner usually requires root."
     },
     "prompts": {
       "enterFolderName": "Enter the name for the new folder:",
@@ -1030,7 +1049,8 @@
       "types": {
         "webhook": "Webhook",
         "email": "Email",
-        "telegram": "Telegram"
+        "telegram": "Telegram",
+        "gotify": "Gotify"
       },
       "form": {
         "addTitle": "Add Notification Channel",
@@ -1063,6 +1083,17 @@
         "telegramMessageTemplate": "Message Template (Optional)",
         "telegramMessagePlaceholder": "Default: Markdown format. Use",
         "telegramCustomDomain": "Custom Telegram API Domain",
+        "gotifyServerUrl": "Server URL",
+        "gotifyServerUrlHelp": "e.g. https://gotify.example.com — do not append /message.",
+        "gotifyToken": "App Token",
+        "gotifyTokenHelp": "Create an app in Gotify (Apps) and copy its token.",
+        "gotifyPriority": "Priority",
+        "gotifyPriorityHelp": "0–10, default 5. Values of 8 or higher trigger a high-priority alert.",
+        "gotifyTitle": "Fixed Title (Optional)",
+        "gotifyTitlePlaceholder": "Leave empty to use the event name",
+        "gotifySkipTlsVerify": "Skip TLS certificate verification (self-signed certificates)",
+        "gotifyMessageTemplate": "Message Template (Optional)",
+        "gotifyMessagePlaceholder": "Default: Markdown format. Use",
         "enabledEvents": "Enabled Events:",
         "templateHelp": "Placeholders:",
         "invalidJson": "Invalid JSON"

@@ -9,6 +9,7 @@ import { SftpArchiveService } from './services/sftp-archive.service';
 import { SftpUploadService } from './services/sftp-upload.service';
 import { ScpFileService } from './services/scp-file.service';
 import { findConnectionByIdWithTags } from '../connections/connection.repository';
+import { buildChownCommand } from './chown-command';
 
 /**
  * 远程文件服务门面 (SFTP / SCP Facade)
@@ -211,6 +212,93 @@ export class SftpService {
             return this.scpFileService.chmod(sessionId, path, mode, requestId);
         }
         return this.fileService.chmod(sessionId, path, mode, requestId);
+    }
+
+    /**
+     * 修改文件/目录的所有者与所属组。
+     *
+     * 走 SSH 执行 `chown` 而不是 SFTP 原生的 `sftp.chown`：协议层的 chown 只接受
+     * 数字 uid/gid，而界面里填的是 `www-data` 这类名字，还得额外解析一次。
+     * 顺带一个好处是 SFTP / SCP 两种文件模式共用同一份实现。
+     */
+    async chown(
+        sessionId: string,
+        path: string,
+        targets: { owner?: string; group?: string },
+        requestId: string
+    ): Promise<void> {
+        const state = this.clientStates.get(sessionId);
+        const send = (type: 'sftp:chown:success' | 'sftp:chown:error', payload: any) => {
+            state?.ws.send(JSON.stringify({ type, path, payload, requestId }));
+        };
+
+        if (!state || !state.sshClient) {
+            console.warn(`[SFTP] 会话 ${sessionId} 的 SSH 通道不存在，无法执行 chown (ID: ${requestId})`);
+            send('sftp:chown:error', 'SSH 会话未就绪');
+            return;
+        }
+
+        const { command, error } = buildChownCommand(path, targets);
+        if (!command) {
+            const reasonMap: Record<string, string> = {
+                emptyTargets: '没有指定要修改的所有者或所属组',
+                invalidOwner: '所有者名称不合法（只允许字母、数字、点、下划线、连字符）',
+                invalidGroup: '所属组名称不合法（只允许字母、数字、点、下划线、连字符）',
+            };
+            console.warn(`[SFTP ${sessionId}] chown 参数校验失败 (ID: ${requestId}):`, error);
+            send('sftp:chown:error', reasonMap[error || ''] || '参数不合法');
+            return;
+        }
+
+        console.debug(`[SFTP ${sessionId}] chown ${path} → ${targets.owner || ''}:${targets.group || ''} (ID: ${requestId})`);
+
+        try {
+            const result = await new Promise<{ stderr: string; code: number | null }>((resolve, reject) => {
+                if (!state.sshClient) return reject(new Error('SSH client disconnected'));
+                let stderr = '';
+                state.sshClient.exec(command, { pty: false }, (err, stream) => {
+                    if (err) return reject(err);
+                    stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+                    stream.on('close', (code: number | null) => resolve({ stderr, code }));
+                    stream.on('error', (execErr: Error) => reject(execErr));
+                });
+            });
+
+            if (result.code !== 0) {
+                const detail = result.stderr.trim() || `退出码 ${result.code}`;
+                console.error(`[SFTP ${sessionId}] chown ${path} 失败 (ID: ${requestId}):`, detail);
+                // chown 最常见的失败就是权限不足（普通用户不能把文件送给别人）
+                const hint = /operation not permitted|permission denied/i.test(detail)
+                    ? '（需要 root 或有 CAP_CHOWN 权限）'
+                    : '';
+                send('sftp:chown:error', `修改所有者失败: ${detail}${hint}`);
+                return;
+            }
+
+            // 成功：能 lstat 就顺手把最新属性回给前端，列表里的 uid/gid 立刻跟上
+            if (state.sftp) {
+                state.sftp.lstat(path, (statErr, stats) => {
+                    if (statErr) {
+                        send('sftp:chown:success', null);
+                        return;
+                    }
+                    send('sftp:chown:success', {
+                        filename: path.substring(path.lastIndexOf('/') + 1),
+                        longname: '',
+                        attrs: {
+                            size: stats.size, uid: stats.uid, gid: stats.gid, mode: stats.mode,
+                            atime: stats.atime * 1000, mtime: stats.mtime * 1000,
+                            isDirectory: stats.isDirectory(), isFile: stats.isFile(), isSymbolicLink: stats.isSymbolicLink(),
+                        },
+                    });
+                });
+            } else {
+                send('sftp:chown:success', null);
+            }
+        } catch (err: any) {
+            console.error(`[SFTP ${sessionId}] chown ${path} 异常 (ID: ${requestId}):`, err);
+            send('sftp:chown:error', `修改所有者时发生异常: ${err?.message || err}`);
+        }
     }
 
     async realpath(sessionId: string, path: string, requestId: string): Promise<void> {

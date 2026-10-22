@@ -9,6 +9,7 @@ const props = defineProps<{
   isMultiSelectMode: boolean;
   searchQuery: string;
   isSearchActive: boolean;
+  showHiddenFiles?: boolean;
   terminalSyncMode?: TerminalSyncMode;
 }>();
 
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   (e: 'update:searchQuery', value: string): void;
   (e: 'update:isSearchActive', value: boolean): void;
   (e: 'toggle-compact-mode'): void;
+  (e: 'toggle-hidden-files'): void;
   (e: 'toggle-multi-select'): void;
   (e: 'cd-to-terminal'): void;
   (e: 'cycle-terminal-sync-mode'): void;
@@ -185,6 +187,17 @@ defineExpose({
           :title="props.isCompactMode ? t('fileManager.compactModeOn', '当前为紧凑模式（点击展开详细）') : t('fileManager.compactModeOff', '当前为详细模式（点击收缩列表）')"
         >
           <i :class="props.isCompactMode ? 'fas fa-compress-alt text-xs' : 'fas fa-expand-alt text-xs'"></i>
+        </button>
+
+        <!-- 显示/隐藏点文件 -->
+        <button
+          type="button"
+          class="w-8 h-8 rounded-xl border flex items-center justify-center text-xs active:scale-95 transition-all cursor-pointer"
+          :class="props.showHiddenFiles ? 'bg-primary/15 border-primary/40 text-primary font-medium' : 'bg-header/60 border border-border/50 text-text-secondary hover:text-foreground'"
+          @click.stop="emit('toggle-hidden-files')"
+          :title="props.showHiddenFiles ? t('fileManager.actions.hideHiddenFiles', '隐藏以 . 开头的文件') : t('fileManager.actions.showHiddenFiles', '显示隐藏文件（以 . 开头）')"
+        >
+          <i :class="props.showHiddenFiles ? 'fas fa-eye' : 'fas fa-eye-slash'"></i>
         </button>
       </div>
 

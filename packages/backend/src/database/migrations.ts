@@ -797,6 +797,37 @@ const definedMigrations: Migration[] = [
         execute: async (db: Database): Promise<void> => {
             console.log('[Migrations] Migration 23: 已移除 connections.docker_exec_command —— 进容器命令改为按容器自动探测（shell 是容器级属性，连接级配置会错）。');
         }
+    },
+    {
+        id: 24,
+        name: 'Allow gotify channel type in notification_settings',
+        check: async (db: Database): Promise<boolean> => {
+            // SQLite 的 CHECK 约束改不了，只能重建表。老库建表 SQL 里没有 gotify 才需要重建；
+            // 新库由 schema.ts 直接带上 gotify，拿到的是 null/已含 gotify → 跳过。
+            const createSql = await getTableCreateSQL(db, 'notification_settings');
+            if (!createSql) return false;
+            return !/gotify/i.test(createSql);
+        },
+        sql: `
+            ALTER TABLE notification_settings RENAME TO notification_settings_legacy;
+            CREATE TABLE notification_settings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_type TEXT NOT NULL CHECK(channel_type IN ('webhook', 'email', 'telegram', 'gotify')),
+                name TEXT NOT NULL DEFAULT '',
+                enabled BOOLEAN NOT NULL DEFAULT false,
+                config TEXT NOT NULL DEFAULT '{}',
+                enabled_events TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+            );
+            INSERT INTO notification_settings (id, channel_type, name, enabled, config, enabled_events, created_at, updated_at)
+                SELECT id, channel_type, name, enabled, config, enabled_events, created_at, updated_at
+                FROM notification_settings_legacy;
+            DROP TABLE notification_settings_legacy;
+        `,
+        execute: async (db: Database): Promise<void> => {
+            console.log('[Migrations] Migration 24: notification_settings 的 channel_type CHECK 已放开 gotify（重建表，原有渠道配置原样保留）。');
+        }
     }
 ];
 

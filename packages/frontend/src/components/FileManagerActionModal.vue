@@ -3,7 +3,8 @@ import { type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FileListItem } from '../types/sftp.types';
 import MobileFileManagerActionModal from './MobileFileManagerActionModal.vue';
-import { useFileManagerActionModal } from '../composables/file-manager/useFileManagerActionModal';
+import FilePermissionEditor from './FilePermissionEditor.vue';
+import { useFileManagerActionModal, type FileManagerActionConfirmPayload } from '../composables/file-manager/useFileManagerActionModal';
 
 const props = defineProps({
   isVisible: {
@@ -37,13 +38,18 @@ const { t } = useI18n();
 
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'confirm', value?: string): void;
+  (e: 'confirm', payload?: FileManagerActionConfirmPayload): void;
 }>();
 
 // 展示与校验逻辑两端共用（见 composables/file-manager/useFileManagerActionModal.ts）
 const {
   inputValue,
   inputRef,
+  ownerValue,
+  groupValue,
+  isChmodAction,
+  currentUid,
+  currentGid,
   modalTitle,
   actionIconClass,
   confirmButtonText,
@@ -73,7 +79,8 @@ const {
   <!-- 桌面端常规居中弹窗 -->
   <div v-else-if="isVisible" class="fixed inset-0 z-[100]">
     <div class="fixed inset-0 bg-overlay flex justify-center items-center z-[100] p-4" @click.self="closeModal">
-        <div class="bg-background text-foreground p-5 rounded-lg shadow-xl border border-border w-full max-w-md flex flex-col relative">
+        <div class="bg-background text-foreground p-5 rounded-lg shadow-xl border border-border w-full flex flex-col relative"
+             :class="isChmodAction ? 'max-w-lg' : 'max-w-md'">
           <!-- Close Button -->
           <button class="absolute top-3 right-3 p-1 text-text-secondary hover:text-foreground z-10" @click="closeModal" :title="t('fileManager.modals.buttons.close', 'Close')">
              <i class="fas fa-times text-sm"></i>
@@ -91,7 +98,17 @@ const {
               {{ messageText }}
             </p>
 
-            <div v-if="showInput">
+            <!-- 权限：rwx 勾选网格 + 八进制 + 所有者/所属组 -->
+            <FilePermissionEditor
+              v-if="isChmodAction"
+              v-model:mode="inputValue"
+              v-model:owner="ownerValue"
+              v-model:group="groupValue"
+              :current-uid="currentUid"
+              :current-gid="currentGid"
+            />
+
+            <div v-else-if="showInput">
               <label :for="`fileManagerActionInput-${actionType}`" class="block text-sm font-medium text-text-secondary mb-1">
                 {{ inputLabel }}
               </label>
@@ -103,12 +120,6 @@ const {
                 :placeholder="inputPlaceholder"
                 class="w-full px-3 py-2 bg-input border border-border rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm text-foreground"
               />
-              <p v-if="actionType === 'chmod' && inputValue.trim() && !/^[0-7]{3,4}$/.test(inputValue.trim())" class="mt-1 text-xs text-red-500">
-                {{ t('fileManager.errors.invalidPermissionsFormat', 'Invalid octal format (e.g., 755 or 0755).') }}
-              </p>
-               <p v-else-if="actionType === 'chmod'" class="mt-1 text-xs text-text-tertiary">
-                {{ t('fileManager.modals.chmodHelp', 'Enter permissions in octal format (e.g., 755 or 0755).') }}
-              </p>
             </div>
           </div>
 

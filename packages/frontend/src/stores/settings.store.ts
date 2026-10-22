@@ -67,6 +67,7 @@ interface SettingsState {
   fileManagerDoubleClickToOpen?: string; // 'true' or 'false' - 双击打开文件/文件夹 (默认 false) //  'true' or 'false' - 文件管理器删除确认提示
   fileManagerHighlightChanges?: string; // 'true' or 'false' - 文件列表增量变动(新增/修改)时高亮闪烁 (默认 true)
   fileManagerSearchFixed?: string; // 'true' or 'false' - 文件管理器搜索栏固定（跨端同步，默认 false）
+  fileManagerShowHidden?: string; // 'true' or 'false' - 文件管理器显示以 . 开头的隐藏文件 (默认 false)
   terminalEnableRightClickPaste?: string; //  'true' or 'false' - 终端右键粘贴
   terminalRightClickBehavior?: string; // 'contextMenu' | 'paste' | 'copy' | 'openPath' | 'openFile' | 'saveQuickCommand' | 'none'
   terminalContextMenuItems?: string; // JSON string of TerminalContextMenuSettings
@@ -736,6 +737,11 @@ export const useSettingsStore = defineStore('settings', () => {
       return settings.value.fileManagerHighlightChanges !== 'false';
   });
 
+  // 文件管理器是否显示隐藏文件（以 . 开头），默认关闭
+  const fileManagerShowHiddenBoolean = computed(() => {
+      return settings.value.fileManagerShowHidden === 'true';
+  });
+
   //  Getter for Terminal Right Click Paste, returning boolean
   const terminalNoWrapBoolean = computed(() => {
       return settings.value.terminalNoWrap === 'true'; // Default to false
@@ -930,6 +936,7 @@ export const useSettingsStore = defineStore('settings', () => {
     terminalScrollbackLimitNumber, //  Expose terminal scrollback limit getter
     fileManagerShowDeleteConfirmationBoolean, //  Expose file manager delete confirmation getter
     fileManagerHighlightChangesBoolean, //  文件列表增量变动高亮开关
+    fileManagerShowHiddenBoolean, //  文件管理器显示隐藏文件开关
     fileManagerDoubleClickToOpenBoolean, //  Expose file manager double click to open getter
     terminalEnableRightClickPasteBoolean, //  Expose terminal right click paste getter
     terminalRightClickBehaviorString,
