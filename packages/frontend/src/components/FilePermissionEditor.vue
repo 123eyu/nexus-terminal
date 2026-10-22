@@ -108,14 +108,20 @@ const groupPlaceholder = computed(() =>
           <label
             v-for="col in 3"
             :key="col"
-            class="flex items-center justify-center h-7 rounded-md border cursor-pointer transition-colors"
+            class="relative flex items-center justify-center h-7 rounded-md border cursor-pointer transition-colors focus-within:ring-1 focus-within:ring-primary/40"
             :class="bits[(col - 1) * 3 + rowIndex]
               ? 'bg-primary/15 border-primary/40'
               : 'bg-background border-border/60 hover:bg-header/40'"
           >
+            <!--
+              ⚠️ 这里必须用内联样式，不能用 `sr-only`：style.css 里未分层的
+              `input[type="checkbox"] { width:1rem; height:1rem; margin-right:.5rem }`
+              会压过所有 Tailwind 工具类（cascade layers 规则），导致勾选框虽然看不见
+              却仍占 24px，把对勾挤到右边。绝对定位 + 内联样式才能真的不参与 flex 布局。
+            -->
             <input
               type="checkbox"
-              class="sr-only"
+              style="position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer;"
               :checked="bits[(col - 1) * 3 + rowIndex]"
               @change="toggleBit((col - 1) * 3 + rowIndex)"
             />
