@@ -22,7 +22,6 @@ interface ConnectionBase {
     notes?: string | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
-    docker_exec_command?: string | null;
 //    jump_chain: number[] | null; // <-- REMOVE from ConnectionBase
 }
 
@@ -52,7 +51,6 @@ export interface FullConnectionData extends ConnectionBase {
     proxy_type?: 'proxy' | 'jump' | null; // 新增连接本身的 proxy_type
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
-    docker_exec_command?: string | null;
 }
 
 
@@ -79,7 +77,7 @@ interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 't
 export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]> => {
     const sql = `
         SELECT
-            c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol, c.docker_exec_command,
+            c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -109,7 +107,7 @@ export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]
 export const findConnectionByIdWithTags = async (id: number): Promise<ConnectionWithTags | null> => {
     const sql = `
         SELECT
-            c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol, c.docker_exec_command,
+            c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.tag_id) as tag_ids_str
          FROM connections c
@@ -164,7 +162,7 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
   * 根据名称查找连接 (用于检查名称是否重复)
   */
  export const findConnectionByName = async (name: string): Promise<ConnectionBase | null> => {
-     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, docker_exec_command, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
+     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
      try {
          const db = await getDbInstance();
          const row = await getDbRow<ConnectionWithTagsRow>(db, sql, [name]);
@@ -190,8 +188,8 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
     const now = Math.floor(Date.now() / 1000);
     const uuid = (data as any).uuid || crypto.randomUUID();
     const sql = `
-        INSERT INTO connections (uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, docker_exec_command, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        INSERT INTO connections (uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
     const jumpChainStringified = (data.jump_chain && data.jump_chain.length > 0) ? JSON.stringify(data.jump_chain) : null;
     console.log(`[Repository:createConnection] jump_chain input: ${JSON.stringify(data.jump_chain)}, stringified to: ${jumpChainStringified}`);
@@ -209,7 +207,6 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
         jumpChainStringified,
         data.background_color ?? null,
         data.file_protocol ?? 'auto',
-        data.docker_exec_command ?? '',
         now, now
     ];
     console.log('[Repository:createConnection] SQL:', sql);

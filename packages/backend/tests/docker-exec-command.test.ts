@@ -12,90 +12,27 @@ import {
 } from '../src/docker/exec-command.ts';
 
 /**
- * 「进入容器」的命令生成 + shell 探测。
+ * 「进入容器」的命令生成 + shell 探测（命令一律由探测得出，不做连接级配置）。
  *
  * 这块最容易出的错是**探测脚本的 shell 语法**（多行 if/then/for 拼错、
  * 试探不存在的 shell 时 stderr 漏到终端），所以除了单测字符串，还真跑一遍脚本。
  */
 
-// --- 命令模板 ---
+// --- 命令生成（只有探测，没有连接级配置） ---
 
-test('buildDockerExecCommand：空模板 → 用探测到的 shell', () => {
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', shell: 'bash' }),
-    'docker exec -it abc123 bash',
-  );
+test('buildDockerExecCommand：拼上探测到的 shell', () => {
+  assert.equal(buildDockerExecCommand('abc123', 'bash'), 'docker exec -it abc123 bash');
+  assert.equal(buildDockerExecCommand('abc123', 'ash'), 'docker exec -it abc123 ash');
 });
 
-test('buildDockerExecCommand：auto 与空等价', () => {
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', template: 'AUTO', shell: 'ash' }),
-    'docker exec -it abc123 ash',
-  );
+test('buildDockerExecCommand：Windows 容器用 powershell', () => {
+  assert.equal(buildDockerExecCommand('abc123', 'powershell'), 'docker exec -it abc123 powershell');
 });
 
-test('buildDockerExecCommand：探测不到 shell 时退回 sh', () => {
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', template: '', shell: '' }),
-    'docker exec -it abc123 sh',
-  );
-});
-
-test('buildDockerExecCommand：只填程序名 → 拼到容器 ID 后面', () => {
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', template: 'bash' }),
-    'docker exec -it abc123 bash',
-  );
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', template: '  powershell  ' }),
-    'docker exec -it abc123 powershell',
-  );
-});
-
-test('buildDockerExecCommand：含 {id} 的完整模板原样替换（可加 -u 等参数）', () => {
-  assert.equal(
-    buildDockerExecCommand({
-      containerId: 'abc123',
-      template: 'docker exec -it -u root {id} bash',
-    }),
-    'docker exec -it -u root abc123 bash',
-  );
-  assert.equal(
-    buildDockerExecCommand({
-      containerId: 'abc123',
-      containerName: 'web-1',
-      template: 'docker exec -it {name} sh',
-    }),
-    'docker exec -it web-1 sh',
-  );
-});
-
-test('buildDockerExecCommand：{name} 缺省时退回容器 ID', () => {
-  assert.equal(
-    buildDockerExecCommand({ containerId: 'abc123', template: 'docker exec -it {name} sh' }),
-    'docker exec -it abc123 sh',
-  );
-});
-
-test('buildDockerExecCommand：{shell} 走探测结果，大小写混写也替换', () => {
-  assert.equal(
-    buildDockerExecCommand({
-      containerId: 'abc123',
-      template: 'docker exec -it {id} {shell}',
-      shell: 'ash',
-    }),
-    'docker exec -it abc123 ash',
-  );
-});
-
-test('buildDockerExecCommand：替换是全局的（{id} 出现多次）', () => {
-  assert.equal(
-    buildDockerExecCommand({
-      containerId: 'abc123',
-      template: 'docker exec -it {id} sh -c "echo {id}"',
-    }),
-    'docker exec -it abc123 sh -c "echo abc123"',
-  );
+test('buildDockerExecCommand：探不到 shell（distroless）→ 退回 sh', () => {
+  assert.equal(buildDockerExecCommand('abc123', ''), 'docker exec -it abc123 sh');
+  assert.equal(buildDockerExecCommand('abc123'), 'docker exec -it abc123 sh');
+  assert.equal(buildDockerExecCommand('abc123', '   '), 'docker exec -it abc123 sh');
 });
 
 // --- 探测结果解析 ---

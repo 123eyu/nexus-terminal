@@ -6,36 +6,19 @@
  *   - Debian / Ubuntu 通常有 bash
  *   - Windows 容器只有 powershell / cmd
  *   - distroless 根本没有 shell
- * 所以默认改成「探测」，并允许在连接的高级选项里用 `docker_exec_command` 覆盖。
+ *
+ * 所以命令一律靠探测得出。**刻意不做「连接级固定命令」配置**：同一个 SSH 主机上
+ * 跑的容器本来就是不同发行版，一条给整个连接用的固定命令必然会错；
+ * 探不到（distroless）就退回 sh，用户在终端里自己换。
  */
-
-export interface BuildDockerExecOptions {
-    containerId: string;
-    containerName?: string;
-    /** 连接上配置的模板；空 / 'auto' = 自动探测 */
-    template?: string | null;
-    /** 探测到的 shell（template 为空或含 {shell} 时才有意义） */
-    shell?: string | null;
-}
 
 /**
- * 生成最终要丢进终端的命令。三种写法：
- *   1. 空 / `auto`           → `docker exec -it <id> <shell||sh>`
- *   2. 含 `{id}`/`{name}`/`{shell}` → 当完整命令模板，替换占位符（要加 `-u root` 就得用这种）
- *   3. 其它（如 `bash`）     → 当程序名/参数，拼到容器 ID 后面
+ * 生成最终要丢进终端的命令。
+ * @param shell 探测到的 shell；为空（distroless 之类）时退回 `sh`
  */
-export function buildDockerExecCommand(opts: BuildDockerExecOptions): string {
-    const id = opts.containerId;
-    const name = (opts.containerName || '').trim() || id;
-    const shell = (opts.shell || '').trim() || 'sh';
-    const tpl = (opts.template || '').trim();
-    if (!tpl || tpl.toLowerCase() === 'auto') {
-        return `docker exec -it ${id} ${shell}`;
-    }
-    if (/\{(id|name|shell)\}/.test(tpl)) {
-        return tpl.replace(/\{id\}/g, id).replace(/\{name\}/g, name).replace(/\{shell\}/g, shell);
-    }
-    return `docker exec -it ${id} ${tpl}`;
+export function buildDockerExecCommand(containerId: string, shell?: string | null): string {
+    const safeShell = (shell || '').trim() || 'sh';
+    return `docker exec -it ${containerId} ${safeShell}`;
 }
 
 /**

@@ -783,6 +783,20 @@ const definedMigrations: Migration[] = [
             });
             console.log('[Migrations] Migration 22: connections 表 docker_exec_command 字段迁移完成 (默认空=自动探测)。');
         }
+    },
+    {
+        id: 23,
+        name: 'Drop docker_exec_command column from connections table',
+        check: async (db: Database): Promise<boolean> => {
+            // 列还在才需要迁（新库直接 schema.ts 建表，本来就没有这列）
+            return await columnExists(db, 'connections', 'docker_exec_command');
+        },
+        sql: `
+            ALTER TABLE connections DROP COLUMN docker_exec_command;
+        `,
+        execute: async (db: Database): Promise<void> => {
+            console.log('[Migrations] Migration 23: 已移除 connections.docker_exec_command —— 进容器命令改为按容器自动探测（shell 是容器级属性，连接级配置会错）。');
+        }
     }
 ];
 

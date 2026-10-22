@@ -1,7 +1,6 @@
 import { AuthenticatedWebSocket, ClientState, DockerContainer, DockerStats } from '../types';
 import { parsePortsString } from '../utils';
 import { clientStates, settingsService } from '../state';
-import { findConnectionByIdWithTags } from '../../connections/connection.repository';
 import { buildDockerExecCommand, buildShellProbeCommand, parseShellProbeOutput } from '../../docker/exec-command';
 import WebSocket from 'ws';
 
@@ -322,20 +321,22 @@ export async function detectContainerShell(state: ClientState, containerId: stri
 }
 
 /**
- * 处理「进入容器」：读连接上配置的命令模板，需要时探测 shell，回一条成品命令给前端。
+ * 处理「进入容器」：探测容器里能用的 shell，回一条成品命令给前端。
  *
- * 放在后端做的原因：连接的 `docker_exec_command` 本来就在库里（不用前端再查一遍连接），
- * 探测又必须走 SSH（前端拿不到远端 shell）。
+ * 为什么必须在后端：探测要走 SSH，前端拿不到远端 shell；
+ * 探测结果按容器缓存在 `state.dockerShellCache`（同一容器的 shell 不会变）。
+ *
+ * 为什么没有「用户自己填」的入口：shell 是**容器级**属性，而连接是一台主机 ——
+ * 主机上的 Alpine 与 Debian 容器要的 shell 不一样，挂一个连接级固定命令反而会错。
  */
 export async function handleDockerGetExecCommand(ws: AuthenticatedWebSocket, sessionId: string | undefined, payload: any): Promise<void> {
     const state = sessionId ? clientStates.get(sessionId) : undefined;
     const containerId = typeof payload?.containerId === 'string' ? payload.containerId : '';
-    const containerName = typeof payload?.containerName === 'string' ? payload.containerName : '';
     const requestId = payload?.requestId;
 
     const reply = (data: Record<string, unknown>) => {
         if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'docker:exec_command', sessionId, payload: { containerId, containerName, requestId, ...data } }));
+            ws.send(JSON.stringify({ type: 'docker:exec_command', sessionId, payload: { containerId, requestId, ...data } }));
         }
     };
 
@@ -344,29 +345,14 @@ export async function handleDockerGetExecCommand(ws: AuthenticatedWebSocket, ses
     if (!cleanId) { reply({ error: 'Missing or invalid containerId.' }); return; }
 
     try {
-        let template = '';
-        if (state.dbConnectionId) {
-            try {
-                const conn = await findConnectionByIdWithTags(state.dbConnectionId);
-                template = (conn?.docker_exec_command || '').trim();
-            } catch (err: any) {
-                // 读配置失败不该挡住「进入容器」，退化成自动探测
-                console.warn(`[docker:get_exec_command] 读取连接 ${state.dbConnectionId} 的 docker_exec_command 失败:`, err.message);
-            }
-        }
-        const needsShell = !template || template.toLowerCase() === 'auto' || template.includes('{shell}');
-        let shell = '';
-        if (needsShell) {
-            const detected = await detectContainerShell(state, cleanId);
-            shell = detected.shell;
-        }
-        const command = buildDockerExecCommand({ containerId: cleanId, containerName, template, shell });
-        console.log(`[docker:get_exec_command] 会话 ${sessionId} 容器 ${cleanId} → ${command}`);
-        reply({ command, shell, auto: !template || template.toLowerCase() === 'auto' });
+        const { shell } = await detectContainerShell(state, cleanId);
+        const command = buildDockerExecCommand(cleanId, shell);
+        console.log(`[docker:get_exec_command] 会话 ${sessionId} 容器 ${cleanId} → ${command}${shell ? '' : '（未探到 shell，退回 sh）'}`);
+        reply({ command, shell: shell || 'sh', detected: !!shell });
     } catch (error: any) {
-        console.warn(`[docker:get_exec_command] 会话 ${sessionId} 容器 ${cleanId} 失败:`, error.message);
+        console.warn(`[docker:get_exec_command] 会话 ${sessionId} 容器 ${cleanId} 探测失败:`, error.message);
         // 探测失败也要能进容器：退回最保守的 sh
-        reply({ command: buildDockerExecCommand({ containerId: cleanId, containerName, template: '', shell: 'sh' }), shell: 'sh', auto: true, error: error.message });
+        reply({ command: buildDockerExecCommand(cleanId, 'sh'), shell: 'sh', detected: false, error: error.message });
     }
 }
 

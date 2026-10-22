@@ -101,8 +101,6 @@ jump_chain TEXT NULL,
 proxy_type TEXT NULL,
 background_color TEXT NULL,
 file_protocol TEXT NOT NULL DEFAULT 'auto',
--- 进入 Docker 容器时执行的命令模板：空串=自动探测容器内可用的 shell（bash/ash/sh 或 powershell）
-docker_exec_command TEXT NOT NULL DEFAULT '',
 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     last_connected_at INTEGER NULL,

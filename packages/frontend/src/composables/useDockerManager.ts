@@ -228,9 +228,11 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
 
     /**
      * 取「进入容器」要执行的命令。
-     * 连接上配置了 `docker_exec_command` 就按模板生成；留空则由后端探测容器里能用的 shell（bash/ash/sh 或 powershell）。
+     *
+     * 命令由后端**按容器**探测得出（bash → ash → sh，Windows 容器 powershell → pwsh → cmd），
+     * 探不到就退回 sh。刻意没有连接级配置：同一台主机上的容器本来就是不同发行版。
      */
-    const getEnterCommand = (containerId: string, containerName?: string): Promise<string> => {
+    const getEnterCommand = (containerId: string): Promise<string> => {
         const fallback = `docker exec -it ${containerId} sh`;
         if (!isConnected.value) return Promise.resolve(fallback);
         if (wsUnsubscribeHooks.length === 0) setupWsListeners();
@@ -247,7 +249,7 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
                 if (payload?.error) console.warn(`[DockerManager ${sessionId}] 获取进入容器命令失败:`, payload.error);
                 resolve(cmd || fallback);
             });
-            sendMessage({ type: 'docker:get_exec_command', sessionId, payload: { containerId, containerName, requestId } });
+            sendMessage({ type: 'docker:get_exec_command', sessionId, payload: { containerId, requestId } });
         });
     };
 
@@ -352,7 +354,7 @@ export function createDockerManager(sessionId: string, wsDeps: DockerManagerDepe
         requestDockerStatus, // Might be useful for manual refresh button in UI
         sendDockerCommand,
         toggleExpand, // UI needs this to handle clicks
-        getEnterCommand, // 「进入容器」：按连接配置 + 自动探测生成命令
+        getEnterCommand, // 「进入容器」：后端按容器探测 shell 生成命令
 
         // Lifecycle
         cleanup,

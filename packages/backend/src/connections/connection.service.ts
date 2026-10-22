@@ -206,7 +206,6 @@ notes: input.notes ?? null, // Add notes field
         jump_chain: processedJumpChain,
         background_color: input.background_color ?? null,
         file_protocol: input.file_protocol ?? 'auto',
-        docker_exec_command: input.docker_exec_command ?? '',
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
     const finalConnectionData = { ...connectionData };
@@ -294,7 +293,6 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     if (input.ssh_key_id !== undefined) dataToUpdate.ssh_key_id = input.ssh_key_id;
     if (input.background_color !== undefined) dataToUpdate.background_color = input.background_color;
     if (input.file_protocol !== undefined) dataToUpdate.file_protocol = input.file_protocol;
-    if (input.docker_exec_command !== undefined) dataToUpdate.docker_exec_command = input.docker_exec_command;
 
     // 处理认证方法更改或凭证更新 (根据 targetType)
     // Use the validated targetType for logic
