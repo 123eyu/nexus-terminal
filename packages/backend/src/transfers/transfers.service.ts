@@ -7,6 +7,7 @@ import { getConnectionWithDecryptedCredentials } from '../connections/connection
 import type { ConnectionWithTags, DecryptedConnectionCredentials } from '../types/connection.types';
 // 命令拼装抽成纯函数（rsync 源路径的尾斜杠会改变语义，见 transfer-command.ts 注释）
 import { buildTransferCommandString, escapeShellArg } from './transfer-command';
+import { serializeTransferTask } from './transfers.serialize';
 
 
 export class TransfersService {
@@ -776,18 +777,12 @@ private async executeRemoteTransferOnSource(
   }
 
   // --- Status Update and Retrieval Methods (largely unchanged) ---
+
   public async getTransferTaskDetails(taskId: string, userId: string | number): Promise<TransferTask | null> {
     const task = this.transferTasks.get(taskId);
     console.debug(`[TransfersService] Retrieving details for task: ${taskId} for user: ${userId}`);
     if (task && task.userId === userId) {
-      // Spread the task, then explicitly add top-level fields from payload
-      const taskToReturn = {
-        ...task,
-        subTasks: task.subTasks.map(st => ({ ...st })),
-        sourceConnectionId: task.payload.sourceConnectionId,
-        remoteTargetPath: task.payload.remoteTargetPath,
-      };
-      return taskToReturn;
+      return serializeTransferTask(task);
     }
     if (task && task.userId !== userId) {
         console.warn(`[TransfersService] User ${userId} attempted to access task ${taskId} owned by ${task.userId}.`);
@@ -800,15 +795,7 @@ private async executeRemoteTransferOnSource(
     console.debug(`[TransfersService] Retrieving all transfer tasks for user: ${userId}.`);
     return Array.from(this.transferTasks.values())
       .filter(task => task.userId === userId)
-      .map(task => {
-        // Spread the task, then explicitly add top-level fields from payload
-        return {
-          ...task,
-          subTasks: task.subTasks.map(st => ({ ...st })),
-          sourceConnectionId: task.payload.sourceConnectionId,
-          remoteTargetPath: task.payload.remoteTargetPath,
-        };
-      });
+      .map(task => serializeTransferTask(task));
   }
 
   public updateSubTaskStatus(

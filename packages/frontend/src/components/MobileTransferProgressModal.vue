@@ -3,7 +3,8 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
 import TransferStatusBadge from './common/TransferStatusBadge.vue';
-import { isBusyTransferStatus, resolveTransferTone } from '../utils/transfer-status';
+import { isBusyTransferStatus, pctLabel, barToneClass } from '../utils/transfer-status';
+import { buildTransferTaskView } from '../utils/transfer-task-view';
 
 interface TransferSubTask {
   subTaskId: string;
@@ -24,6 +25,8 @@ interface TransferTask {
   overallProgress?: number;
   sourceConnectionId?: number;
   remoteTargetPath?: string;
+  targetConnectionIds?: number[];
+  sourceItems?: Array<{ name: string; path: string; type: 'file' | 'directory' }>;
 }
 
 const props = defineProps<{
@@ -52,37 +55,18 @@ const handleClose = () => {
   emit('update:visible', false);
 };
 
-// --- 卡片展示用的小工具（与桌面端保持同一套语义） ---
-const getTaskFileName = (task: TransferTask): string => {
-  if (task.subTasks && task.subTasks.length > 0 && task.subTasks[0].sourceItemName) {
-    return task.subTasks[0].sourceItemName;
-  }
-  return t('transferProgressModal.unknownFileName', '[文件名未知]');
-};
-
-const getTaskSourceName = (task: TransferTask): string => {
-  if (task.sourceConnectionId) return props.getConnectionName(task.sourceConnectionId);
-  return t('transferProgressModal.localSource', '本机');
-};
-
-const getTaskTargetPath = (task: TransferTask): string => {
-  return task.remoteTargetPath || t('transferProgressModal.unknownTargetPath', '[目标路径未知]');
-};
-
-const getTaskMethods = (task: TransferTask): string[] => {
-  const methods = new Set<string>();
-  for (const st of task.subTasks || []) {
-    if (st.transferMethodUsed) methods.add(st.transferMethodUsed);
-  }
-  return [...methods];
-};
-
-const pctValue = (value?: number): number => {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
-  return Math.max(0, Math.min(100, value));
-};
-const pctLabel = (value?: number): string => `${Math.round(pctValue(value))}%`;
-const barToneClass = (status: string): string => `tp-fill--${resolveTransferTone(status)}`;
+// --- 卡片展示模型（与桌面端共用 buildTransferTaskView） ---
+const taskViews = computed(() =>
+  props.displayedTasks.map(task => ({
+    task,
+    // 手机上横向空间有限，目标服务器只并排显示 1 个，其余收成 +N
+    view: buildTransferTaskView(task as any, {
+      t: t as any,
+      getConnectionName: props.getConnectionName,
+      maxTargetNames: 1,
+    }),
+  }))
+);
 
 // 子任务折叠：失败的任务自动展开一次（错误信息得能一眼看到），之后完全听用户的
 const openTaskIds = ref<string[]>([]);
@@ -191,28 +175,51 @@ const activeSummary = computed(() => {
         </div>
 
         <div
-          v-for="task in props.displayedTasks"
+          v-for="{ task, view } in taskViews"
           :key="task.taskId"
           class="tp-m-card"
         >
           <!-- 条目名 + 状态 -->
           <div class="flex items-start gap-2">
-            <div class="tp-m-card__icon" :class="`tp-card__icon--${resolveTransferTone(task.status)}`">
-              <i class="fas fa-file-alt"></i>
+            <div class="tp-m-card__icon" :class="`tp-card__icon--${view.tone}`">
+              <i :class="['fas', view.icon]"></i>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-1.5 min-w-0">
-                <span class="tp-m-card__name" :title="getTaskFileName(task)">{{ getTaskFileName(task) }}</span>
+                <span class="tp-m-card__name" :title="view.primaryNameTitle">{{ view.primaryName }}</span>
                 <TransferStatusBadge
                   :status="task.status"
                   :label="props.getDisplayStatus(task.status)"
                   size="xs"
                 />
               </div>
-              <div class="tp-m-route">
-                <span class="tp-m-route__part" :title="getTaskSourceName(task)">{{ getTaskSourceName(task) }}</span>
+
+              <!-- 哪台服务器 → 哪台服务器 -->
+              <div class="tp-m-route" :title="view.routeTitle">
+                <span class="tp-node">
+                  <i class="fas fa-server"></i>
+                  <span class="tp-node__text">{{ view.sourceName }}</span>
+                </span>
                 <i class="fas fa-arrow-right tp-m-route__arrow"></i>
-                <span class="tp-m-route__part tp-m-route__part--path" :title="getTaskTargetPath(task)">{{ getTaskTargetPath(task) }}</span>
+                <span
+                  v-for="(targetName, targetIndex) in view.targetNames"
+                  :key="`${targetName}-${targetIndex}`"
+                  class="tp-node tp-node--target"
+                >
+                  <span class="tp-node__text">{{ targetName }}</span>
+                </span>
+                <span
+                  v-if="view.hiddenTargetCount > 0"
+                  class="tp-node tp-node--more"
+                  :title="view.allTargetNames.join(', ')"
+                >+{{ view.hiddenTargetCount }}</span>
+              </div>
+
+              <!-- 哪个路径 → 哪个路径 -->
+              <div class="tp-m-path" :title="view.pathTitle">
+                <span v-if="view.sourcePath" class="tp-m-path__part" :title="view.sourcePath">{{ view.sourcePath }}</span>
+                <i v-if="view.sourcePath" class="fas fa-arrow-right tp-m-path__arrow"></i>
+                <span class="tp-m-path__part tp-m-path__part--dest" :title="view.targetPathLabel">{{ view.targetPathLabel }}</span>
               </div>
             </div>
           </div>
@@ -245,7 +252,7 @@ const activeSummary = computed(() => {
             <span class="tp-m-meta__date">
               <i class="far fa-clock"></i>{{ props.formatDate(task.createdAt) }}
             </span>
-            <span v-for="method in getTaskMethods(task)" :key="method" class="tp-m-method">{{ method }}</span>
+            <span v-for="method in view.methods" :key="method" class="tp-m-method">{{ method }}</span>
             <span class="flex-1"></span>
             <button
               v-if="props.isTaskCancellable(task.status)"
@@ -327,6 +334,7 @@ const activeSummary = computed(() => {
 .tp-m-cancel i,
 .tp-m-toggle i,
 .tp-m-route i,
+.tp-m-path i,
 .tp-m-meta i,
 .tp-m-sub i,
 .tp-m-state__icon i,
@@ -450,33 +458,91 @@ const activeSummary = computed(() => {
   white-space: nowrap;
 }
 
+/* 服务器链路：源 → 目标（手机上一次只并排 1 个目标） */
 .tp-m-route {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  margin-top: 2px;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 3px;
   min-width: 0;
   font-size: 10.5px;
   color: var(--text-color-secondary);
 }
 
-.tp-m-route__part {
+.tp-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.22rem;
   min-width: 0;
-  max-width: 42%;
+  max-width: 9.5rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
+  color: color-mix(in oklab, var(--text-color) 82%, var(--app-bg-color));
+  background-color: color-mix(in oklab, var(--text-color) 7%, transparent);
+}
+
+.tp-node__text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tp-m-route__part--path {
-  max-width: 56%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+.tp-node i {
+  flex: none;
+  font-size: 8.5px;
+  opacity: 0.65;
+}
+
+.tp-node--target {
+  color: var(--link-active-color);
+  background-color: color-mix(in oklab, var(--link-active-color) 10%, transparent);
+}
+
+.tp-node--more {
+  flex: none;
+  color: var(--text-color-secondary);
+  background-color: color-mix(in oklab, var(--text-color) 6%, transparent);
 }
 
 .tp-m-route__arrow {
   flex: none;
   font-size: 8px;
   opacity: 0.5;
+}
+
+/* 路径行：源路径 → 目标路径 */
+.tp-m-path {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-top: 2px;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-color-secondary);
+}
+
+.tp-m-path__part {
+  min-width: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.tp-m-path__part--dest {
+  max-width: 100%;
+  color: color-mix(in oklab, var(--text-color) 74%, var(--app-bg-color));
+  opacity: 1;
+}
+
+.tp-m-path__arrow {
+  flex: none;
+  font-size: 7px;
+  opacity: 0.45;
 }
 
 /* ===== 进度 ===== */

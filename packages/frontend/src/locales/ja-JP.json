@@ -1829,7 +1829,8 @@
     "task": {
       "idLabel": "タスク",
       "createdAt": "作成日時",
-      "overallProgress": "全体進捗"
+      "overallProgress": "全体進捗",
+      "multiItems": "{name} ほか {count} 件"
     },
     "status": {
       "queued": "待機中",

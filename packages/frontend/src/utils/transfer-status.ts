@@ -44,3 +44,19 @@ export function isBusyTransferStatus(status?: string | null): boolean {
 export function isFinalTransferStatus(status?: string | null): boolean {
   return ['completed', 'failed', 'cancelled', 'partially-completed'].includes(status || '');
 }
+
+/** 进度值归一化到 0-100（后端可能给 undefined / NaN） */
+export function pctValue(value?: number): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+/** 进度文字，例：`46%` */
+export function pctLabel(value?: number): string {
+  return `${Math.round(pctValue(value))}%`;
+}
+
+/** 进度条填充色：只由色调决定，和状态徽标同一套语义 */
+export function barToneClass(status?: string | null): string {
+  return `tp-fill--${resolveTransferTone(status)}`;
+}

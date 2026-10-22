@@ -1945,7 +1945,8 @@
     "task": {
       "idLabel": "Task",
       "createdAt": "Created at",
-      "overallProgress": "Overall Progress"
+      "overallProgress": "Overall Progress",
+      "multiItems": "{name} and {count} more"
     },
     "status": {
       "queued": "Queued",

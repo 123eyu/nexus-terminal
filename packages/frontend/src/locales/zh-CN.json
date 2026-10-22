@@ -1912,7 +1912,8 @@
     "task": {
       "idLabel": "任务",
       "createdAt": "创建于",
-      "overallProgress": "整体进度"
+      "overallProgress": "整体进度",
+      "multiItems": "{name} 等 {count} 项"
     },
     "status": {
       "queued": "排队中",
