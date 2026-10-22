@@ -46,6 +46,10 @@ const { isMobile } = useDeviceDetection();
 const route = useRoute();
 const navRef = ref<HTMLElement | null>(null);
 const underlineRef = ref<HTMLElement | null>(null);
+const navLinksRef = ref<HTMLElement | null>(null);
+const logoRef = ref<HTMLImageElement | null>(null);
+/** 监听左侧链接容器尺寸变化（字体/缩放变了 → 链接宽度变 → 下划线要重量） */
+let underlineResizeObserver: ResizeObserver | null = null;
 
 // +++ 存储上一次由切换器聚焦的 ID +++
 const lastFocusedIdBySwitcher = ref<string | null>(null);
@@ -53,6 +57,17 @@ const isAltPressed = ref(false); // 跟踪 Alt 键是否按下
 const altShortcutKey = ref<string | null>(null);
 // --- 移除 shortcutTriggeredInKeyDown 标志 ---
 
+/**
+ * 下划线的位置是**量出来的**（offsetLeft / offsetWidth），所以布局一变就必须重量一次，
+ * 否则它会停在旧坐标上，看起来就是「刷新后导航栏底下的条错位」。
+ * 会改变导航布局的信号（`remeasureUnderline` 把下面这些都接上了）：
+ *   - 路由切换（下面的 watch(route)）
+ *   - logo 图片加载完成 —— 见模板里 img 上的注释，load 之前宽度为 0，整排链接会被往左推一个 logo 宽
+ *   - 中文字体就绪（字体换了，链接文案宽度跟着变）
+ *   - 窗口尺寸 / 浏览器缩放（会跨 md: 断点增删链接）
+ *   - 左侧链接容器自身尺寸变化（ResizeObserver，兜住上面没枚举到的字体差异）
+ *   - 工作区的 header 从隐藏变显示（header 是 v-if，重新挂载时才重新拿到 navRef）
+ */
 const updateUnderline = async () => {
   await nextTick(); // 等待 DOM 更新
   if (navRef.value && underlineRef.value) {
@@ -69,6 +84,8 @@ const updateUnderline = async () => {
   }
 };
 
+const remeasureUnderline = () => { void updateUnderline(); };
+
 onMounted(() => {
   // 启动全局实时同步长连接监听器，实现全工作区面板无感自动刷新
   initGlobalSyncListener();
@@ -78,6 +95,20 @@ onMounted(() => {
   // Initial position update
   // Use setTimeout to ensure styles are applied and elements have dimensions
   setTimeout(updateUnderline, 100);
+
+  // 让下划线在这些「布局可能刚变」的时刻都重量一次，避免停在旧坐标（详见 updateUnderline 上方注释）
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(remeasureUnderline).catch(() => {});
+  }
+  const logoEl = logoRef.value;
+  if (logoEl && !logoEl.complete) {
+    logoEl.addEventListener('load', remeasureUnderline);
+  }
+  window.addEventListener('resize', remeasureUnderline);
+  if (typeof ResizeObserver !== 'undefined' && navLinksRef.value) {
+    underlineResizeObserver = new ResizeObserver(remeasureUnderline);
+    underlineResizeObserver.observe(navLinksRef.value);
+  }
 
   // +++ 全局 Alt 键监听器 +++
   window.addEventListener('keydown', handleAltKeyDown); // +++ 监听 keydown 设置状态 +++
@@ -125,6 +156,9 @@ onUnmounted(() => {
   window.removeEventListener('keyup', handleGlobalKeyUp);   // +++ 移除 keyup 监听 +++
   window.removeEventListener('dragover', handleGlobalDragOver);
   window.removeEventListener('drop', handleGlobalDrop);
+  window.removeEventListener('resize', remeasureUnderline);
+  if (underlineResizeObserver) { underlineResizeObserver.disconnect(); underlineResizeObserver = null; }
+  logoRef.value?.removeEventListener('load', remeasureUnderline);
 });
 
 
@@ -134,6 +168,12 @@ const isWorkspaceRoute = computed(() => route.path === '/workspace');
 watch(route, () => {
   updateUnderline();
 }, { immediate: true }); // *** 确保 immediate: true 存在 ***
+
+// 工作区的 header 是 v-if 控制的（`!isWorkspaceRoute || isHeaderVisible`），
+// 从隐藏切到显示时 nav 是重新挂载的，必须重新量一次
+watch(isHeaderVisible, () => {
+  remeasureUnderline();
+});
 
 
 const handleLogout = () => {
@@ -309,9 +349,13 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
       <!-- Nav with Tailwind classes -->
       <nav ref="navRef" class="flex items-center justify-between w-full relative"> <!-- Added relative positioning for underline -->
         <!-- Left navigation links with Tailwind classes using theme variables -->
-        <div class="flex items-center space-x-1">
+        <div ref="navLinksRef" class="flex items-center space-x-1">
           <!-- 项目 Logo -->
-          <img src="./assets/logo.png" alt="Project Logo" class="h-10 w-auto"> <!-- 移除右侧外边距，使其更靠左 -->
+          <!-- ⚠️ 必须带 width/height 属性（= 图片原始尺寸，配合 h-10 w-auto 由浏览器按比例算出 46px 宽）：
+               不写的话，img 在 load 之前宽度是 0，右侧整排链接会先按「没有 logo」排版，
+               图片一加载全部右移 46px —— 靠量 offsetLeft 定位的滑动下划线就永远停在旧位置
+               （用户看到的「刷新后导航栏底下的条错位」）。写死宽高属性后首帧就是最终布局。 -->
+          <img ref="logoRef" src="./assets/logo.png" alt="Project Logo" width="3072" height="2646" class="h-10 w-auto"> <!-- 移除右侧外边距，使其更靠左 -->
             <RouterLink to="/" class="inline-flex px-3 py-2 rounded-md text-sm font-medium text-secondary hover:text-link-hover hover:bg-nav-active-bg hover:no-underline transition duration-150 ease-in-out whitespace-nowrap" active-class="text-link-active bg-nav-active-bg">{{ t('nav.dashboard') }}</RouterLink> <!-- 恢复仪表盘链接, 始终可见 -->
             <RouterLink to="/workspace" class="inline-flex px-3 py-2 rounded-md text-sm font-medium text-secondary hover:text-link-hover hover:bg-nav-active-bg hover:no-underline transition duration-150 ease-in-out whitespace-nowrap" active-class="text-link-active bg-nav-active-bg">{{ t('nav.terminal') }}</RouterLink> <!-- 保持可见 -->
             <RouterLink to="/connections" class="hidden md:inline-flex px-3 py-2 rounded-md text-sm font-medium text-secondary hover:text-link-hover hover:bg-nav-active-bg hover:no-underline transition duration-150 ease-in-out whitespace-nowrap" active-class="text-link-active bg-nav-active-bg">{{ t('nav.connections') }}</RouterLink> <!-- 连接管理链接 -->
