@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, nextTick, Teleport } from 'vue';
+import { ref, nextTick, Teleport, computed, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { PRESET_COLORS, generateRandomColor, hexToRgba } from '../utils/colorUtils';
 import { isRemoteDesktopSupported } from '../utils/platform';
+import FolderSelect from './FolderSelect.vue';
+import type { TagInfo } from '../stores/tags.store';
 
 // Define Props. formData is expected to be a reactive object from the parent composable.
 const props = defineProps<{
@@ -13,10 +15,31 @@ const props = defineProps<{
     port: number;
     custom_background_color?: boolean;
     background_color?: string;
+    tag_ids: number[];
   };
+  folders: TagInfo[];
+  isFolderLoading?: boolean;
+  folderStoreError?: string | null;
+}>();
+
+const emit = defineEmits<{
+  (e: 'create-folder', folderName: string): void;
 }>();
 
 const { t } = useI18n();
+
+/** 所属文件夹单选：表单里是 tag_ids 数组，这里只取第一个 */
+const selectedFolderId = computed({
+  get: () => (props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null),
+  set: (val: number | null) => {
+    props.formData.tag_ids = val !== null ? [val] : [];
+  },
+});
+
+const handleCreateFolder = (folderName: string) => {
+  emit('create-folder', folderName);
+};
+
 
 // Tooltip state and refs for the host input
 const showHostTooltip = ref(false);
@@ -183,6 +206,24 @@ const handleHostIconMouseLeave = () => {
           class="w-full px-3 py-2 text-xs md:text-sm font-mono border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
         />
       </div>
+    </div>
+
+    <!-- 所属文件夹：跟「卡片背景颜色」同属「归类/外观」，放在同一张卡片里 -->
+    <div class="pt-3 border-t border-border/40">
+      <label class="block text-xs font-medium text-text-secondary mb-1.5">
+        <i class="fas fa-folder text-amber-400 mr-1"></i>
+        {{ t('folders.title', '所属文件夹') }}
+      </label>
+      <FolderSelect
+        v-model="selectedFolderId"
+        :folders="props.folders"
+        :allow-create="true"
+        @create-folder="handleCreateFolder"
+        :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
+      />
+      <!-- 只有真的还没有任何文件夹时才提示加载中：后台静默刷新会让 isFolderLoading 瞬间为 true -->
+      <div v-if="props.isFolderLoading && props.folders.length === 0" class="mt-1 text-xs text-text-secondary">{{ t('common.loading') }}</div>
+      <div v-if="props.folderStoreError" class="mt-1 text-xs text-error">{{ props.folderStoreError }}</div>
     </div>
 
     <!-- 卡片背景颜色配置 (极简无冗余废话) -->

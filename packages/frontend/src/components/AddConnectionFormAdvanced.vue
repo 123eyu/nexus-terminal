@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed, watch, type Ref, type PropType } from 'vue';
+import { type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import FolderSelect from './FolderSelect.vue';
 import type { ProxyInfo } from '../stores/proxies.store';
-import type { TagInfo } from '../stores/tags.store';
 import type { ConnectionInfo } from '../stores/connections.store';
 import AppSelect from './common/AppSelect.vue';
 
@@ -24,11 +22,8 @@ const props = defineProps({
   },
   proxies: { type: Array as PropType<ProxyInfo[]>, required: true },
   connections: { type: Array as PropType<ConnectionInfo[]>, required: true }, 
-  tags: { type: Array as PropType<TagInfo[]>, required: true },
   isProxyLoading: { type: Boolean, required: true },
   proxyStoreError: { type: String as PropType<string | null>, required: false, default: null },
-  isTagLoading: { type: Boolean, required: true },
-  tagStoreError: { type: String as PropType<string | null>, required: false, default: null },
   advancedConnectionMode: { type: String as PropType<'proxy' | 'jump'>, required: true },
   addJumpHost: { type: Function as PropType<() => void>, required: true },
   removeJumpHost: { type: Function as PropType<(index: number) => void>, required: true },
@@ -37,30 +32,10 @@ const props = defineProps({
 
 // Define Emits
 const emit = defineEmits<{
-  (e: 'create-tag', tagName: string): void;
-  (e: 'delete-tag', tagId: number): void;
   (e: 'update:advancedConnectionMode', mode: 'proxy' | 'jump'): void;
 }>();
 
 const { t } = useI18n();
-
-const selectedFolderId = computed({
-  get: () => {
-    return props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null;
-  },
-  set: (val: number | null) => {
-    props.formData.tag_ids = val !== null ? [val] : [];
-  }
-});
-
-
-const handleCreateTagEvent = (tagName: string) => {
-  emit('create-tag', tagName);
-};
-
-const handleDeleteTagEvent = (tagId: number) => {
-  emit('delete-tag', tagId);
-};
 
 const setConnectionMode = (mode: 'proxy' | 'jump') => {
   if (props.advancedConnectionMode === mode) return; // Access directly
@@ -94,25 +69,6 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       </div>
     </div>
 
-    <!-- 所属文件夹 -->
-    <div>
-      <label class="block text-xs font-medium text-text-secondary mb-1.5">
-        <i class="fas fa-folder text-amber-400 mr-1"></i>
-        {{ t('folders.title', '所属文件夹') }}
-      </label>
-      <FolderSelect
-        v-model="selectedFolderId"
-        :folders="props.tags"
-        :allow-create="true"
-        @create-folder="handleCreateTagEvent"
-        :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
-      />
-      <!-- 只有真的还没有任何文件夹时才提示加载中：后台静默刷新（切屏回来/云端同步）
-           会让 isTagLoading 瞬间为 true，这里跟着闪一下「加载中...」很刺眼 -->
-      <div v-if="props.isTagLoading && props.tags.length === 0" class="mt-1 text-xs text-text-secondary">{{ t('common.loading') }}</div>
-      <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ props.tagStoreError }}</div>
-    </div>
-    
     <!-- 连接方式切换（网络代理 SSH/RDP/VNC 都支持；跳板机链只支持 SSH） -->
     <div>
       <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionMode', '网络穿透方式') }}</label>

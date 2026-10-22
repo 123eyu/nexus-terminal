@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUiNotificationsStore } from '../../stores/uiNotifications.store';
 
 /**
- * 「SSH 密钥」字段：默认选已有密钥，点右侧「新建密钥」就地展开一个内联表单。
+ * 「SSH 密钥」字段：**默认就是展开的新建表单**，下面再给「选已有密钥」的下拉。
  *
- * 这个内联表单**没有保存按钮**：私钥内容跟着连接表单一起提交，
- * 连接创建成功后由 useAddConnectionForm 把它存成一把正式密钥（失败会回滚删掉）。
- * 选择器通过默认插槽传进来 —— 桌面端是 SshKeySelector，移动端是 MobileSshKeySelector。
+ * 没有保存按钮 —— 私钥内容跟着连接表单一起提交，连接创建成功后由
+ * useAddConnectionForm 把它存成一把正式密钥（失败会回滚删掉）。
+ * 选择器通过默认插槽传进来（桌面 SshKeySelector / 移动端 MobileSshKeySelector）。
+ *
+ * 两边互斥：填了私钥就清掉已选密钥，选了已有密钥就清掉私钥 —— 否则提交时不知道该用哪个。
  */
 const props = withDefaults(
   defineProps<{
@@ -16,7 +18,7 @@ const props = withDefaults(
       selected_ssh_key_id?: number | null;
       private_key?: string;
       passphrase?: string;
-      /** 内联新建时的密钥名称（可选，留空自动取名） */
+      /** 新建时的密钥名称（可选，留空自动取名） */
       ssh_key_name?: string;
       username?: string;
       host?: string;
@@ -30,32 +32,29 @@ const props = withDefaults(
 const { t } = useI18n();
 const uiNotificationsStore = useUiNotificationsStore();
 
-const isInlineOpen = ref(false);
-/** 展开前选中的密钥：没填内容就收起时还回去，别让用户白丢一次选择 */
-const previousKeyId = ref<number | null>(null);
-
 const hasKeyContent = computed(() => (props.formData.private_key || '').trim().length > 0);
 
-// 用户在内联表单里打过字就保持展开；一旦从下拉里选了已有密钥，就收起内联表单
+/** 选了已有密钥 → 清掉草稿，避免「既填了私钥又选了密钥」 */
 watch(
   () => props.formData.selected_ssh_key_id,
   (newId) => {
-    if (newId !== null && newId !== undefined) isInlineOpen.value = false;
+    if (newId === null || newId === undefined) return;
+    if (!hasKeyContent.value) return;
+    props.formData.private_key = '';
+    props.formData.passphrase = '';
+    props.formData.ssh_key_name = '';
   }
 );
 
-const toggleInline = () => {
-  if (isInlineOpen.value) {
-    isInlineOpen.value = false;
-    // 什么都没填就收起 → 把原来的选择还回去
-    if (!hasKeyContent.value) props.formData.selected_ssh_key_id = previousKeyId.value;
-    return;
+/** 开始填私钥 → 取消已选密钥（反向互斥） */
+watch(
+  () => hasKeyContent.value,
+  (has) => {
+    if (has && props.formData.selected_ssh_key_id != null) {
+      props.formData.selected_ssh_key_id = null;
+    }
   }
-  // 内联新建与「选已有」互斥，否则提交时不知道该用哪个
-  previousKeyId.value = props.formData.selected_ssh_key_id ?? null;
-  props.formData.selected_ssh_key_id = null;
-  isInlineOpen.value = true;
-};
+);
 
 /** 留空时的兜底名称，省得用户还得先想个名字 */
 const autoKeyName = computed(() => {
@@ -87,27 +86,9 @@ const inputClass = computed(() =>
 </script>
 
 <template>
-  <div class="space-y-2">
-    <div class="flex items-center justify-between gap-2">
-      <label class="block text-xs font-medium text-text-secondary">
-        {{ t('connections.form.sshKey', 'SSH 密钥') }}
-        <span v-if="!hasKeyContent && !formData.selected_ssh_key_id" class="text-error">*</span>
-      </label>
-      <button
-        type="button"
-        class="text-[11px] font-medium text-primary hover:text-primary-hover flex items-center gap-1 cursor-pointer rounded-md px-1.5 py-0.5 hover:bg-primary/10 transition-colors"
-        @click="toggleInline"
-      >
-        <i :class="['fas text-[10px]', isInlineOpen ? 'fa-chevron-up' : 'fa-plus']"></i>
-        <span>{{ isInlineOpen ? t('connections.form.inlineKeyCollapse', '收起') : t('connections.form.inlineKeyToggle', '新建密钥') }}</span>
-      </button>
-    </div>
-
-    <!-- 选择已有密钥 -->
-    <slot v-if="!isInlineOpen" />
-
-    <!-- 内联新建（无保存按钮：随连接一起提交） -->
-    <div v-else class="surface-inset rounded-xl border border-border/60 p-3 space-y-2.5">
+  <div class="space-y-2.5">
+    <!-- 新建密钥表单（常驻展开，无保存按钮：随连接一起提交） -->
+    <div class="space-y-2.5">
       <div>
         <label for="inline-key-name" class="block text-[11px] font-medium text-text-secondary mb-1">
           {{ t('connections.form.inlineKeyName', '密钥名称') }}
@@ -128,7 +109,7 @@ const inputClass = computed(() =>
         <div class="flex items-center justify-between mb-1">
           <label for="inline-key-private" class="block text-[11px] font-medium text-text-secondary">
             {{ t('connections.form.inlineKeyPrivate', '私钥内容') }}
-            <span class="text-error">*</span>
+            <span v-if="!formData.selected_ssh_key_id" class="text-error">*</span>
           </label>
           <button
             type="button"
@@ -169,6 +150,16 @@ const inputClass = computed(() =>
         <span>{{ t('connections.form.inlineKeyAutoSave', '连接添加成功后会自动保存这把密钥，无需单独保存。') }}</span>
       </p>
     </div>
+
+    <!-- 已有密钥：放在新建表单下面 -->
+    <div class="flex items-center gap-2 pt-0.5">
+      <span class="h-px flex-1 bg-border/50"></span>
+      <span class="text-[11px] text-text-secondary/80 shrink-0">
+        {{ t('connections.form.inlineKeyOrExisting', '或使用已有密钥') }}
+      </span>
+      <span class="h-px flex-1 bg-border/50"></span>
+    </div>
+    <slot />
   </div>
 </template>
 

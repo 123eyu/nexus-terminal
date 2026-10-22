@@ -131,23 +131,24 @@ onUnmounted(() => {
       >
         <!-- 正常表单卡片模式 -->
         <template v-if="!isScriptModeActive">
-          <AddConnectionFormBasicInfo :form-data="formData" />
+          <AddConnectionFormBasicInfo
+            :form-data="formData"
+            :folders="tags"
+            :is-folder-loading="isTagLoading"
+            :folder-store-error="tagStoreError"
+            @create-folder="handleCreateTag"
+          />
           <AddConnectionFormAuth :form-data="formData" :is-edit-mode="isEditMode" />
           <AddConnectionFormAdvanced
             :form-data="formData"
             :proxies="proxies"
-            :tags="tags"
             :connections="connections"
             :is-proxy-loading="isProxyLoading"
             :proxy-store-error="proxyStoreError"
-            :is-tag-loading="isTagLoading"
-            :tag-store-error="tagStoreError"
             :advanced-connection-mode="advancedConnectionMode"
             @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
             :add-jump-host="addJumpHost"
             :remove-jump-host="removeJumpHost"
-            @create-tag="handleCreateTag"
-            @delete-tag="handleDeleteTag"
           />
         </template>
 
