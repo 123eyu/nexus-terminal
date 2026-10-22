@@ -190,7 +190,8 @@ export function useFileManagerContextMenu(options: UseFileManagerContextMenuOpti
        if (onCopyPath) {
          menu.push({ label: t('fileManager.actions.copyPath', 'Copy Path'), action: () => onCopyPath(targetItem), disabled: !(isConnected.value && isSftpReady.value) });
        }
-       if (onAddToFavorites && targetItem.attrs.isDirectory) {
+       // 文件和目录都能收藏：文件收藏点击时直接打开（见 FavoritePathsModal 的分流）
+       if (onAddToFavorites) {
          menu.push({ label: t('fileManager.actions.addToFavorites', '添加到收藏路径'), action: () => onAddToFavorites(targetItem), disabled: !(isConnected.value && isSftpReady.value) });
        }
 

@@ -1094,10 +1094,14 @@ const handleAddToFavorites = async (item?: FileListItem) => {
 
   let targetPath = '';
   let defaultName = '';
+  let isFile = false;
 
   if (item) {
     targetPath = currentSftpManager.value.joinPath(currentSftpManager.value.currentPath.value, item.filename);
     defaultName = item.filename;
+    // 符号链接指向目录时 attrs.isDirectory 可能不准，但这里只需要一个粗判：
+    // 判错的后果只是点击时按目录跳转/按文件打开，用户可以删了重收藏
+    isFile = !item.attrs.isDirectory;
   } else {
     targetPath = currentSftpManager.value.currentPath.value;
     const cleanPath = targetPath.replace(/\/+$/, '');
@@ -1111,6 +1115,8 @@ const handleAddToFavorites = async (item?: FileListItem) => {
     await favoritePathsStore.addFavoritePath({
       path: targetPath,
       name: defaultName || undefined,
+      // 没有 item = 收藏当前目录；有 item 时看它是不是目录
+      is_file: isFile,
     }, t);
   } catch (error) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 添加常用路径失败:`, error);
@@ -1772,6 +1778,19 @@ const handleBreadcrumbOpenFile = (fileItem: FileListItem, fullPath?: string) => 
   });
 };
 
+// 收藏里点的是一个「文件」：不跳目录，直接按打开文件的统一入口处理
+// （桌面端是否交给系统程序打开，由 desktopFileOpenMode 决定，这里不用再分支）
+const handleFavoriteOpenFile = (fav: { path: string; name?: string }) => {
+  const fileName = fav.name || fav.path.substring(fav.path.lastIndexOf('/') + 1) || fav.path;
+  void openRemoteFile({
+    sessionId: props.sessionId,
+    instanceId: props.instanceId,
+    path: fav.path,
+    fileName,
+    connectionId: props.dbConnectionId,
+  });
+};
+
 // --- 桌面端独立搜索栏状态与操作 ---
 const desktopSearchInputRef = ref<HTMLInputElement | null>(null);
 
@@ -1896,6 +1915,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       :sftp-manager="currentSftpManager"
       @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
       @open-file="handleBreadcrumbOpenFile"
+      @open-favorite-file="handleFavoriteOpenFile"
       @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
     />
 

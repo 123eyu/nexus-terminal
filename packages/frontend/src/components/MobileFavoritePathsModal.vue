@@ -15,6 +15,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void;
   (e: 'navigate-to-path', path: string): void;
+  (e: 'open-favorite-file', payload: { path: string; name?: string }): void;
 }>();
 
 const { t } = useI18n();
@@ -53,13 +54,21 @@ const closeModal = () => {
   emit('close');
 };
 
+/** is_file 后端存的是 0/1，兼容一下布尔与字符串 */
+const isFileFavorite = (item: FavoritePathItem): boolean => Number(item.is_file) === 1;
+
 const handleItemClick = async (pathItem: FavoritePathItem) => {
   try {
     await favoritePathsStore.markPathAsUsed(pathItem.id, t);
   } catch (error) {
     console.error('Failed to mark path as used:', error);
   }
-  emit('navigate-to-path', pathItem.path);
+  // 收藏的是文件 → 直接打开；是目录 → 照旧跳转
+  if (isFileFavorite(pathItem)) {
+    emit('open-favorite-file', { path: pathItem.path, name: pathItem.name });
+  } else {
+    emit('navigate-to-path', pathItem.path);
+  }
   closeModal();
 };
 
@@ -164,7 +173,7 @@ watch(() => props.isVisible, (val) => {
       >
         <div class="min-w-0 flex-1 mr-2">
           <div class="font-medium text-[13px] text-foreground truncate">
-            {{ favPath.name || favPath.path }}
+            <i v-if="isFileFavorite(favPath)" class="fas fa-file text-[10px] mr-1 text-text-secondary"></i>{{ favPath.name || favPath.path }}
           </div>
           <div class="text-[11px] font-mono text-text-secondary truncate mt-0.5">
             {{ favPath.path }}

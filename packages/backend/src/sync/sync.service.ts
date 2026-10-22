@@ -1104,16 +1104,16 @@ export const syncService = {
         if (!local) {
           await runDb(
             db,
-            `INSERT INTO favorite_paths (name, path, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-            [d.name || null, d.path, d.last_used_at || null, d.created_at || item.updated_at, item.updated_at]
+            `INSERT INTO favorite_paths (name, path, is_file, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            [d.name || null, d.path, d.is_file ? 1 : 0, d.last_used_at || null, d.created_at || item.updated_at, item.updated_at]
           );
           pushed++;
         } else if (item.updated_at > (local.updated_at || 0)) {
           const maxLastUsed = Math.max(local.last_used_at || 0, d.last_used_at || 0) || null;
           await runDb(
             db,
-            `UPDATE favorite_paths SET name = ?, last_used_at = ?, updated_at = ? WHERE id = ?`,
-            [d.name || null, maxLastUsed, item.updated_at, local.id]
+            `UPDATE favorite_paths SET name = ?, is_file = ?, last_used_at = ?, updated_at = ? WHERE id = ?`,
+            [d.name || null, d.is_file ? 1 : 0, maxLastUsed, item.updated_at, local.id]
           );
           pushed++;
           conflictsResolved++;

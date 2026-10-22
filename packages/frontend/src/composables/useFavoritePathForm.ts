@@ -37,7 +37,8 @@ export function useFavoritePathForm(
   });
 
   const effectivePathData = computed(() => props.pathData || props.pathItem || null);
-  const isEditMode = computed(() => !effectivePathData.value?.id);
+  // 带 id 的才是编辑（历史实现把这里的取反写反了，导致编辑时标题显示"添加"、保存又新增一条）
+  const isEditMode = computed(() => Boolean(effectivePathData.value?.id));
   const isLoading = ref(false);
   const errorMessage = ref<string | null>(null);
 
@@ -118,6 +119,8 @@ export function useFavoritePathForm(
     try {
       const finalName =
         form.value.name.trim() || extractFolderNameFromPath(form.value.path.trim());
+      // 不带 is_file：编辑时后端保留原值（改名字不会把文件收藏变成目录），
+      // 新增时后端默认 0（目录）——手动填的路径没法在浏览器侧判断是不是文件
       if (isEditMode.value && form.value.id) {
         await favoritePathsStore.updateFavoritePath(
           form.value.id,

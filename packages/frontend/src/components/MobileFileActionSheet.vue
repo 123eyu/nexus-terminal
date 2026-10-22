@@ -356,9 +356,8 @@ const triggerCdTerminal = () => {
               <i class="fas fa-copy text-xs text-text-secondary/40"></i>
             </button>
 
-            <!-- 9. 添加到收藏路径 (仅文件夹) -->
+            <!-- 9. 添加到收藏路径（文件收藏点击时直接打开，目录则跳转） -->
             <button
-              v-if="isDirectory"
               type="button"
               @click="triggerAction('add-to-favorites')"
               class="w-full h-11 px-3.5 rounded-xl flex items-center justify-between text-foreground hover:bg-header/50 active:bg-header/80 active:scale-[0.99] transition-all cursor-pointer"

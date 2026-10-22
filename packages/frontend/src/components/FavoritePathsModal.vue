@@ -27,7 +27,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['close', 'navigateToPath']);
+const emit = defineEmits(['close', 'navigateToPath', 'openFavoriteFile']);
 
 const { t } = useI18n();
 const favoritePathsStore = useFavoritePathsStore();
@@ -122,13 +122,26 @@ const closeModal = () => {
   emit('close');
 };
 
+// 移动端把「点开一个文件收藏」透传回桌面端的父组件（模板里写内联对象类型注解 vue-tsc 会报语法错）
+const forwardOpenFavoriteFile = (payload: { path: string; name?: string }) => {
+  emit('openFavoriteFile', payload);
+};
+
+/** is_file 后端存的是 0/1，兼容一下布尔与字符串 */
+const isFileFavorite = (item: FavoritePathItem): boolean => Number(item.is_file) === 1;
+
 const handleItemClick = async (pathItem: FavoritePathItem) => {
   try {
     await favoritePathsStore.markPathAsUsed(pathItem.id, t);
   } catch (error) {
     console.error('Failed to mark path as used:', error);
   }
-  emit('navigateToPath', pathItem.path);
+  // 收藏的是文件 → 直接打开；是目录 → 照旧跳转
+  if (isFileFavorite(pathItem)) {
+    emit('openFavoriteFile', { path: pathItem.path, name: pathItem.name });
+  } else {
+    emit('navigateToPath', pathItem.path);
+  }
   closeModal();
 };
 
@@ -265,6 +278,7 @@ onBeforeUnmount(() => {
     :current-path="props.currentPath"
     @close="closeModal"
     @navigate-to-path="(p: string) => emit('navigateToPath', p)"
+    @open-favorite-file="forwardOpenFavoriteFile"
   />
 
   <!-- 桌面端常规绝对定位下拉浮层 (通过 Teleport 挂载到 body，避免被局部容器包含块或尺寸挤压干扰) -->
@@ -326,7 +340,9 @@ onBeforeUnmount(() => {
           @mouseenter="selectedIndex = idx"
         >
           <div class="truncate flex-grow mr-2">
-            <span v-if="favPath.name" class="font-medium block truncate text-foreground">{{ favPath.name }}</span>
+            <span v-if="favPath.name" class="font-medium block truncate text-foreground">
+              <i v-if="isFileFavorite(favPath)" class="fas fa-file text-[10px] mr-1 text-text-secondary"></i>{{ favPath.name }}
+            </span>
             <span class="text-xs text-text-secondary block truncate font-normal">{{ favPath.path }}</span>
           </div>
           <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">

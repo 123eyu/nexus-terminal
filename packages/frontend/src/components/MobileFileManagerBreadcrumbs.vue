@@ -18,6 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'navigate-to-path', path: string): void;
   (e: 'open-file', fileItem: FileListItem, fullPath?: string): void;
+  (e: 'open-favorite-file', payload: { path: string; name?: string }): void;
   (e: 'refresh'): void;
 }>();
 
@@ -324,6 +325,7 @@ defineExpose({
           :current-path="props.currentPath"
           @close="showFavoritePathsModal = false"
           @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"
+          @open-favorite-file="(fav) => { emit('open-favorite-file', fav); showFavoritePathsModal = false; }"
         />
       </div>
 

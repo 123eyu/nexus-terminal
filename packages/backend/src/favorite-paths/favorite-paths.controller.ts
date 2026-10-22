@@ -6,7 +6,7 @@ import { FavoritePathSortBy } from '../favorite-paths/favorite-paths.service';
  * 处理添加新收藏路径的请求
  */
 export const createFavoritePath = async (req: Request, res: Response): Promise<void> => {
-    const { name, path } = req.body;
+    const { name, path, is_file } = req.body;
 
     if (!path || typeof path !== 'string' || path.trim().length === 0) {
         res.status(400).json({ message: '路径内容不能为空' });
@@ -29,8 +29,10 @@ export const createFavoritePath = async (req: Request, res: Response): Promise<v
         finalName = segments.length > 0 ? segments[segments.length - 1] : 'root';
     }
 
+    const isFile = is_file === true || is_file === 1 || is_file === '1';
+
     try {
-        const newId = await FavoritePathsService.addFavoritePath(finalName, path);
+        const newId = await FavoritePathsService.addFavoritePath(finalName, path, isFile);
         const newFavoritePath = await FavoritePathsService.getFavoritePathById(newId);
         if (newFavoritePath) {
             res.status(201).json({ message: '收藏路径已添加', favoritePath: newFavoritePath });
@@ -91,7 +93,7 @@ export const getFavoritePathById = async (req: Request, res: Response): Promise<
  */
 export const updateFavoritePath = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
-    const { name, path } = req.body;
+    const { name, path, is_file } = req.body;
 
     if (isNaN(id)) {
         res.status(400).json({ message: '无效的 ID' });
@@ -118,8 +120,18 @@ export const updateFavoritePath = async (req: Request, res: Response): Promise<v
         finalName = segments.length > 0 ? segments[segments.length - 1] : 'root';
     }
 
+    // 未显式传 is_file 时保留原值（老版本前端 / 云同步来的请求不带这个字段，
+    // 一律当成目录会把文件收藏悄悄改坏）
     try {
-        const success = await FavoritePathsService.updateFavoritePath(id, finalName, path);
+        let isFile: boolean;
+        if (is_file === undefined) {
+            const existing = await FavoritePathsService.getFavoritePathById(id);
+            isFile = Number(existing?.is_file) === 1;
+        } else {
+            isFile = is_file === true || is_file === 1 || is_file === '1';
+        }
+
+        const success = await FavoritePathsService.updateFavoritePath(id, finalName, path, isFile);
         if (success) {
             const updatedFavoritePath = await FavoritePathsService.getFavoritePathById(id);
             if (updatedFavoritePath) {

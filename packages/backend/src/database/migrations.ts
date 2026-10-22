@@ -749,6 +749,20 @@ const definedMigrations: Migration[] = [
             });
             console.log('[Migrations] Migration 20: connections 表 file_protocol 字段迁移完成 (默认 auto)。');
         }
+    },
+    {
+        id: 21,
+        name: 'Add is_file column to favorite_paths table',
+        check: async (db: Database): Promise<boolean> => {
+            const exists = await columnExists(db, 'favorite_paths', 'is_file');
+            return !exists;
+        },
+        sql: `
+            ALTER TABLE favorite_paths ADD COLUMN is_file INTEGER NOT NULL DEFAULT 0;
+        `,
+        execute: async (db: Database): Promise<void> => {
+            console.log('[Migrations] Migration 21: favorite_paths 表 is_file 字段迁移完成 (默认 0=目录)。');
+        }
     }
 ];
 

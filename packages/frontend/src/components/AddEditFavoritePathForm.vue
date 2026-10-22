@@ -59,8 +59,8 @@ const {
     @save-success="emit('saveSuccess')"
   />
 
-  <!-- 桌面端常规居中弹窗 -->
-  <div v-else-if="isVisible" class="fixed inset-0 z-[70]">
+  <!-- 桌面端常规居中弹窗（z 要高于收藏夹浮层的 z-[1001]，否则浮层会盖住「保存」按钮吞掉点击） -->
+  <div v-else-if="isVisible" class="fixed inset-0 z-[1100]">
     <div 
       class="fixed inset-0 flex items-center justify-center bg-[var(--overlay-bg-color)]"
       @click.self="closeModal"
