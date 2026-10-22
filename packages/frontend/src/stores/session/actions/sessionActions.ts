@@ -462,6 +462,11 @@ export const disconnectSession = (sessionId: string): boolean => {
  *
  * 复用同一个 sessionId / wsManager 实例（后端按 sessionId 续上新连接），
  * 所以终端历史、分屏布局都不用重建，连上后 useSshTerminal 会打一条重连分割线。
+ *
+ * ⚠️ 必须传 `fresh: true`：后端在 ws 关闭时就 cleanup 掉这个 sessionId 的会话了，
+ * 只有重发 `ssh:connect` 才会重新建 SSH 通道。刷新页面恢复出来的会话是「恢复流程」
+ * manager（默认不发 ssh:connect），不强制 fresh 的话 ws 会「假装连上」，
+ * 而终端的 ssh:input 全被后端丢掉 —— 就是「重连后输入没反应」那个 bug。
  * @returns 是否发起了连接（已连接 / 非 SSH 会话返回 false）
  */
 export const reconnectSession = (sessionId: string): boolean => {
@@ -472,8 +477,8 @@ export const reconnectSession = (sessionId: string): boolean => {
     console.log(`[SessionActions] 会话 ${sessionId} 当前状态 ${status}，无需重连`);
     return false;
   }
-  session.wsManager.connect(buildSessionWsUrl());
-  console.log(`[SessionActions] 已发起会话 ${sessionId} 的重连`);
+  session.wsManager.connect(buildSessionWsUrl(), { fresh: true });
+  console.log(`[SessionActions] 已发起会话 ${sessionId} 的重连（fresh 模式，重发 ssh:connect）`);
   return true;
 };
 

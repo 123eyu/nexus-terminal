@@ -27,7 +27,17 @@ export function createWebSocketConnectionManager(
     // --- Instance State ---
     // 每个实例拥有独立的 WebSocket 对象、状态和消息处理器
     const ws = shallowRef<WebSocket | null>(null); // WebSocket 实例
-    const isResumeFlow = options?.isResumeFlow ?? false; // 获取恢复流程标志
+    /**
+     * 「下次连接是不是恢复流程」——**一次性**的。
+     *
+     * 恢复流程（刷新网页后从快照恢复）不自己发 `ssh:connect`，而是由
+     * `resumeSshSession()` 在 ws 打开后发 `SSH_SUSPEND_RESUME_REQUEST`。
+     * 但刷新之后这个 manager 实例会一直活着：用户右键「断开 → 重新连接」时如果还以为
+     * 自己是恢复流程，就什么请求都不发 —— 后端在 ws 关闭时已经 cleanup 了会话，
+     * 于是终端的 `ssh:input` 全被丢掉，表现就是「重连后输入没有任何反应」。
+     * 所以它只对**本次**连接有效，用过就清掉；手动重连还会显式要求 fresh（见 reconnectSession）。
+     */
+    let resumeFlowPending = options?.isResumeFlow ?? false;
     const connectionStatus = ref<WsConnectionStatus>('disconnected'); // 连接状态 (使用导出的类型)
     const statusMessage = ref<string>(''); // 状态描述文本
     const isSftpReady = ref<boolean>(false); // SFTP 是否就绪
@@ -115,9 +125,14 @@ export function createWebSocketConnectionManager(
     /**
      * 建立 WebSocket 连接
      * @param {string} url - WebSocket 服务器 URL
+     * @param {{ fresh?: boolean }} [connectOptions] - `fresh: true` 强制当作一次全新 SSH 连接
+     *   （用户手动「重新连接」必须这样：后端在 ws 关闭时已经清掉了会话，必须重发 ssh:connect）
      */
-    const connect = (url: string) => {
+    const connect = (url: string, connectOptions?: { fresh?: boolean }) => {
         lastUrl = url; // 保存 URL 以便重连
+        if (connectOptions?.fresh) resumeFlowPending = false;
+        // 本次连接是否仍走「恢复流程」分支（不发 ssh:connect）
+        const asResumeFlow = resumeFlowPending;
         intentionalDisconnect = false; // 重置主动断开标记
         if (reconnectTimeoutId) {
             clearTimeout(reconnectTimeoutId); // 清除可能存在的重连定时器
@@ -191,7 +206,7 @@ export function createWebSocketConnectionManager(
                     // ignore
                 }
                 // 状态保持 'connecting' 直到收到 ssh:connected
-                if (!isResumeFlow) {
+                if (!asResumeFlow) {
                     // 对于普通连接，发送 ssh:connect 并等待 ssh:connected 来更新状态
                     sendMessage({
                         type: 'ssh:connect',
@@ -204,6 +219,8 @@ export function createWebSocketConnectionManager(
                     // 对于恢复流程，WebSocket 打开即表示连接基础已建立
                     // 后续的 SSH_SUSPEND_RESUME_REQUEST 会完成会话的恢复
                     connectionStatus.value = 'connected';
+                    // 恢复流程只对这一次连接有效，清掉标记：之后（含手动重连）一律按新的 ssh:connect 走
+                    resumeFlowPending = false;
                 }
                 dispatchMessage('internal:opened', {}, { type: 'internal:opened' }); // 触发内部打开事件
             };
