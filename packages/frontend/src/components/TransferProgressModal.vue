@@ -407,7 +407,6 @@ const handleCancelTask = async (taskId: string) => {
           <div v-else-if="displayedTasks.length === 0" class="tp-state">
             <div class="tp-state__icon"><i class="fas fa-exchange-alt"></i></div>
             <p class="tp-state__title">{{ t('transferProgressModal.noTasks', '当前没有活动的传输任务') }}</p>
-            <p class="tp-state__text">{{ t('transferProgressModal.noTasksTip', '在文件管理器中发送或下载文件时会在此显示进度') }}</p>
           </div>
 
           <template v-else>

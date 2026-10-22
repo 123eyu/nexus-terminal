@@ -1941,7 +1941,6 @@
       "cancelFailed": "Failed to cancel task."
     },
     "noTasks": "There are no active transfer tasks currently.",
-    "noTasksTip": "Progress shows up here when you send or download files from the file manager.",
     "task": {
       "idLabel": "Task",
       "createdAt": "Created at",
@@ -1987,7 +1986,6 @@
     "searchConnectionsPlaceholder": "Search connections...",
     "targetPathLabel": "Target Path",
     "targetPathPlaceholder": "targetPath",
-    "targetPathHint": "The selected folder is placed under this path with its own name, e.g. /root/docker → /root/docker/test",
     "transferMethodLabel": "Transfer Method",
     "transferMethodAuto": "Auto",
     "loadingConnections": "Loading connections...",

@@ -8,6 +8,7 @@ import type { ConnectionWithTags, DecryptedConnectionCredentials } from '../type
 // 命令拼装抽成纯函数（rsync 源路径的尾斜杠会改变语义，见 transfer-command.ts 注释）
 import { buildTransferCommandString, escapeShellArg } from './transfer-command';
 import { serializeTransferTask } from './transfers.serialize';
+import { RSYNC_PROBE_SCRIPT, parseRsyncProbe, buildRsyncInstallCommands } from './rsync-installer';
 
 
 export class TransfersService {
@@ -372,6 +373,134 @@ export class TransfersService {
     });
   }
 
+  // --- rsync 自动安装 -------------------------------------------------------
+  // 每台主机只尝试一次；并发子任务共享同一个 Promise，避免 5 个子任务同时 apt install
+  private rsyncInstallAttempts: Map<string, Promise<boolean>> = new Map();
+
+  /** 在已连接的 client 上跑一条命令，带超时（安装命令可能很久，绝不能无限等） */
+  private execCommandOnClient(
+    client: Client,
+    command: string,
+    timeoutMs = 30000
+  ): Promise<{ code: number | null; stdout: string; stderr: string; timedOut: boolean }> {
+    return new Promise((resolve) => {
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      let timer: NodeJS.Timeout | null = null;
+
+      const settle = (code: number | null, timedOut = false) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve({ code, stdout, stderr, timedOut });
+      };
+
+      client.exec(command, (err, stream) => {
+        if (err) return settle(null);
+        timer = setTimeout(() => {
+          try { stream.close(); } catch { /* stream 可能已关闭 */ }
+          settle(null, true);
+        }, timeoutMs);
+        stream
+          .on('data', (data: Buffer) => { stdout += data.toString(); })
+          .on('close', (code: number | null) => settle(code));
+        stream.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
+      });
+    });
+  }
+
+  /**
+   * 探测包管理器 + 提权能力，然后尝试装 rsync。
+   * 只要有一环不满足就安静放弃（不弹密码、不挂死），交给调用方回退。
+   */
+  private async installRsyncViaClient(client: Client, hostLabel: string): Promise<boolean> {
+    const probe = await this.execCommandOnClient(client, RSYNC_PROBE_SCRIPT, 15000);
+    const info = parseRsyncProbe(probe.stdout);
+    const commands = buildRsyncInstallCommands(info);
+
+    if (commands.length === 0) {
+      console.info(
+        `[TransfersService] ${hostLabel}: rsync 缺失，但没有可用的包管理器或没有免密提权，跳过自动安装 ` +
+        `(pm=${info.packageManager || 'none'}, root=${info.isRoot}, passwordlessSudo=${info.hasPasswordlessSudo})`
+      );
+      return false;
+    }
+
+    for (const command of commands) {
+      console.info(`[TransfersService] ${hostLabel}: 尝试自动安装 rsync → ${command}`);
+      const result = await this.execCommandOnClient(client, command, 180000);
+      if (result.timedOut) {
+        console.warn(`[TransfersService] ${hostLabel}: 自动安装 rsync 超时（180s），放弃该命令`);
+        continue;
+      }
+      if (result.code !== 0) {
+        console.warn(`[TransfersService] ${hostLabel}: 自动安装 rsync 失败 (code=${result.code}): ${(result.stderr || '').trim().slice(-300)}`);
+        continue;
+      }
+      const check = await this.execCommandOnClient(client, 'command -v rsync', 10000);
+      if (check.code === 0 && check.stdout.trim()) {
+        console.info(`[TransfersService] ${hostLabel}: 已自动安装 rsync (${check.stdout.trim()})`);
+        return true;
+      }
+      console.warn(`[TransfersService] ${hostLabel}: 安装命令返回 0，但 rsync 仍然找不到`);
+    }
+    return false;
+  }
+
+  private ensureRsyncOnce(key: string, run: () => Promise<boolean>): Promise<boolean> {
+    const existing = this.rsyncInstallAttempts.get(key);
+    if (existing) return existing;
+    const attempt = run().catch((error: any) => {
+      console.warn(`[TransfersService] 自动安装 rsync 出错 (${key}):`, error?.message || error);
+      return false;
+    });
+    this.rsyncInstallAttempts.set(key, attempt);
+    return attempt;
+  }
+
+  private static hostKey(prefix: string, connection: ConnectionWithTags): string {
+    return `${prefix}:${connection.username}@${connection.host}:${connection.port || 22}`;
+  }
+
+  /** 源机复用当前已连的 client（不需要重连） */
+  private async ensureRsyncOnSource(client: Client, sourceConnection: ConnectionWithTags): Promise<string | null> {
+    const installed = await this.ensureRsyncOnce(
+      TransfersService.hostKey('source', sourceConnection),
+      () => this.installRsyncViaClient(client, `source ${sourceConnection.host}`)
+    );
+    if (!installed) return null;
+    return this.checkCommandOnSource(client, 'rsync');
+  }
+
+  private async ensureRsyncOnTargetServer(
+    targetConnection: ConnectionWithTags,
+    targetCredentials: DecryptedConnectionCredentials
+  ): Promise<string | null> {
+    const installed = await this.ensureRsyncOnce(
+      TransfersService.hostKey('target', targetConnection),
+      async () => {
+        const client = new Client();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            client
+              .on('ready', () => resolve())
+              .on('error', (err) => reject(err))
+              .connect(this.buildSshConnectConfig(targetConnection, targetCredentials));
+          });
+          return await this.installRsyncViaClient(client, `target ${targetConnection.host}`);
+        } catch (error: any) {
+          console.warn(`[TransfersService] target ${targetConnection.host}: 连接失败，无法自动安装 rsync:`, error?.message || error);
+          return false;
+        } finally {
+          try { client.end(); } catch { /* 已断开 */ }
+        }
+      }
+    );
+    if (!installed) return null;
+    return this.checkCommandOnTargetServer(targetConnection, targetCredentials, 'rsync');
+  }
+
   private async checkCommandOnTargetServer(targetConnection: ConnectionWithTags, targetCredentials: DecryptedConnectionCredentials, command: string): Promise<string | null> {
     const targetClient = new Client();
     const connectConfig = this.buildSshConnectConfig(targetConnection, targetCredentials);
@@ -511,39 +640,47 @@ private async executeRemoteTransferOnSource(
       // Pass signal to these check commands if they are made to support it. For now, they are quick.
       const sshpassPath = await this.checkCommandOnSource(sourceSshClient, 'sshpass' /*, signal */);
       if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
-      const rsyncPathOnSource = await this.checkCommandOnSource(sourceSshClient, 'rsync' /*, signal */);
-      if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
       const scpPathOnSource = await this.checkCommandOnSource(sourceSshClient, 'scp' /*, signal */);
       if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
-
 
       let executableCommandPath: string | null = null;
       let commandTypeForLogic: 'rsync' | 'scp' | undefined = undefined; // Initialize as undefined
       let rsyncPathOnTarget: string | null = null;
 
-      if (transferMethodPreference === 'auto') {
-        if (rsyncPathOnSource) {
-          // Source has rsync, check target
-          rsyncPathOnTarget = await this.checkCommandOnTargetServer(targetConnection, targetCredentials, 'rsync' /*, signal */);
-          if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
-          if (rsyncPathOnTarget) {
-            executableCommandPath = rsyncPathOnSource;
-            commandTypeForLogic = 'rsync';
-          }
-        }
-        if (!commandTypeForLogic) { // If rsync not chosen, try SCP
-          if (scpPathOnSource) {
-            executableCommandPath = scpPathOnSource;
-            commandTypeForLogic = 'scp';
-          } else {
-            throw new Error(`Neither Rsync nor SCP are available on source for ${sourceItem.name} (auto mode).`);
-          }
-        }
-      } else if (transferMethodPreference === 'rsync') {
-        if (!rsyncPathOnSource) throw new Error(`Rsync preferred but not available on source for ${sourceItem.name}.`);
+      let rsyncPathOnSource = await this.checkCommandOnSource(sourceSshClient, 'rsync' /*, signal */);
+      if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
+
+      // rsync 缺失 → 先尝试自动安装一次（用户不必自己登上机器 apt install）
+      if (!rsyncPathOnSource && transferMethodPreference !== 'scp') {
+        this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 2, `rsync not found on source (${sourceConnectionForInfo.host}), trying to install it automatically...`);
+        rsyncPathOnSource = await this.ensureRsyncOnSource(sourceSshClient, sourceConnectionForInfo);
+        if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
+      }
+
+      if (rsyncPathOnSource && transferMethodPreference !== 'scp') {
         rsyncPathOnTarget = await this.checkCommandOnTargetServer(targetConnection, targetCredentials, 'rsync' /*, signal */);
         if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
-        if (!rsyncPathOnTarget) throw new Error(`Rsync preferred, but not available on target for ${sourceItem.name}.`);
+        if (!rsyncPathOnTarget) {
+          this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 3, `rsync not found on target (${targetConnection.host}), trying to install it automatically...`);
+          rsyncPathOnTarget = await this.ensureRsyncOnTargetServer(targetConnection, targetCredentials);
+          if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
+        }
+      }
+
+      if (transferMethodPreference === 'auto') {
+        if (rsyncPathOnSource && rsyncPathOnTarget) {
+          executableCommandPath = rsyncPathOnSource;
+          commandTypeForLogic = 'rsync';
+        } else if (scpPathOnSource) {
+          // rsync 装不上（没有包管理器/没有免密提权/安装失败）就退回 scp，别让传输直接失败
+          executableCommandPath = scpPathOnSource;
+          commandTypeForLogic = 'scp';
+        } else if (!rsyncPathOnSource || !rsyncPathOnTarget) {
+          throw new Error(`Neither Rsync nor SCP are available on source for ${sourceItem.name} (auto mode).`);
+        }
+      } else if (transferMethodPreference === 'rsync') {
+        if (!rsyncPathOnSource) throw new Error(`Rsync preferred but not available on source for ${sourceItem.name}, and automatic installation did not succeed.`);
+        if (!rsyncPathOnTarget) throw new Error(`Rsync preferred, but not available on target for ${sourceItem.name}, and automatic installation did not succeed.`);
         executableCommandPath = rsyncPathOnSource;
         commandTypeForLogic = 'rsync';
       } else if (transferMethodPreference === 'scp') {
