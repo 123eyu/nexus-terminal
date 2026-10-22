@@ -141,13 +141,16 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
 
     <!-- 折叠内容区 -->
     <div v-show="isExpanded" class="px-4 pb-4 pt-1 space-y-4 border-t border-border/40">
-      <!-- 1. SSH 连接方式 (仅 SSH 支持代理/跳板机) -->
-      <div v-if="props.formData.type === 'SSH'" class="space-y-3">
+      <!-- 1. 网络穿透方式（网络代理 SSH/RDP/VNC 都支持；跳板机链只支持 SSH） -->
+      <div v-if="props.formData.type === 'SSH' || props.advancedConnectionMode === 'proxy'" class="space-y-3">
         <div class="space-y-1.5">
           <label class="block text-xs font-medium text-text-secondary">
             {{ t('connections.form.connectionMode', '网络连接路由方式') }}
           </label>
-          <div class="grid grid-cols-2 gap-1.5 p-1 bg-muted/40 border border-border/60 rounded-xl">
+          <div
+            class="grid gap-1.5 p-1 bg-muted/40 border border-border/60 rounded-xl"
+            :class="props.formData.type === 'SSH' ? 'grid-cols-2' : 'grid-cols-1'"
+          >
             <button
               type="button"
               @click="setConnectionMode('proxy')"
@@ -161,6 +164,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             </button>
 
             <button
+              v-if="props.formData.type === 'SSH'"
               type="button"
               @click="setConnectionMode('jump')"
               class="h-8.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer min-w-0 px-1.5"

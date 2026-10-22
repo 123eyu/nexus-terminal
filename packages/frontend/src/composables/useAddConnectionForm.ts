@@ -191,18 +191,20 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           formData.auth_method = 'password';
           formData.selected_ssh_key_id = null;
       }
+      // 跳板机链只有 SSH 支持（RDP/VNC 不支持在跳板机上开 direct-tcpip 通道），
+      // 切到非 SSH 类型时把模式拨回「网络代理」，否则会卡在 jump 上、代理选项永远不出现
+      if (newType !== 'SSH' && advancedConnectionMode.value === 'jump') {
+          advancedConnectionMode.value = 'proxy';
+      }
   });
 
   
   watch([() => formData.type, advancedConnectionMode], ([newType, newAdvMode], [oldType, oldAdvMode]) => {
-    if (newType === 'SSH') {
-      if (newAdvMode === 'proxy') {
-        formData.proxy_type = 'proxy';
-      } else if (newAdvMode === 'jump') {
-        formData.proxy_type = 'jump';
-      } else {
-        formData.proxy_type = null;
-      }
+    if (newAdvMode === 'proxy') {
+      // 网络代理 SSH / RDP / VNC 都支持：远程桌面在服务端建立 TCP 时套 SOCKS5 / HTTP CONNECT
+      formData.proxy_type = 'proxy';
+    } else if (newType === 'SSH' && newAdvMode === 'jump') {
+      formData.proxy_type = 'jump';
     } else {
       formData.proxy_type = null;
     }

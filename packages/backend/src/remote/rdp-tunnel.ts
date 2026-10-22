@@ -9,9 +9,10 @@ import {
   ERR_GENERAL,
   ERR_NEGOTIATION,
 } from './rdcleanpath';
+import { connectRemoteTcp } from './proxy-connect';
 import type { RemoteSessionTicket } from './remote-session.store';
 
-const CONNECT_TIMEOUT_MS = 10_000;
+const CONNECT_TIMEOUT_MS = 12_000;
 const X224_TIMEOUT_MS = 10_000;
 const TLS_TIMEOUT_MS = 12_000;
 
@@ -50,25 +51,6 @@ function readTpktFrame(socket: net.Socket, timeoutMs: number): Promise<Buffer> {
     socket.on('data', onData);
     socket.on('error', onError);
     socket.on('close', onClose);
-  });
-}
-
-function connectTcp(host: string, port: number, timeoutMs = CONNECT_TIMEOUT_MS): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect({ host, port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`连接 ${host}:${port} 超时`));
-    }, timeoutMs);
-    socket.once('connect', () => {
-      clearTimeout(timer);
-      socket.setNoDelay(true);
-      resolve(socket);
-    });
-    socket.once('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
   });
 }
 
@@ -224,10 +206,20 @@ export function handleRdpTunnel(ws: WebSocket, ticket: RemoteSessionTicket): voi
       return;
     }
 
+    if (ticket.proxy) {
+      console.log(
+        `[RemoteRDP] ${ticket.host}:${ticket.port} 经 ${ticket.proxy.type} 代理 ${ticket.proxy.host}:${ticket.proxy.port} 建立 TCP`
+      );
+    }
+
     try {
-      socket = await connectTcp(ticket.host, ticket.port);
+      socket = await connectRemoteTcp(ticket.host, ticket.port, {
+        proxy: ticket.proxy,
+        timeoutMs: CONNECT_TIMEOUT_MS,
+      });
     } catch (err: any) {
-      fail(`连接 ${ticket.host}:${ticket.port} 失败: ${err.message}`, ERR_GENERAL, err.errno === -111 ? 10061 : undefined);
+      const via = ticket.proxy ? `（经 ${ticket.proxy.type} 代理 ${ticket.proxy.host}:${ticket.proxy.port}）` : '';
+      fail(`连接 ${ticket.host}:${ticket.port}${via} 失败: ${err.message}`, ERR_GENERAL, err.errno === -111 ? 10061 : undefined);
       return;
     }
 

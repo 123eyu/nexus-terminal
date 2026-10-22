@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { RemoteProxyConfig } from './proxy-connect';
 
 /**
  * 一次性连接票据。
@@ -16,6 +17,8 @@ export interface RemoteSessionTicket {
   password?: string;
   /** RDP 可选域；留空时客户端把 username 原样发（支持 DOMAIN\\user 或 user@domain） */
   domain?: string;
+  /** 连接记录绑定的 SOCKS5 / HTTP 代理；为空表示直连。凭据已解密，票存在服务端内存里 */
+  proxy?: RemoteProxyConfig | null;
   /** 连接记录 id，仅用于日志 */
   connectionId: number;
   createdAt: number;

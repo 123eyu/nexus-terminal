@@ -110,11 +110,12 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       <div v-if="props.tagStoreError" class="mt-1 text-xs text-error">{{ props.tagStoreError }}</div>
     </div>
     
-    <!-- 连接方式切换 (仅 SSH 支持) -->
-    <div v-if="props.formData.type === 'SSH'">
+    <!-- 连接方式切换（网络代理 SSH/RDP/VNC 都支持；跳板机链只支持 SSH） -->
+    <div>
       <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionMode', '网络穿透方式') }}</label>
       <div
-        class="grid grid-cols-2 gap-1.5 p-1 rounded-xl border border-border/70 bg-input"
+        class="grid gap-1.5 p-1 rounded-xl border border-border/70 bg-input"
+        :class="props.formData.type === 'SSH' ? 'grid-cols-2' : 'grid-cols-1'"
       >
         <button
           type="button"
@@ -126,6 +127,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           <span>{{ t('connections.form.connectionModeProxy', '网络代理') }}</span>
         </button>
         <button
+          v-if="props.formData.type === 'SSH'"
           type="button"
           @click="setConnectionMode('jump')"
           class="px-3 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
@@ -174,8 +176,8 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
       </div>
     </div>
 
-    <!-- 代理选择 -->
-    <div v-if="props.formData.type === 'SSH' && props.advancedConnectionMode === 'proxy'">
+    <!-- 代理选择（SSH / RDP / VNC 都支持 SOCKS5 与 HTTP CONNECT） -->
+    <div v-if="props.advancedConnectionMode === 'proxy'">
       <label for="conn-proxy" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.proxy') }}</label>
       <select
         id="conn-proxy"
