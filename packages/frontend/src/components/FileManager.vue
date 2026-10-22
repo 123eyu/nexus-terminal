@@ -198,6 +198,20 @@ const {
 
 // --- 统一组件实例标识 (跨会话联动核心，避免跟随单独会话隔离) ---
 const effectiveInstanceId = computed(() => props.instanceId || 'default');
+
+/**
+ * 专门用于「记住状态」的实例键（localStorage / componentStateStore 用）。
+ *
+ * 移动端和桌面弹窗里的文件管理器，instanceId 是 `fm-modal-<sessionId>`，而**会话 ID 每次刷新
+ * 网页都会重新生成**（云端恢复走 `openNewSession(connId)` 不给 existingSessionId）——键跟着变，
+ * 存下来的东西下次必然读不到，表现就是「路径同步每次刷新都回到关闭」「视图模式也复位」。
+ * 所以这类实例统一折叠成一个稳定键；布局里的面板（`pane#0`、`sidebar-left`…）本来就稳定，各记各的。
+ *
+ * ⚠️ 只用于存储与记忆；事件广播仍然用 `effectiveInstanceId`，那是用来区分不同会话实例的。
+ */
+const instanceStorageId = computed(() =>
+  effectiveInstanceId.value.startsWith('fm-modal-') ? 'fm-modal' : effectiveInstanceId.value
+);
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
 
 // --- 纯目录树导航窗格状态 (按组件实例统一存储与跨会话联动) ---
@@ -218,8 +232,8 @@ const getInitialDirectoryTreeWidth = (instId: string): number => {
   return parseInt(localStorage.getItem(LS_DIRECTORY_TREE_WIDTH_KEY) || '220', 10) || 220;
 };
 
-const showDirectoryTree = ref<boolean>(getInitialDirectoryTreeVisible(effectiveInstanceId.value));
-const directoryTreeWidth = ref<number>(getInitialDirectoryTreeWidth(effectiveInstanceId.value));
+const showDirectoryTree = ref<boolean>(getInitialDirectoryTreeVisible(instanceStorageId.value));
+const directoryTreeWidth = ref<number>(getInitialDirectoryTreeWidth(instanceStorageId.value));
 
 const isResizingTree = ref(false);
 
@@ -227,7 +241,7 @@ const toggleDirectoryTree = () => {
   const nextVal = !showDirectoryTree.value;
   showDirectoryTree.value = nextVal;
   if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(`${LS_SHOW_DIRECTORY_TREE_KEY}:${effectiveInstanceId.value}`, String(nextVal));
+    localStorage.setItem(`${LS_SHOW_DIRECTORY_TREE_KEY}:${instanceStorageId.value}`, String(nextVal));
     localStorage.setItem(LS_SHOW_DIRECTORY_TREE_KEY, String(nextVal));
   }
   emitWorkspaceEvent('fileManager:setDirectoryTreeVisible', {
@@ -244,7 +258,7 @@ const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? '
 const componentStateStore = useComponentStateStore();
 const layoutStore = useLayoutStore();
 
-const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${effectiveInstanceId.value}`);
+const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${instanceStorageId.value}`);
 
 const viewMode = ref<'list' | 'tile'>(
   componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, 'list')
@@ -269,7 +283,8 @@ const toggleViewMode = () => {
 };
 
 // --- 文件管理器与终端路径同步状态 (跟随当前组件实例隔离 + 持久化记忆) ---
-const syncModeStorageKey = computed(() => `fm_terminal_sync_mode:${effectiveInstanceId.value}`);
+// 用 instanceStorageId 而不是 effectiveInstanceId：见上面的说明，弹窗/移动端那份会话 ID 每次刷新都变
+const syncModeStorageKey = computed(() => `fm_terminal_sync_mode:${instanceStorageId.value}`);
 
 const terminalSyncMode = ref<TerminalSyncMode>(
   componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, 'off')
@@ -709,7 +724,8 @@ const {
   dragMouseY,
   handleHeaderPointerDown,
 } = useFileManagerColumnReorder({
-  instanceId: props.instanceId,
+  // 同上：列顺序也要跨刷新记住，弹窗那份会话 ID 每次都变，只能用稳定键
+  instanceId: instanceStorageId.value,
   componentStateStore,
   isResizing,
   onSort: (key) => handleSort(key),
@@ -1355,11 +1371,11 @@ watch(
       if (viewMode.value !== latestViewMode) {
         viewMode.value = latestViewMode;
       }
-      const latestShowTree = getInitialDirectoryTreeVisible(effectiveInstanceId.value);
+      const latestShowTree = getInitialDirectoryTreeVisible(instanceStorageId.value);
       if (showDirectoryTree.value !== latestShowTree) {
         showDirectoryTree.value = latestShowTree;
       }
-      const latestTreeWidth = getInitialDirectoryTreeWidth(effectiveInstanceId.value);
+      const latestTreeWidth = getInitialDirectoryTreeWidth(instanceStorageId.value);
       if (directoryTreeWidth.value !== latestTreeWidth) {
         directoryTreeWidth.value = latestTreeWidth;
       }
