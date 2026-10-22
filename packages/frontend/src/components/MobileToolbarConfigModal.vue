@@ -307,8 +307,10 @@ const handleClose = () => {
                   @mouseup="clearTimer"
                   class="relative flex flex-col items-center justify-center p-3 rounded-xl border shadow-xs transition-colors select-none group"
                   :class="[
+                    // ⚠️ 拖拽态只能用 1px 的 border（换颜色/虚线），不能改成 border-2：
+                    // 边框变粗会让这张卡长高 2px，整行跟着变高，下面的卡片全部往下跳一下
                     isDragging && draggedItem?.id === item.id
-                      ? 'border-2 border-dashed border-primary/60 bg-primary/10 opacity-30 shadow-inner'
+                      ? 'border border-dashed border-primary/60 bg-primary/10 opacity-30 shadow-inner'
                       : 'bg-background border-border/70 hover:border-primary/50 cursor-grab active:cursor-grabbing'
                   ]"
                 >
@@ -419,27 +421,33 @@ const handleClose = () => {
             <div class="sheet-safe-bottom"></div>
           </div>
 
-        <!-- ==================== 仿手机桌面悬浮跟随卡片镜像 (Floating Ghost) ==================== -->
-        <div
-          v-if="isDragging && draggedItem"
-          class="fixed pointer-events-none z-[9999] rounded-xl bg-background border-2 border-primary shadow-2xl flex flex-col items-center justify-center p-3 select-none will-change-transform"
-          :style="{
-            left: `${floatPos.x}px`,
-            top: `${floatPos.y}px`,
-            width: `${floatSize.width}px`,
-            height: `${floatSize.height}px`,
-            transform: 'scale(1.12) rotate(2deg)',
-            transition: 'transform 0.12s cubic-bezier(0.2, 0, 0, 1)',
-          }"
-        >
-          <div class="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-            <i :class="draggedItem.icon" class="text-base"></i>
+        <!-- ==================== 仿手机桌面悬浮跟随卡片镜像 (Floating Ghost) ====================
+             必须 Teleport 到 body：
+             抽屉面板 `.bottom-sheet-panel` 上有 `will-change: transform`，它会给 position:fixed 的
+             后代造一个"包含块"，卡片就变成相对面板定位了 —— 手指按在卡片上，镜像却往下偏一整个面板
+             顶部的高度（约 120px，看着就像"长按后卡片往下跳了一行"）。挂到 body 才是相对视口定位。 -->
+        <Teleport to="body">
+          <div
+            v-if="isDragging && draggedItem"
+            class="fixed pointer-events-none z-[9999] rounded-xl bg-background border-2 border-primary shadow-2xl flex flex-col items-center justify-center p-3 select-none will-change-transform"
+            :style="{
+              left: `${floatPos.x}px`,
+              top: `${floatPos.y}px`,
+              width: `${floatSize.width}px`,
+              height: `${floatSize.height}px`,
+              transform: 'scale(1.12) rotate(2deg)',
+              transition: 'transform 0.12s cubic-bezier(0.2, 0, 0, 1)',
+            }"
+          >
+            <div class="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+              <i :class="draggedItem.icon" class="text-base"></i>
+            </div>
+            <span class="text-xs font-semibold text-foreground tracking-tight truncate w-full text-center px-1 mt-1">
+              {{ draggedItem.name }}
+            </span>
+            <div class="w-5 h-1 bg-primary/40 rounded-full mt-1"></div>
           </div>
-          <span class="text-xs font-semibold text-foreground tracking-tight truncate w-full text-center px-1 mt-1">
-            {{ draggedItem.name }}
-          </span>
-          <div class="w-5 h-1 bg-primary/40 rounded-full mt-1"></div>
-        </div>
+        </Teleport>
   </MobileBottomSheet>
 </template>
 
