@@ -11,10 +11,7 @@ import crypto from 'crypto';
  * 为什么是「整体加密」而不是「逐个文件加密」：
  * 1. manifest 必须明文，否则导入器在不知道密码时无法判断"这是不是我的包、版本对不对"；
  * 2. 只有一处加解密，出错点少；AES-GCM 自带认证，密码错 == 解密失败，不需要额外校验位；
- * 3. 不依赖 zip 级加密库（archiver-zip-encrypted 这类实现兼容性差，且不支持 AEAD）。
- *
- * ⚠️ 包密码与数据库的 ENCRYPTION_KEY 是两回事。前者由用户在导出时自定，
- * 后者只用于落库加密。混用会导致「丢了 .env 就永久打不开自己的备份」。
+ * 3. 不依赖 zip 级加密（这类实现普遍不支持 AEAD，密码错和文件损坏区分不开）。
  */
 
 export const EXPORT_FORMAT = 'nexus-terminal-export';
@@ -281,7 +278,7 @@ export function buildReadme(manifest: ExportManifest): string {
         '  3. 先看一遍预览（会显示新增/冲突/无效各多少条），确认后再执行导入。',
         '',
         '注意：',
-        '  - 这个密码只在导出时设置，和服务器上的 ENCRYPTION_KEY 无关；',
+        '  - 这个密码只在导出时设置，导回来时要用同一个；',
         '  - 密码丢失后包内数据无法恢复，请与文件分开保存密码。',
         '',
     ];

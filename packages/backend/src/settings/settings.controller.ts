@@ -3,14 +3,12 @@ import { settingsService } from './settings.service';
 import { AuditLogService } from '../audit/audit.service';
 import { NotificationService } from '../notifications/notification.service'; 
 import { ipBlacklistService } from '../auth/ip-blacklist.service';
-import { exportConnectionsAsEncryptedZip } from '../services/import-export.service'; 
 import { UpdateSidebarConfigDto, UpdateCaptchaSettingsDto, CaptchaSettings } from '../types/settings.types'; 
 import { AppearanceSettings, UpdateAppearanceDto } from '../types/appearance.types';
 import { getAppearanceSettings, updateAppearanceSettings as updateAppearanceSettingsInRepo } from '../appearance/appearance.repository';
 import { getServerSyncApiKey } from '../sync/sync.middleware';
 import { settingsRepository } from './settings.repository';
 import { isWritableSettingKey } from './settings.schema';
-import i18next from '../i18n'; 
 
 const auditLogService = new AuditLogService();
 const notificationService = new NotificationService(); 
@@ -596,30 +594,6 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
    }
  }, // <-- Add comma here
 
- /**
-  * 导出所有连接配置为加密的 ZIP 文件
-  */
- async exportAllConnections(req: Request, res: Response): Promise<void> {
-   try {
-     const encryptedZipBuffer = await exportConnectionsAsEncryptedZip(true);
-
-     res.setHeader('Content-Type', 'application/zip');
-     res.setHeader('Content-Disposition', 'attachment; filename="nexus_connections_export.zip"');
-     res.send(encryptedZipBuffer);
-     
-     // auditLogService.logAction('CONNECTIONS_EXPORTED', { userId: (req.user as any)?.id || 'unknown' }); // 移除审计日志
-     
-
-   } catch (error: any) {
-     console.error('[控制器] 导出所有连接时出错:', error);
-     // 检查是否是因为 ENCRYPTION_KEY 未设置导致的错误
-     if (error.message && (error.message.includes('ENCRYPTION_KEY is not set') || error.message.includes('Failed to decode ENCRYPTION_KEY') || error.message.includes('Invalid ENCRYPTION_KEY length'))) {
-         res.status(500).json({ message: i18next.t('error.exportFailedEncryptionKey'), error: error.message });
-     } else {
-         res.status(500).json({ message: i18next.t('error.exportFailedGeneric'), error: error.message });
-     }
-   }
- },
 /**
    * 获取所有组件实例状态
    */

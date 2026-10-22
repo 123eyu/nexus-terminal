@@ -554,8 +554,7 @@ export const getConnectionWithDecryptedCredentials = async (
         decryptedPassphrase,
     };
 };
-// 注意：testConnection、importConnections、exportConnections 逻辑
-// 将分别移至 SshService 和 ImportExportService。
+// 注意：testConnection 逻辑在 SshService。
 
 
 /**

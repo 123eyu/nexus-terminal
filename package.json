@@ -37,7 +37,6 @@
   "homepage": "https://github.com/Heavrnl/nexus-terminal#readme",
   "description": "",
   "dependencies": {
-    "archiver-zip-encrypted": "^2.0.0",
     "axios": "^1.8.4",
     "element-plus": "^2.9.11",
     "fs-extra": "^11.4.1",

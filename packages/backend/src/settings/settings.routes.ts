@@ -75,9 +75,6 @@ router.get('/show-quick-command-tags', settingsController.getShowQuickCommandTag
 // PUT /api/v1/settings/show-quick-command-tags - 更新设置
 router.put('/show-quick-command-tags', settingsController.setShowQuickCommandTags);
 
-// +++ 导出所有连接路由 +++
-// GET /api/v1/settings/export-connections - 导出所有连接为加密的 ZIP 文件
-router.get('/export-connections', settingsController.exportAllConnections);
  
 // +++ 显示状态监视器IP地址路由 +++
 // GET /api/v1/settings/show-status-monitor-ip-address - 获取设置

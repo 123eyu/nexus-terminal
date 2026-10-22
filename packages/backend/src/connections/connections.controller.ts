@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import * as ConnectionService from './connection.service';
 import * as SshService from '../services/ssh.service';
-import * as ImportExportService from '../services/import-export.service';
 
 
 
@@ -213,62 +212,6 @@ export const testUnsavedConnection = async (req: Request, res: Response): Promis
 
 
 
-/**
- * 导出所有连接配置 (GET /api/v1/connections/export)
- */
-export const exportConnections = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const exportedData = await ImportExportService.exportConnectionsAsEncryptedZip();
-
-        // 设置响应头，提示浏览器下载文件
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `nexus-terminal-connections-${timestamp}.zip`;
-        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Type', 'application/zip');
-        res.status(200).send(exportedData);
-
-    } catch (error: any) {
-        console.error('Controller: 导出连接时发生错误:', error);
-        res.status(500).json({ message: error.message || '导出连接时发生内部服务器错误。' });
-    }
-};
-
-/**
- * 导入连接配置 (POST /api/v1/connections/import)
- */
-export const importConnections = async (req: Request, res: Response): Promise<void> => {
-    if (!req.file) {
-        res.status(400).json({ message: '未找到上传的文件 (需要名为 "connectionsFile" 的文件)。' });
-        return;
-    }
-
-    try {
-        const result = await ImportExportService.importConnections(req.file.buffer);
-
-        if (result.failureCount > 0) {
-             res.status(400).json({ 
-                 message: `导入完成，但存在 ${result.failureCount} 个错误。成功导入 ${result.successCount} 条。`,
-                 successCount: result.successCount,
-                 failureCount: result.failureCount,
-                 errors: result.errors
-             });
-        } else {
-
-            res.status(200).json({
-                message: `导入成功完成。共导入 ${result.successCount} 条连接。`,
-                successCount: result.successCount,
-                failureCount: 0
-            });
-        }
-    } catch (error: any) {
-        console.error('Controller: 导入连接时发生错误:', error);
-        if (error.message.includes('解析 JSON 文件失败')) {
-             res.status(400).json({ message: error.message });
-        } else {
-             res.status(500).json({ message: error.message || '导入连接时发生内部服务器错误。' });
-        }
-    }
-};
 /**
  * 克隆连接 (POST /api/v1/connections/:id/clone)
  */
