@@ -271,7 +271,7 @@ onMounted(() => {
             <div v-if="enableAdvancedEdit" class="space-y-3">
               <div>
                 <label for="batch-proxy" class="block text-sm font-medium text-text-secondary">{{ t('connections.form.proxy', '代理') }}</label>
-                <select id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary sm:text-sm">
+                <select id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer">
                   <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
                   <option :value="null">{{ t('connections.form.noProxy', '无代理') }}</option>
                   <option v-for="proxy in availableProxies" :key="proxy.id" :value="proxy.id">

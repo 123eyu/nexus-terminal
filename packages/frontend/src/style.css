@@ -271,6 +271,51 @@ select option {
     color: var(--text-color);
 }
 
+/* ==================== 原生 <select> 统一外观 ==================== */
+/* 全站有 20 多个原生 select，之前各写各的：有的连 appearance/箭头都没写，露出来的就是系统默认控件
+   （系统灰底 + 系统三角 + 系统字体），和旁边统一圆角/边框的 input 完全不搭。
+   这里收口「让它看起来像同一个控件」的部分：系统箭头换成同一枚 chevron、右侧留出箭头位、跟随主题配色。
+   尺寸（高度 / 字号 / 圆角 / 左内边距）仍由各处的 Tailwind 类决定 —— 紧凑工具栏里的下拉应该矮一点，
+   但箭头、边框语言、聚焦光环必须一致。 */
+select:not([multiple]):not([size]):not(.encoding-select):not(.mobile-encoding-select) {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%237c8695' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 14px 10px;
+    /* 箭头占 14px + 右侧留 0.5rem，文字至少要留 1.75rem。
+       px-3 / px-2.5 会把 padding-right 一起改小、箭头就会压字，所以这条必须压住工具类 */
+    padding-right: 1.75rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* 兜底默认值：必须放进 @layer base —— Tailwind v4 的工具类都在 @layer utilities 里，
+   而「没有层」的普通 CSS 会无条件压过所有分层样式（跟特异性无关，之前用 :where 也压不住），
+   结果把 h-8 / text-xs / rounded-xl 这些全顶掉了。进 base 层之后工具类照常生效，
+   这里只给「什么都没写」的 select 一个像样的外观。 */
+@layer base {
+    select:not([multiple]):not([size]):not(.encoding-select):not(.mobile-encoding-select) {
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding-left: 0.75rem;
+        font-size: 0.875rem;
+        /* 只是个下限：h-8（32px）这类紧凑尺寸不会被顶高 */
+        min-height: 1.75rem;
+        background-color: var(--app-bg-color);
+        color: var(--text-color);
+    }
+
+    select:disabled {
+        opacity: 0.65;
+    }
+}
+
+select:disabled {
+    cursor: not-allowed;
+}
+
 /* Ensure icons inside primary buttons are white */
 button.bg-primary i,
 button.bg-primary .fas,

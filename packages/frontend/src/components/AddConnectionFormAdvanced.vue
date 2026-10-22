@@ -185,7 +185,6 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         id="conn-proxy"
         v-model="props.formData.proxy_id"
         class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary appearance-none bg-no-repeat bg-right pr-8 transition-all shadow-2xs"
-        style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
       >
         <option :value="null">{{ t('connections.form.noProxy', '不使用代理 (直连)') }}</option>
         <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
@@ -209,7 +208,6 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           <select
             v-model="props.formData.jump_chain[index]"
             class="flex-grow px-3 py-1.5 text-xs border border-border/60 rounded-lg text-foreground bg-background focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
-            style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.75rem center; background-size: 16px 12px;"
           >
             <option :value="null">{{ t('connections.form.selectJumpHost', '请选择跳板机') }}</option>
             <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">

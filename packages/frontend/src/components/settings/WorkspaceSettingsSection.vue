@@ -65,7 +65,6 @@
                 v-model="terminalRightClickBehaviorLocal"
                 @change="handleUpdateTerminalRightClickBehavior"
                 class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer"
-                style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
               >
                 <option value="contextMenu">{{ $t('settings.workspace.rightClickBehaviorContextMenu', '弹出右键菜单 (默认)') }}</option>
                 <option value="paste">{{ $t('settings.workspace.rightClickBehaviorPaste', '直接粘贴剪贴板内容') }}</option>
@@ -198,7 +197,6 @@
               v-model="commandInputSyncTargetLocal"
               @change="handleUpdateCommandInputSyncTarget"
               class="h-9 px-3.5 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 cursor-pointer"
-              style="background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.6rem center; background-size: 14px 10px;"
             >
               <option value="none">{{ $t('settings.commandInputSync.targetNone', '无') }}</option>
               <option value="quickCommands">{{ $t('settings.commandInputSync.targetQuickCommands', '快捷指令') }}</option>

@@ -164,7 +164,7 @@ const handleSave = () => {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select
                 v-model="selectedConnId"
-                class="px-2.5 py-1.5 text-xs rounded-md border border-border bg-[#0d0f15] text-foreground focus:border-purple-500"
+                class="h-8 px-2.5 text-xs rounded-md border border-border bg-[#0d0f15] text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500 transition-all cursor-pointer"
               >
                 <option value="" disabled selected>选择目标连接...</option>
                 <option v-for="conn in availableConnections" :key="conn.id" :value="String(conn.id)">

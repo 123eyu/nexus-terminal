@@ -360,7 +360,7 @@ const handleConnectionModified = async () => {
               <select
                 v-model="selectedTagId"
                 class="h-8 px-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none bg-no-repeat bg-right pr-7 shadow-2xs cursor-pointer transition-all"
-                style="background-color: var(--app-bg-color); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 14px 10px;"
+                style="background-color: var(--app-bg-color)"
                 aria-label="Filter connections by tag"
                 :disabled="isLoadingTags"
               >
@@ -375,7 +375,7 @@ const handleConnectionModified = async () => {
               <select
                 v-model="localSortBy"
                 class="h-8 px-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none bg-no-repeat bg-right pr-7 shadow-2xs cursor-pointer transition-all"
-                style="background-color: var(--app-bg-color); background-image: url('data:image/svg+xml,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 16 16\'%3e%3cpath fill=\'none\' stroke=\'%236c757d\' stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M2 5l6 6 6-6\'/%3e%3c/svg%3e'); background-position: right 0.5rem center; background-size: 14px 10px;"
+                style="background-color: var(--app-bg-color)"
                 aria-label="Sort connections by"
               >
                 <option v-for="option in sortOptions" :key="option.value" :value="option.value">
