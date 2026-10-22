@@ -37,9 +37,10 @@
                 id="targetPath"
                 v-model="targetPath"
                 :placeholder="t('sendFilesModal.targetPathPlaceholder')"
-                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm"
-              />
-            </div>
+          class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm"
+          />
+          <p class="mt-1 text-xs text-text-tertiary">{{ t('sendFilesModal.targetPathHint') }}</p>
+        </div>
             <div class="form-group sm:w-48">
               <label for="transferMethod" class="block text-sm font-medium text-text-secondary mb-1">{{ t('sendFilesModal.transferMethodLabel') }}</label>
               <AppSelect

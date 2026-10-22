@@ -1946,6 +1946,7 @@
     "searchConnectionsPlaceholder": "搜索连接...",
     "targetPathLabel": "目标路径",
     "targetPathPlaceholder": "目标路径",
+    "targetPathHint": "选中的文件夹会以原文件夹名放到该路径下，例如 /root/docker → /root/docker/test",
     "transferMethodLabel": "传输方式",
     "transferMethodAuto": "自动",
     "loadingConnections": "正在加载连接...",

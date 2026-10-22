@@ -1863,6 +1863,7 @@
     "searchConnectionsPlaceholder": "接続を検索...",
     "targetPathLabel": "ターゲットパス",
     "targetPathPlaceholder": "目的のパス",
+    "targetPathHint": "選択したフォルダーは元の名前でこのパスの下に置かれます（例: /root/docker → /root/docker/test）",
     "transferMethodLabel": "転送方法",
     "transferMethodAuto": "自動",
     "loadingConnections": "接続を読み込み中...",
