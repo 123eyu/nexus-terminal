@@ -136,7 +136,16 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // 先用 schema 默认值铺底：即使下面的请求失败，界面也不会因为读到 undefined 而退化。
     // 默认值只在 settings.schema.json 维护一份（由 tools/gen-settings-schema.mjs 生成副本）。
-    settings.value = { ...SETTING_DEFAULTS };
+    //
+    // ⚠️ 只在**第一次加载**时铺底。切屏回来 / 云端同步完成都会再调一次这个函数
+    // （refreshAllStores → loadInitialSettings），如果每次都铺一遍默认值，
+    // 用户已配置的开关会瞬间被打回默认（这些键默认都是 'false'），
+    // 表现为：状态监视器的 IP 胶囊、命令输入栏的文件夹图标、文件管理器的固定搜索栏
+    // 跟着 v-if 卸载再挂回 —— 也就是「切屏回来闪一下」。
+    // 用「settings 里有没有键」来判断，登出清空后会自然回到首次加载的语义。
+    if (Object.keys(settings.value).length === 0) {
+      settings.value = { ...SETTING_DEFAULTS };
+    }
 
     try {
       console.log('[SettingsStore] 加载通用设置...');
