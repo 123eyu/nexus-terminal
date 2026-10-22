@@ -339,7 +339,7 @@
       "dockerExecCommand": "进入容器命令",
       "dockerExecCommandPlaceholder": "留空 = 自动探测容器里的 bash / ash / sh",
       "dockerExecCommandPlaceholderMobile": "留空 = 自动探测 bash / ash / sh",
-      "dockerExecCommandHint": "Docker 面板「进入容器」时使用。留空即自动选择；填 bash 会执行 docker exec -it <容器> bash；要加 -u root 这类参数请写完整命令并用 {id} 占位，例如 docker exec -it -u root {id} bash。",
+      "dockerExecCommandHint": "Docker 面板「进入容器」时使用。留空即自动选择容器里能用的 shell；只填 bash 这类程序名会拼成 docker exec -it <容器> bash。需要额外参数时写完整命令并用 id 占位，例如：",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
       "connectionType": "连接类型",

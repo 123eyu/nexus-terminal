@@ -196,7 +196,8 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         :placeholder="t('connections.form.dockerExecCommandPlaceholder', '留空 = 自动探测容器里的 bash / ash / sh')"
       />
       <p class="mt-1.5 text-[11px] leading-relaxed text-text-secondary/80">
-        {{ t('connections.form.dockerExecCommandHint', 'Docker 面板「进入容器」时使用。留空即自动选择；填 bash 会执行 docker exec -it <容器> bash；要加 -u root 这类参数请写完整命令并用 {id} 占位，例如 docker exec -it -u root {id} bash。') }}
+        {{ t('connections.form.dockerExecCommandHint', 'Docker 面板「进入容器」时使用。留空即自动选择容器里能用的 shell；填 bash 这类程序名会拼成 docker exec -it <容器> bash。需要额外参数时写完整命令并用 id 占位，例如：') }}
+        <code class="mt-1 block font-mono text-[11px] text-text-secondary/70 select-all">docker exec -it -u root {id} bash</code>
       </p>
     </div>
 

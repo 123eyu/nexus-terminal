@@ -341,7 +341,7 @@
       "dockerExecCommand": "Enter Container Command",
       "dockerExecCommandPlaceholder": "Empty = auto-detect bash / ash / sh inside the container",
       "dockerExecCommandPlaceholderMobile": "Empty = auto-detect bash / ash / sh",
-      "dockerExecCommandHint": "Used by the Docker panel when entering a container. Leave empty to auto-select. \"bash\" runs docker exec -it <container> bash. For extra flags, write the full command with an {id} placeholder, e.g. docker exec -it -u root {id} bash.",
+      "dockerExecCommandHint": "Used by the Docker panel when entering a container. Leave empty to auto-select the shell inside the container; a bare program name like bash becomes docker exec -it <container> bash. For extra flags, write the full command with the container id placeholder, e.g.:",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
       "connectionType": "Connection Type:",
