@@ -6,6 +6,7 @@ import { startAuthentication } from '@simplewebauthn/browser';
 import { useAuthStore } from '../stores/auth.store';
 import VueHcaptcha from '@hcaptcha/vue3-hcaptcha';
 import VueRecaptcha from 'vue3-recaptcha2'; // 使用默认导入
+import { isDesktopApp } from '../utils/platform';
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -18,6 +19,11 @@ const credentials = reactive({
   password: '',
 });
 const twoFactorToken = ref(''); // 用于存储 2FA 验证码
+// 桌面端：后端首次启动已经建好 admin 账号，直接把用户名填上，用户只需要点登录
+const isDesktop = isDesktopApp();
+if (isDesktop) {
+  credentials.username = 'admin';
+}
 const rememberMe = ref(false); // 记住我状态，默认为 false
 const captchaToken = ref<string | null>(null); //  Store CAPTCHA token
 const captchaError = ref<string | null>(null); //  Store CAPTCHA specific error
@@ -178,8 +184,10 @@ const handlePasskeyLogin = async () => {
             </div>
             <div>
               <label for="password" class="block text-sm font-medium text-text-secondary mb-1">{{ t('login.password') }}</label>
-              <input type="password" id="password" v-model="credentials.password" required :disabled="isLoading"
+              <!-- 桌面端默认账号没有密码，这里不能强制必填，否则空密码永远提交不了 -->
+              <input type="password" id="password" v-model="credentials.password" :required="!isDesktop" :disabled="isLoading"
                      class="w-full px-4 py-3 border border-border/50 rounded-lg bg-input text-foreground text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out disabled:bg-gray-100 disabled:cursor-not-allowed" />
+              <p v-if="isDesktop" class="mt-1.5 text-xs text-text-secondary/80">{{ t('login.desktopEmptyPasswordHint') }}</p>
             </div>
             <!-- Remember Me Checkbox -->
             <div class="flex items-center">

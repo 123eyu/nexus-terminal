@@ -11,6 +11,7 @@ import { settingsService } from '../settings/settings.service';
 import { passkeyService } from '../passkey/passkey.service'; // +++ Passkey Service
 import { passkeyRepository } from '../passkey/passkey.repository'; // +++ Passkey Repository
 import { userRepository } from '../user/user.repository'; // For passkey auth success
+import { isPasswordSet, isLocalRequest } from './desktop-bootstrap';
 
 const notificationService = new NotificationService();
 const auditLogService = new AuditLogService();
@@ -343,8 +344,12 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     // 从请求体中解构 username, password 和可选的 rememberMe
     const { username, password, rememberMe } = req.body;
 
-    if (!username || !password) {
-        res.status(400).json({ message: '用户名和密码不能为空。' });
+    // 密码允许为空：桌面端首次启动的 admin 账号未设置密码，直接回车即可进入。
+    // 是否真的接受空密码，由下面「该账号有没有设置密码」决定，不由这里决定。
+    const passwordInput = typeof password === 'string' ? password : '';
+
+    if (!username) {
+        res.status(400).json({ message: '用户名不能为空。' });
         return;
     }
 
@@ -394,7 +399,51 @@ export const login = async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const isMatch = await bcrypt.compare(password, user.hashed_password);
+        // 账号没设置密码（桌面端默认 admin）：只接受空密码，且只接受本机请求。
+        // 桌面端后端仍监听 0.0.0.0，不做这个限制等于把机器开放给同网段任何人。
+        if (!isPasswordSet(user.hashed_password)) {
+            if (!isLocalRequest(req)) {
+                console.log(`登录尝试失败: 账号未设置密码且来源非本机 - ${username}`);
+                res.status(403).json({
+                    message: '该账号尚未设置密码，只能在本机登录。请在本机登录后到 设置 → 安全 里设置密码。',
+                });
+                return;
+            }
+            if (passwordInput !== '') {
+                console.log(`登录尝试失败: 账号未设置密码但提交了非空密码 - ${username}`);
+                const failIp = req.ip || req.socket?.remoteAddress || 'unknown';
+                ipBlacklistService.recordFailedAttempt(failIp);
+                auditLogService.logAction('LOGIN_FAILURE', { username, reason: 'Password not set', ip: failIp });
+                res.status(401).json({ message: '无效的凭据。' });
+                return;
+            }
+
+            // 免密不等于免二次验证：这个账号可能先前开过 2FA
+            if (user.two_factor_secret) {
+                console.log(`登录需要两步验证 (本机免密): ${username}`);
+                req.session.userId = user.id;
+                req.session.requiresTwoFactor = true;
+                req.session.rememberMe = rememberMe;
+                res.status(200).json({ message: '需要进行两步验证。', requiresTwoFactor: true });
+                return;
+            }
+
+            console.log(`登录成功 (本机免密): ${username}`);
+            const localIp = req.ip || req.socket?.remoteAddress || 'unknown';
+            ipBlacklistService.resetAttempts(localIp);
+            auditLogService.logAction('LOGIN_SUCCESS', { userId: user.id, username, ip: localIp, method: 'local-no-password' });
+            req.session.userId = user.id;
+            req.session.username = user.username;
+            req.session.requiresTwoFactor = false;
+            req.session.cookie.maxAge = rememberMe ? 315360000000 : undefined;
+            res.status(200).json({
+                message: '登录成功。',
+                user: { id: user.id, username: user.username, isTwoFactorEnabled: false },
+            });
+            return;
+        }
+
+        const isMatch = await bcrypt.compare(passwordInput, user.hashed_password);
 
         if (!isMatch) {
             console.log(`登录尝试失败: 密码错误 - ${username}`);
@@ -455,7 +504,8 @@ export const getAuthStatus = async (req: Request, res: Response): Promise<void> 
 
     try {
         const db = await getDbInstance(); 
-        const user = await getDb<{ two_factor_secret: string | null }>(db, 'SELECT two_factor_secret FROM users WHERE id = ?', [userId]);
+        const user = await getDb<{ two_factor_secret: string | null; hashed_password: string }>(
+            db, 'SELECT two_factor_secret, hashed_password FROM users WHERE id = ?', [userId]);
 
         if (!user) {
              res.status(401).json({ isAuthenticated: false });
@@ -467,7 +517,9 @@ export const getAuthStatus = async (req: Request, res: Response): Promise<void> 
             user: {
                 id: userId,
                 username: username,
-                isTwoFactorEnabled: !!user.two_factor_secret 
+                isTwoFactorEnabled: !!user.two_factor_secret,
+                // 桌面端默认账号没有密码，前端据此把「修改密码」渲染成「设置密码」
+                hasPassword: isPasswordSet(user.hashed_password),
             }
         });
 
@@ -560,16 +612,15 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
         return;
     }
 
-    if (!currentPassword || !newPassword) {
-        res.status(400).json({ message: '当前密码和新密码不能为空。' });
+    // 当前密码可以为空：桌面端默认账号本来就没有密码，这里做的是「设置密码」而不是「改密码」
+    const oldPassword = typeof currentPassword === 'string' ? currentPassword : '';
+
+    if (!newPassword || typeof newPassword !== 'string') {
+        res.status(400).json({ message: '新密码不能为空。' });
         return;
     }
     if (newPassword.length < 8) {
         res.status(400).json({ message: '新密码长度至少需要 8 位。' });
-        return;
-    }
-    if (currentPassword === newPassword) {
-        res.status(400).json({ message: '新密码不能与当前密码相同。' });
         return;
     }
 
@@ -585,11 +636,22 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
             return;
         }
 
-        const isMatch = await bcrypt.compare(currentPassword, user.hashed_password);
-        if (!isMatch) {
-            console.log(`修改密码尝试失败: 当前密码错误 - 用户 ID ${userId}`);
-            res.status(400).json({ message: '当前密码不正确。' });
-            return;
+        // 已有密码：必须验旧密码，且新旧不能相同。没有密码：跳过这两项校验（等同首次设置）。
+        if (isPasswordSet(user.hashed_password)) {
+            if (!oldPassword) {
+                res.status(400).json({ message: '当前密码不能为空。' });
+                return;
+            }
+            const isMatch = await bcrypt.compare(oldPassword, user.hashed_password);
+            if (!isMatch) {
+                console.log(`修改密码尝试失败: 当前密码错误 - 用户 ID ${userId}`);
+                res.status(400).json({ message: '当前密码不正确。' });
+                return;
+            }
+            if (oldPassword === newPassword) {
+                res.status(400).json({ message: '新密码不能与当前密码相同。' });
+                return;
+            }
         }
 
         const saltRounds = 10;
@@ -761,6 +823,10 @@ export const disable2FA = async (req: Request, res: Response): Promise<void> => 
 
         if (!user) {
             res.status(404).json({ message: '用户不存在。' }); return;
+        }
+        // 没有密码的账号无法用密码验证身份，先让用户去设置密码
+        if (!isPasswordSet(user.hashed_password)) {
+            res.status(400).json({ message: '当前账号尚未设置密码，请先在安全设置里设置密码后再关闭两步验证。' }); return;
         }
         const isMatch = await bcrypt.compare(password, user.hashed_password);
         if (!isMatch) {

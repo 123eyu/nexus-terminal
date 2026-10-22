@@ -826,6 +826,7 @@
     "password": "パスワード",
     "recaptchaV3Notice": "このサイトは reCAPTCHA によって保護されており、Google のプライバシーポリシーと利用規約が適用されます。",
     "rememberMe": "ログイン状態を保持",
+    "desktopEmptyPasswordHint": "デスクトップ版では初回にパスワードを空のままログインできます。ログイン後、設定 → セキュリティ で設定できます。",
     "title": "ユーザーログイン",
     "twoFactorPrompt": "2段階認証コードを入力してください:",
     "username": "ユーザー名",
@@ -1239,9 +1240,14 @@
     "changePassword": {
       "confirmPassword": "新しいパスワードを再入力:",
       "currentPassword": "現在のパスワード:",
+      "setTitle": "パスワードを設定",
+      "noPasswordHint": "このアカウントにはまだパスワードが設定されていないため、この端末からのみログインできます。設定すると他の端末からもログインでき、いつでもここで変更できます。",
+      "submitSet": "パスワードを設定",
+      "successSet": "パスワードを設定しました！",
       "error": {
         "generic": "パスワードの変更に失敗しました。後でもう一度お試しください。",
-        "passwordsDoNotMatch": "新しいパスワードと確認用パスワードが一致しません。"
+        "passwordsDoNotMatch": "新しいパスワードと確認用パスワードが一致しません。",
+        "newPasswordRequired": "新しいパスワードを入力してください"
       },
       "newPassword": "新しいパスワード:",
       "submit": "変更を確定",

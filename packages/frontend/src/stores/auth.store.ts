@@ -16,6 +16,7 @@ interface UserInfo {
     id: number;
     username: string;
     isTwoFactorEnabled?: boolean; // 后端 /status 接口会返回这个
+    hasPassword?: boolean; // 桌面端默认账号没有密码，后端 /status 会返回 false
     language?: 'en' | 'zh'; // 用户偏好语言
 }
 

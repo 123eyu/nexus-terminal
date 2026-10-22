@@ -1,8 +1,12 @@
 <template>
   <div class="settings-section-content">
-    <h3 class="text-base font-semibold text-foreground mb-3">{{ $t('settings.changePassword.title') }}</h3>
+    <h3 class="text-base font-semibold text-foreground mb-3">
+      {{ hasPassword ? $t('settings.changePassword.title') : $t('settings.changePassword.setTitle') }}
+    </h3>
+    <p v-if="!hasPassword" class="text-sm text-text-secondary mb-3">{{ $t('settings.changePassword.noPasswordHint') }}</p>
     <form @submit.prevent="handleChangePassword" class="space-y-4">
-      <div>
+      <!-- 没有密码时没有「当前密码」可填，这一栏直接不出现 -->
+      <div v-if="hasPassword">
         <label for="currentPassword" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.changePassword.currentPassword') }}</label>
         <input type="password" id="currentPassword" v-model="currentPassword" required
                class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary">
@@ -20,7 +24,7 @@
       <div class="flex items-center justify-between">
         <button type="submit" :disabled="changePasswordLoading"
                 class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out text-sm font-medium">
-          {{ changePasswordLoading ? $t('common.loading') : $t('settings.changePassword.submit') }}
+          {{ changePasswordLoading ? $t('common.loading') : (hasPassword ? $t('settings.changePassword.submit') : $t('settings.changePassword.submitSet')) }}
         </button>
         <p v-if="changePasswordMessage" :class="['text-sm', changePasswordSuccess ? 'text-success' : 'text-error']">{{ changePasswordMessage }}</p>
       </div>
@@ -29,16 +33,13 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n';
 import { useChangePassword } from '../../composables/settings/useChangePassword';
-
-// useI18n 的 $t 在模板中是全局可用的，如果 script 中需要 t 函数，则解构: const { t } = useI18n();
-// 当前模板直接使用 $t，所以这里可以不显式解构 t，除非 script 内部逻辑也需要。
 
 const {
   currentPassword,
   newPassword,
   confirmPassword,
+  hasPassword,
   changePasswordLoading,
   changePasswordMessage,
   changePasswordSuccess,

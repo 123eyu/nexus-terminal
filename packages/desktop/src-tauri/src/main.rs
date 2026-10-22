@@ -492,6 +492,8 @@ fn main() {
                                 .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
                                 .env("NEXUS_DATA_DIR", &clean_data_dir)
                                 .env("NODE_ENV", "production")
+                                // 后端据此判断「这是桌面端」：首次启动免建账号，直接生成无密码 admin
+                                .env("NEXUS_DESKTOP", "1")
                                 .spawn()
                         });
 
@@ -558,7 +560,9 @@ fn main() {
                                     .env("PORT", port.to_string())
                                     .env("NODE_PATH", node_modules_dir.to_string_lossy().to_string())
                                     .env("NEXUS_DATA_DIR", &clean_data_dir)
-                                    .env("NODE_ENV", "production");
+                                    .env("NODE_ENV", "production")
+                                    // 同上：标记桌面端运行时
+                                    .env("NEXUS_DESKTOP", "1");
 
                                 let log_path = portable_data_dir.join("server.log");
                                 if let Ok(file_out) = std::fs::OpenOptions::new()

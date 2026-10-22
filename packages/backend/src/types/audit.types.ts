@@ -54,6 +54,8 @@ export type AuditLogActionType =
   // System/Error
   | 'DATABASE_MIGRATION'
   | 'ADMIN_SETUP_COMPLETE'
+  // 桌面端首次启动自动建默认账号（无密码）
+  | 'ADMIN_AUTO_CREATED'
 
   // Data transfer (导出包含全部凭据，必须留痕)
   | 'DATA_EXPORTED'

@@ -245,6 +245,7 @@
     "twoFactorPrompt": "Enter your two-factor authentication code:",
     "verifyButton": "Verify",
     "rememberMe": "Remember Me",
+    "desktopEmptyPasswordHint": "On desktop you can sign in with an empty password on first run, then set one in Settings → Security.",
     "loginWithPasskey": "Login with Passkey",
     "captchaPrompt": "Please complete the verification below:",
     "error": {
@@ -1000,15 +1001,20 @@
     },
     "changePassword": {
       "title": "Change Password",
+      "setTitle": "Set Password",
+      "noPasswordHint": "This account has no password yet, so it can only sign in from this machine. Setting one lets you sign in from other devices; you can change it here at any time.",
       "currentPassword": "Current Password:",
       "newPassword": "New Password:",
       "confirmPassword": "Confirm New Password:",
       "submit": "Change Password",
+      "submitSet": "Set Password",
       "success": "Password changed successfully!",
+      "successSet": "Password set successfully!",
       "error": {
         "passwordsDoNotMatch": "New password and confirmation do not match.",
         "generic": "Failed to change password. Please try again later.",
-        "fieldsRequired": "Please fill in your current and new password"
+        "fieldsRequired": "Please fill in your current and new password",
+        "newPasswordRequired": "Please enter a new password"
       }
     },
     "twoFactor": {

@@ -244,6 +244,7 @@
     "twoFactorPrompt": "请输入两步验证码:",
     "verifyButton": "验证",
     "rememberMe": "记住我",
+    "desktopEmptyPasswordHint": "桌面端首次使用可直接留空登录，登录后可在 设置 → 安全 里设置密码。",
     "captchaPrompt": "请完成下方的验证：",
     "loginWithPasskey": "使用 Passkey 登录",
     "error": {
@@ -915,15 +916,20 @@
     },
     "changePassword": {
       "title": "修改密码",
+      "setTitle": "设置密码",
+      "noPasswordHint": "当前账号还没有设置密码，只能在本机登录。设置密码后即可从其他设备登录，之后也可以随时在这里修改。",
       "currentPassword": "当前密码:",
       "newPassword": "新密码:",
       "confirmPassword": "确认新密码:",
       "submit": "确认修改",
+      "submitSet": "设置密码",
       "success": "密码修改成功！",
+      "successSet": "密码设置成功！",
       "error": {
         "passwordsDoNotMatch": "新密码和确认密码不匹配。",
         "generic": "修改密码失败，请稍后重试。",
-        "fieldsRequired": "请填写当前密码与新密码"
+        "fieldsRequired": "请填写当前密码与新密码",
+        "newPasswordRequired": "请填写新密码"
       }
     },
     "twoFactor": {

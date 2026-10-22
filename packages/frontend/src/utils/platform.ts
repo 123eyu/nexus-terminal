@@ -22,6 +22,11 @@ export function isDesktopApp(): boolean {
     if (urlParams.get('platform') === 'desktop') {
       return true;
     }
+    // 未登录时路由守卫会跳到 /login?redirect=/?platform=desktop，
+    // 参数被塞进 redirect 里、不在 location.search 里，扫整条 href 才认得出
+    if (window.location.href.includes('platform=desktop')) {
+      return true;
+    }
   } catch {}
 
   // 3. 普通浏览器 / Web 部署环境下，主动清理历史测试可能残留的 localStorage 污染

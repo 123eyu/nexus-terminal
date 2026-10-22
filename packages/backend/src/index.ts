@@ -107,6 +107,7 @@ import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
+import { ensureDesktopAdmin } from './auth/desktop-bootstrap';
 
 
 import './services/event.service'; 
@@ -412,6 +413,7 @@ const startServer = () => {
 const main = async () => {
     await initializeEnvironment(); // 首先初始化环境和密钥
     await initializeDatabase();   // 然后初始化数据库
+    await ensureDesktopAdmin();   // 桌面端首次启动：自动建默认账号（无密码）
     startServer();                // 最后启动服务器
 
     // 激活双端增量同步调度器与存量数据对齐 (Reconciliation Catch-up)
