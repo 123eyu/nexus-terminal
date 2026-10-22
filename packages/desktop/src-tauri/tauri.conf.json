@@ -56,9 +56,9 @@
       "nsis": {
         "template": "nsis/installer.nsi",
         "languages": [
+          "English",
           "SimpChinese",
           "TradChinese",
-          "English",
           "Japanese",
           "Korean",
           "German",
