@@ -11,6 +11,7 @@ import draggable from 'vuedraggable';
 import LayoutNodeEditor from './LayoutNodeEditor.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useAlertDialog } from '../composables/useAlertDialog';
+import AppSelect from './common/AppSelect.vue';
 
 // --- Props ---
 const props = defineProps({
@@ -719,9 +720,9 @@ const handleAvailablePaneDragEnd = (event: any) => {
           </span>
           
           <div class="relative min-w-[200px]">
-            <select
-              :value="selectedPresetId"
-              @change="handlePresetSelectChange(($event.target as HTMLSelectElement).value)"
+            <AppSelect
+              :model-value="selectedPresetId"
+              @update:model-value="(v) => handlePresetSelectChange(String(v ?? ''))"
               class="w-full bg-background border border-border/80 text-foreground text-xs rounded-lg px-2.5 py-1.5 appearance-none pr-8 font-medium focus:outline-none focus:border-primary cursor-pointer hover:border-primary/50 transition-colors shadow-xs"
             >
               <option
@@ -731,8 +732,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
               >
                 {{ preset.name }}
               </option>
-            </select>
-            <i class="fas fa-chevron-down absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary pointer-events-none"></i>
+            </AppSelect>
           </div>
 
           <!-- 设为默认按钮/徽章 -->

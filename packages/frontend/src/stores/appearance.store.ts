@@ -696,6 +696,45 @@ export const useAppearanceStore = defineStore('appearance', () => {
         if (popoverBg) {
             root.style.setProperty('--popover-bg-color', popoverBg);
         }
+        syncNativeColorScheme(theme['--app-bg-color']);
+    }
+
+    /** 解析 #rgb / #rrggbb / rgb() / rgba() 成 [r,g,b]，解析不了返回 null */
+    function parseCssRgb(input?: string): [number, number, number] | null {
+        if (!input) return null;
+        const s = input.trim();
+        let m = s.match(/^#([0-9a-f]{3})$/i);
+        if (m) {
+            const h = m[1];
+            return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16)];
+        }
+        m = s.match(/^#([0-9a-f]{6})$/i);
+        if (m) {
+            const v = m[1];
+            return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+        }
+        m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+        if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
+        return null;
+    }
+
+    /**
+     * 让「系统渲染的东西」跟着主题深浅走。
+     *
+     * 为什么需要它：原生 `<select>` 展开后的选项列表、日期选择器、滚动条这些由**操作系统**绘制，
+     * CSS 的 `background-color` 完全管不到（`select option { background-color }` 只影响收起态）。
+     * 深色主题下点开下拉会弹出一整片系统白色的列表，看起来就是「没做过样式的原生控件」。
+     * 唯一能让它跟着变深的是 `color-scheme` —— 按应用底色的亮度推断，写到 <html> 上，
+     * 浏览器/WebView 就会用对应的系统配色渲染这些弹层。
+     */
+    function syncNativeColorScheme(bgColor?: string) {
+        if (typeof document === 'undefined') return;
+        const bg = bgColor || getComputedStyle(document.documentElement).getPropertyValue('--app-bg-color');
+        const rgb = parseCssRgb(bg);
+        if (!rgb) return;
+        // sRGB 相对亮度的近似（够用来判断深浅，不需要做伽马校正）
+        const luminance = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+        document.documentElement.style.colorScheme = luminance > 0.55 ? 'light' : 'dark';
     }
 
     function applyPageBackground() {

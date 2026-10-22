@@ -316,6 +316,178 @@ select:disabled {
     cursor: not-allowed;
 }
 
+/* ==================== 自绘下拉 AppSelect ==================== */
+/* 原生 select 的**展开浮层**由系统绘制，CSS 管不到（深色主题里点开会弹出一片浅色列表），
+   所以需要真正跟主题一致的下拉时用 components/common/AppSelect.vue。这里只给它的三个部件上色。 */
+@layer base {
+    .app-select-trigger {
+        position: relative;
+        /* inline-grid 单格叠放：当前文案与「最长选项」占同一个格，宽度取二者最大值
+           （原生 select 的宽度就是最长选项，换选项时不会跳动） */
+        display: inline-grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: center;
+        /* 与原生 select 的兜底保持同一套：按钮本身不带系统外观，尺寸仍由各处的 Tailwind 类决定 */
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding-left: 0.75rem;
+        font-size: 0.875rem;
+        font-family: inherit;
+        line-height: 1.25rem;
+        min-height: 1.75rem;
+        background-color: var(--app-bg-color);
+        color: var(--text-color);
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+}
+
+/* 箭头占 14px + 右侧留 0.5rem：px-3 / px-2.5 会把 padding-right 一起改小、箭头就会压字，
+   所以这条留在层外把它压住（与原生 select 的处理一致） */
+.app-select-trigger {
+    padding-right: 1.75rem;
+}
+
+.app-select-trigger:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.app-select-trigger:focus-visible {
+    border-color: var(--input-focus-border-color);
+    outline: 0;
+    box-shadow: 0 0 0 3px rgba(var(--input-focus-glow-rgb), 0.2);
+}
+
+.app-select-label {
+    display: block;
+    grid-area: 1 / 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 只用来撑宽度：不可见、不占高度、不参与交互 */
+.app-select-measure {
+    display: block;
+    grid-area: 1 / 1;
+    height: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    visibility: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+
+.app-select-chevron {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    opacity: 0.62;
+    transform: translateY(-50%);
+    pointer-events: none;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.app-select-trigger.is-open .app-select-chevron {
+    transform: translateY(-50%) rotate(180deg);
+    opacity: 0.9;
+}
+
+.app-select-popup {
+    position: fixed;
+    z-index: 9500;
+    box-sizing: border-box;
+    padding: 0.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    background-color: var(--popover-bg-color, var(--app-bg-color));
+    color: var(--text-color);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    animation: app-select-popup-in 0.12s ease-out;
+}
+
+@keyframes app-select-popup-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.app-select-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--text-color);
+    cursor: pointer;
+    user-select: none;
+}
+
+.app-select-option.is-active {
+    background-color: color-mix(in srgb, var(--link-active-color) 16%, transparent);
+}
+
+.app-select-option.is-selected {
+    color: var(--link-active-color);
+    font-weight: 500;
+}
+
+.app-select-option.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.app-select-option-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.app-select-check {
+    width: 14px;
+    height: 14px;
+    flex: none;
+}
+
+.app-select-empty {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--text-color-secondary);
+}
+
+/* <optgroup> 的分组小标题：不可点、不参与键盘导航 */
+.app-select-group {
+    padding: 0.375rem 0.625rem 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-color-secondary);
+    opacity: 0.8;
+    user-select: none;
+}
+
+.app-select-group:not(:first-child) {
+    margin-top: 0.125rem;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+}
+
 /* Ensure icons inside primary buttons are white */
 button.bg-primary i,
 button.bg-primary .fas,

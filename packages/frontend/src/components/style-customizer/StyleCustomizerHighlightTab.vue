@@ -10,6 +10,7 @@ import type {
   BuiltinMatcherType,
 } from '../../types/terminal-highlight.types';
 import { ansiToHtml } from '../../utils/terminal-highlighter';
+import AppSelect from '../common/AppSelect.vue';
 
 const { t } = useI18n();
 const highlightStore = useTerminalHighlightStore();
@@ -747,7 +748,7 @@ const handleResetToDefault = () => {
 
                 <!-- 类型 1: 内置规则选择 -->
                 <div v-if="item.type === 'builtin'" class="flex-1 min-w-0">
-                  <select
+                  <AppSelect
                     v-model="item.builtinType"
                     class="w-full px-2.5 py-1 text-xs border border-border rounded-md shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
                   >
@@ -759,7 +760,7 @@ const handleResetToDefault = () => {
                     >
                       {{ opt.label }}
                     </option>
-                  </select>
+                  </AppSelect>
                 </div>
 
                 <!-- 类型 2: 关键词输入及全词匹配/大小写开关 -->

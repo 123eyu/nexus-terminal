@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useProxiesStore, ProxyInfo } from '../stores/proxies.store';
 import { useTagsStore } from '../stores/tags.store'; 
 import TagInput from './TagInput.vue'; 
+import AppSelect from './common/AppSelect.vue';
 
 // 定义组件发出的事件
 const emit = defineEmits(['close', 'proxy-added', 'proxy-updated']);
@@ -134,11 +135,11 @@ const handleSubmit = async () => {
         </div>
         <div> <!-- Form Group -->
           <label for="proxy-type" class="block text-sm font-medium text-text-secondary mb-1">{{ t('proxies.form.type') }}</label>
-          <select id="proxy-type" v-model="formData.type"
+          <AppSelect id="proxy-type" v-model="formData.type"
                   class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8">
             <option value="SOCKS5">SOCKS5</option>
             <option value="HTTP">HTTP</option>
-          </select>
+          </AppSelect>
         </div>
         <div> <!-- Form Group -->
           <label for="proxy-host" class="block text-sm font-medium text-text-secondary mb-1">{{ t('proxies.form.host') }}</label>

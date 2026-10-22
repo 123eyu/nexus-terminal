@@ -17,6 +17,7 @@ import { storeToRefs } from 'pinia';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, ja } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
+import AppSelect from '../components/common/AppSelect.vue';
 
 const { t, locale } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
@@ -941,14 +942,14 @@ const handleConnectAllFilteredConnections = async () => {
             </div>
 
             <!-- Sort By -->
-            <select
+            <AppSelect
               v-model="localSortBy"
               class="h-8 px-2.5 text-xs bg-input border border-border/70 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
             >
               <option v-for="option in sortOptions" :key="option.value" :value="option.value">
                 {{ t(option.labelKey, option.value) }}
               </option>
-            </select>
+            </AppSelect>
 
             <!-- Sort Order Toggle -->
             <button

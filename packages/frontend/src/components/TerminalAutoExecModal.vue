@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { LayoutNode, TerminalAutoExecConfig } from '../stores/layout.store';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
+import AppSelect from './common/AppSelect.vue';
 
 const props = defineProps<{
   visible: boolean;
@@ -162,7 +163,7 @@ const handleSave = () => {
           <!-- 添加新规则表单 -->
           <div class="flex flex-col gap-2 p-2.5 rounded-lg border border-border/60 bg-[#10121a]">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <select
+              <AppSelect
                 v-model="selectedConnId"
                 class="h-8 px-2.5 text-xs rounded-md border border-border bg-[#0d0f15] text-foreground focus:outline-none focus:ring-2 focus:ring-purple-500/40 focus:border-purple-500 transition-all cursor-pointer"
               >
@@ -170,7 +171,7 @@ const handleSave = () => {
                 <option v-for="conn in availableConnections" :key="conn.id" :value="String(conn.id)">
                   {{ conn.name || conn.host }} ({{ conn.host }}{{ conn.port ? `:${conn.port}` : '' }})
                 </option>
-              </select>
+              </AppSelect>
 
               <input
                 v-model="newConnCommand"

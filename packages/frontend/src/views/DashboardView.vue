@@ -18,6 +18,7 @@ import { storeToRefs } from 'pinia';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN, enUS, ja } from 'date-fns/locale';
 import type { Locale } from 'date-fns';
+import AppSelect from '../components/common/AppSelect.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -357,7 +358,7 @@ const handleConnectionModified = async () => {
 
             <div class="flex items-center gap-2">
               <!-- 标签筛选下拉 -->
-              <select
+              <AppSelect
                 v-model="selectedTagId"
                 class="h-8 px-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none bg-no-repeat bg-right pr-7 shadow-2xs cursor-pointer transition-all"
                 style="background-color: var(--app-bg-color)"
@@ -369,10 +370,10 @@ const handleConnectionModified = async () => {
                 <option v-for="tag in (tags as TagInfo[])" :key="tag.id" :value="tag.id">
                   {{ tag.name }}
                 </option>
-              </select>
+              </AppSelect>
 
               <!-- 排序下拉 -->
-              <select
+              <AppSelect
                 v-model="localSortBy"
                 class="h-8 px-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none bg-no-repeat bg-right pr-7 shadow-2xs cursor-pointer transition-all"
                 style="background-color: var(--app-bg-color)"
@@ -381,7 +382,7 @@ const handleConnectionModified = async () => {
                 <option v-for="option in sortOptions" :key="option.value" :value="option.value">
                   {{ t(option.labelKey, option.value.replace('_', ' ')) }}
                 </option>
-              </select>
+              </AppSelect>
 
               <!-- 排序顺序切换按钮 -->
               <button

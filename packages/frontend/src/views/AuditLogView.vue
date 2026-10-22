@@ -14,11 +14,11 @@
         </div>
         <div class="flex-grow min-w-[200px]">
           <label for="action-type" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('auditLog.table.actionType') }}</label>
-          <select id="action-type" v-model="selectedActionType"
+          <AppSelect id="action-type" v-model="selectedActionType"
                   class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 text-sm">
             <option value="">{{ $t('common.all') }}</option>
             <option v-for="type in allActionTypes" :key="type" :value="type">{{ translateActionType(type) }}</option>
-          </select>
+          </AppSelect>
         </div>
         <div class="self-end">
            <button @click="applyFilters" class="px-4 py-2 bg-button text-button-text rounded hover:bg-button-hover text-sm font-medium">
@@ -105,6 +105,7 @@ import { ref, onMounted, computed } from 'vue'; // Removed watch
 import { useAuditLogStore } from '../stores/audit.store';
 import { AuditLogEntry, AuditLogActionType } from '../types/server.types';
 import { useI18n } from 'vue-i18n';
+import AppSelect from '../components/common/AppSelect.vue';
 // Removed lodash-es import
 
 const store = useAuditLogStore();

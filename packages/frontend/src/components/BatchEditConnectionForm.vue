@@ -9,6 +9,7 @@ import { useTagsStore, type TagInfo } from '../stores/tags.store';
 import { useSshKeysStore, type SshKeyBasicInfo } from '../stores/sshKeys.store';
 import TagInput from './TagInput.vue';
 import SshKeySelector from './SshKeySelector.vue';
+import AppSelect from './common/AppSelect.vue';
 
 interface BatchUpdateData {
   port?: number | string | null;
@@ -271,13 +272,13 @@ onMounted(() => {
             <div v-if="enableAdvancedEdit" class="space-y-3">
               <div>
                 <label for="batch-proxy" class="block text-sm font-medium text-text-secondary">{{ t('connections.form.proxy', '代理') }}</label>
-                <select id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer">
+                <AppSelect id="batch-proxy" v-model="formData.proxy_id" class="mt-1 block w-full h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer">
                   <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
                   <option :value="null">{{ t('connections.form.noProxy', '无代理') }}</option>
                   <option v-for="proxy in availableProxies" :key="proxy.id" :value="proxy.id">
                     {{ proxy.name }} ({{ proxy.type }})
                   </option>
-                </select>
+                </AppSelect>
               </div>
               <div>
                 <label class="block text-sm font-medium text-text-secondary">{{ t('connections.table.tags', '标签') }}</label>

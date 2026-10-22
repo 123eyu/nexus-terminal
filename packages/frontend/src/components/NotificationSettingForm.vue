@@ -20,12 +20,12 @@
 
       <div>
         <label for="setting-channel-type" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.notifications.form.channelType') }}</label>
-        <select id="setting-channel-type" v-model="formData.channel_type" required :disabled="isEditing"
+        <AppSelect id="setting-channel-type" v-model="formData.channel_type" :disabled="isEditing"
                 class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8 disabled:opacity-70 disabled:bg-header/50">
           <option value="webhook">{{ $t('settings.notifications.types.webhook') }}</option>
           <option value="email">{{ $t('settings.notifications.types.email') }}</option>
           <option value="telegram">{{ $t('settings.notifications.types.telegram') }}</option>
-        </select>
+        </AppSelect>
         <small v-if="isEditing" class="block mt-1 text-xs text-text-secondary">{{ $t('settings.notifications.form.channelTypeEditNote') }}</small>
       </div>
     </div>
@@ -45,12 +45,12 @@
         </div>
         <div>
           <label for="webhook-method" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.notifications.form.webhookMethod') }}</label>
-          <select id="webhook-method" v-model="webhookConfig.method"
+          <AppSelect id="webhook-method" v-model="webhookConfig.method"
                   class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8">
             <option value="POST">POST</option>
             <option value="GET">GET</option>
             <option value="PUT">PUT</option>
-          </select>
+          </AppSelect>
         </div>
         <div>
           <label for="webhook-headers" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.notifications.form.webhookHeaders') }} (JSON)</label>
@@ -218,6 +218,7 @@ import {
     NotificationChannelType
 } from '../types/server.types';
 import { useI18n } from 'vue-i18n';
+import AppSelect from './common/AppSelect.vue';
 
 
 interface SmtpEmailConfig extends Omit<EmailConfig, 'subjectTemplate'> {

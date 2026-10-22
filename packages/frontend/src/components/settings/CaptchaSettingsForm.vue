@@ -16,12 +16,12 @@
         <!-- Provider Select (Only show if enabled) -->
         <div v-if="captchaForm.enabled">
           <label for="captchaProvider" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.captcha.providerLabel') }}</label>
-          <select id="captchaProvider" v-model="captchaForm.provider"
+          <AppSelect id="captchaProvider" v-model="captchaForm.provider"
                   class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8">
             <option value="none">{{ $t('settings.captcha.providerNone') }}</option>
             <option value="hcaptcha">hCaptcha</option>
             <option value="recaptcha">Google reCAPTCHA v2</option>
-          </select>
+          </AppSelect>
         </div>
 
         <!-- hCaptcha Settings (Only show if enabled and provider is hcaptcha) -->
@@ -73,6 +73,7 @@ import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useSettingsStore } from '../../stores/settings.store';
 import { useCaptchaSettings } from '../../composables/settings/useCaptchaSettings';
+import AppSelect from '../common/AppSelect.vue';
 
 // const { t } = useI18n(); // $t is globally available in template
 const settingsStore = useSettingsStore();

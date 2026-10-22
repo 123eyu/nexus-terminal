@@ -42,7 +42,7 @@
             </div>
             <div class="form-group sm:w-48">
               <label for="transferMethod" class="block text-sm font-medium text-text-secondary mb-1">{{ t('sendFilesModal.transferMethodLabel') }}</label>
-              <select
+              <AppSelect
                 id="transferMethod"
                 v-model="transferMethod"
                 class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8"
@@ -50,7 +50,7 @@
                 <option value="auto">{{ t('sendFilesModal.transferMethodAuto') }}</option>
                 <option value="rsync">rsync</option>
                 <option value="scp">scp</option>
-              </select>
+              </AppSelect>
             </div>
           </div>
         </div>
@@ -158,6 +158,7 @@ import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.
 import { useTagsStore, type TagInfo } from '../stores/tags.store';
 import apiClient from '../utils/apiClient';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import AppSelect from './common/AppSelect.vue';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents'; // +++ 导入事件发射器 +++
 
 interface ItemToSend {

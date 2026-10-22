@@ -60,7 +60,7 @@
               </div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
-              <select
+              <AppSelect
                 id="terminalRightClickBehaviorSelect"
                 v-model="terminalRightClickBehaviorLocal"
                 @change="handleUpdateTerminalRightClickBehavior"
@@ -73,7 +73,7 @@
                 <option value="openFile">{{ $t('settings.workspace.rightClickBehaviorOpenFile', '打开文件') }}</option>
                 <option value="saveQuickCommand">{{ $t('settings.workspace.rightClickBehaviorSaveQuickCommand', '保存为快捷命令') }}</option>
                 <option value="none">{{ $t('settings.workspace.rightClickBehaviorNone', '无操作') }}</option>
-              </select>
+              </AppSelect>
               <span v-if="!terminalRightClickBehaviorSuccess && terminalRightClickBehaviorMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
                 <i class="fas fa-exclamation-circle text-xs"></i>
                 {{ terminalRightClickBehaviorMessage }}
@@ -192,7 +192,7 @@
             </div>
           </div>
           <div class="flex items-center gap-3 shrink-0">
-            <select
+            <AppSelect
               id="commandInputSyncTargetSelect"
               v-model="commandInputSyncTargetLocal"
               @change="handleUpdateCommandInputSyncTarget"
@@ -201,7 +201,7 @@
               <option value="none">{{ $t('settings.commandInputSync.targetNone', '无') }}</option>
               <option value="quickCommands">{{ $t('settings.commandInputSync.targetQuickCommands', '快捷指令') }}</option>
               <option value="commandHistory">{{ $t('settings.commandInputSync.targetCommandHistory', '历史命令') }}</option>
-            </select>
+            </AppSelect>
             <span v-if="!commandInputSyncSuccess && commandInputSyncMessage" class="text-sm font-medium text-red-500 flex items-center gap-1">
               <i class="fas fa-exclamation-circle text-xs"></i>
               {{ commandInputSyncMessage }}
@@ -579,6 +579,7 @@ import type { DesktopFileOpenMode } from '../../stores/settings.store';
 import ToggleSwitch from '../common/ToggleSwitch.vue';
 import HelpTooltip from '../common/HelpTooltip.vue';
 import SettingToggle from './SettingToggle.vue';
+import AppSelect from '../common/AppSelect.vue';
 
 const settingsStore = useSettingsStore();
 const { settings } = storeToRefs(settingsStore);

@@ -8,12 +8,12 @@
          <form @submit.prevent="handleUpdateLanguage" class="space-y-4">
            <div>
              <label for="languageSelect" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.language.selectLabel') }}</label>
-             <select id="languageSelect" v-model="selectedLanguage"
+             <AppSelect id="languageSelect" v-model="selectedLanguage"
                      class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8">
                <option v-for="locale in availableLocales" :key="locale" :value="locale">
                  {{ languageNames[locale] || locale }} <!-- Display mapped name or locale code -->
                </option>
-             </select>
+             </AppSelect>
            </div>
            <div class="flex items-center justify-between">
               <button type="submit"
@@ -31,12 +31,12 @@
          <form @submit.prevent="handleUpdateTimezone" class="space-y-4">
            <div>
              <label for="timezoneSelect" class="block text-sm font-medium text-text-secondary mb-1">{{ $t('settings.timezone.selectLabel') }}</label>
-             <select id="timezoneSelect" v-model="selectedTimezone"
+             <AppSelect id="timezoneSelect" v-model="selectedTimezone"
                      class="w-full px-3 py-2 border border-border rounded-md shadow-sm bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none bg-no-repeat bg-right pr-8">
                <option v-for="tz in commonTimezones" :key="tz" :value="tz">
                  {{ tz }}
                </option>
-             </select>
+             </AppSelect>
               <small class="block mt-1 text-xs text-text-secondary">{{ $t('settings.timezone.description') }}</small>
            </div>
            <div class="flex items-center justify-between">
@@ -403,6 +403,7 @@ import { storeToRefs } from 'pinia';
 import { useSystemSettings } from '../../composables/settings/useSystemSettings';
 import { isDesktopApp } from '../../utils/platform';
 import axios from 'axios';
+import AppSelect from '../common/AppSelect.vue';
 
 const settingsStore = useSettingsStore();
 const desktopSyncStore = useDesktopSyncStore();

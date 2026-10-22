@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia';
 import type { ITheme } from 'xterm';
 import type { TerminalTheme } from '../../types/terminal-theme.types';
 import { defaultXtermTheme } from '../../features/appearance/config/default-themes';
+import AppSelect from '../common/AppSelect.vue';
 import {
   TERMINAL_FONT_PRESETS,
   TERMINAL_FONT_CATEGORIES,
@@ -474,7 +475,7 @@ watch(() => props.isEditingTheme, (isEditing) => {
 
       <!-- 下拉选择或输入 -->
       <div v-if="!isCustomFontMode">
-        <select
+        <AppSelect
           id="terminalFontSelect"
           v-model="selectedFontPresetId"
           @change="handleSelectFontPreset(selectedFontPresetId)"
@@ -496,7 +497,7 @@ watch(() => props.isEditingTheme, (isEditing) => {
           <optgroup label="其他">
             <option value="custom">✏️ 自定义输入字体...</option>
           </optgroup>
-        </select>
+        </AppSelect>
       </div>
       <div v-else class="flex items-center gap-2">
         <input

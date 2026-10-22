@@ -5,6 +5,7 @@ import FolderSelect from './FolderSelect.vue';
 import type { ProxyInfo } from '../stores/proxies.store';
 import type { TagInfo } from '../stores/tags.store';
 import type { ConnectionInfo } from '../stores/connections.store';
+import AppSelect from './common/AppSelect.vue';
 
 // Define Props
 const props = defineProps({
@@ -181,7 +182,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
     <!-- 代理选择（SSH / RDP / VNC 都支持 SOCKS5 与 HTTP CONNECT） -->
     <div v-if="props.advancedConnectionMode === 'proxy'">
       <label for="conn-proxy" class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.proxy') }}</label>
-      <select
+      <AppSelect
         id="conn-proxy"
         v-model="props.formData.proxy_id"
         class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary appearance-none bg-no-repeat bg-right pr-8 transition-all shadow-2xs"
@@ -190,7 +191,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         <option v-for="proxy in props.proxies" :key="proxy.id" :value="proxy.id">
           {{ proxy.name }} ({{ proxy.type }} - {{ proxy.host }}:{{ proxy.port }})
         </option>
-      </select>
+      </AppSelect>
       <div v-if="props.isProxyLoading && props.proxies.length === 0" class="mt-1 text-xs text-text-secondary">{{ t('proxies.loading') }}</div>
       <div v-if="props.proxyStoreError" class="mt-1 text-xs text-error">{{ t('proxies.error', { error: props.proxyStoreError }) }}</div>
     </div>
@@ -205,7 +206,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           class="flex items-center space-x-2 p-2 border border-border/70 rounded-xl bg-input"
         >
           <span class="text-xs font-medium text-text-secondary whitespace-nowrap pl-1">{{ t('connections.form.jumpHostLabel', '跳板机') }} {{ index + 1 }}:</span>
-          <select
+          <AppSelect
             v-model="props.formData.jump_chain[index]"
             class="flex-grow px-3 py-1.5 text-xs border border-border/60 rounded-lg text-foreground bg-background focus:outline-none focus:ring-1 focus:ring-primary appearance-none bg-no-repeat bg-right pr-8"
           >
@@ -213,7 +214,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
             <option v-for="host in getAvailableJumpHostsForIndex(index)" :key="host.id" :value="host.id">
               {{ host.name }}
             </option>
-          </select>
+          </AppSelect>
           <button
             type="button"
             @click="props.removeJumpHost(index)"
