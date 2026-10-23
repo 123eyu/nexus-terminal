@@ -14,8 +14,10 @@ import { createSshTerminalManager, type SshTerminalDependencies } from '../../..
 import { createStatusMonitorManager, type StatusMonitorDependencies } from '../../../composables/useStatusMonitor';
 import { createDockerManager, type DockerManagerDependencies } from '../../../composables/useDockerManager';
 import { registerSshSuspendHandlers } from './sshSuspendActions'; 
+import { suspendSessionNow } from './suspendNow';
 import apiClient from '../../../utils/apiClient';
 import { useWorkspaceSyncStore, markSessionRemovedPendingSync } from '../../workspaceSync.store';
+import { useUiNotificationsStore } from '../../uiNotifications.store';
 
 
 // --- 辅助函数 (特定于此模块的 actions) ---
@@ -270,7 +272,27 @@ export const activateSession = (sessionId: string, opts?: { silent?: boolean }) 
   }
 };
 
-export const closeSession = (sessionId: string, options?: { recordRemoval?: boolean }) => {
+/** 「已挂起」提示的节流时间戳：关闭其他/左侧/右侧标签时会连发几十次，不能一条条弹 */
+let lastSuspendToastAt = 0;
+const SUSPEND_TOAST_THROTTLE_MS = 800;
+
+export const closeSession = async (
+  sessionId: string,
+  options?: {
+    recordRemoval?: boolean;
+    /**
+     * 是否把 SSH 会话转入后台挂起（默认 true）。
+     * 只有「整页拆解」——页面卸载、接管前清场——才传 false，
+     * 那种场景要么后端自己会接管，要么进程都要没了，挂起没有意义。
+     */
+    suspend?: boolean;
+  },
+  /**
+   * 可选的 i18n 依赖。只有「挂起成功」这类需要给用户反馈的场景才用到，
+   * 批量拆解（cleanupAllSessions）不传，避免逐条弹提示。
+   */
+  deps?: { t: ReturnType<typeof useI18n>['t'] },
+) => {
   console.log(`[SessionActions] 请求关闭会话 ID: ${sessionId}`);
   const sessionToClose = sessions.value.get(sessionId);
   if (!sessionToClose) {
@@ -281,6 +303,36 @@ export const closeSession = (sessionId: string, options?: { recordRemoval?: bool
   // 远程桌面会话从来没有进过云端快照（RDP/VNC 不参与刷新恢复），
   // 所以既不需要记"待清理"，也不需要调后端原子销毁接口。
   const isRemoteSession = sessionToClose.kind === 'rdp' || sessionToClose.kind === 'vnc';
+
+  // 0. 关闭标签 = 转入后台挂起，不是断开连接。
+  //    必须在清理 wsManager / 终端实例之前做，并且要等后端确认真的接管了才敢放手：
+  //    后端一旦接管，SSH 引用就从 ws 会话里摘走了，之后怎么关 ws 都杀不到它。
+  let suspended = false;
+  if (!isRemoteSession && options?.suspend !== false) {
+    const suspendResult = await suspendSessionNow(sessionToClose);
+    suspended = suspendResult.ok;
+    if (suspended) {
+      console.log(`[SessionActions] 会话 ${sessionId} 已转入后台挂起，可在挂起面板恢复`);
+      // 标签消失是有意的：告诉用户 SSH 还活着，只是进了挂起池，
+      // 否则容易以为是"关个标签把连接关断了"。
+      // 批量关标签（关闭其他/左侧/右侧）会连续走这里，节流成一条提示。
+      const now = Date.now();
+      if (deps?.t && now - lastSuspendToastAt > SUSPEND_TOAST_THROTTLE_MS) {
+        lastSuspendToastAt = now;
+        try {
+          useUiNotificationsStore().showInfo(
+            deps.t('suspendedSshSessions.tabSuspendedToast', {
+              name: sessionToClose.connectionName || sessionId,
+            })
+          );
+        } catch (notifyErr) {
+          console.warn('[SessionActions] 挂起提示投递失败:', notifyErr);
+        }
+      }
+    } else {
+      console.log(`[SessionActions] 会话 ${sessionId} 挂起未成功 (${suspendResult.error})，按直接断开处理`);
+    }
+  }
 
   // 0. 先判断本次关闭能不能碰云端。
   //    接管遮罩里的 cleanupAllSessions() 会逐个走这里，那时候正在"准备从云端恢复"，
@@ -358,13 +410,21 @@ export const closeSession = (sessionId: string, options?: { recordRemoval?: bool
 
   // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘（仅针对该 sessionId）
   //
+  // 但如果前面已经成功挂起，**绝对不能**走这条路：原子销毁会把刚移交给挂起池的 SSH 一起 terminate 掉。
+  // 挂起之后只需要把这条标签从云端快照里摘掉（第 5 步整体覆盖快照就够了），
+  // 否则下次打开网页它又会被恢复成一个新连接。
+  //
   // 注意：接管/恢复/卸载期间不能动云端（canTouchCloud 在第 0 步已判定）。
   if (canTouchCloud && !isRemoteSession) {
-    apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
-      console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
-    }).catch((err) => {
-      console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
-    });
+    if (!suspended) {
+      apiClient.delete(`/workspace-sync/sessions/${sessionId}`).then((res) => {
+        console.log(`[SessionActions] 会话 ${sessionId} 已成功由后端原子销毁并落盘:`, res.data);
+      }).catch((err) => {
+        console.warn(`[SessionActions] 调用后端原子销毁接口失败:`, err);
+      });
+    } else {
+      console.log(`[SessionActions] 会话 ${sessionId} 已挂起，跳过原子销毁，仅从云端快照移除`);
+    }
 
     // 5. 立即同步当前剩余会话至云端快照
     try {
@@ -499,7 +559,9 @@ export const cleanupAllSessions = () => {
   sessions.value.forEach((_session, sessionId) => {
     // 整页拆解（页面卸载 / 接管前清场）不是"用户关掉了这些会话"，
     // 不能记进"待清理清单"——否则接管回来后它们会被当成已关闭而从快照里剔掉。
-    closeSession(sessionId, { recordRemoval: false });
+    // 同理也绝不能走挂起：这类场景要么后端自己会接管，要么整个页面就要没了，
+    // 再挂起一遍只会在挂起池里堆出一串永远不会被恢复的僵尸条目。
+    closeSession(sessionId, { recordRemoval: false, suspend: false });
   });
   // sessions.value.clear(); // closeSession 内部会逐个删除，这里不需要重复clear，但确认Map为空
   if (sessions.value.size > 0) { // 以防万一

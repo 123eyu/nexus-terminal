@@ -39,6 +39,14 @@ export interface SuspendSessionDetails {
   pendingResumeBuffer?: Buffer[];
   /** 多终端分屏独立 Shell 通道映射 (用于多终端保活) */
   paneStreams?: Map<string, any>;
+  /**
+   * 是否为「手动挂起」（用户主动关掉标签）。
+   *
+   * 这类会话**只属于挂起池**，和工作区同步彻底无关：
+   * 前端恢复工作区时绝不能自动认领它，否则「关掉的标签刷新后又自己回来了」。
+   * 而刷新 / 被别的客户端接管产生的挂起是 false（自动挂起），恢复流程照旧认领。
+   */
+  manuallySuspended?: boolean;
 }
 
 /**
@@ -60,4 +68,6 @@ export interface SuspendedSessionInfo {
   backendSshStatus: BackendSshStatus;
   disconnectionTimestamp?: string;
   originalSessionId?: string;
+  /** 是否手动挂起（关标签产生）。恢复工作区时必须跳过这类条目。 */
+  manuallySuspended?: boolean;
 }

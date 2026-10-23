@@ -56,7 +56,12 @@ export const useSessionStore = defineStore('session', () => {
       shouldActivate
     );
   const activateSession = (sessionId: string, opts?: { silent?: boolean }) => sessionActions.activateSession(sessionId, opts);
-  const closeSession = (sessionId: string) => sessionActions.closeSession(sessionId);
+  // 关闭标签默认「转入后台挂起」而不是断开 SSH，所以要透传 options 并返回 Promise
+  // （调用方可能想等挂起交接完成后再做后续动作）。顺手把 t 带进去发提示。
+  const closeSession = (
+    sessionId: string,
+    options?: { recordRemoval?: boolean; suspend?: boolean }
+  ) => sessionActions.closeSession(sessionId, options, { t });
   const handleConnectRequest = (connection: ConnectionInfo) =>
     sessionActions.handleConnectRequest(connection, {
       connectionsStore,

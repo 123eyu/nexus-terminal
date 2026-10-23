@@ -53,6 +53,8 @@ export class SshSuspendService extends EventEmitter {
     initialBuffer?: string;
     customSuspendName?: string;
     paneStreams?: Map<string, any>;
+    /** 手动挂起（用户关标签）标记，见 SuspendSessionDetails.manuallySuspended */
+    manuallySuspended?: boolean;
   }): Promise<string | null> {
     const {
       userId,
@@ -65,6 +67,7 @@ export class SshSuspendService extends EventEmitter {
       initialBuffer,
       customSuspendName,
       paneStreams,
+      manuallySuspended,
     } = details;
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Called for userId=${userId}, originalSessionId=${originalSessionId}`);
 
@@ -112,6 +115,7 @@ export class SshSuspendService extends EventEmitter {
       inMemoryBuffer: initialBuffer ? [initialBuffer] : [],
       pendingResumeBuffer: undefined,
       paneStreams: paneStreams && paneStreams.size > 0 ? new Map(paneStreams) : undefined,
+      manuallySuspended: manuallySuspended === true,
     };
 
     userSessions.set(suspendSessionId, sessionDetails);
@@ -223,6 +227,7 @@ export class SshSuspendService extends EventEmitter {
         backendSshStatus: details.backendSshStatus,
         disconnectionTimestamp: details.disconnectionTimestamp,
         originalSessionId: details.originalSessionId,
+        manuallySuspended: details.manuallySuspended === true,
       });
     }
     // TODO: 增强此方法以从日志目录恢复 'disconnected_by_backend' 的会话状态，

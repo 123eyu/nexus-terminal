@@ -439,6 +439,115 @@ export function initializeConnectionHandler(wss: WebSocketServer, sshSuspendServ
                             }
                             break;
                         }
+                        /**
+                         * 立即挂起（关闭标签时的默认动作）
+                         *
+                         * 与 SSH_MARK_FOR_SUSPEND 的区别：那个只打标记，真正的移交要等 ws 断开；
+                         * 而 ws 断开一旦被判定为「显式关闭」（1000），标记会被清掉、SSH 直接被杀。
+                         * 这里当场把 SSH 移交给挂起池，然后把 state 上的引用摘掉，
+                         * 之后前端怎么关 ws 都碰不到这条连接了。
+                         */
+                        case 'SSH_SUSPEND_NOW': {
+                            const nowPayload = payload as { sessionId?: string; initialBuffer?: string };
+                            const requestedSessionId = nowPayload.sessionId;
+                            const initialBuffer = nowPayload.initialBuffer;
+                            const replySuspendNow = (ok: boolean, extra: Record<string, any> = {}) => {
+                                if (ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'SSH_SUSPEND_NOW_ACK',
+                                        // 回传前端传进来的 id，前端靠它兑现等待的 Promise
+                                        payload: { sessionId: requestedSessionId, success: ok, ...extra },
+                                    }));
+                                }
+                            };
+
+                            console.log(`[SSH_SUSPEND_NOW] UserID: ${ws.userId}, TargetSessionID: ${requestedSessionId}, InitialBuffer: ${!!initialBuffer}`);
+
+                            if (!ws.userId) {
+                                replySuspendNow(false, { error: '用户认证失败' });
+                                break;
+                            }
+
+                            let actualSessionId = requestedSessionId || ws.sessionId || '';
+                            let stateForSuspend = clientStates.get(actualSessionId);
+                            if ((!stateForSuspend || !stateForSuspend.sshClient || !stateForSuspend.sshShellStream) && ws.sessionId) {
+                                const fallbackState = clientStates.get(ws.sessionId);
+                                if (fallbackState && fallbackState.sshClient && fallbackState.sshShellStream) {
+                                    actualSessionId = ws.sessionId;
+                                    stateForSuspend = fallbackState;
+                                }
+                            }
+
+                            if (!stateForSuspend || !stateForSuspend.sshClient || !stateForSuspend.sshShellStream) {
+                                replySuspendNow(false, { error: '未找到可挂起的活动 SSH 会话' });
+                                break;
+                            }
+
+                            try {
+                                const logIdentifier = stateForSuspend.suspendLogPath || actualSessionId;
+                                await temporaryLogStorageService.ensureLogDirectoryExists();
+                                // 先把前端带过来的完整 scrollback 落地，挂起期间的新输出由 service 追加
+                                if (initialBuffer) {
+                                    const normalized = initialBuffer.replace(/\r?\n/g, '\r\n');
+                                    await temporaryLogStorageService.overwriteLog(
+                                        logIdentifier,
+                                        normalized.endsWith('\r\n') ? normalized : `${normalized}\r\n`
+                                    );
+                                } else if (stateForSuspend.recentOutputBuffer?.length) {
+                                    const fallbackBuffer = stateForSuspend.recentOutputBuffer.join('');
+                                    if (fallbackBuffer) {
+                                        await temporaryLogStorageService.overwriteLog(
+                                            logIdentifier,
+                                            fallbackBuffer.replace(/\r?\n/g, '\r\n')
+                                        );
+                                    }
+                                }
+
+                                const sshClientToPass = stateForSuspend.sshClient;
+                                const channelToPass = stateForSuspend.sshShellStream;
+                                const paneStreamsToPass = stateForSuspend.paneStreams;
+
+                                // 先摘引用再交接：交接失败要能原样放回去
+                                stateForSuspend.sshClient = undefined as any;
+                                stateForSuspend.sshShellStream = undefined;
+                                stateForSuspend.paneStreams = undefined;
+                                stateForSuspend.isSuspendedByService = true;
+                                stateForSuspend.isMarkedForSuspend = false;
+                                stateForSuspend.suspendLogPath = logIdentifier;
+
+                                const newSuspendId = await sshSuspendService.takeOverMarkedSession({
+                                    userId: ws.userId,
+                                    originalSessionId: actualSessionId,
+                                    sshClient: sshClientToPass,
+                                    channel: channelToPass,
+                                    connectionName: stateForSuspend.connectionName || '未知连接',
+                                    connectionId: String(stateForSuspend.dbConnectionId),
+                                    logIdentifier,
+                                    // 历史已经写进日志了，别再塞给 service 重复一份
+                                    initialBuffer: undefined,
+                                    paneStreams: paneStreamsToPass,
+                                    // 打上「手动挂起」标记：这是用户主动关的标签，
+                                    // 工作区恢复流程必须跳过它，只能由用户去挂起面板手动恢复。
+                                    manuallySuspended: true,
+                                });
+
+                                if (!newSuspendId) {
+                                    stateForSuspend.sshClient = sshClientToPass;
+                                    stateForSuspend.sshShellStream = channelToPass;
+                                    stateForSuspend.paneStreams = paneStreamsToPass;
+                                    stateForSuspend.isSuspendedByService = false;
+                                    replySuspendNow(false, { error: '挂起失败：SSH 通道已不可用' });
+                                    break;
+                                }
+
+                                console.log(`[SSH_SUSPEND_NOW] 会话 ${actualSessionId} 已转入挂起池，挂起 ID: ${newSuspendId}`);
+                                replySuspendNow(true, { suspendSessionId: newSuspendId });
+                            } catch (err: any) {
+                                console.error(`[SSH_SUSPEND_NOW] 会话 ${actualSessionId} 挂起失败:`, err);
+                                replySuspendNow(false, { error: err?.message || '挂起失败' });
+                            }
+                            break;
+                        }
                         case 'SSH_UNMARK_FOR_SUSPEND': {
                             const unmarkPayload = payload as SshUnmarkForSuspendRequest['payload'];
                             const sessionToUnmarkId = unmarkPayload.sessionId;

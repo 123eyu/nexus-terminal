@@ -39,8 +39,12 @@ const fileEditorStore = useFileEditorStore();
 const workspaceSyncStore = useWorkspaceSyncStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
 const { activeSessionId } = storeToRefs(sessionStore);
+const { suspendedSshSessions } = storeToRefs(sessionStore);
 const { syncEnabled, isSyncing } = storeToRefs(workspaceSyncStore);
 const { toggleSyncEnabled } = workspaceSyncStore;
+
+// 关标签 = 挂起，挂起池里通常会有货：按钮上给个数字，别让用户忘了它们还活着
+const suspendedCount = computed(() => suspendedSshSessions.value?.length || 0);
 
 const syncButtonTitle = computed(() => {
   if (isSyncing.value) return t('workspaceSync.syncing', '正在同步工作区...');
@@ -241,10 +245,12 @@ const getBarButtonClass = (isActive: boolean = false) => [
         <button
           v-else-if="itemId === 'suspendedSessions'"
           @click="toggleSuspendedSshSessionsModal"
+          class="mci-suspend-btn"
           :class="getBarButtonClass(showSuspendedSshSessionsModal)"
           :title="t('suspendedSshSessions.title', '挂起会话')"
         >
           <i class="fas fa-pause-circle text-base"></i>
+          <span v-if="suspendedCount > 0" class="mci-suspend-badge">{{ suspendedCount }}</span>
         </button>
 
         <!-- 虚拟按键 -->
@@ -380,3 +386,28 @@ const getBarButtonClass = (isActive: boolean = false) => [
     />
   </div>
 </template>
+
+<style scoped>
+/* 挂起会话按钮上的计数角标：关标签会挂起，得让用户知道后台还挂着几个 */
+.mci-suspend-btn {
+  position: relative;
+}
+
+.mci-suspend-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.2rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 0.95rem;
+  text-align: center;
+  pointer-events: none;
+  /* 用语义变量，浅色/深色主题都能看清（项目没有 .dark 类） */
+  color: var(--color-warning-text);
+  background-color: color-mix(in oklab, var(--color-warning) 82%, var(--text-color));
+}
+</style>

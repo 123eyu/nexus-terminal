@@ -2061,6 +2061,15 @@
       "suspendedAt": "挂起于"
     },
     "disconnectedAt": "已于 {time} 断开",
+    "tabSuspendedToast": "「{name}」已挂起，可在挂起会话面板恢复",
+    "badge": {
+      "manual": "挂起模式",
+      "manualTooltip": "你手动关闭了这个标签，SSH 连接没有断开，而是转入后台挂起"
+    },
+    "hint": {
+      "detached": "关标签 = 挂起（SSH 不断开）。挂起会话不参与工作区同步，刷新页面不会自动打开，需要在这里手动恢复。",
+      "manualEntry": "手动挂起 · 刷新页面不会自动恢复 · 恢复后进程状态原样保留"
+    },
     "status": {
       "hanging": "活跃",
       "disconnected": "已断开"

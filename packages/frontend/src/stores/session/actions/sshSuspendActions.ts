@@ -22,6 +22,7 @@ import type {
 } from '../../../types/websocket.types'; 
 import type { WsManagerInstance, SessionState } from '../types'; 
 import { closeSession as closeSessionAction, activateSession as activateSessionAction, openNewSession, closeSession } from './sessionActions'; 
+import { resolveSuspendNowAck } from './suspendNow';
 import { useConnectionsStore } from '../../connections.store'; 
 import { useUiNotificationsStore } from '../../uiNotifications.store'; 
 import { useTerminalHighlightStore } from '../../terminal-highlight.store'; 
@@ -576,6 +577,30 @@ const handleSshMarkedForSuspendAck = (payload: SshMarkedForSuspendAckPayload): v
   }
 };
 
+/**
+ * 「立即挂起」的确认。只有关标签路径会等这个 ACK，
+ * 所以兑现不到就说明不是那条链路发起的（比如手动标记），直接忽略即可。
+ */
+const handleSshSuspendNowAck = (payload: {
+  sessionId?: string;
+  success?: boolean;
+  error?: string;
+  suspendSessionId?: string;
+}): void => {
+  if (!payload?.sessionId) return;
+  const consumed = resolveSuspendNowAck(payload.sessionId, {
+    ok: payload.success === true,
+    error: payload.error,
+  });
+  if (!consumed) return;
+  if (payload.success === true) {
+    console.log(`[${t('term.sshSuspend')}] 会话 ${payload.sessionId} 已转入后台挂起: ${payload.suspendSessionId}`);
+  } else {
+    // 挂起失败不打扰用户：closeSession 会自动退回「直接断开」，观感等于旧行为
+    console.warn(`[${t('term.sshSuspend')}] 会话 ${payload.sessionId} 挂起失败，按直接断开处理: ${payload.error}`);
+  }
+};
+
 const handleSshUnmarkedForSuspendAck = (payload: SshUnmarkedForSuspendAckPayload): void => {
   const uiNotificationsStore = useUiNotificationsStore();
   console.log(`[${t('term.sshSuspend')}] 接到 SSH_UNMARKED_FOR_SUSPEND_ACK:`, payload);
@@ -816,6 +841,7 @@ export const registerSshSuspendHandlers = (wsManager: WsManagerInstance): void =
   // 但通常这些处理器会随 wsManager 实例的生命周期一起存在。
   // wsManager.onMessage('SSH_SUSPEND_STARTED_RESP', (p: MessagePayload) => handleSshSuspendStartedResp(p as SshSuspendStartedRespPayload));
   wsManager.onMessage('SSH_MARKED_FOR_SUSPEND_ACK', (p: MessagePayload) => handleSshMarkedForSuspendAck(p as SshMarkedForSuspendAckPayload));
+  wsManager.onMessage('SSH_SUSPEND_NOW_ACK', (p: MessagePayload) => handleSshSuspendNowAck(p as any));
   wsManager.onMessage('SSH_UNMARKED_FOR_SUSPEND_ACK', (p: MessagePayload) => handleSshUnmarkedForSuspendAck(p as SshUnmarkedForSuspendAckPayload)); 
   wsManager.onMessage('SSH_SUSPEND_LIST_RESPONSE', (p: MessagePayload) => handleSshSuspendListResponse(p as SshSuspendListResponsePayload));
   wsManager.onMessage('SSH_SUSPEND_RESUMED_NOTIF', (p: MessagePayload) => handleSshSuspendResumedNotif(p as SshSuspendResumedNotifPayload));

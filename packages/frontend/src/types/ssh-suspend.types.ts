@@ -23,6 +23,15 @@ export interface SuspendedSshSession {
    * 则此字段表示断开连接的时间戳，ISO 格式的日期字符串。
    */
   disconnectionTimestamp?: string;
+  /**
+   * 是否为「手动挂起」——用户主动关掉标签产生的挂起。
+   *
+   * 这类会话属于挂起池专属资产，**不参与工作区同步**：
+   * 刷新页面 / 换端恢复都不会自动把它变回标签，只能在这里手动恢复。
+   */
+  manuallySuspended?: boolean;
+  /** 产生该挂起条目的原始会话 ID（后端用于对账，UI 不展示）。 */
+  originalSessionId?: string;
 }
 
 /**

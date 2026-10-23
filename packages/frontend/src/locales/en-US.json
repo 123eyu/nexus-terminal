@@ -2062,6 +2062,15 @@
       "suspendedAt": "Suspended At"
     },
     "disconnectedAt": "Disconnected at {time}",
+    "tabSuspendedToast": "\"{name}\" is suspended. Restore it from the suspended sessions panel.",
+    "badge": {
+      "manual": "Suspended",
+      "manualTooltip": "You closed this tab manually. The SSH connection is kept alive in the background instead of being disconnected."
+    },
+    "hint": {
+      "detached": "Closing a tab suspends the session instead of killing SSH. Suspended sessions are not part of workspace sync: refreshing the page will not reopen them, restore them here manually.",
+      "manualEntry": "Manually suspended · Not restored on refresh · Process state is preserved on resume"
+    },
     "status": {
       "hanging": "Active",
       "disconnected": "Disconnected"

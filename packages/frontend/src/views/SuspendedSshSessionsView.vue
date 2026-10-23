@@ -17,6 +17,12 @@
       <!-- <div class="text-sm text-gray-500 mt-1">
         当前挂起会话总数: {{ filteredSessions.length }} / {{ allSuspendedSshSessions.length }}
       </div> -->
+      <!-- 说明「挂起」是什么：这些会话的 SSH 还在后端活着，只是没有标签了 -->
+      <p class="sss-hint mt-1.5">
+        <i class="fas fa-circle-info"></i>
+        <span>{{ $t('suspendedSshSessions.hint.detached') }}</span>
+        <span class="sss-hint-count">{{ filteredSessions.length }}</span>
+      </p>
     </div>
 
     <div class="session-list-container flex-grow overflow-y-auto">
@@ -32,11 +38,14 @@
           v-for="session in filteredSessions"
           :key="session.suspendSessionId"
           class="session-item p-3 mb-2 border border-border/70 rounded-md bg-surface-ground"
-          :class="{ 'opacity-60': session.backendSshStatus === 'disconnected_by_backend' }"
+          :class="{
+            'opacity-60': session.backendSshStatus === 'disconnected_by_backend',
+            'sss-item--paused': session.manuallySuspended && session.backendSshStatus === 'hanging',
+          }"
         >
           <div class="flex justify-between items-center">
             <div class="session-info flex-grow mr-2">
-              <div class="font-bold text-lg flex items-center">
+              <div class="font-bold text-lg flex items-center flex-wrap gap-x-2 gap-y-1">
                 <span
                   v-if="editingSuspendSessionId !== session.suspendSessionId"
                   class="cursor-pointer hover:text-primary"
@@ -55,11 +64,18 @@
                   @keydown.enter.prevent="finishEditingName()"
                   @keydown.esc.prevent="cancelEditingName()"
                 />
+                <!-- 挂起模式徽标：明确告诉用户"这不是断开，是挂起" -->
                 <span
-                  :class="[
-                    'px-2 py-0.5 text-xs font-semibold rounded-full ml-2 whitespace-nowrap', /* +++ 调整了 padding 和增加了 ml-2, whitespace-nowrap +++ */
-                    session.backendSshStatus === 'hanging' ? 'bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-700 dark:text-yellow-100'
-                  ]"
+                  v-if="session.manuallySuspended"
+                  class="sss-badge sss-badge--paused"
+                  :title="$t('suspendedSshSessions.badge.manualTooltip')"
+                >
+                  <i class="fas fa-pause"></i>
+                  <span>{{ $t('suspendedSshSessions.badge.manual') }}</span>
+                </span>
+                <span
+                  class="sss-badge"
+                  :class="session.backendSshStatus === 'hanging' ? 'sss-badge--live' : 'sss-badge--dead'"
                 >
                   {{ session.backendSshStatus === 'hanging' ? $t('suspendedSshSessions.status.hanging') : $t('suspendedSshSessions.status.disconnected') }}
                 </span>
@@ -69,6 +85,10 @@
               </div>
               <div class="text-xs text-muted-color mt-1">
                 {{ $t('suspendedSshSessions.label.suspendedAt') }}: {{ formatDateTime(session.suspendStartTime) }}
+              </div>
+              <!-- 手动挂起的会话不参与工作区同步，只能在这里手动恢复 -->
+              <div v-if="session.manuallySuspended" class="sss-note">
+                {{ $t('suspendedSshSessions.hint.manualEntry') }}
               </div>
               <div
                 v-if="session.backendSshStatus === 'disconnected_by_backend' && session.disconnectionTimestamp"
@@ -309,6 +329,82 @@ onUnmounted(() => {
 }
 .session-item:hover {
   background-color: var(--surface-hover); /* PrimeVue hover color */
+}
+
+/* ---- 挂起标识 ----
+ * 项目没有 .dark 类（主题靠 :root 变量整体替换），所以这里一律用语义变量 + color-mix，
+ * 浅色/深色两套主题下都能读出对比度。
+ */
+.sss-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* 全局 `i, .fas` 没进 @layer，会盖掉徽标自己的配色 */
+.sss-badge i {
+  color: inherit;
+  font-size: 0.625rem;
+}
+
+.sss-badge--live {
+  color: color-mix(in oklab, var(--color-success) 78%, var(--text-color));
+  background-color: color-mix(in oklab, var(--color-success) 14%, transparent);
+  border-color: color-mix(in oklab, var(--color-success) 34%, transparent);
+}
+
+.sss-badge--dead {
+  color: color-mix(in oklab, var(--color-warning) 70%, var(--text-color));
+  background-color: color-mix(in oklab, var(--color-warning) 16%, transparent);
+  border-color: color-mix(in oklab, var(--color-warning) 34%, transparent);
+}
+
+/* 「挂起模式」：手动关标签进来的会话，和环境不同，用蓝色系区分 */
+.sss-badge--paused {
+  color: color-mix(in oklab, #2563eb 76%, var(--text-color));
+  background-color: color-mix(in oklab, #2563eb 14%, transparent);
+  border-color: color-mix(in oklab, #2563eb 36%, transparent);
+}
+
+.sss-item--paused {
+  border-left: 3px solid color-mix(in oklab, #2563eb 70%, transparent);
+}
+
+.sss-note {
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-color-secondary);
+  opacity: 0.9;
+}
+
+.sss-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--text-color-secondary);
+}
+
+.sss-hint i {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.sss-hint-count {
+  margin-left: auto;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  font-weight: 600;
+  color: var(--text-color);
+  background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
 }
 
 /* 保持与 QuickCommandsView 类似的简洁风格 */

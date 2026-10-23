@@ -16,6 +16,8 @@ import type { WorkspaceSnapshot } from './types';
  *    两端的本地自增 id 不同，只认 id 会把会话挂到错误的连接上。
  * 2. **挂起会话优先消费**：服务端还留着 SSH 连接时直接唤醒（保留进程状态），
  *    唤醒成功就**不要**再回放 buffer —— 后端会通过 logData 自己回放，重复写会叠两层。
+ *    但「手动挂起」（关标签产生的，`manuallySuspended`）永远不参与恢复，
+ *    它们只属于挂起面板，必须由用户手动恢复。
  * 3. **并发恢复但保持快照顺序**：`Promise.all` 只影响耗时，不影响 sessionOrder。
  * 4. **primaryTerminalPaneId 只记录不写入 manager**：会话树的 paneId 每次刷新都重新生成，
  *    写进 manager 会锁定一个不存在的分屏通道，命令直接发不出去。
@@ -23,8 +25,9 @@ import type { WorkspaceSnapshot } from './types';
 export interface RestoreSessionsDeps {
   snapshot: WorkspaceSnapshot;
   /**
-   * 阶段 2 拉到的挂起会话池。**会被就地消费（splice）**，
+   * 阶段 2 拉到的挂起会话池。**其中可自动认领的部分会被就地消费（splice）**，
    * 所以必须传同一个数组引用，否则后续会话会重复认领同一个挂起会话。
+   * `manuallySuspended` 的条目会被跳过且不动，留在面板里。
    */
   availableSuspended: any[];
 }
@@ -44,8 +47,51 @@ export async function restoreSessionsFromSnapshot(
     return sessionIdMap;
   }
 
+  /**
+   * 手动挂起的会话（用户主动关掉的标签）不参与工作区恢复。
+   *
+   * 这是「挂起功能」和「工作区实时同步」的分界线：
+   * 刷新手动关掉的标签，它只应该躺在挂起面板里等你手动恢复，
+   * 绝不能被恢复流程顺手认领回来 —— 否则关标签等于没关。
+   *
+   * 自动挂起的（刷新 / 被其它客户端接管时后端保活下来的）仍然是 true 的相反面，
+   * 照旧在这里被认领，刷新后标签原样回来。
+   */
+  const autoClaimableSuspended = (availableSuspended || []).filter(
+    (item) => !item?.manuallySuspended
+  );
+  const manualSuspendedCount = (availableSuspended?.length || 0) - autoClaimableSuspended.length;
+  if (manualSuspendedCount > 0) {
+    logSync(
+      `跳过 ${manualSuspendedCount} 个手动挂起的会话（关标签产生的），它们只在挂起面板里等手动恢复`
+    );
+  }
+
   // 预先识别云端选中的目标激活会话（未记录则默认第 0 个）
   const targetActiveSessionSnapshotId = snapshot.activeSessionId || snapshot.sessions[0]?.sessionId;
+
+  /**
+   * 「这条快照记录本身就是那条被关掉的标签」吗？
+   *
+   * 判据是 `originalSessionId`：手动挂起条目记着它挂起前的会话 ID，
+   * 而快照里那条陈旧记录用的正是同一个 ID —— 命中就说明快照还留着"已经关掉的那张标签"，
+   * 这种情况下绝不能恢复（否则关标签等于没关）。
+   *
+   * 注意**不能只看连接**：用户关掉标签后完全可能重新点开同一个连接（新会话、新 ID），
+   * 那个标签是活的，该恢复；按连接一刀切会把正常标签也弄丢。
+   */
+  const manualSuspendedOriginalIds = new Set<string>();
+  const manualSuspendedIds = new Set<string>();
+  for (const item of availableSuspended || []) {
+    if (!item?.manuallySuspended) continue;
+    if (item.originalSessionId) manualSuspendedOriginalIds.add(String(item.originalSessionId));
+    if (item.suspendSessionId) manualSuspendedIds.add(String(item.suspendSessionId));
+  }
+  const isSnapshotEntryManuallySuspended = (s: WorkspaceSnapshot['sessions'][number]) => {
+    if (manualSuspendedOriginalIds.size === 0 && manualSuspendedIds.size === 0) return false;
+    if (s.sessionId && manualSuspendedOriginalIds.has(String(s.sessionId))) return true;
+    return !!s.suspendSessionId && manualSuspendedIds.has(String(s.suspendSessionId));
+  };
 
   // 先同步匹配消费池，为并发恢复做预先规划
   const restorePlans = snapshot.sessions.map((s) => {
@@ -64,18 +110,18 @@ export async function restoreSessionsFromSnapshot(
       connInfo = connectionsStore.connections.find((c) => c.id === connIdNum);
     }
 
-    let matchedIdx = availableSuspended.findIndex(
+    let matchedIdx = autoClaimableSuspended.findIndex(
       (item) => item.originalSessionId && item.originalSessionId === s.sessionId
     );
 
     if (matchedIdx === -1 && s.suspendSessionId) {
-      matchedIdx = availableSuspended.findIndex(
+      matchedIdx = autoClaimableSuspended.findIndex(
         (item) => item.suspendSessionId === s.suspendSessionId
       );
     }
 
     if (matchedIdx === -1) {
-      matchedIdx = availableSuspended.findIndex(
+      matchedIdx = autoClaimableSuspended.findIndex(
         (item) =>
           String(item.connectionId) === String(s.connectionId) ||
           item.connectionName === s.connectionName
@@ -84,8 +130,8 @@ export async function restoreSessionsFromSnapshot(
 
     let matchedSuspended: any = undefined;
     if (matchedIdx !== -1) {
-      matchedSuspended = availableSuspended[matchedIdx];
-      availableSuspended.splice(matchedIdx, 1);
+      matchedSuspended = autoClaimableSuspended[matchedIdx];
+      autoClaimableSuspended.splice(matchedIdx, 1);
     }
 
     return {
@@ -93,6 +139,8 @@ export async function restoreSessionsFromSnapshot(
       connInfo,
       matchedSuspended,
       isTargetActive: s.sessionId === targetActiveSessionSnapshotId,
+      // 这条快照记录就是用户关掉的那张标签（已手动挂起）→ 不恢复，交给挂起面板
+      blockedByManualSuspend: !matchedSuspended && isSnapshotEntryManuallySuspended(s),
     };
   });
 
@@ -108,6 +156,14 @@ export async function restoreSessionsFromSnapshot(
       let targetSessionId: string | null = null;
       let isResumed = false;
       const shouldActivateThis = plan.isTargetActive;
+
+      // 这条快照记录就是用户关掉的那张标签（已手动挂起），标签归挂起面板管
+      if (plan.blockedByManualSuspend) {
+        logSync(
+          `快照里的会话 ${s.sessionId} (${s.connectionName || s.connectionId}) 已手动挂起，跳过这次标签恢复（等用户在挂起面板手动恢复）`
+        );
+        return;
+      }
 
       if (plan.matchedSuspended) {
         logSync(
