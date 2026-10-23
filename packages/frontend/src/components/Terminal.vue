@@ -88,6 +88,18 @@ let serializeAddon: SerializeAddon | null = null; // 官方序列化插件，用
 let unregisterDebugTerminal: (() => void) | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let observedElement: HTMLElement | null = null; // +++ Store the observed element +++
+/**
+ * 可见性观察器：专门解决「终端在被 v-show 隐藏的会话里挂载」这一次性场景。
+ *
+ * 每个会话的工作区是个常驻的 `v-show` 沙箱，刷新恢复时非激活会话的终端是在
+ * `display:none` 的祖先里挂载的 —— 容器 0×0，`proposeDimensions()` 返回 undefined，
+ * 只能退化成 xterm 默认的 80×24。等用户切到这个标签、容器重新有盒子时，
+ * **ResizeObserver 不会补发回调**（观察时元素就没有盒子，Chromium 不会在它重新获得盒子时通知），
+ * 于是终端永远停在 80 列，表现为"文本只占左上角一小块"。
+ *
+ * IntersectionObserver 会如实报告 不可见 → 可见 的跃迁，拿它补这一刀 fit。
+ */
+let visibilityObserver: IntersectionObserver | null = null;
 let debounceTimer: number | null = null; // 用于防抖的计时器 ID
 let selectionListenerDisposable: IDisposable | null = null; // +++ 提升声明并添加类型 +++
 let lastResizeObserverWidth = 0;
@@ -431,6 +443,37 @@ onMounted(() => {
             resizeObserver.observe(observedElement);
             console.log(`[Terminal ${props.sessionId}] Initial observe.`);
         }
+
+        /**
+         * 可见性兜底：元素从"没有盒子"变成"有盒子"时补一次 fit。
+         * fit 会不会白跑？不会 —— 尺寸没变就什么都不发（见下面的 dims 比较），
+         * 所以正常可见挂载的场景只多一次无副作用的测量。
+         */
+        try {
+            visibilityObserver = new IntersectionObserver((entries) => {
+                const entry = entries[0];
+                if (!entry?.isIntersecting) return;
+                if (!props.isActive || !terminal || !terminalRef.value) return;
+                // 等一帧，让 flex 布局把最终尺寸算完（v-show 刚切回来时这一帧还没落定）
+                requestAnimationFrame(() => {
+                    if (!props.isActive || !terminal || !terminalRef.value) return;
+                    if (terminalRef.value.offsetWidth <= 0 || terminalRef.value.offsetHeight <= 0) return;
+                    try {
+                        const dims = calculateTerminalDimensions(terminal);
+                        if (dims.cols === terminal.cols && dims.rows === terminal.rows) return;
+                        console.log(
+                            `[Terminal ${props.sessionId}] 容器重新可见，补一次 fit: ${terminal.cols}x${terminal.rows} -> ${dims.cols}x${dims.rows}`
+                        );
+                        fitAndEmitResizeNow(terminal);
+                    } catch (e) {
+                        console.warn(`[Terminal ${props.sessionId}] 可见性补 fit 失败:`, e);
+                    }
+                });
+            }, { threshold: 0 });
+            visibilityObserver.observe(observedElement);
+        } catch (e) {
+            console.warn(`[Terminal ${props.sessionId}] IntersectionObserver 不可用，跳过可见性补 fit:`, e);
+        }
     }
 
 
@@ -738,6 +781,14 @@ onBeforeUnmount(() => {
       console.log(`[Terminal ${props.sessionId}] ResizeObserver disconnected.`);
   }
   resizeObserver = null;
+  if (visibilityObserver) {
+    try {
+      visibilityObserver.disconnect();
+    } catch (e) {
+      // ignore
+    }
+    visibilityObserver = null;
+  }
   observedElement = null;
 
   if (serializeAddon) {
