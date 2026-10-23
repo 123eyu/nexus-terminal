@@ -2,6 +2,7 @@ import { Client } from 'ssh2';
 import { WebSocket } from 'ws';
 import { ClientState } from '../websocket';
 import { settingsService } from '../settings/settings.service';
+import { MemUsage, parseFreeOutput, parseProcMeminfo } from './status-monitor-memory';
 
 
 interface ServerStatus {
@@ -155,60 +156,18 @@ export class StatusMonitorService {
 
 
              try {
-                 let freeCommand = 'free -m';
-                 let isBusyBox = false;
-                 try {
-                     const busyboxCheck = await this.executeSshCommand(sshClient, 'busybox --help');
-                     if (busyboxCheck.includes('BusyBox')) {
-                         freeCommand = 'free';
-                         isBusyBox = true;
-                     }
-                 } catch (err) {
-                     // 如果检查失败，默认使用 free -m
-                 }
-                 const freeOutput = await this.executeSshCommand(sshClient, freeCommand);
-                 const lines = freeOutput.split('\n');
-                 const memLine = lines.find(line => line.startsWith('Mem:'));
-                 const swapLine = lines.find(line => line.startsWith('Swap:'));
-                 if (memLine) {
-                     const parts = memLine.split(/\s+/);
-                     if (parts.length >= 3) {
-                         let totalVal = parseInt(parts[1], 10);
-                         let usedVal = parseInt(parts[2], 10);
-
-                         if (isBusyBox) { 
-                             if (!isNaN(totalVal)) totalVal = Math.round(totalVal / 1024);
-                             if (!isNaN(usedVal)) usedVal = Math.round(usedVal / 1024);
-                         }
-
-                         if (!isNaN(totalVal) && !isNaN(usedVal)) {
-                             status.memTotal = totalVal;
-                             status.memUsed = usedVal;
-                             status.memPercent = totalVal > 0 ? parseFloat(((usedVal / totalVal) * 100).toFixed(1)) : 0;
-                         }
-                     }
-                 }
-                 if (swapLine) {
-                     const parts = swapLine.split(/\s+/);
-                     if (parts.length >= 3) {
-                         let totalVal = parseInt(parts[1], 10);
-                         let usedVal = parseInt(parts[2], 10);
-
-                         if (isBusyBox) {
-                             if (!isNaN(totalVal)) totalVal = Math.round(totalVal / 1024);
-                             if (!isNaN(usedVal)) usedVal = Math.round(usedVal / 1024);
-                         }
-
-                         if (!isNaN(totalVal) && !isNaN(usedVal)) {
-                             status.swapTotal = totalVal;
-                             status.swapUsed = usedVal;
-                             status.swapPercent = totalVal > 0 ? parseFloat(((usedVal / totalVal) * 100).toFixed(1)) : 0;
-                         }
-                     }
-                 } else {
-                     status.swapTotal = 0;
-                     status.swapUsed = 0;
-                     status.swapPercent = 0;
+                 // 先读 /proc/meminfo（key 是内核导出的英文，不受 locale 影响），
+                 // 失败再退回 free（命令强制 LC_ALL=C）。
+                 // 直接解析 `free` 的 "Mem:" 标签在 procps 4.0+ 的中文环境下必然失配，
+                 // 表现就是「只有内存读不到」，见 status-monitor-memory.ts 头部说明。
+                 const mem = (await this.readMemFromProc(sshClient)) ?? (await this.readMemFromFree(sshClient));
+                 if (mem) {
+                     status.memTotal = mem.memTotal;
+                     status.memUsed = mem.memUsed;
+                     status.memPercent = mem.memTotal > 0 ? parseFloat(((mem.memUsed / mem.memTotal) * 100).toFixed(1)) : 0;
+                     status.swapTotal = mem.swapTotal;
+                     status.swapUsed = mem.swapUsed;
+                     status.swapPercent = mem.swapTotal > 0 ? parseFloat(((mem.swapUsed / mem.swapTotal) * 100).toFixed(1)) : 0;
                  }
              } catch (err) { /* 静默处理 */ }
 
@@ -303,7 +262,7 @@ export class StatusMonitorService {
             }
 
             try {
-                const uptimeOutput = await this.executeSshCommand(sshClient, 'uptime');
+                const uptimeOutput = await this.executeSshCommand(sshClient, 'LC_ALL=C uptime');
                  const match = uptimeOutput.match(/load average(?:s)?:\s*([\d.]+)[, ]?\s*([\d.]+)[, ]?\s*([\d.]+)/);
                  if (match) status.loadAvg = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
              } catch (err) { /* 静默处理 */ }
@@ -339,6 +298,46 @@ export class StatusMonitorService {
 
          return status as ServerStatus;
      }
+
+    /**
+     * 从 /proc/meminfo 读取内存/交换信息。
+     * key 由内核按英文常量导出，`cat` 也不经过 gettext，所以不受 LANG / LC_* 影响。
+     * @returns 解析成功返回 MB 为单位的数据；文件不存在（非 Linux）或解析失败返回 null
+     */
+    private async readMemFromProc(sshClient: Client): Promise<MemUsage | null> {
+        try {
+            const output = await this.executeSshCommand(sshClient, 'cat /proc/meminfo');
+            return parseProcMeminfo(output);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * 退路：用 `free` 取内存/交换信息。
+     * ⚠️ 必须前置 `LC_ALL=C`：procps 4.0+ 的 `free` 标签会随 locale 翻译
+     * （中文下 `Mem:` 变成 `内存：`），匹配不到就会整块内存信息为 undefined。
+     * @returns 解析成功返回 MB 为单位的数据；命令失败或解析失败返回 null
+     */
+    private async readMemFromFree(sshClient: Client): Promise<MemUsage | null> {
+        let freeCommand = 'LC_ALL=C free -m';
+        let isBusyBox = false;
+        try {
+            const busyboxCheck = await this.executeSshCommand(sshClient, 'busybox --help');
+            if (busyboxCheck.includes('BusyBox')) {
+                freeCommand = 'LC_ALL=C free'; // BusyBox 的 free 没有 -m，输出单位是 Byte
+                isBusyBox = true;
+            }
+        } catch (err) {
+            // 没有 busybox，沿用 free -m
+        }
+        try {
+            const freeOutput = await this.executeSshCommand(sshClient, freeCommand);
+            return parseFreeOutput(freeOutput, isBusyBox);
+        } catch (err) {
+            return null;
+        }
+    }
 
     /**
      * 解析 /proc/net/dev 的输出
