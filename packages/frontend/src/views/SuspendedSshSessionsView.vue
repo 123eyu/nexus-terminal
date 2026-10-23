@@ -9,20 +9,11 @@
           type="text"
           v-model="searchTerm"
           :placeholder="$t('suspendedSshSessions.searchPlaceholder')"
-          class="w-full pl-10 pr-4 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out"
+          class="w-full pl-10 pr-12 py-1.5 border border-border/50 rounded-lg bg-input text-foreground text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition duration-150 ease-in-out"
           @input="filterSessions"
         />
-      </div>
-      <!-- 可选：显示挂起会话总数 -->
-      <!-- <div class="text-sm text-gray-500 mt-1">
-        当前挂起会话总数: {{ filteredSessions.length }} / {{ allSuspendedSshSessions.length }}
-      </div> -->
-      <!-- 说明「挂起」是什么：这些会话的 SSH 还在后端活着，只是没有标签了 -->
-      <p class="sss-hint mt-1.5">
-        <i class="fas fa-circle-info"></i>
-        <span>{{ $t('suspendedSshSessions.hint.detached') }}</span>
         <span class="sss-hint-count">{{ filteredSessions.length }}</span>
-      </p>
+      </div>
     </div>
 
     <div class="session-list-container flex-grow overflow-y-auto">
@@ -85,10 +76,6 @@
               </div>
               <div class="text-xs text-muted-color mt-1">
                 {{ $t('suspendedSshSessions.label.suspendedAt') }}: {{ formatDateTime(session.suspendStartTime) }}
-              </div>
-              <!-- 手动挂起的会话不参与工作区同步，只能在这里手动恢复 -->
-              <div v-if="session.manuallySuspended" class="sss-note">
-                {{ $t('suspendedSshSessions.hint.manualEntry') }}
               </div>
               <div
                 v-if="session.backendSshStatus === 'disconnected_by_backend' && session.disconnectionTimestamp"
@@ -377,32 +364,18 @@ onUnmounted(() => {
   border-left: 3px solid color-mix(in oklab, #2563eb 70%, transparent);
 }
 
-.sss-note {
-  margin-top: 0.25rem;
-  font-size: 0.6875rem;
-  color: var(--text-color-secondary);
-  opacity: 0.9;
-}
-
-.sss-hint {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.6875rem;
-  line-height: 1.4;
-  color: var(--text-color-secondary);
-}
-
-.sss-hint i {
-  color: inherit;
-  flex-shrink: 0;
-}
-
+/* 搜索结果计数：贴在搜索框右侧，不额外占一行 */
 .sss-hint-count {
-  margin-left: auto;
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
   padding: 0 0.375rem;
   border-radius: 9999px;
+  font-size: 0.6875rem;
+  line-height: 1.4;
   font-weight: 600;
+  pointer-events: none;
   color: var(--text-color);
   background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
 }
