@@ -14,6 +14,7 @@ import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
 import { installDebugBridge } from './debug';
 import { showBootFailure, isChunkLoadError } from './utils/bootFallback';
+import { isDesktopApp } from './utils/platform';
 
 
 const pinia = createPinia(); // 创建 Pinia 实例
@@ -107,13 +108,30 @@ app.use(i18n); // 使用 i18n
     showBootFailure('应用启动失败', error);
   }
 // --- PWA Service Worker Registration ---
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').then(registration => {
-        console.log('SW registered: ', registration);
-      }).catch(registrationError => {
-        console.log('SW registration failed: ', registrationError);
-      });
-    });
+  // ⚠️ 这段以前挂在 `window.addEventListener('load')` 上：它位于一堆 await（认证、设置、
+  // 路由 chunk、挂载）之后，真正执行到时 load 早就 fire 完了 —— 监听器永远不会触发，
+  // SW 实际上从来没注册成功过（`getRegistrations()` 恒为 []）。要么直接注册，要么别写。
+  //
+  // 现在只在「生产构建的网页版」注册：
+  //   - dev（vite 5173）：SW 会把源码模块缓存住，改代码不生效，绝对不要；
+  //   - 桌面端：更新靠替换安装包，多一层缓存只会制造"版本对不上"；
+  //   - 网页版：/sw.js 已改成「导航网络优先 + /assets 缓存优先 + /api、/ws 不碰」，
+  //     普通刷新必拿最新 index.html，见 public/sw.js 顶部说明。
+  if (import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktopApp()) {
+    const registerServiceWorker = () => {
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then((registration) => {
+          console.log('[SW] 注册成功，scope=', registration.scope);
+        })
+        .catch((error) => {
+          console.warn('[SW] 注册失败:', error);
+        });
+    };
+    if (document.readyState === 'complete') {
+      registerServiceWorker();
+    } else {
+      window.addEventListener('load', registerServiceWorker, { once: true });
+    }
   }
 })();
