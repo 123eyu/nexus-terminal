@@ -111,6 +111,8 @@ let lastInnerObserverWidth = 0;
 let lastInnerObserverHeight = 0;
 /** 可见 / 激活后「收敛式 fit」的 rAF 句柄（见 scheduleSettleFit） */
 let settleRafId: number | null = null;
+/** 心跳自检定时器（见 onMounted 里的兜底说明） */
+let dimWatchdogId: number | null = null;
 const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素抖动，消除Layout Thrashing振荡
 
 
@@ -552,6 +554,34 @@ onMounted(() => {
         }
 
         /**
+         * 兜底的兜底：1 秒一次的心跳自检。
+         *
+         * 上面那些机制都依赖"事件能及时送到"，但实机上总有我们没枚举到的时序
+         * （布局分几段长开、字体晚到、面板折叠、样式重排……）。与其一个个补，
+         * 不如让终端自己发现"我现在算出来的尺寸和实际用着的不一样"，然后自己修。
+         *
+         * 代价：可见时每秒一次 getComputedStyle；不可见的标签页（容器 0×0）直接跳过。
+         * 防抖：连续两次都量到同一个偏差才动手，避免 1 列抖动来回 resize。
+         */
+        let mismatchStreak = 0;
+        dimWatchdogId = window.setInterval(() => {
+            if (document.visibilityState !== 'visible') return;
+            if (!props.isActive || !terminal || !terminalRef.value) return;
+            if (terminalNoWrapBoolean.value) return;
+            const el = terminalRef.value;
+            if (el.offsetWidth <= 0 || el.offsetHeight <= 0) { mismatchStreak = 0; return; }
+            const dims = calculateTerminalDimensions(terminal);
+            if (dims.cols === terminal.cols && dims.rows === terminal.rows) { mismatchStreak = 0; return; }
+            mismatchStreak += 1;
+            if (mismatchStreak < 2) return;
+            mismatchStreak = 0;
+            console.log(
+                `[Terminal ${props.sessionId}] 心跳自检发现尺寸不符，纠正: ${terminal.cols}x${terminal.rows} -> ${dims.cols}x${dims.rows} (容器 ${el.offsetWidth}x${el.offsetHeight})`
+            );
+            fitAndEmitResizeNow(terminal);
+        }, 1000);
+
+        /**
          * 可见性兜底：元素从"没有盒子"变成"有盒子"时补 fit。
          * 单次 fit 不够 —— 见 scheduleSettleFit 的注释，这里交给它按递增间隔反复量。
          */
@@ -888,6 +918,10 @@ onBeforeUnmount(() => {
     visibilityObserver = null;
   }
   cancelSettleFit();
+  if (dimWatchdogId !== null) {
+    clearInterval(dimWatchdogId);
+    dimWatchdogId = null;
+  }
   if (innerResizeObserver) {
     try {
       innerResizeObserver.disconnect();
