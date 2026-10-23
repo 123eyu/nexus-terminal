@@ -538,6 +538,14 @@
     }
   },
   "workspace": {
+    "recentConnections": {
+      "title": "Recent connections",
+      "subtitle": "Click one to open a session — no need to go back to the dashboard",
+      "empty": "No connections yet",
+      "emptyAction": "Create a connection",
+      "viewAll": "View all connections",
+      "neverConnected": "Never connected"
+    },
     "status": {
       "connectingWs": "Connecting WebSocket ({url})...",
       "wsConnected": "WebSocket connected, waiting for SSH handshake...",

@@ -537,6 +537,14 @@
     }
   },
   "workspace": {
+    "recentConnections": {
+      "title": "最近连接",
+      "subtitle": "点一下直接开会话，不用先回仪表盘",
+      "empty": "还没有可用的连接",
+      "emptyAction": "去新建连接",
+      "viewAll": "查看全部连接",
+      "neverConnected": "从未连接"
+    },
     "status": {
       "connectingWs": "正在连接 WebSocket ({url})...",
       "wsConnected": "WebSocket 已连接，等待 SSH 握手...",

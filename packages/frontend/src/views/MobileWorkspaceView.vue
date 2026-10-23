@@ -5,6 +5,7 @@ import TerminalTabBar from '../components/TerminalTabBar.vue';
 import CommandInputBar from '../components/CommandInputBar.vue';
 import VirtualKeyboard from '../components/VirtualKeyboard.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
+import RecentConnectionsPanel from '../components/RecentConnectionsPanel.vue';
 // 同 DesktopWorkspaceView：远程桌面客户端按需加载，别拖累移动端进终端的首屏。
 const RemoteSessionPane = defineAsyncComponent(() => import('../components/remote/RemoteSessionPane.vue'));
 import { useSessionStore } from '../stores/session.store';
@@ -140,9 +141,8 @@ const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
         :editor-tabs="props.editorTabs"
         :active-editor-tab-id="props.activeEditorTabId"
       />
-      <div v-else class="pane-placeholder">
-        {{ t('workspace.noActiveSession', '没有活动的会话') }}
-      </div>
+      <!-- 没有会话时别给一块空白：直接列最近连接，点一下就能开 -->
+      <RecentConnectionsPanel v-else :is-mobile="true" class="layout-renderer-wrapper flex-grow" />
     </div>
 
     <!-- 移动端会话标签栏：紧贴终端视口下方 -->

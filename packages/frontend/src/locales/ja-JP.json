@@ -731,6 +731,14 @@
     "sshSuspend": "SSHサスペンド"
   },
   "workspace": {
+    "recentConnections": {
+      "title": "最近の接続",
+      "subtitle": "クリックするだけでセッションを開けます",
+      "empty": "接続がまだありません",
+      "emptyAction": "接続を作成する",
+      "viewAll": "すべての接続を表示",
+      "neverConnected": "未接続"
+    },
     "status": {
       "connectingWs": "WebSocket に接続中 ({url})...",
       "wsConnected": "WebSocket 接続済み、SSH ハンドシェイクを待機中...",
