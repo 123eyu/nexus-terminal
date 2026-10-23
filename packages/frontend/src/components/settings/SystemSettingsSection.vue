@@ -82,6 +82,33 @@
         </p>
       </div>
 
+      <hr class="border-border/50"> <!-- Separator -->
+      <!-- 测试连接超时（Issue #123） -->
+      <div class="settings-section-content">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h3 class="text-base font-semibold text-foreground">{{ $t('settings.testTimeout.title', '测试连接超时') }}</h3>
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="relative flex items-center">
+              <input
+                type="number"
+                id="connectionTestTimeout"
+                v-model.number="testTimeoutLocal"
+                min="5"
+                max="120"
+                step="1"
+                @change="handleUpdateTestTimeout"
+                @keydown.enter.prevent="handleUpdateTestTimeout"
+                class="w-28 sm:w-32 h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+              />
+              <span class="text-sm text-text-secondary ml-2 shrink-0">{{ $t('settings.testTimeout.unit', '秒') }}</span>
+            </div>
+            <span v-if="testTimeoutMessage" :class="['text-sm', testTimeoutSuccess ? 'text-success' : 'text-error']">
+              {{ testTimeoutMessage }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- Cloud Server Sync API Key Setting (仅在 Web / 云端部署环境下展示) -->
       <div v-if="!isDesktop" class="settings-section-content">
         <hr class="border-border/50 mb-6">
@@ -394,7 +421,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useSettingsStore } from '../../stores/settings.store';
 import { useDesktopSyncStore, SYNC_MODULE_OPTIONS, type SyncModuleKey } from '../../stores/desktopSync.store';
 import { useWorkspaceSyncStore } from '../../stores/workspaceSync.store';
@@ -437,6 +464,40 @@ const handleToggleRememberLastRoute = async () => {
   }
 }; 
 const { t } = useI18n();
+
+// --- 测试连接超时（Issue #123） ---
+const TEST_TIMEOUT_MIN = 5;
+const TEST_TIMEOUT_MAX = 120;
+const testTimeoutLocal = ref(15);
+const testTimeoutMessage = ref('');
+const testTimeoutSuccess = ref(true);
+
+watch(
+  () => settings.value?.connectionTestTimeoutSeconds,
+  (val) => {
+    const n = parseInt(String(val ?? ''), 10);
+    if (!isNaN(n) && n > 0) testTimeoutLocal.value = n;
+  },
+  { immediate: true }
+);
+
+const handleUpdateTestTimeout = async () => {
+  let n = Number(testTimeoutLocal.value);
+  if (!Number.isFinite(n) || n <= 0) n = 15;
+  n = Math.min(TEST_TIMEOUT_MAX, Math.max(TEST_TIMEOUT_MIN, Math.round(n)));
+  testTimeoutLocal.value = n;
+  if (String(settings.value?.connectionTestTimeoutSeconds ?? '') === String(n)) return;
+  testTimeoutMessage.value = '';
+  try {
+    await settingsStore.updateSetting('connectionTestTimeoutSeconds', String(n));
+    testTimeoutSuccess.value = true;
+    testTimeoutMessage.value = t('settings.testTimeout.saved', '已保存');
+    setTimeout(() => { testTimeoutMessage.value = ''; }, 2000);
+  } catch (err: any) {
+    testTimeoutSuccess.value = false;
+    testTimeoutMessage.value = err?.message || t('common.saveFailed', '保存设置失败');
+  }
+};
 
 const {
   selectedLanguage,

@@ -6,9 +6,20 @@ import * as ConnectionRepository from '../connections/connection.repository';
 import *   as ProxyRepository from '../proxies/proxy.repository';
 import { decrypt } from '../utils/crypto';
 import * as SshKeyService from '../ssh_keys/ssh_key.service';
+import { settingsService } from '../settings/settings.service';
 
 const CONNECT_TIMEOUT = 20000; // 连接超时时间 (毫秒)
-const TEST_TIMEOUT = 15000; // 测试连接超时时间 (毫秒)
+const TEST_TIMEOUT = 15000; // 测试连接超时时间 (毫秒)，设置里没配时的兜底值
+
+// Issue #123：读设置项 connectionTestTimeoutSeconds，读不到退回 TEST_TIMEOUT
+const getTestTimeoutMs = async (): Promise<number> => {
+    try {
+        const seconds = await settingsService.getConnectionTestTimeoutSeconds();
+        return seconds > 0 ? seconds * 1000 : TEST_TIMEOUT;
+    } catch {
+        return TEST_TIMEOUT;
+    }
+};
 
 
 interface JumpHostRawConfig {
@@ -638,7 +649,7 @@ export const testConnection = async (connectionId: number): Promise<{ latency: n
     const startTime = Date.now();
     try {
         const connDetails = await getConnectionDetails(connectionId);
-        sshClient = await establishSshConnection(connDetails, TEST_TIMEOUT);
+        sshClient = await establishSshConnection(connDetails, await getTestTimeoutMs());
         const endTime = Date.now();
         const latency = endTime - startTime;
         console.log(`SshService: 测试连接 ${connectionId} 成功，延迟: ${latency}ms。`);
@@ -742,7 +753,7 @@ export const testUnsavedConnection = async (connectionConfig: {
             tempConnDetails.connection_proxy_setting = null; // Explicitly no proxy
         }
 
-        sshClient = await establishSshConnection(tempConnDetails, TEST_TIMEOUT);
+        sshClient = await establishSshConnection(tempConnDetails, await getTestTimeoutMs());
 
         const endTime = Date.now();
         const latency = endTime - startTime;

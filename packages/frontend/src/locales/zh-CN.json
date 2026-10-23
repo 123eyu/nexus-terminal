@@ -884,6 +884,11 @@
     "deleteConfirm": "确定要全局删除标签“{name}”吗？此操作无法撤销。"
   },
   "settings": {
+    "testTimeout": {
+      "title": "测试连接超时",
+      "unit": "秒",
+      "saved": "已保存"
+    },
     "popupFileManager": {
       "title": "弹窗文件管理器",
       "enableLabel": "启用弹窗文件管理器",

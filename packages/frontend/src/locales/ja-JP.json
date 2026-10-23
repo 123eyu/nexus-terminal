@@ -1086,6 +1086,11 @@
     "ctrlAltDelTooltip": "Ctrl+Alt+Del を送信"
   },
   "settings": {
+    "testTimeout": {
+      "title": "接続テストのタイムアウト",
+      "unit": "秒",
+      "saved": "保存しました"
+    },
     "popupFileManager": {
       "title": "ポップアップファイルマネージャー",
       "enableLabel": "ポップアップファイルマネージャーを有効にする",

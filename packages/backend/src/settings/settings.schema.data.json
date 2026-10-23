@@ -15,6 +15,7 @@
     "dockerStatusIntervalSeconds": { "type": "number", "default": "2", "writable": true },
     "dockerDefaultExpand": { "type": "boolean", "default": "false", "writable": true },
     "statusMonitorIntervalSeconds": { "type": "number", "default": "3", "writable": true },
+    "connectionTestTimeoutSeconds": { "type": "number", "default": "15", "writable": true },
     "showStatusMonitorIpAddress": { "type": "boolean", "default": "false", "writable": true },
     "workspaceSidebarPersistent": { "type": "boolean", "default": "false", "writable": true },
     "sidebarPaneWidths": { "type": "json", "writable": true },

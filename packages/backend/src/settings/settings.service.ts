@@ -34,6 +34,10 @@ const LAYOUT_PRESETS_KEY = 'layoutPresets'; // 布局预设（含默认预设、
 const AUTO_COPY_ON_SELECT_KEY = 'autoCopyOnSelect'; // 终端选中自动复制设置键
 const STATUS_MONITOR_INTERVAL_SECONDS_KEY = 'statusMonitorIntervalSeconds'; // 状态监控间隔设置键
 const DEFAULT_STATUS_MONITOR_INTERVAL_SECONDS = 3; // 默认状态监控间隔
+const CONNECTION_TEST_TIMEOUT_SECONDS_KEY = 'connectionTestTimeoutSeconds';
+const DEFAULT_CONNECTION_TEST_TIMEOUT_SECONDS = 15;
+const MIN_CONNECTION_TEST_TIMEOUT_SECONDS = 5;
+const MAX_CONNECTION_TEST_TIMEOUT_SECONDS = 120;
 const IP_BLACKLIST_ENABLED_KEY = 'ipBlacklistEnabled'; // IP 黑名单启用设置键
 const SHOW_CONNECTION_TAGS_KEY = 'showConnectionTags'; // 连接标签显示设置键
 const SHOW_QUICK_COMMAND_TAGS_KEY = 'showQuickCommandTags'; // 快捷指令标签显示设置键
@@ -414,6 +418,23 @@ export const settingsService = {
      throw new Error('Failed to save status monitor interval setting.');
    }
  }, 
+
+ /** 测试连接超时（秒）。未配置/脏值返回默认 15，超出 [5,120] 夹到边界。（Issue #123） */
+ async getConnectionTestTimeoutSeconds(): Promise<number> {
+   try {
+     const raw = await settingsRepository.getSetting(CONNECTION_TEST_TIMEOUT_SECONDS_KEY);
+     if (raw) {
+       const seconds = parseInt(raw, 10);
+       if (!isNaN(seconds) && seconds > 0) {
+         return Math.min(MAX_CONNECTION_TEST_TIMEOUT_SECONDS, Math.max(MIN_CONNECTION_TEST_TIMEOUT_SECONDS, seconds));
+       }
+       console.warn(`[Service] Invalid connection test timeout value ('${raw}'). Returning default.`);
+     }
+   } catch (error) {
+     console.error(`[Service] Error getting connection test timeout (key: ${CONNECTION_TEST_TIMEOUT_SECONDS_KEY}):`, error);
+   }
+   return DEFAULT_CONNECTION_TEST_TIMEOUT_SECONDS;
+ },
 
  // --- Sidebar Config Specific Functions ---
 

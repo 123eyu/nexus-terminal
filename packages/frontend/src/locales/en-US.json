@@ -885,6 +885,11 @@
     "deleteConfirm": "Delete tag \"{name}\" everywhere? This cannot be undone."
   },
   "settings": {
+    "testTimeout": {
+      "title": "Test connection timeout",
+      "unit": "s",
+      "saved": "Saved"
+    },
     "popupFileManager": {
       "title": "Popup File Manager",
       "enableLabel": "Enable Popup File Manager",
