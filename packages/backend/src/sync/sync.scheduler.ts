@@ -205,7 +205,7 @@ export class SyncThrottleScheduler {
     const db = await getDbInstance();
     console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
 
-    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags', 'command_history'];
+    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags', 'command_history', 'port_forwards'];
     let totalCatchup = 0;
 
     for (const tbl of tables) {

@@ -400,17 +400,19 @@ async function importRow(input: {
         if (column.startsWith('plain_')) delete row[column];
     }
 
-    // 2. 外键：源机 id -> 本机 id。找不到就置 null；关联表则整行作废
+    // 2. 外键：源机 id -> 本机 id。找不到就置 null；关联表 / 声明了 requiredRefs 的整行作废
+    const requiredRefs = new Set(tableSpec.requiredRefs || []);
     for (const ref of tableSpec.refs || []) {
+        const mustResolve = isJunction || requiredRefs.has(ref.column);
         const sourceRefId = row[ref.column];
         if (sourceRefId === null || sourceRefId === undefined || sourceRefId === '') {
-            if (isJunction) return { status: 'invalid', message: 'missingReference' };
+            if (mustResolve) return { status: 'invalid', message: `missingReference:${ref.dataset}` };
             row[ref.column] = null;
             continue;
         }
         const mapped = idMaps.get(ref.dataset)?.get(Number(sourceRefId));
         if (mapped === undefined || mapped === 0) {
-            if (isJunction) return { status: 'invalid', message: `missingReference:${ref.dataset}` };
+            if (mustResolve) return { status: 'invalid', message: `missingReference:${ref.dataset}` };
             row[ref.column] = null;
         } else {
             row[ref.column] = mapped;
@@ -461,6 +463,9 @@ async function importRow(input: {
     }
 
     // 5. 插入
+    // 只有新增才补 uuid：覆盖已有行时改 uuid 会让别的设备看到「旧行消失、新行出现」
+    if (tableSpec.generateUuid && !row.uuid) row.uuid = crypto.randomUUID();
+
     if (tableSpec.keyColumn) {
         await runDb(db, buildInsertOrReplaceSql(tableSpec, row), buildInsertParams(tableSpec, row));
         if (sourceId !== null) rememberId(idMaps, spec.key, sourceId, Number(row[tableSpec.keyColumn]));

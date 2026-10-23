@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { getDbInstance, runDb, getDb as getDbRow, allDb } from '../database/connection';
 
 export type PortForwardType = 'local' | 'remote' | 'dynamic';
@@ -5,6 +6,8 @@ export type PortForwardType = 'local' | 'remote' | 'dynamic';
 /** 一条端口转发规则（按连接绑定，运行态不在这里） */
 export interface PortForwardRule {
     id: number;
+    /** 跨端同步身份，不能用自增 id */
+    uuid?: string | null;
     connection_id: number;
     type: PortForwardType;
     bind_host: string;
@@ -27,7 +30,7 @@ export interface PortForwardRuleInput {
     auto_start?: boolean | number;
 }
 
-const COLUMNS = 'id, connection_id, type, bind_host, bind_port, target_host, target_port, auto_start, created_at, updated_at';
+const COLUMNS = 'id, uuid, connection_id, type, bind_host, bind_port, target_host, target_port, auto_start, created_at, updated_at';
 
 export const listRulesByConnection = async (connectionId: number): Promise<PortForwardRule[]> => {
     const db = await getDbInstance();
@@ -49,9 +52,11 @@ export const createRule = async (connectionId: number, input: PortForwardRuleInp
     const db = await getDbInstance();
     const result = await runDb(
         db,
-        `INSERT INTO port_forwards (connection_id, type, bind_host, bind_port, target_host, target_port, auto_start)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO port_forwards (uuid, connection_id, type, bind_host, bind_port, target_host, target_port, auto_start)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
+            // 显式生成：同步触发器只在同步开启时才补 uuid，这里必须自己保证有
+            crypto.randomUUID(),
             connectionId,
             input.type,
             input.bind_host || '127.0.0.1',

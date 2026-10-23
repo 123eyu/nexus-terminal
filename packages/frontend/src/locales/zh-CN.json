@@ -1380,6 +1380,7 @@
         "quickCommandTagAssociations": "快捷指令标签关联",
         "terminalThemes": "终端主题",
         "favoritePaths": "收藏路径",
+        "portForwards": "端口转发规则",
         "fileColorHighlights": "文件颜色标记",
         "settings": "系统设置",
         "appearance": "外观设置",

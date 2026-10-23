@@ -1184,6 +1184,7 @@
         "quickCommandTagAssociations": "クイックコマンドタグの関連",
         "terminalThemes": "ターミナルテーマ",
         "favoritePaths": "お気に入りパス",
+        "portForwards": "ポート転送ルール",
         "fileColorHighlights": "ファイルの色分け",
         "settings": "システム設定",
         "appearance": "外観設定",

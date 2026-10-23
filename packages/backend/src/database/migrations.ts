@@ -828,6 +828,36 @@ const definedMigrations: Migration[] = [
         execute: async (db: Database): Promise<void> => {
             console.log('[Migrations] Migration 24: notification_settings 的 channel_type CHECK 已放开 gotify（重建表，原有渠道配置原样保留）。');
         }
+    },
+    {
+        id: 25,
+        name: 'Add uuid / updated_hlc columns to port_forwards for cross-device sync',
+        check: async (db: Database): Promise<boolean> => {
+            // 新库由 schema.ts 建表时就带上了；只有先在旧版本里建过 port_forwards 的库需要补列
+            if (!(await tableExists(db, 'port_forwards'))) return false;
+            return !(await columnExists(db, 'port_forwards', 'uuid'));
+        },
+        sql: `
+            ALTER TABLE port_forwards ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE port_forwards ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_port_forwards_uuid ON port_forwards(uuid);
+        `,
+        execute: async (db: Database): Promise<void> => {
+            // 补完列要回填 uuid，否则这些老规则永远进不了同步
+            const rows = await new Promise<Array<{ id: number }>>((resolve, reject) => {
+                db.all("SELECT id FROM port_forwards WHERE uuid IS NULL OR uuid = ''", (err, list: Array<{ id: number }>) => {
+                    if (err) reject(err); else resolve(list || []);
+                });
+            });
+            for (const row of rows) {
+                await new Promise<void>((resolve, reject) => {
+                    db.run('UPDATE port_forwards SET uuid = ? WHERE id = ?', [crypto.randomUUID(), row.id], err => {
+                        if (err) reject(err); else resolve();
+                    });
+                });
+            }
+            console.log(`[Migrations] Migration 25: port_forwards 已补上 uuid / updated_hlc（回填 ${rows.length} 条），可参与双端同步。`);
+        }
     }
 ];
 

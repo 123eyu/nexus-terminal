@@ -328,6 +328,7 @@ const GROUPS: Array<{ id: string; keys: string[] }> = [
       'quickCommandTagAssociations',
       'terminalThemes',
       'favoritePaths',
+      'portForwards',
       'fileColorHighlights',
     ],
   },

@@ -260,6 +260,7 @@ CREATE TABLE IF NOT EXISTS favorite_paths (
 export const createPortForwardsTableSQL = `
 CREATE TABLE IF NOT EXISTS port_forwards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uuid TEXT NULL,
     connection_id INTEGER NOT NULL,
     type TEXT NOT NULL CHECK(type IN ('local', 'remote', 'dynamic')),
     bind_host TEXT NOT NULL DEFAULT '127.0.0.1',
@@ -269,6 +270,7 @@ CREATE TABLE IF NOT EXISTS port_forwards (
     auto_start INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_hlc TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE
 );
 `;

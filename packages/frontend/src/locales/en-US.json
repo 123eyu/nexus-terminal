@@ -933,6 +933,7 @@
         "quickCommandTagAssociations": "Quick command tag links",
         "terminalThemes": "Terminal themes",
         "favoritePaths": "Favorite paths",
+        "portForwards": "Port forwarding rules",
         "fileColorHighlights": "File color highlights",
         "settings": "System settings",
         "appearance": "Appearance",

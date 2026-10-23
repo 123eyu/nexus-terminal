@@ -70,6 +70,13 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     primaryKeyColumn: 'key'
   },
   {
+    tableName: 'port_forwards',
+    updateOfColumns: [
+      'connection_id', 'type', 'bind_host', 'bind_port',
+      'target_host', 'target_port', 'auto_start'
+    ]
+  },
+  {
     tableName: 'command_history',
     updateOfColumns: [
       'command', 'timestamp'

@@ -101,6 +101,17 @@ export interface SnapshotResponseResult {
       timestamp: number;
       updated_hlc: string;
     }>;
+    port_forwards?: Array<{
+      uuid: string;
+      connection_uuid: string | null;
+      type: 'local' | 'remote' | 'dynamic';
+      bind_host: string;
+      bind_port: number;
+      target_host: string | null;
+      target_port: number | null;
+      auto_start: number;
+      updated_hlc: string;
+    }>;
   };
   tombstones: Array<{ tbl: string; row_id: string; deleted_hlc: string; deleted_at: number }>;
   server_time: number;
@@ -122,6 +133,10 @@ export const syncV2Service = {
       for (const p of pendings) {
         if (p.child_tbl === 'connections' && (p.fk_field === 'proxy_id' || p.fk_field === 'ssh_key_id')) {
           await runDb(db, `UPDATE connections SET ${p.fk_field} = ? WHERE uuid = ?`, [targetPhysId, p.child_uuid]);
+        }
+        // 端口转发规则绑定的是连接：父连接到达后把 connection_id 缝回去
+        if (p.child_tbl === 'port_forwards' && p.fk_field === 'connection_id') {
+          await runDb(db, `UPDATE port_forwards SET connection_id = ? WHERE uuid = ?`, [targetPhysId, p.child_uuid]);
         }
       }
 
@@ -162,6 +177,15 @@ export const syncV2Service = {
         for (let i = 0; i < changes.length; i++) {
           const item = changes[i];
           const savepointName = `sp_sync_${i}`;
+          // NOT NULL 外键的子表（如 port_forwards.connection_id）在父记录没到时就落不了库，
+          // 本条注定回滚。待解析登记必须活到回滚之后，所以先攒在这里，catch 里再写。
+          const deferredPendingRefs: Array<{
+            childTbl: string;
+            childUuid: string;
+            fkField: string;
+            targetTbl: string;
+            targetUuid: string;
+          }> = [];
           await runDb(db, `SAVEPOINT ${savepointName}`);
 
           try {
@@ -490,6 +514,63 @@ export const syncV2Service = {
                   }
                 }
               }
+            } else if (item.tbl === 'port_forwards') {
+              // 规则绑定的是连接：跨端用 connection_uuid 表达，落地时解析成本机自增 id
+              const connRow = data.connection_uuid
+                ? await getDb<{ id: number }>(db, `SELECT id FROM connections WHERE uuid = ?`, [data.connection_uuid])
+                : undefined;
+              if (!connRow) {
+                // connection_id 是 NOT NULL，父连接没到就没法落库。登记待解析，父到达后缝合；
+                // 本条先跳过，下次全量快照/该连接再次变更时会补上。
+                if (data.connection_uuid) {
+                  deferredPendingRefs.push({
+                    childTbl: 'port_forwards',
+                    childUuid: item.row_id,
+                    fkField: 'connection_id',
+                    targetTbl: 'connections',
+                    targetUuid: data.connection_uuid,
+                  });
+                }
+                throw new Error('端口转发规则的连接尚未同步到本机');
+              }
+              if (existingLive) {
+                await runDb(
+                  db,
+                  `UPDATE port_forwards SET connection_id = ?, type = ?, bind_host = ?, bind_port = ?,
+                                            target_host = ?, target_port = ?, auto_start = ?, updated_hlc = ?
+                   WHERE uuid = ?`,
+                  [
+                    connRow.id,
+                    data.type,
+                    data.bind_host || '127.0.0.1',
+                    data.bind_port,
+                    data.target_host || null,
+                    data.target_port || null,
+                    data.auto_start ? 1 : 0,
+                    effectiveHlc,
+                    item.row_id
+                  ]
+                );
+                targetPhysId = existingLive.id;
+              } else {
+                const ins = await runDb(
+                  db,
+                  `INSERT INTO port_forwards (uuid, connection_id, type, bind_host, bind_port, target_host, target_port, auto_start, updated_hlc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    item.row_id,
+                    connRow.id,
+                    data.type,
+                    data.bind_host || '127.0.0.1',
+                    data.bind_port,
+                    data.target_host || null,
+                    data.target_port || null,
+                    data.auto_start ? 1 : 0,
+                    effectiveHlc
+                  ]
+                );
+                targetPhysId = ins.lastID;
+              }
             } else if (item.tbl === 'command_history') {
               const cmdText = data.command;
               const cmdTs = data.timestamp || Math.floor(nowMs / 1000);
@@ -545,6 +626,17 @@ export const syncV2Service = {
           } catch (itemErr: any) {
             console.error(`[SyncV2] 应用单条记录 ${item.tbl}:${item.row_id} 失败，回滚该条保存点:`, itemErr.message);
             await runDb(db, `ROLLBACK TO SAVEPOINT ${savepointName}`);
+            for (const p of deferredPendingRefs) {
+              try {
+                await runDb(
+                  db,
+                  `INSERT INTO sync_pending_references (child_tbl, child_uuid, fk_field, target_tbl, target_uuid) VALUES (?, ?, ?, ?, ?)`,
+                  [p.childTbl, p.childUuid, p.fkField, p.targetTbl, p.targetUuid]
+                );
+              } catch (pendingErr: any) {
+                console.warn(`[SyncV2] 登记待解析外键失败 ${p.childTbl}:${p.childUuid}:`, pendingErr.message);
+              }
+            }
             rejected.push({ tbl: item.tbl, row_id: item.row_id, reason: itemErr.message });
           }
         }
@@ -795,6 +887,33 @@ export const syncV2Service = {
               }
             });
           }
+        } else if (row.tbl === 'port_forwards') {
+          const pf = await getDb<any>(
+            db,
+            `SELECT pf.*, c.uuid AS connection_uuid
+             FROM port_forwards pf
+             LEFT JOIN connections c ON pf.connection_id = c.id
+             WHERE pf.uuid = ?`,
+            [row.row_id]
+          );
+          if (pf) {
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: pf.updated_hlc || `${Date.now()}-00000-server`,
+              data: {
+                connection_uuid: pf.connection_uuid || null,
+                type: pf.type,
+                bind_host: pf.bind_host,
+                bind_port: pf.bind_port,
+                target_host: pf.target_host || null,
+                target_port: pf.target_port || null,
+                auto_start: pf.auto_start ? 1 : 0
+              }
+            });
+          }
         } else if (row.tbl === 'command_history') {
           const ch = await getDb<any>(db, `SELECT * FROM command_history WHERE uuid = ?`, [row.row_id]);
           if (ch) {
@@ -996,6 +1115,33 @@ export const syncV2Service = {
               data: {
                 key: s.key,
                 value: s.value
+              }
+            });
+          }
+        } else if (r.tbl === 'port_forwards') {
+          const pf = await getDb<any>(
+            db,
+            `SELECT pf.*, c.uuid AS connection_uuid
+             FROM port_forwards pf
+             LEFT JOIN connections c ON pf.connection_id = c.id
+             WHERE pf.uuid = ?`,
+            [r.row_id]
+          );
+          if (pf) {
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: pf.updated_hlc || `${Date.now()}-00000-local`,
+              data: {
+                connection_uuid: pf.connection_uuid || null,
+                type: pf.type,
+                bind_host: pf.bind_host,
+                bind_port: pf.bind_port,
+                target_host: pf.target_host || null,
+                target_port: pf.target_port || null,
+                auto_start: pf.auto_start ? 1 : 0
               }
             });
           }
@@ -1332,7 +1478,29 @@ export const syncV2Service = {
       updated_hlc: ch.updated_hlc || `${Date.now()}-00000-server`
     }));
 
-    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length;
+    // 10.5 提取 port_forwards（连接外键转 uuid）
+    const rawPortForwards = await allDb<any>(
+      db,
+      `SELECT pf.*, c.uuid AS connection_uuid
+       FROM port_forwards pf
+       LEFT JOIN connections c ON pf.connection_id = c.id
+       ORDER BY pf.id ASC`
+    );
+    const portForwards = rawPortForwards
+      .filter(pf => !!pf.uuid)
+      .map(pf => ({
+        uuid: pf.uuid,
+        connection_uuid: pf.connection_uuid || null,
+        type: pf.type,
+        bind_host: pf.bind_host,
+        bind_port: pf.bind_port,
+        target_host: pf.target_host || null,
+        target_port: pf.target_port || null,
+        auto_start: pf.auto_start ? 1 : 0,
+        updated_hlc: pf.updated_hlc || `${Date.now()}-00000-server`
+      }));
+
+    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length + portForwards.length;
 
     return {
       snapshot_cursor: snapshotCursor,
@@ -1348,7 +1516,8 @@ export const syncV2Service = {
         quick_commands: quickCommands,
         connections,
         settings,
-        command_history
+        command_history,
+        port_forwards: portForwards
       },
       tombstones,
       server_time: serverTime

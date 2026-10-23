@@ -18,6 +18,17 @@ export interface TableSpec {
     encryptedColumns?: string[];
     dropColumns?: string[];
     refs?: Array<{ column: string; dataset: string }>;
+    /**
+     * 这些外键列必须能解析到本机记录，否则整行作废。
+     * 用在「外键 NOT NULL」的从表上：父记录没被选中时置 null 只会撞约束，
+     * 与其让整张表的事务回滚，不如把这一行标成 invalid 让用户看见。
+     */
+    requiredRefs?: string[];
+    /**
+     * 该表的 uuid 是跨端同步身份，包里不带（跨机会撞），
+     * 导入时由本机重新生成 —— 否则这些行永远不进同步。
+     */
+    generateUuid?: boolean;
 }
 
 export interface DatasetSpec {
@@ -186,6 +197,26 @@ const DATASET_LIST: DatasetSpec[] = [
         ],
     },
     {
+        key: 'portForwards',
+        // 必须在 connections 之后：连接就是它的外键
+        order: 30,
+        defaultSelected: true,
+        sensitive: false,
+        tables: [
+            {
+                table: 'port_forwards',
+                idColumn: 'id',
+                // 一个监听位在同一时刻只能用一条规则，拿监听点当身份最稳
+                identity: ['connection_id', 'type', 'bind_host', 'bind_port'],
+                // uuid / updated_hlc 是跨端同步游标，跟着导入会把同步状态搞乱
+                dropColumns: ['uuid', 'updated_hlc'],
+                refs: [{ column: 'connection_id', dataset: 'connections' }],
+                requiredRefs: ['connection_id'],
+                generateUuid: true,
+            },
+        ],
+    },
+    {
         key: 'fileColorHighlights',
         order: 30,
         defaultSelected: true,
@@ -197,6 +228,8 @@ const DATASET_LIST: DatasetSpec[] = [
                 identity: ['connection_id', 'path'],
                 dropColumns: ['uuid', 'updated_hlc'],
                 refs: [{ column: 'connection_id', dataset: 'connections' }],
+                // connection_id NOT NULL：连接没被选中时置 null 会撞约束，整表事务回滚
+                requiredRefs: ['connection_id'],
             },
         ],
     },
