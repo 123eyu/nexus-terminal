@@ -1118,6 +1118,17 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
         const result: Record<string, string> = {};
         for (const [pId, entry] of terminalPanes.value.entries()) {
             const rawEntry = toRaw(entry);
+            // 终端在尺寸可信之前会把写入暂存起来（见 Terminal.vue），此时 buffer 是空的，
+            // 直接把暂存的原始流当成屏幕内容交出去（绝不要为了采集而提前 flush）。
+            try {
+                const pendingText = (rawEntry.terminal as any)?.getPendingWriteText?.();
+                if (typeof pendingText === 'string' && pendingText.length > 0) {
+                    result[pId] = pendingText;
+                    continue;
+                }
+            } catch {
+                /* 忽略：终端可能已销毁 */
+            }
             // 同上：备用屏（TUI）不参与快照，避免刷新后停在备用屏
             if (rawEntry.terminal?.buffer?.active?.type === 'alternate') {
                 console.log(`[会话 ${sessionId}][分屏终端 ${pId}] 处于 TUI 备用屏，跳过序列化`);
@@ -1176,6 +1187,14 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     };
 
     const serializeTerminalImpl = (): string | null => {
+        // 终端在尺寸可信前会把写入暂存（见 Terminal.vue），此时 buffer 为空，
+        // 直接把暂存的原始流当成屏幕内容返回（绝不要为了采集而提前 flush）。
+        try {
+            const pendingText = (terminalInstance.value as any)?.getPendingWriteText?.();
+            if (typeof pendingText === 'string' && pendingText.length > 0) return pendingText;
+        } catch {
+            /* 忽略 */
+        }
         // 处于备用屏（btop / vim / less 等全屏 TUI）时不要序列化。
         // 否则恢复出来的终端会停在备用屏里，用户退出 TUI（Ctrl+C）后回到空的正常屏，
         // 整块区域被"当前 SGR 背景"填满 —— 表现为刷新后终端变成一块黑。

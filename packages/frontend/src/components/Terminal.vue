@@ -115,6 +115,17 @@ let settleRafId: number | null = null;
 let dimWatchdogId: number | null = null;
 const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素抖动，消除Layout Thrashing振荡
 
+// --- 尺寸未定时暂存写入（见 onMounted 里「把 write 包一层」的说明）---
+/** 是否已经量到过一次真实尺寸（= 终端 cols/rows 可信，可以往里写内容了） */
+let hasRealSize = false;
+/** 尺寸可信之前收到的写入，按原顺序暂存 */
+let pendingWrites: (string | Uint8Array)[] = [];
+let pendingWriteChars = 0;
+/** 未经包装的原始 write，flush 时才用 */
+let rawTerminalWrite: ((data: string | Uint8Array, cb?: () => void) => void) | null = null;
+/** 暂存上限：隐藏会话一直不回前台时，超过这个量就认了，先写进去（不无限吃内存） */
+const PENDING_WRITE_LIMIT = 8 * 1024 * 1024;
+
 
 const { isMobile } = useDeviceDetection(); // 设备检测
 
@@ -211,7 +222,53 @@ const calculateTerminalDimensions = (term: Terminal) => {
   const visualCols = proposed?.cols || term.cols;
   // 开启不换行模式时提供充足列宽 (至少 500 列)，内容超出通过横向滚动条查看
   const cols = terminalNoWrapBoolean.value ? Math.max(500, visualCols) : visualCols;
-  return { cols, rows };
+  // `proposed` 为 undefined = 这次根本没量出来（容器没盒子 / 渲染器还没量字体），
+  // 此时 cols/rows 是兜底出来的原值，拿它去「解锁写入」会把内容按错的列数写死。
+  return { cols, rows, measured: !!proposed };
+};
+
+/**
+ * 把「尺寸未定时」暂存的写入按原顺序真正写进终端。
+ * 见 onMounted 里给 `write` 包一层的说明：内容一旦以 80 列写进去，
+ * xterm 在 resize 时并不会把它重新折行（实测 5.3.0 的 reflow 对这批行不起作用），
+ * 所以唯一可靠的办法是**等内容能按正确列数写的时候再写**。
+ */
+const flushPendingWrites = () => {
+  if (!rawTerminalWrite || pendingWrites.length === 0) return;
+  const queue = pendingWrites;
+  pendingWrites = [];
+  pendingWriteChars = 0;
+  const write = rawTerminalWrite;
+  for (const chunk of queue) {
+    try {
+      write(chunk);
+    } catch (e) {
+      console.warn(`[Terminal ${props.sessionId}] 补写暂存数据失败:`, e);
+      break;
+    }
+  }
+};
+
+/**
+ * 量到真实尺寸后解锁写入。只在第一次生效（后续靠 xterm 自己的 resize）。
+ * 容器还没有盒子（会话在 `display:none` 的沙箱里）时直接返回，继续暂存。
+ *
+ * `measured` 必须传 `proposeDimensions()` 真的量出来了：容器刚拿到盒子的那一瞬间，
+ * 渲染器还没量出字符宽高，proposeDimensions 会返回 undefined、cols 兜底成 80，
+ * 这时候解锁就等于又按 80 列写一遍（实测就是这么翻车的）。
+ */
+const markRealSize = (reason: string, measured = true) => {
+  if (hasRealSize) return;
+  if (!measured) return;
+  const el = terminalRef.value;
+  if (!el || el.offsetWidth <= 0 || el.offsetHeight <= 0) return;
+  hasRealSize = true;
+  if (pendingWrites.length > 0) {
+    console.log(
+      `[Terminal ${props.sessionId}] 拿到真实尺寸(${el.offsetWidth}x${el.offsetHeight} via ${reason}, ${terminal?.cols}x${terminal?.rows})，补写 ${pendingWrites.length} 段暂存数据`
+    );
+    flushPendingWrites();
+  }
 };
 
 // 立即执行 Fit 并发送 Resize 的函数
@@ -221,6 +278,7 @@ const fitAndEmitResizeNow = (term: Terminal) => {
         if (terminalRef.value.offsetHeight > 0 && terminalRef.value.offsetWidth > 0) {
             const dims = calculateTerminalDimensions(term);
             term.resize(dims.cols, dims.rows);
+            markRealSize('fitNow', dims.measured);
             emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims, paneId: props.paneId });
             if (terminalRef.value) {
               const stableWidth = terminalOuterWrapperRef.value?.offsetWidth || terminalRef.value.offsetWidth;
@@ -268,11 +326,22 @@ const scheduleSettleFit = (term: Terminal, reason: string) => {
         const el = terminalRef.value;
         if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
         const dims = calculateTerminalDimensions(term);
-        if (dims.cols === term.cols && dims.rows === term.rows) return false;
+        // 第一帧的盒子可能还是布局中间态（实测能读到真实宽度的 40%），
+        // 这一轮只 fit、不解锁写入 —— 否则暂存内容会按这个偏小的列数折行。
+        const canUnlock = label !== 'raf';
+        if (dims.cols === term.cols && dims.rows === term.rows) {
+            // 尺寸已经对了：如果还有暂存的写入没收（例如恢复时终端一开始就是对的），
+            // 这里也要解锁，否则数据会一直压在队里。
+            if (canUnlock) markRealSize(`settle/${label}`, dims.measured);
+            return false;
+        }
         console.log(
             `[Terminal ${props.sessionId}] 补 fit(${reason}/${label}): ${term.cols}x${term.rows} -> ${dims.cols}x${dims.rows} (容器 ${el.offsetWidth}x${el.offsetHeight}, ${Math.round(performance.now() - startedAt)}ms)`
         );
         term.resize(dims.cols, dims.rows);
+        // ⚠️ 必须在 resize **之后**再解锁写入：解锁会把暂存内容真正写进终端，
+        // 写进去时用的列数就是 resize 后的列数，这样折行位置才对。
+        if (canUnlock) markRealSize(`settle/${label}`, dims.measured);
         emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims, paneId: props.paneId });
         return true;
     };
@@ -413,6 +482,48 @@ onMounted(() => {
 
     // 将终端附加到 DOM
     terminal.open(terminalRef.value);
+
+    /**
+     * 尺寸可信之前，先把写入攒起来（见下方 fit 处）。
+     *
+     * 为什么非这样不可：每个会话的工作区是个常驻 `v-show` 沙箱，刷新恢复时非激活会话的
+     * 终端是在 `display:none` 的祖先里挂载的 —— 容器 0×0，`proposeDimensions()` 返回 undefined，
+     * 终端只能是 xterm 默认的 80×24。这时后端把回放数据灌进来，200 多列的长行就会被
+     * **按 80 列折行**写进 buffer。等切到该标签、fit 到 164 列时，xterm 5.3.0 的 reflow
+     * 并不会把这批行重新合并（实测：`resize` 前后行宽都是 80，`isWrapped` 原样保留），
+     * 于是屏幕上的旧内容永远只占左边 80 列 —— 用户看到的"文本挤在左上一小部分"。
+     *
+     * 唯一可靠的做法是：**等终端真的量到尺寸了再写**。所以这里把 `write` 包一层，
+     * 在 `hasRealSize` 之前只入队；`markRealSize()` 在 fit 成功后按顺序补写。
+     */
+    rawTerminalWrite = terminal.write.bind(terminal);
+    (terminal as any).write = ((data: string | Uint8Array, cb?: () => void) => {
+      if (hasRealSize) {
+        rawTerminalWrite!(data, cb);
+        return;
+      }
+      pendingWrites.push(data);
+      pendingWriteChars += data.length;
+      if (pendingWriteChars >= PENDING_WRITE_LIMIT) {
+        console.warn(
+          `[Terminal ${props.sessionId}] 暂存写入超过 ${PENDING_WRITE_LIMIT} 字符仍没等到尺寸，先按当前 ${terminal?.cols}x${terminal?.rows} 写进去`
+        );
+        hasRealSize = true;
+        flushPendingWrites();
+      }
+    }) as any;
+    // 采集快照时如果数据还压在队里（这个会话从没露过面），直接把原始字节流交出去：
+    // 此刻 buffer 还是空的，这份流就是它的全部内容；等它真被切到、fit 到正确列数后
+    // 再写进去，折行位置才对。**绝不能为了采集而提前 flush** —— 那等于按 80 列写一遍，
+    // 又回到"内容只有 80 列宽"的老问题。
+    (terminal as any).getPendingWriteText = () => {
+      if (pendingWrites.length === 0) return null;
+      let text = '';
+      for (const chunk of pendingWrites) {
+        text += typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk as Uint8Array);
+      }
+      return text;
+    };
     // 开发期：把 xterm 实例交给调试桥，AI 可直接读 buffer 判断"黑屏/断连/回显缺失"
     unregisterDebugTerminal = registerDebugTerminal({
       id: props.paneId || props.sessionId,
@@ -428,6 +539,8 @@ onMounted(() => {
     // 适应容器大小
     const initDims = calculateTerminalDimensions(terminal);
     terminal.resize(initDims.cols, initDims.rows);
+    // 容器有盒子（当前标签就是激活的）→ 立刻解锁写入；隐藏沙箱里则继续攒着
+    markRealSize('mounted', initDims.measured);
     emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows }, paneId: props.paneId }); // 触发初始 resize 事件
 
     // 注册自定义按键处理器：拦截并放行分屏终端切换快捷键，防止被 xterm.js 吞噬
@@ -504,6 +617,7 @@ onMounted(() => {
                   terminal.resize(dims.cols, dims.rows);
                   debouncedEmitResize(terminal);
                 }
+                markRealSize('outerRO', dims.measured);
                 const viewportWidth = roundedWidth;
                 const viewportHeight = roundedHeight;
                 emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: viewportWidth, height: viewportHeight, paneId: props.paneId });
@@ -543,11 +657,15 @@ onMounted(() => {
                 lastInnerObserverWidth = w;
                 lastInnerObserverHeight = h;
                 const dims = calculateTerminalDimensions(terminal);
-                if (dims.cols === terminal.cols && dims.rows === terminal.rows) return;
+                if (dims.cols === terminal.cols && dims.rows === terminal.rows) {
+                    markRealSize('innerRO', dims.measured);
+                    return;
+                }
                 console.log(
                     `[Terminal ${props.sessionId}] 内层容器变化，重新 fit: ${terminal.cols}x${terminal.rows} -> ${dims.cols}x${dims.rows} (容器 ${w}x${h})`
                 );
                 terminal.resize(dims.cols, dims.rows);
+                markRealSize('innerRO', dims.measured);
                 debouncedEmitResize(terminal);
             });
             innerResizeObserver.observe(terminalRef.value);
@@ -571,7 +689,11 @@ onMounted(() => {
             const el = terminalRef.value;
             if (el.offsetWidth <= 0 || el.offsetHeight <= 0) { mismatchStreak = 0; return; }
             const dims = calculateTerminalDimensions(terminal);
-            if (dims.cols === terminal.cols && dims.rows === terminal.rows) { mismatchStreak = 0; return; }
+            if (dims.cols === terminal.cols && dims.rows === terminal.rows) {
+                markRealSize('watchdog', dims.measured);
+                mismatchStreak = 0;
+                return;
+            }
             mismatchStreak += 1;
             if (mismatchStreak < 2) return;
             mismatchStreak = 0;
@@ -620,6 +742,8 @@ onMounted(() => {
                 // （祖先刚从 display:none 回来时，盒子往往还没长到最终尺寸）
                 nextTick(() => {
                     if (props.isActive && terminal && terminalRef.value && terminalRef.value.offsetHeight > 0) {
+                        // 解锁写入交给 scheduleSettleFit 的 40ms 之后那一轮：
+                        // 第一帧的盒子可能是布局中间态，用它的列数写内容会重演"内容只有 80 列宽"。
                         scheduleSettleFit(terminal, 'active');
                         // 移动端不自动聚焦，避免每次激活会话自动弹起输入法
                         if (!isMobile.value) {
@@ -918,6 +1042,13 @@ onBeforeUnmount(() => {
     visibilityObserver = null;
   }
   cancelSettleFit();
+  // 丢弃还没写出去的暂存数据：终端马上要销毁了，写进去也没有意义
+  if (pendingWrites.length > 0) {
+    console.log(`[Terminal ${props.sessionId}] 卸载时丢弃 ${pendingWrites.length} 段未解锁的暂存数据`);
+  }
+  pendingWrites = [];
+  pendingWriteChars = 0;
+  rawTerminalWrite = null;
   if (dimWatchdogId !== null) {
     clearInterval(dimWatchdogId);
     dimWatchdogId = null;
