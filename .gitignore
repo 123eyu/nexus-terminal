@@ -187,6 +187,8 @@ packages/backend/src/sync/__test_e2e_sync.ts
 # 前端诊断产物（眼睛脚本的报告、截图、运行时日志）
 .debug/
 **/.debug/
+# 多实例联调用的独立数据目录（web 端 / 桌面端各一份）
+.devtest/
 .workbuddy-ai/
 doc/FRONTEND_DEBUGGING.md
 doc/CUSTOM_PANEL_PLAN.md
