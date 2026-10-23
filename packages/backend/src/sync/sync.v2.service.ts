@@ -1226,14 +1226,20 @@ export const syncV2Service = {
                 // 遇到 413 且批次大于 5，立即二分降级重试该段
                 console.warn(`[SyncV2:Client] 遭遇云端 413 限制，自动降级批次大小 (${subBatchSize} -> ${Math.floor(subBatchSize / 2)}) 重试...`);
                 subBatchSize = Math.max(1, Math.floor(subBatchSize / 2));
-              } else {
-                console.warn(`[SyncV2:Client] 推送批次 (偏移 ${i + subIdx}) 告警:`, postErr.message);
-                // 若单条超大无法推送，推进游标防止整体死锁阻塞
+              } else if (is413) {
+                // 单条也超限：这一行永远推不上去，只能跳过，否则会堵死后续所有变更
+                console.warn(`[SyncV2:Client] 单条变更体积超限，跳过 seq=${subChunk[0]?.seq} 避免阻塞:`, postErr.message);
                 const failedSeq = subChunk[0]?.seq;
                 if (failedSeq) {
                   await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [failedSeq]);
                 }
                 subIdx += 1;
+              } else {
+                // 网络中断 / 鉴权失败 / 云端 5xx 都是可恢复的：游标绝不能动，
+                // 否则这批变更会永久跳过（sync_changes 已落在游标下面，再也不会被取出）。
+                // 抛出去结束本轮 PUSH，下一轮从同一条重试。
+                console.warn(`[SyncV2:Client] 推送批次 (偏移 ${i + subIdx}) 失败，保留游标待下轮重试:`, postErr.message);
+                throw postErr;
               }
             }
           }
