@@ -88,31 +88,22 @@ let serializeAddon: SerializeAddon | null = null; // 官方序列化插件，用
 let unregisterDebugTerminal: (() => void) | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let observedElement: HTMLElement | null = null; // +++ Store the observed element +++
-/**
- * 可见性观察器：专门解决「终端在被 v-show 隐藏的会话里挂载」这一次性场景。
- *
- * 每个会话的工作区是个常驻的 `v-show` 沙箱，刷新恢复时非激活会话的终端是在
- * `display:none` 的祖先里挂载的 —— 容器 0×0，`proposeDimensions()` 返回 undefined，
- * 只能退化成 xterm 默认的 80×24。等用户切到这个标签、容器重新有盒子时，
- * **ResizeObserver 不会补发回调**（观察时元素就没有盒子，Chromium 不会在它重新获得盒子时通知），
- * 于是终端永远停在 80 列，表现为"文本只占左上角一小块"。
- *
- * IntersectionObserver 会如实报告 不可见 → 可见 的跃迁，拿它补这一刀 fit。
- */
-let visibilityObserver: IntersectionObserver | null = null;
 let debounceTimer: number | null = null; // 用于防抖的计时器 ID
 let selectionListenerDisposable: IDisposable | null = null; // +++ 提升声明并添加类型 +++
 let lastResizeObserverWidth = 0;
 let lastResizeObserverHeight = 0;
 let resizeRafId: number | null = null;
-/** 内层容器（真正的 fit 目标）的尺寸观察器，见 onMounted 里的说明 */
+/**
+ * 内层容器（`proposeDimensions()` 的真正测量对象）的尺寸观察器。
+ *
+ * 会话沙箱是常驻 `v-show`：刷新恢复时非激活会话的终端在 `display:none` 的祖先里挂载，
+ * 容器 0×0 → 终端退化成 xterm 默认 80×24。切回来时外层 wrapper 的盒子往往没变
+ * （变的是内层被挤小再放开），外层 ResizeObserver 全程静默 → 终端定格在 80 列。
+ * 直接盯内层，0 → N 的那次跃迁才能收到。
+ */
 let innerResizeObserver: ResizeObserver | null = null;
 let lastInnerObserverWidth = 0;
 let lastInnerObserverHeight = 0;
-/** 可见 / 激活后「收敛式 fit」的 rAF 句柄（见 scheduleSettleFit） */
-let settleRafId: number | null = null;
-/** 心跳自检定时器（见 onMounted 里的兜底说明） */
-let dimWatchdogId: number | null = null;
 const RESIZE_THRESHOLD = 3.0; // px: 提升阈值至 3px，彻底过滤子像素抖动，消除Layout Thrashing振荡
 
 // --- 尺寸未定时暂存写入（见 onMounted 里「把 write 包一层」的说明）---
@@ -294,79 +285,28 @@ const fitAndEmitResizeNow = (term: Terminal) => {
 };
 
 /**
- * 收敛式 fit：**只 fit 一次是不够的**。
+ * 「量不出来就隔一会儿再量」。
  *
- * 刷新恢复后第一次切到某个标签时，祖先链是刚从 `display:none` 变回可见的，
- * 这一刻读到的盒子经常是"布局还没长开"的中间态（实测能小到真实宽度的 40%）。
- * 用这个中间态 fit 出来的 cols 会被原样记住，而之后布局长开时
- * 外层 ResizeObserver 不一定看得到（它观察的是 wrapper，内层被挤小/放开时 wrapper 可能纹丝不动），
- * IntersectionObserver 也不会再报（已经可见了）—— 终端就定格在错误列数，
- * 表现成"文本挤在左上角"。
- *
- * 所以在可见 / 激活之后按递增间隔补量几次（一帧 + 40/90/160/260/400/600/900/1300/1800ms），
- * 每次只在尺寸真的变了时才 resize；稳定时纯测量，不写 DOM、不发消息。
- * 超过 1.8s 才长开的极端情况由内层 ResizeObserver 兜底（见 onMounted）。
+ * 元素从 0×0 变成有盒子、或祖先刚从 `display:none` 回来时，xterm 的渲染器还没量出
+ * 字符宽高，`proposeDimensions()` 会返回 **undefined**，此时 cols 只能兜底成 80 ——
+ * 既不能拿它 fit（会定格成 80 列），更不能拿它解锁写入（内容会被按 80 列折死）。
+ * 这个窗口只有几十毫秒，量到就停，最多续 1.2s。
  */
-let settleTimerIds: number[] = [];
-const cancelSettleFit = () => {
-    for (const id of settleTimerIds) clearTimeout(id);
-    settleTimerIds = [];
-    if (settleRafId !== null) {
-        cancelAnimationFrame(settleRafId);
-        settleRafId = null;
-    }
+let fitRetryIds: number[] = [];
+const cancelFitRetries = () => {
+    for (const id of fitRetryIds) clearTimeout(id);
+    fitRetryIds = [];
 };
-const scheduleSettleFit = (term: Terminal, reason: string) => {
-    cancelSettleFit();
-    const startedAt = performance.now();
-
-    /** 量一次，尺寸变了才 resize（稳定时纯测量，不写 DOM、不发消息） */
-    const probe = (label: string) => {
-        if (!props.isActive || !terminal || !terminalRef.value) return false;
-        const el = terminalRef.value;
-        if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
-        const dims = calculateTerminalDimensions(term);
-        // 第一帧的盒子可能还是布局中间态（实测能读到真实宽度的 40%），
-        // 这一轮只 fit、不解锁写入 —— 否则暂存内容会按这个偏小的列数折行。
-        const canUnlock = label !== 'raf';
-        if (dims.cols === term.cols && dims.rows === term.rows) {
-            // 尺寸已经对了：如果还有暂存的写入没收（例如恢复时终端一开始就是对的），
-            // 这里也要解锁，否则数据会一直压在队里。
-            if (canUnlock) markRealSize(`settle/${label}`, dims.measured);
-            return false;
-        }
-        console.log(
-            `[Terminal ${props.sessionId}] 补 fit(${reason}/${label}): ${term.cols}x${term.rows} -> ${dims.cols}x${dims.rows} (容器 ${el.offsetWidth}x${el.offsetHeight}, ${Math.round(performance.now() - startedAt)}ms)`
-        );
-        term.resize(dims.cols, dims.rows);
-        // ⚠️ 必须在 resize **之后**再解锁写入：解锁会把暂存内容真正写进终端，
-        // 写进去时用的列数就是 resize 后的列数，这样折行位置才对。
-        if (canUnlock) markRealSize(`settle/${label}`, dims.measured);
-        emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims, paneId: props.paneId });
-        return true;
-    };
-
-    // 逐帧探一次（覆盖"同一 tick 内布局已长开"的常见情况）
-    settleRafId = requestAnimationFrame(() => {
-        settleRafId = null;
-        if (probe('raf') && terminal && terminalRef.value) {
-            const stableWidth = terminalOuterWrapperRef.value?.offsetWidth || terminalRef.value.offsetWidth;
-            const stableHeight = terminalOuterWrapperRef.value?.offsetHeight || terminalRef.value.offsetHeight;
-            emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight, paneId: props.paneId });
-        }
-    });
-    // 之后按递增间隔补探：布局是异步长开的（分屏比例、侧栏、字体加载），
-    // 只探一帧很容易踩在中间态上（实测能读到真实宽度的 40%）。
-    for (const delay of [40, 90, 160, 260, 400, 600, 900, 1300, 1800]) {
-        settleTimerIds.push(
-            window.setTimeout(() => {
-                if (probe(`${delay}ms`) && terminalRef.value) {
-                    const stableWidth = terminalOuterWrapperRef.value?.offsetWidth || terminalRef.value.offsetWidth;
-                    const stableHeight = terminalOuterWrapperRef.value?.offsetHeight || terminalRef.value.offsetHeight;
-                    emitWorkspaceEvent('terminal:stabilizedResize', { sessionId: props.sessionId, width: stableWidth, height: stableHeight, paneId: props.paneId });
-                }
-            }, delay)
-        );
+const retryFitUntilMeasured = (term: Terminal) => {
+    cancelFitRetries();
+    for (const delay of [16, 50, 100, 180, 300, 450, 650, 900, 1200]) {
+        fitRetryIds.push(window.setTimeout(() => {
+            if (!terminal || !terminalRef.value) return;
+            if (terminalRef.value.offsetWidth <= 0 || terminalRef.value.offsetHeight <= 0) return;
+            if (!calculateTerminalDimensions(term).measured) return; // 还没量出来，等下一档
+            cancelFitRetries();
+            fitAndEmitResizeNow(term);
+        }, delay));
     }
 };
 
@@ -541,6 +481,8 @@ onMounted(() => {
     terminal.resize(initDims.cols, initDims.rows);
     // 容器有盒子（当前标签就是激活的）→ 立刻解锁写入；隐藏沙箱里则继续攒着
     markRealSize('mounted', initDims.measured);
+    // 有盒子但渲染器还没量出字符宽高 → 过一会儿重量（量到就停）
+    if (!initDims.measured && terminalRef.value.offsetWidth > 0) retryFitUntilMeasured(terminal);
     emitWorkspaceEvent('terminal:resize', { sessionId: props.sessionId, dims: { cols: terminal.cols, rows: terminal.rows }, paneId: props.paneId }); // 触发初始 resize 事件
 
     // 注册自定义按键处理器：拦截并放行分屏终端切换快捷键，防止被 xterm.js 吞噬
@@ -658,7 +600,8 @@ onMounted(() => {
                 lastInnerObserverHeight = h;
                 const dims = calculateTerminalDimensions(terminal);
                 if (dims.cols === terminal.cols && dims.rows === terminal.rows) {
-                    markRealSize('innerRO', dims.measured);
+                    if (!dims.measured) retryFitUntilMeasured(terminal);
+                    else markRealSize('innerRO', true);
                     return;
                 }
                 console.log(
@@ -671,53 +614,6 @@ onMounted(() => {
             innerResizeObserver.observe(terminalRef.value);
         }
 
-        /**
-         * 兜底的兜底：1 秒一次的心跳自检。
-         *
-         * 上面那些机制都依赖"事件能及时送到"，但实机上总有我们没枚举到的时序
-         * （布局分几段长开、字体晚到、面板折叠、样式重排……）。与其一个个补，
-         * 不如让终端自己发现"我现在算出来的尺寸和实际用着的不一样"，然后自己修。
-         *
-         * 代价：可见时每秒一次 getComputedStyle；不可见的标签页（容器 0×0）直接跳过。
-         * 防抖：连续两次都量到同一个偏差才动手，避免 1 列抖动来回 resize。
-         */
-        let mismatchStreak = 0;
-        dimWatchdogId = window.setInterval(() => {
-            if (document.visibilityState !== 'visible') return;
-            if (!props.isActive || !terminal || !terminalRef.value) return;
-            if (terminalNoWrapBoolean.value) return;
-            const el = terminalRef.value;
-            if (el.offsetWidth <= 0 || el.offsetHeight <= 0) { mismatchStreak = 0; return; }
-            const dims = calculateTerminalDimensions(terminal);
-            if (dims.cols === terminal.cols && dims.rows === terminal.rows) {
-                markRealSize('watchdog', dims.measured);
-                mismatchStreak = 0;
-                return;
-            }
-            mismatchStreak += 1;
-            if (mismatchStreak < 2) return;
-            mismatchStreak = 0;
-            console.log(
-                `[Terminal ${props.sessionId}] 心跳自检发现尺寸不符，纠正: ${terminal.cols}x${terminal.rows} -> ${dims.cols}x${dims.rows} (容器 ${el.offsetWidth}x${el.offsetHeight})`
-            );
-            fitAndEmitResizeNow(terminal);
-        }, 1000);
-
-        /**
-         * 可见性兜底：元素从"没有盒子"变成"有盒子"时补 fit。
-         * 单次 fit 不够 —— 见 scheduleSettleFit 的注释，这里交给它按递增间隔反复量。
-         */
-        try {
-            visibilityObserver = new IntersectionObserver((entries) => {
-                const entry = entries[0];
-                if (!entry?.isIntersecting) return;
-                if (!props.isActive || !terminal || !terminalRef.value) return;
-                scheduleSettleFit(terminal, 'visible');
-            }, { threshold: 0 });
-            visibilityObserver.observe(observedElement);
-        } catch (e) {
-            console.warn(`[Terminal ${props.sessionId}] IntersectionObserver 不可用，跳过可见性补 fit:`, e);
-        }
     }
 
 
@@ -738,13 +634,12 @@ onMounted(() => {
                 } catch (e) {
                      console.warn(`[Terminal ${props.sessionId}] Error observing element:`, e);
                 }
-                // 收敛式 fit：DOM 更新后立即量一次，并在之后几百毫秒里继续量
-                // （祖先刚从 display:none 回来时，盒子往往还没长到最终尺寸）
                 nextTick(() => {
                     if (props.isActive && terminal && terminalRef.value && terminalRef.value.offsetHeight > 0) {
-                        // 解锁写入交给 scheduleSettleFit 的 40ms 之后那一轮：
-                        // 第一帧的盒子可能是布局中间态，用它的列数写内容会重演"内容只有 80 列宽"。
-                        scheduleSettleFit(terminal, 'active');
+                        // 立刻 fit 一次；量不出来（渲染器还没量字符宽高）就过一会儿重量。
+                        // 内容解锁交给 fit 内部（markRealSize 只在 proposeDimensions 真的量出来时才生效）。
+                        fitAndEmitResizeNow(terminal);
+                        if (!calculateTerminalDimensions(terminal).measured) retryFitUntilMeasured(terminal);
                         // 移动端不自动聚焦，避免每次激活会话自动弹起输入法
                         if (!isMobile.value) {
                             terminal.focus();
@@ -754,7 +649,6 @@ onMounted(() => {
             } else {
                 // --- Become Inactive ---
                 console.log(`[Terminal ${props.sessionId}] Becoming inactive. Unobserving element.`);
-                cancelSettleFit();
                 // Stop observing
                 try {
                     resizeObserver.unobserve(observedElement);
@@ -1033,15 +927,6 @@ onBeforeUnmount(() => {
       console.log(`[Terminal ${props.sessionId}] ResizeObserver disconnected.`);
   }
   resizeObserver = null;
-  if (visibilityObserver) {
-    try {
-      visibilityObserver.disconnect();
-    } catch (e) {
-      // ignore
-    }
-    visibilityObserver = null;
-  }
-  cancelSettleFit();
   // 丢弃还没写出去的暂存数据：终端马上要销毁了，写进去也没有意义
   if (pendingWrites.length > 0) {
     console.log(`[Terminal ${props.sessionId}] 卸载时丢弃 ${pendingWrites.length} 段未解锁的暂存数据`);
@@ -1049,10 +934,8 @@ onBeforeUnmount(() => {
   pendingWrites = [];
   pendingWriteChars = 0;
   rawTerminalWrite = null;
-  if (dimWatchdogId !== null) {
-    clearInterval(dimWatchdogId);
-    dimWatchdogId = null;
-  }
+  cancelFitRetries();
+  cancelFitRetries();
   if (innerResizeObserver) {
     try {
       innerResizeObserver.disconnect();
