@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRoute } from 'vue-router';
-import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue';
+import { ref, onMounted, onUnmounted, watch, nextTick, computed, defineAsyncComponent } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from './stores/auth.store';
 import { useDeviceDetection } from './composables/useDeviceDetection';
@@ -13,7 +13,6 @@ import { useSessionStore } from './stores/session.store';
 import { useFavoritePathsStore } from './stores/favoritePaths.store';
 import { storeToRefs } from 'pinia';
 import UINotificationDisplay from './components/UINotificationDisplay.vue';
-import FileEditorOverlay from './components/FileEditorOverlay.vue';
 import StyleCustomizer from './components/StyleCustomizer.vue';
 import MobileStyleCustomizerModal from './components/MobileStyleCustomizerModal.vue';
 import FocusSwitcherConfigurator from './components/FocusSwitcherConfigurator.vue';
@@ -23,8 +22,21 @@ import LargeFileOpenDialog from './components/LargeFileOpenDialog.vue';
 import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
+import { useFileEditorStore } from './stores/fileEditor.store';
 import { initGlobalSyncListener } from './composables/useGlobalSyncListener';
 import { initExternalOpenSync } from './composables/file-manager/useExternalOpenSync';
+
+/**
+ * 文件编辑器浮层必须懒加载。
+ *
+ * 它 → SingleEditorPane → MonacoEditor → `import * as monaco from 'monaco-editor'`，
+ * 静态 import 会把整包 monaco（构建出来 ~5MB，gzip 还有 1.5MB）塞进入口 chunk：
+ * 每台设备（尤其是手机）打开任何一个页面都要先下完、解析完这 5MB 才开始渲染，
+ * 手机上的表现就是「点哪都没反应」。
+ *
+ * 而且这个浮层只在编辑器弹窗真的打开时才有内容，完全没必要在启动时就加载。
+ */
+const FileEditorOverlay = defineAsyncComponent(() => import('./components/FileEditorOverlay.vue'));
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -33,6 +45,7 @@ const appearanceStore = useAppearanceStore();
 const layoutStore = useLayoutStore();
 const focusSwitcherStore = useFocusSwitcherStore(); // +++ 实例化焦点切换 Store +++
 const sessionStore = useSessionStore(); // +++ 实例化 Session Store +++
+const fileEditorStore = useFileEditorStore(); // 只为判断编辑器弹窗是否打开（决定是否加载 monaco）
 const dialogStore = useDialogStore(); // +++ 实例化 DialogStore +++
 const { state: dialogState } = storeToRefs(dialogStore); 
 const favoritePathsStore = useFavoritePathsStore(); // +++ 实例化 favoritePathsStore +++
@@ -396,7 +409,11 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
     <UINotificationDisplay />
 
     <!-- 根据设置条件或移动端环境渲染全局文件编辑器弹窗 -->
-    <FileEditorOverlay v-if="showPopupFileEditorBoolean || isMobile" :is-mobile="isMobile" />
+    <!-- 只有弹窗真的打开时才挂载：否则移动端会无条件把 monaco 拉下来 -->
+    <FileEditorOverlay
+      v-if="(showPopupFileEditorBoolean || isMobile) && fileEditorStore.isPopupOpen"
+      :is-mobile="isMobile"
+    />
 
     <!-- 条件渲染样式自定义器：移动端与桌面端完全解耦渲染 -->
     <MobileStyleCustomizerModal

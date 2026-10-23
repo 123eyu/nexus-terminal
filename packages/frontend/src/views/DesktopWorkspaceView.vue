@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { watch } from 'vue';
+import { defineAsyncComponent, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
-import RemoteSessionPane from '../components/remote/RemoteSessionPane.vue';
+// 远程桌面（RDP/VNC）客户端体积很大（noVNC + iron-remote-desktop），而且只在真有
+// rdp/vnc 会话时才用得上。静态 import 会把它塞进工作区的 chunk 里：手机上光是进终端
+// 就要多下几百 KB，更糟的是这块代码一旦在新 WebView 上解析/求值失败，整个工作区
+// 连渲染都进不去（0.9.11 起「点终端没反应/黑屏」就是这么来的）。改成按需加载。
+const RemoteSessionPane = defineAsyncComponent(() => import('../components/remote/RemoteSessionPane.vue'));
 import { useSessionStore } from '../stores/session.store';
 import { useLayoutStore } from '../stores/layout.store';
 import { storeToRefs } from 'pinia';

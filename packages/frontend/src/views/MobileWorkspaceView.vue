@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, defineAsyncComponent, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import CommandInputBar from '../components/CommandInputBar.vue';
 import VirtualKeyboard from '../components/VirtualKeyboard.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
-import RemoteSessionPane from '../components/remote/RemoteSessionPane.vue';
+// 同 DesktopWorkspaceView：远程桌面客户端按需加载，别拖累移动端进终端的首屏。
+const RemoteSessionPane = defineAsyncComponent(() => import('../components/remote/RemoteSessionPane.vue'));
 import { useSessionStore } from '../stores/session.store';
 import { useLayoutStore } from '../stores/layout.store';
 import type { LayoutNode } from '../stores/layout.store';

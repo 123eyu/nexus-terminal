@@ -13,6 +13,7 @@ import 'splitpanes/dist/splitpanes.css';
 import ElementPlus from 'element-plus';
 import 'element-plus/dist/index.css';
 import { installDebugBridge } from './debug';
+import { showBootFailure, isChunkLoadError } from './utils/bootFallback';
 
 
 const pinia = createPinia(); // 创建 Pinia 实例
@@ -70,6 +71,17 @@ app.use(i18n); // 使用 i18n
 
     // 3. 状态和数据准备就绪后，再启用路由并挂载应用
     console.log("[main.ts] 状态准备就绪，启用路由并挂载应用...");
+    // 路由懒加载的 chunk 挂掉时，导航永远不会 settle：以前的表现是整页空白、控制台无输出，
+    // 手机上根本看不出发生了什么。这里先接住错误，给个能重试的提示。
+    router.onError((error) => {
+      console.error('[main.ts] 路由加载失败:', error);
+      showBootFailure(
+        isChunkLoadError(error) ? '页面资源加载失败' : '页面打开失败',
+        isChunkLoadError(error)
+          ? '前端代码没有下载完整（弱网或缓存里的旧文件）。请检查网络后重新加载。'
+          : error
+      );
+    });
     app.use(router); // 在这里启用路由，确保守卫能获取到最新状态
     await router.isReady(); // 等待路由初始化完成 (特别是异步路由加载)
     app.mount('#app');
@@ -79,13 +91,20 @@ app.use(i18n); // 使用 i18n
     // 捕获初始化过程中的意外错误
     console.error("[main.ts] 应用初始化过程中发生严重错误:", error);
     // 即使发生严重错误，也尝试启用路由并挂载应用，可能显示错误页面或回退状态
-    app.use(router); // 确保路由被添加
+    try {
+      app.use(router); // 确保路由被添加
+    } catch (_) {}
     try {
       await router.isReady();
     } catch (routerError) {
       console.error("[main.ts] 路由初始化失败:", routerError);
     }
-    app.mount('#app');
+    try {
+      app.mount('#app');
+    } catch (mountError) {
+      console.error("[main.ts] 挂载失败:", mountError);
+    }
+    showBootFailure('应用启动失败', error);
   }
 // --- PWA Service Worker Registration ---
   if ('serviceWorker' in navigator) {

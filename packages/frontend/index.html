@@ -13,7 +13,72 @@
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <!--
+        启动占位：正常加载时 Vue 挂载会把它整块替换掉（几十毫秒，看不见）。
+        只有在「路由懒加载 chunk 卡住 / 失败」时才会露出来 —— 以前这种情况是纯黑屏，
+        手机上没有控制台，用户只能看到一片黑。
+        延迟 4s 才淡入，避免正常加载时闪一下。
+      -->
+      <div class="boot-hint">
+        <div class="boot-hint__spinner"></div>
+        <p class="boot-hint__title">正在加载页面…</p>
+        <p class="boot-hint__desc">如果一直停在这里，说明前端资源没下载完，请检查网络后重试。</p>
+        <button class="boot-hint__retry" type="button" onclick="location.reload()">重新加载</button>
+      </div>
+    </div>
+    <noscript>Nexus Terminal 需要启用 JavaScript。</noscript>
+    <style>
+      .boot-hint {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 24px;
+        text-align: center;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: #8b93a1;
+        opacity: 0;
+        animation: boot-hint-in 0.25s ease 4s forwards;
+      }
+      .boot-hint__spinner {
+        width: 28px;
+        height: 28px;
+        border: 2px solid rgba(147, 112, 219, 0.25);
+        border-top-color: #9370db;
+        border-radius: 50%;
+        animation: boot-hint-spin 0.9s linear infinite;
+      }
+      .boot-hint__title {
+        margin: 0;
+        font-size: 15px;
+      }
+      .boot-hint__desc {
+        margin: 0;
+        max-width: 22em;
+        font-size: 12px;
+        line-height: 1.6;
+        opacity: 0.75;
+      }
+      .boot-hint__retry {
+        margin-top: 4px;
+        padding: 7px 18px;
+        font-size: 13px;
+        color: #fff;
+        background: #9370db;
+        border: 0;
+        border-radius: 6px;
+      }
+      @keyframes boot-hint-in {
+        to { opacity: 1; }
+      }
+      @keyframes boot-hint-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
