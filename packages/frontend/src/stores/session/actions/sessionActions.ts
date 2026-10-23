@@ -281,9 +281,11 @@ export const closeSession = async (
   options?: {
     recordRemoval?: boolean;
     /**
-     * 是否把 SSH 会话转入后台挂起（默认 true）。
-     * 只有「整页拆解」——页面卸载、接管前清场——才传 false，
-     * 那种场景要么后端自己会接管，要么进程都要没了，挂起没有意义。
+     * 是否把 SSH 会话转入后台挂起（默认 false = 真断开）。
+     *
+     * 只有用户**主动**从标签右键菜单选「挂起会话」才传 true。
+     * 关标签（点 X、关闭/关闭其他/左/右）一律按断开处理 —— 「关个标签连接还在后台活着」
+     * 是很容易让人以为连接没关掉的行为，挂起必须是显式操作。
      */
     suspend?: boolean;
   },
@@ -304,11 +306,11 @@ export const closeSession = async (
   // 所以既不需要记"待清理"，也不需要调后端原子销毁接口。
   const isRemoteSession = sessionToClose.kind === 'rdp' || sessionToClose.kind === 'vnc';
 
-  // 0. 关闭标签 = 转入后台挂起，不是断开连接。
+  // 0. 只有「挂起会话」这条显式路径才转入后台挂起（默认是直接断开）。
   //    必须在清理 wsManager / 终端实例之前做，并且要等后端确认真的接管了才敢放手：
   //    后端一旦接管，SSH 引用就从 ws 会话里摘走了，之后怎么关 ws 都杀不到它。
   let suspended = false;
-  if (!isRemoteSession && options?.suspend !== false) {
+  if (!isRemoteSession && options?.suspend === true) {
     const suspendResult = await suspendSessionNow(sessionToClose);
     suspended = suspendResult.ok;
     if (suspended) {

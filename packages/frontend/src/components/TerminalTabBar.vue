@@ -169,11 +169,9 @@ const handleContextMenuAction = (payload: { action: string; targetId: string | n
     case 'reconnect':
       emitWorkspaceEvent('session:reconnect', { sessionId: targetId });
       break;
-    case 'mark-for-suspend':
-      sessionStore.requestStartSshSuspend(targetId);
-      break;
-    case 'unmark-for-suspend':
-      sessionStore.requestUnmarkSshSuspend(targetId);
+    case 'suspend':
+      // 先让后端当场接管 SSH，ACK 回来才清标签（内部会弹「已挂起」提示）
+      sessionStore.closeSession(targetId, { suspend: true });
       break;
     default:
       console.warn(`[TabBar] 未知的菜单操作: ${action}`);
@@ -211,14 +209,11 @@ const contextMenuItems = computed(() => {
   items.push({ label: 'tabs.contextMenu.reconnect', action: 'reconnect', disabled: !canReconnect });
   items.push({ label: '', action: '', isSeparator: true });
 
-  if (connectionInfo && connectionInfo.type === 'SSH') {
-    const isActiveSession = targetSessionState.wsManager.isConnected.value;
-    if (isActiveSession) {
-      if (targetSessionState.isMarkedForSuspend) {
-        items.push({ label: 'tabs.contextMenu.unmarkForSuspend', action: 'unmark-for-suspend' });
-      } else {
-        items.push({ label: 'tabs.contextMenu.suspendSession', action: 'mark-for-suspend' });
-      }
+  // 挂起必须是显式操作：关标签只断开，想留连接就走这里。
+  // 只给连着的 SSH 会话（断开状态下没什么可挂，RDP/VNC 也不支持挂起）。
+  if (connectionInfo && connectionInfo.type === 'SSH' && targetSessionState.kind === 'ssh') {
+    if (targetSessionState.wsManager.isConnected.value) {
+      items.push({ label: 'tabs.contextMenu.suspendSession', action: 'suspend' });
       items.push({ label: '', action: '', isSeparator: true });
     }
   }

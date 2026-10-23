@@ -74,7 +74,8 @@ const handleRequestEditFromPopup = (connection: ConnectionInfo) => {
   emitWorkspaceEvent('connection:requestEdit', { connectionInfo: connection });
 };
 
-// 触屏长按会话触发待挂起/取消挂起（与拖拽排序精准解耦）
+// 触屏长按会话 = 挂起会话（显式操作，与桌面端标签右键「挂起会话」等价）
+// 关标签只断开，不再有「标记待挂起」这种隐式状态
 let touchTimeout: number | null = null;
 const touchDuration = 800;
 let touchedSessionId: string | null = null;
@@ -95,13 +96,14 @@ const handleTouchStart = (event: TouchEvent, sessionId: string) => {
   touchTimeout = window.setTimeout(() => {
     if (touchedSessionId === sessionId && !isTouchMoved) {
       const sessionState = sessionStore.sessions.get(sessionId);
-      if (sessionState && sessionState.isMarkedForSuspend) {
-        sessionStore.requestUnmarkSshSuspend(sessionId);
-      } else if (sessionState) {
-        sessionStore.requestStartSshSuspend(sessionId);
-      }
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(40);
+      // 只有连着 SSH 才有得挂；远程桌面/断开的会话长按不做任何事
+      if (sessionState
+        && sessionState.kind === 'ssh'
+        && sessionState.wsManager.isConnected.value) {
+        sessionStore.closeSession(sessionId, { suspend: true });
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(40);
+        }
       }
     }
     touchTimeout = null;
