@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useConnectionsStore } from '../stores/connections.store';
 import type { ConnectionInfo } from '../stores/connections.store';
 import { useSessionStore } from '../stores/session.store';
+import { hexToRgba } from '../utils/colorUtils';
 import { formatRelativeFromSeconds } from '../utils/relativeTime';
 
 /**
@@ -72,6 +73,26 @@ const lastUsedText = (conn: ConnectionInfo): string => formatRelativeFromSeconds
 
 const connect = (conn: ConnectionInfo) => {
   sessionStore.handleConnectRequest(conn);
+};
+
+/**
+ * 连接自己在「连接管理」里设的背景色：卡片底色 + 边框跟着它走（和仪表盘的连接卡片同一套透明度），
+ * 图标再染成纯色。没设色的连接保持默认卡片外观。
+ */
+const rowStyle = (conn: ConnectionInfo): Record<string, string> | undefined => {
+  const color = conn.background_color;
+  if (!color) return undefined;
+  return {
+    '--rc-bg': hexToRgba(color, 0.14),
+    '--rc-bg-hover': hexToRgba(color, 0.22),
+    '--rc-border': hexToRgba(color, 0.32),
+  };
+};
+
+const iconStyle = (conn: ConnectionInfo): Record<string, string> | undefined => {
+  const color = conn.background_color;
+  if (!color) return undefined;
+  return { backgroundColor: hexToRgba(color, 0.2), color };
 };
 
 /** 量一次真实行高；量到不一样的值就重算（只会在首次/换主题时发生一次） */
@@ -168,11 +189,16 @@ onBeforeUnmount(() => {
         <li v-for="conn in visibleConnections" :key="conn.id">
           <button
             type="button"
-            class="group flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 cursor-pointer"
+            class="rc-row group flex w-full items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 cursor-pointer"
+            :class="{ 'rc-colored': !!conn.background_color }"
+            :style="rowStyle(conn)"
             :title="`${conn.name || conn.host} — ${conn.username ? conn.username + '@' : ''}${conn.host}:${conn.port}`"
             @click="connect(conn)"
           >
-            <span class="rc-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <span
+              class="rc-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+              :style="iconStyle(conn)"
+            >
               <i :class="['fas', typeIcon(conn.type), 'text-xs']"></i>
             </span>
             <span class="min-w-0 flex-1">
@@ -202,5 +228,16 @@ onBeforeUnmount(() => {
 /* 全局 `i, .fas { color: var(--icon-color) }` 没有进 @layer，会盖掉继承来的 text-primary */
 .rc-icon i {
   color: inherit;
+}
+
+/* 连接设了背景色：底色/边框/悬停都跟着那条连接的颜色走（透明度同仪表盘连接卡片） */
+.rc-row.rc-colored {
+  background-color: var(--rc-bg);
+  border-color: var(--rc-border);
+}
+
+.rc-row.rc-colored:hover {
+  background-color: var(--rc-bg-hover);
+  border-color: var(--rc-border);
 }
 </style>
