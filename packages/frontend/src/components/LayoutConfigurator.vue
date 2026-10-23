@@ -102,6 +102,21 @@ const SIDEBAR_ONLY_PANES: PaneName[] = ['portForward'];
 // 桌面端专属：web 端连入口都不显示。平台在运行时是固定值，不需要响应式
 const sidebarOnlyPanes: PaneName[] = isDesktopApp() ? [...SIDEBAR_ONLY_PANES] : [];
 
+// 侧栏的唯一权威是 settings.sidebar（live），预设里那份只是快照。
+// 快照可能落后于 live（换设备/清缓存首次进入、预设被种子布局对齐过），
+// 若直接以快照为编辑起点，点一次保存就会把「侧栏专用」入口从 live 里抹掉。
+// 这里把 live 有、快照没有的补回去；用户在编辑器里删掉后 live 也会跟着没，不会复活。
+function mergeSidebarOnlyPanes() {
+  const live = layoutStore.sidebarPanes;
+  (['left', 'right'] as const).forEach(side => {
+    if (!localSidebarPanes.value[side]) localSidebarPanes.value[side] = [];
+    const list = localSidebarPanes.value[side];
+    (live?.[side] || []).forEach(pane => {
+      if (SIDEBAR_ONLY_PANES.includes(pane) && !list.includes(pane)) list.push(pane);
+    });
+  });
+}
+
 // 加载指定预设到编辑画布
 function loadPresetIntoEditor(presetId: string) {
   const target = layoutStore.layoutPresets.find(p => p.id === presetId)
@@ -116,7 +131,8 @@ function loadPresetIntoEditor(presetId: string) {
 
   const initialSidebars = target.sidebarPanes ? JSON.parse(JSON.stringify(target.sidebarPanes)) : layoutStore.getSystemDefaultSidebarPanes();
   localSidebarPanes.value = initialSidebars;
-  originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
+  mergeSidebarOnlyPanes();
+  originalSidebarPanes.value = JSON.parse(JSON.stringify(localSidebarPanes.value));
 
   localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => !SIDEBAR_ONLY_PANES.includes(p));
   localAvailablePanes.value.sort((a, b) =>
@@ -416,7 +432,8 @@ watch(() => props.isVisible, async (newValue) => {
       : (selectedPreset?.sidebarPanes ?? layoutStore.sidebarPanes);
     const initialSidebars = sidebarSource ? JSON.parse(JSON.stringify(sidebarSource)) : { left: [], right: [] };
     localSidebarPanes.value = initialSidebars;
-    originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
+    mergeSidebarOnlyPanes();
+    originalSidebarPanes.value = JSON.parse(JSON.stringify(localSidebarPanes.value));
 
     // 组件物料库全量展示所有可用组件，支持无限次拖拽克隆至布局画布
     localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => !SIDEBAR_ONLY_PANES.includes(p));
