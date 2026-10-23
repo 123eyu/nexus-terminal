@@ -777,7 +777,8 @@
       "statusMonitor": "ステータスモニター",
       "terminal": "ターミナル",
       "suspendedSshSessions": "中断されたセッション管理",
-      "multiLineCommandInput": "複数行コマンド入力"
+      "multiLineCommandInput": "複数行コマンド入力",
+      "portForward": "ポート転送"
     },
     "panes": {
       "suspendedSshSessions": "中断されたセッション管理者"
@@ -798,7 +799,8 @@
     "saveError": "レイアウトの保存中にエラーが発生しました。後でもう一度お試しください。",
     "title": "レイアウトマネージャー",
     "lockLayout": "レイアウトをロック",
-    "lockUpdateError": "レイアウトロック状態の更新に失敗しました。"
+    "lockUpdateError": "レイアウトロック状態の更新に失敗しました。",
+    "sidebarOnly": "サイドバー専用"
   },
   "layoutNodeEditor": {
     "addHorizontalContainer": "水平コンテナーを追加",
@@ -2170,5 +2172,26 @@
     "reclaiming": "引き継ぎ中...",
     "backToHome": "ホームに戻る",
     "safetyNote": "クラウドセッションは安全に維持され、シームレスにローミング可能です"
+  },
+  "portForward": {
+    "title": "ポート転送",
+    "add": "新規ルール",
+    "noSession": "先に SSH セッションを開いてください",
+    "empty": "ルールがありません",
+    "running": "実行中",
+    "stopped": "停止中",
+    "start": "開始",
+    "stop": "停止",
+    "bindHost": "待受アドレス",
+    "bindPort": "ポート",
+    "targetHost": "転送先",
+    "targetPort": "ポート",
+    "autoStart": "起動時に有効化",
+    "confirmDelete": "ポート転送ルール {target} を削除しますか？",
+    "type": {
+      "local": "ローカル (-L)",
+      "dynamic": "動的 SOCKS (-D)",
+      "remote": "リモート (-R)"
+    }
   }
 }

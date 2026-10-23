@@ -17,7 +17,9 @@ export type PaneName =
   | 'quickCommands'
   | 'dockerManager'
   | 'suspendedSshSessions'
-  | 'multiLineCommandInput';
+  | 'multiLineCommandInput'
+  /** 端口转发：仅桌面端、且只能停靠在侧栏 */
+  | 'portForward';
 
 /** 终端自动执行指令配置 */
 export interface TerminalAutoExecConfig {

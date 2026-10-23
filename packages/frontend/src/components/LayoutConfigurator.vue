@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { isDesktopApp } from '../utils/platform';
 import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useConnectionsStore } from '../stores/connections.store';
@@ -96,6 +97,11 @@ const filteredConnections = computed(() => {
   );
 });
 
+// 这些面板只能停靠在侧栏，主布局画布不接受（拖进去也不认）
+const SIDEBAR_ONLY_PANES: PaneName[] = ['portForward'];
+// 桌面端专属：web 端连入口都不显示。平台在运行时是固定值，不需要响应式
+const sidebarOnlyPanes: PaneName[] = isDesktopApp() ? [...SIDEBAR_ONLY_PANES] : [];
+
 // 加载指定预设到编辑画布
 function loadPresetIntoEditor(presetId: string) {
   const target = layoutStore.layoutPresets.find(p => p.id === presetId)
@@ -112,7 +118,7 @@ function loadPresetIntoEditor(presetId: string) {
   localSidebarPanes.value = initialSidebars;
   originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
 
-  localAvailablePanes.value = [...layoutStore.allPossiblePanes];
+  localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => !SIDEBAR_ONLY_PANES.includes(p));
   localAvailablePanes.value.sort((a, b) =>
     layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
   );
@@ -339,6 +345,12 @@ const paneMetaMap: Record<string, { icon: string; iconColor: string; bgSoft: str
     bgSoft: 'bg-rose-500/15',
     borderSoft: 'border-rose-500/30',
   },
+  portForward: {
+    icon: 'fas fa-arrow-right-arrow-left',
+    iconColor: 'text-emerald-400',
+    bgSoft: 'bg-emerald-500/15',
+    borderSoft: 'border-emerald-500/30',
+  },
   multiLineCommandInput: {
     icon: 'fas fa-bars-staggered',
     iconColor: 'text-violet-400',
@@ -407,7 +419,7 @@ watch(() => props.isVisible, async (newValue) => {
     originalSidebarPanes.value = JSON.parse(JSON.stringify(initialSidebars));
 
     // 组件物料库全量展示所有可用组件，支持无限次拖拽克隆至布局画布
-    localAvailablePanes.value = [...layoutStore.allPossiblePanes];
+    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => !SIDEBAR_ONLY_PANES.includes(p));
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -491,6 +503,7 @@ const paneLabels = computed(() => ({
   dockerManager: t('layout.pane.dockerManager', 'Docker 管理器'),
   suspendedSshSessions: t('layout.pane.suspendedSshSessions', '挂起会话管理'),
   multiLineCommandInput: t('layout.pane.multiLineCommandInput', '多行命令输入'),
+  portForward: t('layout.pane.portForward', '端口转发'),
 }));
 
 // --- Methods ---
@@ -516,9 +529,19 @@ const closeDialog = async () => {
   }
 };
 
+// 兜底：侧栏专用面板绝不能落进主布局树（拖拽已经拦了，这里再保一层）
+const stripSidebarOnlyPanes = (node: LayoutNode | null): LayoutNode | null => {
+  if (!node) return null;
+  if (node.type === 'pane') {
+    return node.component && SIDEBAR_ONLY_PANES.includes(node.component) ? null : node;
+  }
+  const children = (node.children ?? []).map(stripSidebarOnlyPanes).filter(Boolean) as LayoutNode[];
+  return children.length ? { ...node, children } : null;
+};
+
 const saveLayout = async () => {
   try {
-    const layoutTreeToSave = localLayoutTree.value ? JSON.parse(JSON.stringify(localLayoutTree.value)) : layoutStore.getSystemDefaultLayout();
+    const layoutTreeToSave = stripSidebarOnlyPanes(localLayoutTree.value ? JSON.parse(JSON.stringify(localLayoutTree.value)) : layoutStore.getSystemDefaultLayout()) ?? layoutStore.getSystemDefaultLayout();
     const sidebarConfigToSave = JSON.parse(JSON.stringify(localSidebarPanes.value));
 
     // 同步更新当前正在编辑的预设数据
@@ -570,7 +593,7 @@ const resetToDefault = async () => {
     const defaultSidebarPanes = layoutStore.getSystemDefaultSidebarPanes();
     localSidebarPanes.value = JSON.parse(JSON.stringify(defaultSidebarPanes));
 
-    localAvailablePanes.value = [...layoutStore.allPossiblePanes];
+    localAvailablePanes.value = layoutStore.allPossiblePanes.filter(p => !SIDEBAR_ONLY_PANES.includes(p));
     localAvailablePanes.value.sort((a, b) =>
         layoutStore.allPossiblePanes.indexOf(a) - layoutStore.allPossiblePanes.indexOf(b)
     );
@@ -855,6 +878,32 @@ const handleAvailablePaneDragEnd = (event: any) => {
               </li>
             </template>
           </draggable>
+
+          <!-- 侧栏专用：只允许拖进左右侧栏，主布局画布不接受 -->
+          <div v-if="sidebarOnlyPanes.length" class="mt-2 pt-2 border-t border-border/60 flex-shrink-0">
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <i class="fas fa-columns text-[10px] text-primary"></i>
+              <h4 class="text-[11px] font-semibold text-text-secondary m-0">{{ t('layoutConfigurator.sidebarOnly', '侧栏专用') }}</h4>
+            </div>
+            <draggable
+              :list="sidebarOnlyPanes"
+              tag="ul"
+              class="list-none p-0 m-0 space-y-1"
+              :item-key="(element: PaneName) => `sidebar-${element}`"
+              :group="{ name: 'sidebar-only-items', pull: 'clone', put: false }"
+              :sort="false"
+              :clone="clonePane"
+            >
+              <template #item="{ element }: { element: PaneName }">
+                <li class="flex items-center gap-2 px-2.5 py-1.5 bg-background border border-dashed border-emerald-500/40 rounded-lg cursor-grab text-xs active:cursor-grabbing">
+                  <div class="w-5 h-5 rounded flex items-center justify-center text-[10px] flex-shrink-0 border" :class="[getPaneMeta(element).bgSoft, getPaneMeta(element).borderSoft, getPaneMeta(element).iconColor]">
+                    <i :class="getPaneMeta(element).icon"></i>
+                  </div>
+                  <span class="truncate font-medium text-foreground">{{ paneLabels[element] || element }}</span>
+                </li>
+              </template>
+            </draggable>
+          </div>
         </section>
 
         <!-- 右侧：主布局预览与侧栏配置 (饱满充实，消除大块空白) -->
@@ -910,7 +959,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
                 tag="ul"
                 class="list-none p-0 m-0 flex-grow overflow-y-auto space-y-1 pr-1 custom-scroll"
                 :item-key="(element: PaneName) => `left-${element}`"
-                group="layout-items"
+                :group="{ name: 'layout-items', put: ['layout-items', 'sidebar-only-items'] }"
                 :sort="true"
                 @change="(event) => onDraggableChange(event, 'left')"
               >
@@ -958,7 +1007,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
                 tag="ul"
                 class="list-none p-0 m-0 flex-grow overflow-y-auto space-y-1 pr-1 custom-scroll"
                 :item-key="(element: PaneName) => `right-${element}`"
-                group="layout-items"
+                :group="{ name: 'layout-items', put: ['layout-items', 'sidebar-only-items'] }"
                 :sort="true"
                 @change="(event) => onDraggableChange(event, 'right')"
               >

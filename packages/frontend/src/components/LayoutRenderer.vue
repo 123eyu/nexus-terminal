@@ -11,6 +11,7 @@ import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useAppearanceStore } from '../stores/appearance.store'; // +++ Import appearance store +++
 import { useSidebarResize } from '../composables/useSidebarResize';
+import { isDesktopApp } from '../utils/platform';
 import { storeToRefs } from 'pinia';
 
 
@@ -72,6 +73,11 @@ const { sidebarPanes } = storeToRefs(layoutStore);
 const { orderedTabs: editorTabsFromStore, activeTabId: activeEditorTabIdFromStore } = storeToRefs(fileEditorStore); // <-- Get editor state
 
 // --- Sidebar State ---
+// 端口转发只在桌面端可用；web 端即便老布局里存了也要过滤掉
+const isDesktop = isDesktopApp();
+const visibleLeftSidebarPanes = computed(() => sidebarPanes.value.left.filter(p => p !== 'portForward' || isDesktop));
+const visibleRightSidebarPanes = computed(() => sidebarPanes.value.right.filter(p => p !== 'portForward' || isDesktop));
+
 const activeLeftSidebarPane = ref<PaneName | null>(null);
 const activeRightSidebarPane = ref<PaneName | null>(null);
 const leftSidebarPanelRef = ref<HTMLElement | null>(null); // +++ Ref for left panel +++
@@ -94,6 +100,7 @@ const componentMap: Record<PaneName, Component> = {
   dockerManager: defineAsyncComponent(() => import('./DockerManager.vue')), // <--- 添加 dockerManager 映射
   suspendedSshSessions: defineAsyncComponent(() => import('../views/SuspendedSshSessionsView.vue')),
   multiLineCommandInput: defineAsyncComponent(() => import('./MultiLineCommandInput.vue')),
+  portForward: defineAsyncComponent(() => import('../views/PortForwardView.vue')),
 };
 
 // --- Computed ---
@@ -154,6 +161,7 @@ const paneLabels = computed(() => ({
   dockerManager: t('layout.pane.dockerManager', 'Docker 管理器'),
   suspendedSshSessions: t('layout.panes.suspendedSshSessions', '挂起会话管理'),
   multiLineCommandInput: t('layout.pane.multiLineCommandInput', '多行命令输入'),
+  portForward: t('layout.pane.portForward', '端口转发'),
 }));
 
 
@@ -387,6 +395,7 @@ const getIconClasses = (paneName: PaneName): string[] => {
     case 'statusMonitor': return ['fas', 'fa-tachometer-alt'];
     case 'suspendedSshSessions': return ['fas', 'fa-pause-circle'];
     case 'multiLineCommandInput': return ['fas', 'fa-file-code']; // 图标：暂停圈
+    case 'portForward': return ['fas', 'fa-arrow-right-arrow-left']; // 端口转发
     // Add other specific icons here if needed
     default: return ['fas', 'fa-question-circle']; // Default icon
   }
@@ -743,9 +752,9 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative flex h-full w-full overflow-hidden">
     <!-- Left Sidebar Buttons -->
-    <div class="flex flex-col bg-sidebar py-1 z-10 flex-shrink-0 border-r border-border" v-if="isRootRenderer && sidebarPanes.left.length > 0">
+    <div class="flex flex-col bg-sidebar py-1 z-10 flex-shrink-0 border-r border-border" v-if="isRootRenderer && visibleLeftSidebarPanes.length > 0">
         <button
-            v-for="pane in sidebarPanes.left"
+            v-for="pane in visibleLeftSidebarPanes"
             :key="`left-${pane}`"
             @click="toggleSidebarPane('left', pane)"
             :class="['flex items-center justify-center w-10 h-10 mb-1 text-text-secondary hover:bg-hover hover:text-foreground transition-colors duration-150 cursor-pointer text-lg',
@@ -1065,9 +1074,9 @@ onBeforeUnmount(() => {
     </div>
 
      <!-- Right Sidebar Buttons -->
-    <div class="flex flex-col bg-sidebar py-1 z-10 flex-shrink-0 border-l border-border" v-if="isRootRenderer && sidebarPanes.right.length > 0">
+    <div class="flex flex-col bg-sidebar py-1 z-10 flex-shrink-0 border-l border-border" v-if="isRootRenderer && visibleRightSidebarPanes.length > 0">
          <button
-             v-for="pane in sidebarPanes.right"
+             v-for="pane in visibleRightSidebarPanes"
             :key="`right-${pane}`"
             @click="toggleSidebarPane('right', pane)"
             :class="['flex items-center justify-center w-10 h-10 mb-1 text-text-secondary hover:bg-hover hover:text-foreground transition-colors duration-150 cursor-pointer text-lg',

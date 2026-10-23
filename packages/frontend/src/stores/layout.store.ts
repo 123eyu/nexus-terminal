@@ -230,7 +230,7 @@ function isValidPaneNameArray(arr: any, allPanes: PaneName[]): arr is PaneName[]
 const ALL_POSSIBLE_PANES: PaneName[] = [
   'connections', 'terminal', 'commandBar', 'fileManager',
   'editor', 'statusMonitor', 'commandHistory', 'quickCommands',
-  'dockerManager', 'suspendedSshSessions', 'multiLineCommandInput'
+  'dockerManager', 'suspendedSshSessions', 'multiLineCommandInput', 'portForward'
 ];
 
 // 同步获取初始布局结构（优先从 localStorage 读取，杜绝打开工作区时全屏显示加载中占位）

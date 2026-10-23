@@ -117,6 +117,12 @@ const paneMetaMap: Record<string, { icon: string; iconColor: string; bgSoft: str
     bgSoft: 'bg-rose-500/15',
     borderSoft: 'border-rose-500/30',
   },
+  portForward: {
+    icon: 'fas fa-arrow-right-arrow-left',
+    iconColor: 'text-emerald-400',
+    bgSoft: 'bg-emerald-500/15',
+    borderSoft: 'border-emerald-500/30',
+  },
   multiLineCommandInput: {
     icon: 'fas fa-bars-staggered',
     iconColor: 'text-violet-400',
@@ -306,7 +312,7 @@ const getChildFlexStyle = (child: LayoutNode) => {
         class="flex-grow p-1.5 overflow-hidden flex gap-1.5 min-h-[44px] w-full h-full relative"
         :class="node.direction === 'horizontal' ? 'flex-row' : 'flex-col'"
         item-key="id"
-        :group="{ name: 'layout-items', pull: true, put: true }"
+        :group="{ name: 'layout-items', pull: true, put: ['layout-items'] }"
         :direction="node.direction"
         :sort="true"
         :empty-insert-threshold="25"

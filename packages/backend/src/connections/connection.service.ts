@@ -11,6 +11,8 @@ import {
     FullConnectionData,
     ConnectionWithTags as ConnectionWithTagsType // Alias to avoid conflict with variable name
 } from '../types/connection.types';
+import { stopAllForConnection } from '../port-forward/port-forward.service';
+import { deleteRulesByConnection } from '../port-forward/port-forward.repository';
 
 export type { ConnectionBase, ConnectionWithTags, CreateConnectionInput, UpdateConnectionInput };
 
@@ -453,6 +455,11 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
  * 删除连接
  */
 export const deleteConnection = async (id: number): Promise<boolean> => {
+    // 先把这条连接上跑着的端口转发停掉，再删数据
+    try {
+        await stopAllForConnection(id);
+        await deleteRulesByConnection(id);
+    } catch (e) {}
     try {
         const existing = await ConnectionRepository.findConnectionByIdWithTags(id);
         if (existing && (existing as any).uuid) {

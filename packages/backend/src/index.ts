@@ -96,6 +96,7 @@ import sshSuspendRouter from './ssh-suspend/ssh-suspend.routes';
 import { transfersRoutes } from './transfers/transfers.routes';
 import pathHistoryRoutes from './path-history/path-history.routes';
 import favoritePathsRouter from './favorite-paths/favorite-paths.routes';
+import portForwardRouter from './port-forward/port-forward.routes';
 import workspaceSyncRouter from './workspace-sync/workspace-sync.routes';
 import desktopRouter from './settings/desktop.routes';
 import syncRouter from './sync/sync.routes';
@@ -107,7 +108,9 @@ import { syncThrottleScheduler } from './sync/sync.scheduler';
 import { syncWsClient } from './sync/sync.ws-client';
 import { initializeWebSocket } from './websocket';
 import { ipWhitelistMiddleware } from './auth/ipWhitelist.middleware';
-import { ensureDesktopAdmin } from './auth/desktop-bootstrap';
+import { ensureDesktopAdmin, isDesktopRuntime } from './auth/desktop-bootstrap';
+import { listAutoStartRules } from './port-forward/port-forward.repository';
+import { restoreAutoStart } from './port-forward/port-forward.service';
 
 
 import './services/event.service'; 
@@ -333,6 +336,7 @@ const startServer = () => {
     app.use('/api/v1/transfers', transfersRoutes());
     app.use('/api/v1/path-history', pathHistoryRoutes);
     app.use('/api/v1/favorite-paths', favoritePathsRouter);
+    app.use('/api/v1/port-forwards', portForwardRouter);
     app.use('/api/v1/workspace-sync', workspaceSyncRouter);
     app.use('/api/v1/desktop', desktopRouter);
     app.use('/api/v1/sync', syncRouter);
@@ -415,6 +419,15 @@ const main = async () => {
     await initializeDatabase();   // 然后初始化数据库
     await ensureDesktopAdmin();   // 桌面端首次启动：自动建默认账号（无密码）
     startServer();                // 最后启动服务器
+
+    // 桌面端：把上次开着的端口转发拉起来（面板只在桌面端可见）
+    if (isDesktopRuntime()) {
+        try {
+            await restoreAutoStart(await listAutoStartRules());
+        } catch (err: any) {
+            console.warn('[PortForward] 恢复自动转发失败:', err?.message);
+        }
+    }
 
     // 激活双端增量同步调度器与存量数据对齐 (Reconciliation Catch-up)
     try {

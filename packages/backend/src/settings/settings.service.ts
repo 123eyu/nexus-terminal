@@ -464,10 +464,12 @@ export const settingsService = {
      }
 
      // Validate PaneName (using the type imported)
+     // 必须与前端 PaneName 保持同步，否则会出现「能拖进去、保存却被 400」
      const validPaneNames: Set<PaneName> = new Set([
          'connections', 'terminal', 'commandBar', 'fileManager',
          'editor', 'statusMonitor', 'commandHistory', 'quickCommands',
-         'dockerManager', 'suspendedSshSessions' // 添加 "suspendedSshSessions"
+         'dockerManager', 'suspendedSshSessions', 'multiLineCommandInput',
+         'portForward'
      ]);
 
      const validatePaneArray = (arr: any[], side: string) => {

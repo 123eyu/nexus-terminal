@@ -1540,7 +1540,8 @@
     "lockLayout": "Lock Layout",
     "lockUpdateError": "Failed to update layout lock status.",
     "confirmClose": "You have unsaved changes. Close anyway?",
-    "confirmReset": "Restore the default layout and sidebar configuration? Current changes will be lost."
+    "confirmReset": "Restore the default layout and sidebar configuration? Current changes will be lost.",
+    "sidebarOnly": "Sidebar only"
   },
   "layoutNodeEditor": {
     "containerLabel": "Container ({direction})",
@@ -1772,7 +1773,8 @@
       "quickCommands": "Quick Commands",
       "dockerManager": "Docker Manager",
       "suspendedSshSessions": "Suspended Sessions Management",
-      "multiLineCommandInput": "Multi-line Command Input"
+      "multiLineCommandInput": "Multi-line Command Input",
+      "portForward": "Port forwarding"
     },
     "panes": {
       "suspendedSshSessions": "Suspended Session Manager"
@@ -2299,5 +2301,26 @@
     "reloading": "Reconnecting...",
     "backToHome": "Back to Home",
     "safetyNote": "Cloud sessions kept alive securely with seamless roaming"
+  },
+  "portForward": {
+    "title": "Port forwarding",
+    "add": "New rule",
+    "noSession": "Open an SSH session first",
+    "empty": "No rules yet",
+    "running": "Running",
+    "stopped": "Stopped",
+    "start": "Start",
+    "stop": "Stop",
+    "bindHost": "Listen host",
+    "bindPort": "Port",
+    "targetHost": "Target host",
+    "targetPort": "Port",
+    "autoStart": "Run on startup",
+    "confirmDelete": "Delete port forwarding rule {target}?",
+    "type": {
+      "local": "Local (-L)",
+      "dynamic": "Dynamic SOCKS (-D)",
+      "remote": "Remote (-R)"
+    }
   }
 }
