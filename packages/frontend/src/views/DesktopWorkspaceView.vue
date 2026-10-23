@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { defineAsyncComponent, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
-import RecentConnectionsPanel from '../components/RecentConnectionsPanel.vue';
 // 远程桌面（RDP/VNC）客户端体积很大（noVNC + iron-remote-desktop），而且只在真有
 // rdp/vnc 会话时才用得上。静态 import 会把它塞进工作区的 chunk 里：手机上光是进终端
 // 就要多下几百 KB，更糟的是这块代码一旦在新 WebView 上解析/求值失败，整个工作区
@@ -31,6 +31,7 @@ const emit = defineEmits<{
   (e: 'request-edit-connection', connection: ConnectionInfo): void;
 }>();
 
+const { t } = useI18n();
 const sessionStore = useSessionStore();
 const layoutStore = useLayoutStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
@@ -153,9 +154,21 @@ watch(
           />
         </div>
       </template>
-      <!-- 无打开会话时：直接把最近连过的机器列出来，省掉「先去仪表盘再回来」这一步 -->
-      <div v-else class="layout-renderer-wrapper w-full h-full overflow-hidden">
-        <RecentConnectionsPanel />
+      <!-- 无打开会话时的默认空闲布局：终端面板里会显示「最近连接」（见 LayoutRenderer） -->
+      <div v-else class="layout-renderer-wrapper w-full h-full flex flex-col overflow-hidden">
+        <LayoutRenderer
+          v-if="props.layoutTree"
+          :is-root-renderer="true"
+          :layout-node="props.layoutTree"
+          :active-session-id="null"
+          :layout-locked="props.layoutLocked"
+          class="flex-grow w-full h-full"
+          :editor-tabs="props.editorTabs"
+          :active-editor-tab-id="props.activeEditorTabId"
+        />
+        <div v-else class="pane-placeholder">
+          {{ t('layout.loading', '加载布局中...') }}
+        </div>
       </div>
     </div>
   </div>

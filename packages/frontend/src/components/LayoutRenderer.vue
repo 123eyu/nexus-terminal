@@ -11,6 +11,8 @@ import { useFileEditorStore } from '../stores/fileEditor.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useAppearanceStore } from '../stores/appearance.store'; // +++ Import appearance store +++
 import { useSidebarResize } from '../composables/useSidebarResize';
+import { getTerminalPaneIdsInLayout } from '../utils/layoutTree';
+import RecentConnectionsPanel from './RecentConnectionsPanel.vue';
 import { isDesktopApp } from '../utils/platform';
 import { storeToRefs } from 'pinia';
 
@@ -46,6 +48,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  /**
+   * 「最近连接」面板只画在一个终端面板里（一般是第一个），
+   * 由根渲染器算好后往下传；否则四分屏会有四份一模一样的列表。
+   */
+  recentConnectionsPaneId: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
 });
 
 
@@ -77,6 +87,20 @@ const { orderedTabs: editorTabsFromStore, activeTabId: activeEditorTabIdFromStor
 const isDesktop = isDesktopApp();
 const visibleLeftSidebarPanes = computed(() => sidebarPanes.value.left.filter(p => p !== 'portForward' || isDesktop));
 const visibleRightSidebarPanes = computed(() => sidebarPanes.value.right.filter(p => p !== 'portForward' || isDesktop));
+
+/**
+ * 「最近连接」只挂在**一个**终端面板里：
+ * 根渲染器取布局树里第一个终端面板的 id，再逐层往下传；
+ * 子渲染器直接用传下来的值，避免自己重新算（树是同一棵，但没必要每层都遍历）。
+ */
+const recentPanelPaneId = computed<string | null>(() => {
+  if (props.recentConnectionsPaneId) return props.recentConnectionsPaneId;
+  if (!props.isRootRenderer) return null;
+  return getTerminalPaneIdsInLayout(props.layoutNode)[0] ?? null;
+});
+const showRecentConnections = computed(() => !props.activeSessionId
+  && !!props.layoutNode?.id
+  && props.layoutNode.id === recentPanelPaneId.value);
 
 const activeLeftSidebarPane = ref<PaneName | null>(null);
 const activeRightSidebarPane = ref<PaneName | null>(null);
@@ -790,6 +814,7 @@ onBeforeUnmount(() => {
                         :active-session-id="activeSessionId"
                         :editor-tabs="editorTabs"
                         :active-editor-tab-id="activeEditorTabId"
+                        :recent-connections-pane-id="recentPanelPaneId"
                         class="flex-grow overflow-auto"
                     />
                   </pane>
@@ -873,8 +898,14 @@ onBeforeUnmount(() => {
                            </keep-alive>
                        </template>
 
-                       <!-- Placeholder -->
-                       <div v-if="!activeSessionId || !hasSshSessions"
+                       <!-- 没有任何会话时：这个终端面板直接列最近连接，点一下就能开 -->
+                       <RecentConnectionsPanel
+                           v-if="showRecentConnections"
+                           class="absolute inset-0"
+                           :style="{ zIndex: 4 }"
+                       />
+                       <!-- 其它情况（只有远程桌面会话、或选的不是第一个终端面板）仍给占位提示 -->
+                       <div v-else-if="!activeSessionId || !hasSshSessions"
                             class="absolute inset-0 flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4"
                             :style="{ zIndex: 4 }">
                            <div class="flex flex-col items-center justify-center p-8 w-full h-full">

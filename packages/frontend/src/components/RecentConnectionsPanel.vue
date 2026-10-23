@@ -59,14 +59,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="recent-connections h-full w-full overflow-y-auto flex items-center justify-center px-5 py-8">
-    <div class="w-full" :class="props.isMobile ? 'max-w-full' : 'max-w-[560px]'">
-      <div class="mb-5 text-center">
+  <!-- m-auto 居中：终端面板被拖得很矮时内容也不会被裁掉顶部（overflow-y-auto 仍可用）
+       铺一层不透明底色：面板可能落在开了「终端背景图」的面板上，透明的话文字会糊在图里 -->
+  <div class="recent-connections h-full w-full overflow-y-auto flex bg-background px-4 py-5">
+    <div class="m-auto w-full" :class="props.isMobile ? 'max-w-full' : 'max-w-[560px]'">
+      <div class="mb-4 text-center">
         <div class="rc-icon mb-2.5 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
           <i class="fas fa-bolt"></i>
         </div>
         <h2 class="text-sm font-semibold text-foreground">{{ t('workspace.recentConnections.title') }}</h2>
-        <p class="mt-1 text-xs text-text-secondary">{{ t('workspace.recentConnections.subtitle') }}</p>
       </div>
 
       <div v-if="isLoading && recentConnections.length === 0" class="py-6 text-center text-xs text-text-secondary">
