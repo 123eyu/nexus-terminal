@@ -22,7 +22,6 @@ import LargeFileOpenDialog from './components/LargeFileOpenDialog.vue';
 import CloseConfirmModal from './components/desktop/CloseConfirmModal.vue';
 import FirstSyncModal from './components/desktop/FirstSyncModal.vue';
 import { useDialogStore } from './stores/dialog.store';
-import { useFileEditorStore } from './stores/fileEditor.store';
 import { initGlobalSyncListener } from './composables/useGlobalSyncListener';
 import { initExternalOpenSync } from './composables/file-manager/useExternalOpenSync';
 
@@ -45,7 +44,6 @@ const appearanceStore = useAppearanceStore();
 const layoutStore = useLayoutStore();
 const focusSwitcherStore = useFocusSwitcherStore(); // +++ 实例化焦点切换 Store +++
 const sessionStore = useSessionStore(); // +++ 实例化 Session Store +++
-const fileEditorStore = useFileEditorStore(); // 只为判断编辑器弹窗是否打开（决定是否加载 monaco）
 const dialogStore = useDialogStore(); // +++ 实例化 DialogStore +++
 const { state: dialogState } = storeToRefs(dialogStore); 
 const favoritePathsStore = useFavoritePathsStore(); // +++ 实例化 favoritePathsStore +++
@@ -409,9 +407,15 @@ const isElementVisibleAndFocusable = (element: HTMLElement): boolean => {
     <UINotificationDisplay />
 
     <!-- 根据设置条件或移动端环境渲染全局文件编辑器弹窗 -->
-    <!-- 只有弹窗真的打开时才挂载：否则移动端会无条件把 monaco 拉下来 -->
+    <!--
+      挂载条件和以前完全一致（别再往里加 isPopupOpen 之类的条件）：
+      浮层自己按 isPopupOpen / 标签状态决定显示什么，组件不在场就什么都画不出来 ——
+      之前想"只在弹窗打开时才挂载"就是踩了这个坑，结果编辑器直接打不开。
+      monaco 靠 defineAsyncComponent 懒加载：入口 chunk 不再背着它，
+      但要挂载时它还是会被拉下来（移动端一直挂载，所以确实会拉）。
+    -->
     <FileEditorOverlay
-      v-if="(showPopupFileEditorBoolean || isMobile) && fileEditorStore.isPopupOpen"
+      v-if="showPopupFileEditorBoolean || isMobile"
       :is-mobile="isMobile"
     />
 
