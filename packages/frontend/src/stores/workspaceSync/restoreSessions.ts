@@ -58,12 +58,24 @@ export async function restoreSessionsFromSnapshot(
    * 照旧在这里被认领，刷新后标签原样回来。
    */
   const autoClaimableSuspended = (availableSuspended || []).filter(
-    (item) => !item?.manuallySuspended
+    // 只有后端仍在保活的（hanging）才认领得动。
+    // `disconnected_by_backend` 的条目 resume 一定失败，而认领后失败会把刚恢复出来的
+    // 标签连带关掉（resume 失败的会话会被前端回收）—— 所以宁可不认领，退回新建连接。
+    (item) => !item?.manuallySuspended && item?.backendSshStatus === 'hanging'
   );
-  const manualSuspendedCount = (availableSuspended?.length || 0) - autoClaimableSuspended.length;
+  const manualSuspendedCount = (availableSuspended || []).filter(
+    (item) => !!item?.manuallySuspended
+  ).length;
+  const deadSuspendedCount =
+    (availableSuspended?.length || 0) - autoClaimableSuspended.length - manualSuspendedCount;
   if (manualSuspendedCount > 0) {
     logSync(
       `跳过 ${manualSuspendedCount} 个手动挂起的会话（关标签产生的），它们只在挂起面板里等手动恢复`
+    );
+  }
+  if (deadSuspendedCount > 0) {
+    logSync(
+      `跳过 ${deadSuspendedCount} 个后端已断开（disconnected_by_backend）的挂起条目，这些走新建连接恢复`
     );
   }
 
