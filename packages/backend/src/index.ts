@@ -381,11 +381,28 @@ const startServer = () => {
       // 托管静态资产，对 index.html 禁用强缓存，确保每次热重载和版本更新即时生效
       app.use(express.static(frontendStaticDir, {
         setHeaders: (res: Response, filePath: string) => {
-          if (filePath.endsWith('index.html')) {
+          /**
+           * Vite 产出的 `assets/` 文件名里带内容 hash（`index-CcbmsMuy.js`），
+           * 内容一变文件名就变 —— 这种文件可以放心长缓存。
+           *
+           * 以前这里只特殊处理了 index.html，其余文件走 express 默认的
+           * `public, max-age=0`，等于**每次打开都要为几百个资源各发一次
+           * revalidate 请求**：字节是 304 拿不到，但弱网下那几百个 RTT 就是几秒，
+           * 用户感受就是"每次进工作区都把前端重新下一遍"。
+           */
+          const normalized = filePath.replace(/\\/g, '/');
+          if (normalized.endsWith('index.html')) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
+            return;
           }
+          if (/\/assets\/[^/]+-[A-Za-z0-9_-]{6,}\.(js|css|woff2?|ttf|png|jpe?g|svg|webp|avif|wasm)$/.test(normalized)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            return;
+          }
+          // 其余（sw.js、图标等）保持"可缓存但要校验"，改了立刻能生效
+          res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
         }
       }));
 
