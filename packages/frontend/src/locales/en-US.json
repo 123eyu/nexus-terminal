@@ -565,6 +565,7 @@
       "connected": "Connected",
       "disconnected": "Disconnected: {reason}",
       "reconnecting": "Reconnecting (attempt {attempt}, retrying in {delay}s)...",
+      "reattaching": "Network restored, re-attaching to the existing session...",
       "reconnectFailed": "Reconnect failed, please refresh the page",
       "error": "Connection error: {message}",
       "wsError": "WebSocket connection error",

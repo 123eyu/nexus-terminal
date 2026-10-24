@@ -106,6 +106,34 @@ export interface SshSuspendResumeRequest {
   };
 }
 
+/**
+ * 就地接回：WebSocket 因网络抖动断开又自动连上时，把「刚才被后端自动挂起的那个会话」
+ * 接回同一个前端会话 id，而不是重新建一条 SSH。
+ *
+ * 与 SSH_SUSPEND_RESUME_REQUEST 的区别：
+ *   - 那个是「挂起面板 / 刷新后恢复工作区」，会新建前端会话、回放全部历史；
+ *   - 这个是「原地接回」，前端会话 id 不变、已显示过的历史不再重放。
+ */
+export interface SshReattachRequest {
+  type: "SSH_REATTACH_REQUEST";
+  payload: {
+    /** 前端会话 id（断开前的那个），后端按它反查 originalSessionId 匹配的挂起条目 */
+    sessionId: string;
+  };
+}
+
+export interface SshReattachResult {
+  type: "SSH_REATTACH_RESULT";
+  payload: {
+    sessionId: string;
+    success: boolean;
+    /** 失败原因：not_suspended（没有可接回的挂起条目）/ unauthorized / error */
+    reason?: string;
+    /** 接回时若命中，回传挂起条目上的连接名，便于前端提示 */
+    connectionName?: string;
+  };
+}
+
 export interface SshSuspendTerminateRequest {
   type: "SSH_SUSPEND_TERMINATE_REQUEST";
   payload: {
@@ -249,6 +277,7 @@ export type SshSuspendClientToServerMessages =
   | SshSuspendStartRequest
   | SshSuspendListRequest
   | SshSuspendResumeRequest
+  | SshReattachRequest
   | SshSuspendTerminateRequest
   | SshSuspendRemoveEntryRequest
   | SshSuspendEditNameRequest
@@ -260,6 +289,7 @@ export type SshSuspendServerToClientMessages =
   | SshSuspendStartedResponse
   | SshSuspendListResponse
   | SshSuspendResumedNotification
+  | SshReattachResult
   | SshOutputCachedChunk
   | SshSuspendTerminatedResponse
   | SshSuspendEntryRemovedResponse

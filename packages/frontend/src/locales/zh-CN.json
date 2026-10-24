@@ -564,6 +564,7 @@
       "connected": "已连接",
       "disconnected": "连接已断开: {reason}",
       "reconnecting": "正在重连（第 {attempt} 次，{delay} 秒后重试）...",
+      "reattaching": "网络已恢复，正在接回原会话...",
       "reconnectFailed": "重连失败，请手动刷新页面",
       "error": "连接出错: {message}",
       "wsError": "WebSocket 连接出错",

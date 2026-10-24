@@ -142,6 +142,23 @@ export interface SshSuspendResumeReqMessage extends WebSocketMessage {
   payload: SshSuspendResumeReqPayload;
 }
 
+/**
+ * 就地接回：网络抖动后 ws 自动重连时，先问后端「刚才那条会话还能不能接回来」。
+ * 命中就沿用当前前端会话 id 继续用（cwd / 运行中的进程 / 历史输出都在）；
+ * 未命中（远端已断、或已被用户手动挂起）后端回 success: false，前端再走 ssh:connect。
+ */
+export interface SshReattachReqMessage extends WebSocketMessage {
+  type: 'SSH_REATTACH_REQUEST';
+  payload: { sessionId: string };
+}
+
+export interface SshReattachResultPayload {
+  sessionId: string;
+  success: boolean;
+  reason?: string;
+  connectionName?: string;
+}
+
 export interface SshSuspendTerminateReqMessage extends WebSocketMessage {
   type: 'SSH_SUSPEND_TERMINATE_REQUEST';
   payload: SshSuspendTerminateReqPayload;

@@ -50,6 +50,55 @@ export function createWebSocketConnectionManager(
     let reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null; // 重连定时器 ID
     let lastUrl = ''; // 保存上次连接的 URL
     let intentionalDisconnect = false; // 标记是否为用户主动断开
+    /**
+     * 「这次重连要不要先尝试接回原会话」。
+     *
+     * ws 一断，后端就会把 SSH 通道转进挂起池保活（见 cleanupClientConnection）。
+     * 如果重连时闷头发 `ssh:connect`，就会在同一个标签里换成一个全新的 shell，
+     * 而断网前那个 shell（cwd、跑着的进程、输出历史）留在后台变成僵尸。
+     * 所以非主动断开后置位，重连时先发 SSH_REATTACH_REQUEST 问一句「还能接回吗」。
+     */
+    let awaitingReattach = false;
+    /** 接回询问的兜底定时器：后端不回（或没有挂起条目）就退回新建连接 */
+    let reattachTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    /** 接回询问的等待时长；超时即视为接不回来，不能把用户卡在这里 */
+    const REATTACH_TIMEOUT_MS = 2500;
+
+    const clearReattachTimeout = () => {
+        if (reattachTimeoutId) {
+            clearTimeout(reattachTimeoutId);
+            reattachTimeoutId = null;
+        }
+    };
+
+    /** 发起一次全新 SSH 连接（正常首次连接、手动重连、接回失败时的兜底都走这里） */
+    const requestFreshSshConnection = () => {
+        clearReattachTimeout();
+        awaitingReattach = false;
+        sendMessage({
+            type: 'ssh:connect',
+            payload: {
+                connectionId: instanceDbConnectionId,
+                sessionId: instanceSessionId, // 显式传递前端当前会话 ID，保证重连时会话 ID 稳定一致
+            },
+        });
+    };
+
+    /**
+     * 问后端「刚才那条会话还在挂起池里吗」，在就地接回。
+     * 收到 SSH_REATTACH_RESULT 由消息处理器决定成功/退回；这里只负责超时兜底。
+     */
+    const requestReattach = () => {
+        clearReattachTimeout();
+        statusMessage.value = getStatusText('reattaching');
+        sendMessage({ type: 'SSH_REATTACH_REQUEST', payload: { sessionId: instanceSessionId } });
+        reattachTimeoutId = setTimeout(() => {
+            reattachTimeoutId = null;
+            if (!awaitingReattach) return;
+            console.warn(`[WebSocket ${instanceSessionId}] 就地接回超时（${REATTACH_TIMEOUT_MS}ms 未收到确认），退回新建连接。`);
+            requestFreshSshConnection();
+        }, REATTACH_TIMEOUT_MS);
+    };
 
 
     /**
@@ -130,7 +179,12 @@ export function createWebSocketConnectionManager(
      */
     const connect = (url: string, connectOptions?: { fresh?: boolean }) => {
         lastUrl = url; // 保存 URL 以便重连
-        if (connectOptions?.fresh) resumeFlowPending = false;
+        if (connectOptions?.fresh) {
+            resumeFlowPending = false;
+            // 用户手动「重新连接」＝明确不要旧会话，别再问后端能不能接回
+            awaitingReattach = false;
+            clearReattachTimeout();
+        }
         // 本次连接是否仍走「恢复流程」分支（不发 ssh:connect）
         const asResumeFlow = resumeFlowPending;
         intentionalDisconnect = false; // 重置主动断开标记
@@ -207,14 +261,14 @@ export function createWebSocketConnectionManager(
                 }
                 // 状态保持 'connecting' 直到收到 ssh:connected
                 if (!asResumeFlow) {
-                    // 对于普通连接，发送 ssh:connect 并等待 ssh:connected 来更新状态
-                    sendMessage({
-                        type: 'ssh:connect',
-                        payload: {
-                            connectionId: instanceDbConnectionId,
-                            sessionId: instanceSessionId, // 显式传递前端当前会话 ID，保证重连时会话 ID 稳定一致
-                        }
-                    });
+                    // 非主动断开后的自动重连：先试着把原会话接回来（会保留 cwd、进程与历史），
+                    // 只有后端说「那条已经没了」才退回新建连接。
+                    if (awaitingReattach) {
+                        requestReattach();
+                    } else {
+                        // 对于普通连接，发送 ssh:connect 并等待 ssh:connected 来更新状态
+                        requestFreshSshConnection();
+                    }
                 } else {
                     // 对于恢复流程，WebSocket 打开即表示连接基础已建立
                     // 后续的 SSH_SUSPEND_RESUME_REQUEST 会完成会话的恢复
@@ -249,9 +303,22 @@ export function createWebSocketConnectionManager(
 
                     // --- 更新此实例的连接状态 ---
                     if (message.type === 'ssh:connected') {
+                        clearReattachTimeout();
+                        awaitingReattach = false;
                         if (connectionStatus.value !== 'connected') {
                             connectionStatus.value = 'connected';
                             statusMessage.value = getStatusText('connected');
+                        }
+                    } else if (message.type === 'SSH_REATTACH_RESULT') {
+                        const reattachResult = message.payload as { sessionId?: string; success?: boolean; reason?: string } | undefined;
+                        if (reattachResult?.success) {
+                            clearReattachTimeout();
+                            awaitingReattach = false;
+                            console.log(`[WebSocket ${instanceSessionId}] 已就地接回原会话（保留 cwd / 运行中的进程 / 历史输出）。`);
+                        } else {
+                            // 没有可接回的挂起条目（远端已断开、或用户主动挂起的） → 老老实实新建一条
+                            console.log(`[WebSocket ${instanceSessionId}] 就地接回未命中（${reattachResult?.reason || 'unknown'}），改为新建 SSH 连接。`);
+                            requestFreshSshConnection();
                         }
                     } else if (message.type === 'ssh:disconnected') {
                         if (connectionStatus.value !== 'disconnected') {
@@ -311,9 +378,12 @@ export function createWebSocketConnectionManager(
                 dispatchMessage('internal:closed', { code: event.code, reason: event.reason }, { type: 'internal:closed' });
                 isSftpReady.value = false;
                 ws.value = null; // 清理实例引用
+                clearReattachTimeout();
 
                 // 如果不是主动断开 (code 1000)，尝试重连
                 if (!intentionalDisconnect && event.code !== 1000) { // 1000 is normal closure
+                    // 后端此刻正把这条 SSH 通道转进挂起池；重连时优先接回它
+                    awaitingReattach = true;
                     scheduleReconnect();
                 }
             };
@@ -330,6 +400,8 @@ export function createWebSocketConnectionManager(
      */
     const disconnect = () => {
         intentionalDisconnect = true; // 标记为主动断开
+        awaitingReattach = false; // 主动断开不接回
+        clearReattachTimeout();
         if (reconnectTimeoutId) {
             clearTimeout(reconnectTimeoutId); // 清除重连定时器
             reconnectTimeoutId = null;

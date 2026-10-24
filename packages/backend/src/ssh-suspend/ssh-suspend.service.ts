@@ -113,6 +113,9 @@ export class SshSuspendService extends EventEmitter {
       originalSessionId,
       userId,
       inMemoryBuffer: initialBuffer ? [initialBuffer] : [],
+      // 第 0 块是前端已经显示过的历史；就地接回时不能重放它
+      historyChunks: initialBuffer ? 1 : 0,
+      historyChars: initialBuffer ? initialBuffer.length : 0,
       pendingResumeBuffer: undefined,
       paneStreams: paneStreams && paneStreams.size > 0 ? new Map(paneStreams) : undefined,
       manuallySuspended: manuallySuspended === true,
@@ -236,15 +239,48 @@ export class SshSuspendService extends EventEmitter {
   }
 
   /**
+   * 找出「这个前端会话断开时被自动挂起」的那条记录，用于 WebSocket 抖动后**就地接回**。
+   *
+   * 只认 `backendSshStatus === 'hanging'`（SSH 连接还活着）且不是手动挂起的条目：
+   *   - `disconnected_by_backend`：远端已经断了（reboot / 进程被杀），谈不上接回，只能新建；
+   *   - `manuallySuspended`：用户自己关掉的标签，接回等于把用户关掉的东西复活。
+   */
+  findReattachableSession(
+    userId: number,
+    originalSessionId: string
+  ): { suspendSessionId: string; connectionName: string } | null {
+    if (!originalSessionId) return null;
+    const userSessions = this.getUserSessions(userId);
+    for (const [suspendSessionId, details] of userSessions.entries()) {
+      if (
+        details.originalSessionId === originalSessionId &&
+        details.backendSshStatus === 'hanging' &&
+        details.manuallySuspended !== true
+      ) {
+        return { suspendSessionId, connectionName: details.connectionName };
+      }
+    }
+    return null;
+  }
+
+  /**
    * 恢复指定的挂起会话。
    * @param userId 用户ID。
    * @param suspendSessionId 要恢复的挂起会话ID。
-   * @returns Promise<{ sshClient: Client; channel: ClientChannel; logData: string; connectionName: string; originalConnectionId: string; getPendingResumeData?: () => Buffer[]; } | null> 恢复成功则返回客户端、通道、日志数据、连接名和原始连接ID，否则返回null。
+   * @param options.replay `full`（默认）回放全部历史，用于刷新页面后的恢复；
+   *   `delta` 只回放断线期间新增的输出，用于终端里已有历史的「就地接回」。
+   * @returns Promise<{ sshClient: Client; channel: ClientChannel; logData: string; fullLogData: string; ... } | null>
+   *   `logData` 是按 replay 处理过、要发给前端的部分；`fullLogData` 是完整历史，只用于维护后端自己的环形缓冲，不回放。
    */
-  async resumeSession(userId: number, suspendSessionId: string): Promise<{
+  async resumeSession(
+    userId: number,
+    suspendSessionId: string,
+    options?: { replay?: 'full' | 'delta' }
+  ): Promise<{
     sshClient: Client;
     channel: ClientChannel;
     logData: string;
+    fullLogData: string;
     connectionName: string;
     originalConnectionId: string;
     paneStreams?: Map<string, any>;
@@ -265,18 +301,24 @@ export class SshSuspendService extends EventEmitter {
     session.pendingResumeBuffer = [];
 
     // 2. 优先从内存缓冲中无缝拼接完整数据，避免异步磁盘 I/O 排队未落盘导致的尾部数据丢失
-    let logData = '';
+    let fullLogData = '';
+    let deltaLogData = '';
+    const historyChunks = session.historyChunks ?? 0;
     if (session.inMemoryBuffer && session.inMemoryBuffer.length > 0) {
-      logData = session.inMemoryBuffer.join('');
-      console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 优先从内存输出缓冲拼接挂起会话 ${suspendSessionId} 数据，长度: ${logData.length}`);
+      fullLogData = session.inMemoryBuffer.join('');
+      deltaLogData = session.inMemoryBuffer.slice(historyChunks).join('');
+      console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 优先从内存输出缓冲拼接挂起会话 ${suspendSessionId} 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
     } else {
       try {
-        logData = await this.logStorageService.readLog(session.tempLogPath);
-        console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 从磁盘读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 数据，长度: ${logData.length}`);
+        fullLogData = await this.logStorageService.readLog(session.tempLogPath);
+        deltaLogData = fullLogData.slice(session.historyChars ?? 0);
+        console.log(`[SshSuspendService][用户: ${userId}] resumeSession: 从磁盘读取挂起会话 ${suspendSessionId} (日志: ${session.tempLogPath}) 数据，长度: ${fullLogData.length}（其中断线期间新增 ${deltaLogData.length}）`);
       } catch (error) {
-        logData = '';
+        fullLogData = '';
+        deltaLogData = '';
       }
     }
+    const logData = options?.replay === 'delta' ? deltaLogData : fullLogData;
 
     // 停止挂起阶段的旧监听器
     this.removeChannelListeners(session.channel, session.sshClient);
@@ -294,6 +336,7 @@ export class SshSuspendService extends EventEmitter {
       sshClient,
       channel,
       logData,
+      fullLogData,
       connectionName,
       originalConnectionId,
       paneStreams,

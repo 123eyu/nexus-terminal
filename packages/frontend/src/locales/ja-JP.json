@@ -741,6 +741,7 @@
       "connected": "接続済み",
       "disconnected": "切断されました: {reason}",
       "reconnecting": "再接続中（{attempt} 回目、{delay} 秒後に再試行）...",
+      "reattaching": "ネットワークが復旧しました。既存セッションに再接続しています...",
       "reconnectFailed": "再接続に失敗しました。ページを再読み込みしてください",
       "error": "接続エラー: {message}",
       "wsError": "WebSocket 接続エラー",

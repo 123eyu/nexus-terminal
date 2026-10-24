@@ -35,6 +35,17 @@ export interface SuspendSessionDetails {
   userId: number;
   /** 内存中的输出缓冲（保证挂起与恢复期间 100% 连续无丢失） */
   inMemoryBuffer?: string[];
+  /**
+   * `inMemoryBuffer` 里有几块是「挂起那一刻客户端屏幕上已经有了的」历史。
+   *
+   * 挂起时会把前端传来的 scrollback 作为第 0 块塞进缓冲（见 takeOverMarkedSession），
+   * 之后才是断线期间新产生的输出。刷新页面后恢复要回放全部（终端是空的），
+   * 但 WebSocket 抖动后**就地接回**时终端里已经有这段历史了，只能补第 1 块往后，
+   * 否则同一段输出会在屏幕上出现两遍。
+   */
+  historyChunks?: number;
+  /** 同上，但给「从磁盘日志读回来」的分支用（按字符数裁掉历史部分） */
+  historyChars?: number;
   /** 挂起恢复过渡期间暂存的实时数据流队列 */
   pendingResumeBuffer?: Buffer[];
   /** 多终端分屏独立 Shell 通道映射 (用于多终端保活) */
