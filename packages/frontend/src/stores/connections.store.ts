@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import apiClient from '../utils/apiClient'; // 使用统一的 apiClient
+import { PREWARM_KEYS, usePrewarm } from '../utils/prewarm';
 
 // 定义连接信息接口 (与后端对应，不含敏感信息)
 export interface ConnectionInfo {
@@ -67,8 +68,13 @@ export const useConnectionsStore = defineStore('connections', {
             // 已有数据时不翻 isLoading：切屏回来 / 云端同步会后台静默重拉，翻一下列表就会闪 loading
             if (this.connections.length === 0) this.isLoading = true;
             try {
-                const response = await apiClient.get<ConnectionInfo[]>('/connections');
-                const freshData = response.data;
+                // 冷启动时列表可能已在「挂载前预取」里发过一枪（与工作区快照并行）：
+                // 恢复流程必须同步等这份列表才能按 uuid 打开会话，多一个往返就多一帧空工作区。
+                const prefetched = await usePrewarm<ConnectionInfo[] | null>(
+                    PREWARM_KEYS.connections,
+                    async () => null,
+                );
+                const freshData = prefetched ?? (await apiClient.get<ConnectionInfo[]>('/connections')).data;
                 const freshDataString = JSON.stringify(freshData);
 
                 // 3. 对比并更新

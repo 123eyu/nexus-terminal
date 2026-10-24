@@ -32,6 +32,8 @@ import {
   restoreSessionsFromSnapshot,
 } from './workspaceSync/restoreSessions';
 import { waitForSessionSftpReady } from './workspaceSync/waitForSftp';
+import { registerPrewarm, usePrewarm, PREWARM_KEYS } from '../utils/prewarm';
+import { suspendedSshSessions } from './session/state';
 
 // 快照类型是所有快照读写方的公共契约，这里重新导出，既有 import 路径保持不变。
 export type {
@@ -88,6 +90,95 @@ const removePendingRemovedSessions = (ids: string[]): void => {
 
 // 诊断日志统一格式见 stores/workspaceSync/log.ts
 
+// 2. 客户端唯一标识 (基于 sessionStorage，保证单标签页刷新保持、多标签/跨设备互斥)
+const getOrCreateClientId = (): string => {
+  if (typeof sessionStorage !== 'undefined') {
+    let cid = sessionStorage.getItem(CLIENT_ID_SESSION_KEY);
+    if (!cid) {
+      cid = `client_${uuidv4().replace(/-/g, '').slice(0, 16)}`;
+      sessionStorage.setItem(CLIENT_ID_SESSION_KEY, cid);
+    }
+    return cid;
+  }
+  return `client_${Date.now()}`;
+};
+
+/** 工作区实时同步是否开启（桌面端恒为 false）。可脱离组件上下文调用。 */
+export const isWorkspaceSyncEnabled = (): boolean => {
+  if (isDesktopApp()) return false;
+  if (typeof localStorage === 'undefined') return true;
+  return localStorage.getItem(SYNC_ENABLED_STORAGE_KEY) !== 'false';
+};
+
+/** 预取 key 统一放在 utils/prewarm.ts 的 PREWARM_KEYS 里 */
+
+let prewarmTask: Promise<void> | null = null;
+
+/**
+ * 挂载前预取「恢复工作区要用的四个往返」。
+ *
+ * 这是"打开网页就无缝恢复"的关键一招：`main.ts` 在 `app.mount()` 之前调用它，
+ * 与路由懒加载的 chunk 下载并行跑。挂载后的恢复流程取用这些已 resolve 的 promise，
+ * 于是它只剩微任务 —— 会话在首帧绘制前就进了 store，用户不会先看到一个空工作区。
+ *
+ * 不依赖 pinia / 组件上下文（`session.store` 用了 `useI18n`/`useRouter`，
+ * 在组件外实例化会抛错，所以这里只用 apiClient 发原始请求）。
+ */
+export const prewarmWorkspaceSync = (): Promise<void> => {
+  if (prewarmTask) return prewarmTask;
+  if (!isWorkspaceSyncEnabled()) {
+    prewarmTask = Promise.resolve();
+    return prewarmTask;
+  }
+
+  logSync('（挂载前）并行预取工作区快照 / 接管租约 / 挂起会话 / 连接列表...');
+
+  const snapshot = registerPrewarm(
+    PREWARM_KEYS.snapshot,
+    apiClient
+      .get('/workspace-sync')
+      .then((res) => (res.data?.success && res.data?.data ? res.data.data : null))
+      .catch(() => null),
+  );
+
+  // ⚠️ 接管租约必须**无条件**抢，不能等快照里看到 syncEnabled 再抢：
+  //    云端快照为空（首次使用 / 上一个客户端存了个空 state）时同样要立住租约，
+  //    否则租约一直留在旧 clientId 手上，本端每一次保存都会被后端判成「已被接管」直接丢掉，
+  //    表现就是「打开新页面 → 会话关不掉也存不下」。这条和原 initSync 的语义一致。
+  const claim = registerPrewarm(
+    PREWARM_KEYS.claim,
+    apiClient
+      .post('/workspace-sync/claim', { clientId: getOrCreateClientId() })
+      .then((res) => !!res.data?.success)
+      .catch(() => false),
+  );
+
+  // 挂起列表必须排在 claim 之后：正是这次 claim 让后端把旧端的会话挂起来的。
+  const suspended = registerPrewarm(
+    PREWARM_KEYS.suspended,
+    claim.then(() =>
+      apiClient
+        .get('ssh-suspend/suspended-sessions')
+        .then((res) => res.data ?? null)
+        .catch(() => null),
+    ),
+  );
+
+  // 连接列表与上面几件事没有依赖，最早就能并行下去
+  const connections = registerPrewarm(
+    PREWARM_KEYS.connections,
+    apiClient
+      .get('/connections')
+      .then((res) => res.data ?? null)
+      .catch(() => null),
+  );
+
+  prewarmTask = Promise.all([snapshot, claim, suspended, connections]).then(() => {
+    logSync('（挂载前）预取完成。');
+  });
+  return prewarmTask;
+};
+
 export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const sessionStore = useSessionStore();
 
@@ -101,18 +192,6 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   );
 
   // 2. 客户端唯一标识 (基于 sessionStorage，保证单标签页刷新保持、多标签/跨设备互斥)
-  const getOrCreateClientId = (): string => {
-    if (typeof sessionStorage !== 'undefined') {
-      let cid = sessionStorage.getItem(CLIENT_ID_SESSION_KEY);
-      if (!cid) {
-        cid = `client_${uuidv4().replace(/-/g, '').slice(0, 16)}`;
-        sessionStorage.setItem(CLIENT_ID_SESSION_KEY, cid);
-      }
-      return cid;
-    }
-    return `client_${Date.now()}`;
-  };
-
   const clientId = ref<string>(getOrCreateClientId());
 
   // 3. 被接管与遮罩状态
@@ -132,6 +211,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
   const isUnloading = ref<boolean>(false);
   /** 是否已经成功从云端恢复过一次（用于阻止"恢复前空会话覆盖快照"） */
   let hasRestoredOnce = false;
+  /**
+   * 挂载前预取时"欠着"的慢活儿（等 SFTP、编辑器/文件管理器面板、弹窗显隐）。
+   * 它们不影响「标签栏长什么样」，所以可以等首帧画完再补。
+   */
+  let pendingWorkspaceTail: (() => Promise<void>) | null = null;
+  /** 预取是否已经把「首屏该长什么样」定下来了（initSync 据此不再重复拉快照） */
+  let prefetchedRestore = false;
+  /** 预取任务本身（重复调用只跑一次） */
+  let prefetchTask: Promise<boolean> | null = null;
+  /** 正在跑的收尾任务（重复调用只跑一次） */
+  let tailTask: Promise<void> | null = null;
   const lastSyncTime = ref<number | null>(null);
 
   // 5. 文件管理器当前状态缓存（全局兼容层）
@@ -391,11 +481,14 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     try {
       logSync(`当前客户端 (${clientId.value}) 正在声明工作区接管权...`);
 
-      const res = await apiClient.post('/workspace-sync/claim', {
-        clientId: clientId.value,
-      });
+      // 挂载前预取时已经发过这一枪，这里直接复用（没有预取的路径照旧现场发）
+      const claimed = await usePrewarm<boolean>(PREWARM_KEYS.claim, () =>
+        apiClient
+          .post('/workspace-sync/claim', { clientId: clientId.value })
+          .then((res) => !!res.data?.success),
+      );
 
-      if (res.data?.success) {
+      if (claimed) {
         isTakenOver.value = false;
         takeoverByClientId.value = null;
         logSync(`接管权声明成功！当前客户端独占工作区操作。`);
@@ -440,7 +533,17 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     return filtered;
   };
 
-  const restoreWorkspaceFromSnapshot = async (snapshot: WorkspaceSnapshot) => {
+  const restoreWorkspaceFromSnapshot = async (
+    snapshot: WorkspaceSnapshot,
+    opts?: {
+      /**
+       * 只做「决定首屏长什么样」的那一段（会话/顺序/激活/文件管理器状态），
+       * 把等 SFTP、恢复编辑器与面板这些慢活儿丢到后台继续。
+       * 挂载前调用时用它 —— 首帧就该是正确的，不必先画一个空工作区再填。
+       */
+      deferTail?: boolean;
+    },
+  ) => {
     if (!snapshot) return;
 
     const sessionStore = useSessionStore();
@@ -468,20 +571,34 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       //    表现为"改完立刻刷新 → 先变回旧的，等 SSH 恢复后又跳回新的"。
       //    现在布局只认 layout store 自己加载的 settings.layout，快照只负责会话/编辑器/文件管理器。
 
-      // 1. 确保连接配置已加载
-      if (!connectionsStore.connections || connectionsStore.connections.length === 0) {
+      // 1+2. 接管租约与连接列表互不依赖，并行发起；挂起会话必须等接管之后才有意义。
+      //      以前这里是「依次 await 三次网络往返」，白白把首屏推后两三个 RTT。
+      const connectionsTask = (async () => {
+        if (connectionsStore.connections && connectionsStore.connections.length > 0) return;
         try {
           await connectionsStore.fetchConnections();
           logSync(`已加载可用连接列表，总数: ${connectionsStore.connections.length}`);
         } catch (e) {
           logSyncWarn('加载连接列表失败:', e);
         }
-      }
+      })();
+      await Promise.all([claimTakeover(), connectionsTask]);
 
-      // 2. 检查云端挂起会话（旧端被接管时会自动挂起）
+      // 3. 检查云端挂起会话（旧端被接管时会自动挂起）
       let availableSuspended: any[] = [];
       try {
-        await sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
+        // 预取里已经有这一枪（而且它排在 claim 之后，挂起列表是完整的）
+        const prefetchedSuspended = await usePrewarm<any[] | null>(
+          PREWARM_KEYS.suspended,
+          async () => {
+            await sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
+            return null;
+          },
+        );
+        if (prefetchedSuspended) {
+          // 恢复流程依赖这份列表（resumeSshSession 要按挂起 ID 查），写回同一份 state
+          suspendedSshSessions.value = prefetchedSuspended;
+        }
         availableSuspended = [...(sessionStore.suspendedSshSessions || [])];
         logSync(`已拉取挂起会话列表，可用挂起数: ${availableSuspended.length}`, availableSuspended);
       } catch (e) {
@@ -543,65 +660,77 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
       }
       if (snapshot.multiLineCommandInput) {
         multiLineCommandState.value = { ...snapshot.multiLineCommandInput };
-      }
-
-      // 3.5 等待所有会话的 SFTP 就绪（最多等待 8 秒，保障文件管理器与编辑器平稳对接）
-      const activeSessions = Array.from(sessionStore.sessions.values());
-      if (activeSessions.length > 0) {
-        logSync('正在等待会话 SFTP 就绪...');
-        await Promise.all(activeSessions.map(sess => waitForSessionSftpReady(sess, 8000)));
-        logSync('会话 SFTP 就绪阶段完成');
-      }
-
-      // 4/4.1 编辑器标签恢复（实现见 stores/workspaceSync/restoreEditors.ts）
-      restoreEditorsFromSnapshot({ snapshot, resolveSessionId });
-
-      // 5/5.1 文件管理器恢复（实现见 stores/workspaceSync/restoreFileManagers.ts）
-      restoreFileManagersFromSnapshot({
-        snapshot,
-        resolveSessionId,
-        activeSessionId: sessionStore.activeSessionId,
-        fileManagerState,
-        fileManagerInstances,
-      });
-
-      // 6. 恢复多行命令输入框状态
-      if (snapshot.multiLineCommandInput) {
-        multiLineCommandState.value = { ...snapshot.multiLineCommandInput };
         logSync(`已恢复多行命令输入框草稿内容`);
       }
 
-      // 7. 最终确保工作区精准切换到上次激活的会话（防止异步加载与渲染过程中被其它事件打断）
-      //    但如果用户在恢复期间已经手动点过标签，就必须尊重用户的选择，不能把他拽回去。
-      if (snapshot.activeSessionId) {
-        const activeSessionSnapshot = snapshot.sessions?.find(s => s.sessionId === snapshot.activeSessionId);
-        const fallbackConnId = activeSessionSnapshot?.connectionId;
-        const finalActiveId = resolveSessionId(snapshot.activeSessionId, fallbackConnId);
-        if (finalActiveId) {
-          await nextTick();
-          if (sessionStore.activeSessionId !== finalActiveId) {
-            if (lastUserSwitchAt.value > restoreStartedAt) {
-              logSync('恢复收尾：检测到用户已手动切换会话，跳过最终激活对齐');
-            } else {
-              logSync(`恢复收尾，最终对齐激活会话至: ${finalActiveId}`);
-              sessionStore.activateSession(finalActiveId, { silent: true });
+      /**
+       * 慢活儿：等 SFTP、恢复编辑器与文件管理器面板、弹窗显隐。
+       * 它们只影响 pane 里的内容，不影响「标签栏长什么样」，所以完全可以放到首帧之后。
+       */
+      const runTail = async () => {
+        // 3.5 等待所有会话的 SFTP 就绪（最多等待 8 秒，保障文件管理器与编辑器平稳对接）
+        const activeSessions = Array.from(sessionStore.sessions.values());
+        if (activeSessions.length > 0) {
+          logSync('正在等待会话 SFTP 就绪...');
+          await Promise.all(activeSessions.map(sess => waitForSessionSftpReady(sess, 8000)));
+          logSync('会话 SFTP 就绪阶段完成');
+        }
+
+        // 4/4.1 编辑器标签恢复（实现见 stores/workspaceSync/restoreEditors.ts）
+        restoreEditorsFromSnapshot({ snapshot, resolveSessionId });
+
+        // 5/5.1 文件管理器恢复（实现见 stores/workspaceSync/restoreFileManagers.ts）
+        restoreFileManagersFromSnapshot({
+          snapshot,
+          resolveSessionId,
+          activeSessionId: sessionStore.activeSessionId,
+          fileManagerState,
+          fileManagerInstances,
+        });
+
+        // 7. 最终确保工作区精准切换到上次激活的会话（防止异步加载与渲染过程中被其它事件打断）
+        //    但如果用户在恢复期间已经手动点过标签，就必须尊重用户的选择，不能把他拽回去。
+        if (snapshot.activeSessionId) {
+          const activeSessionSnapshot = snapshot.sessions?.find(s => s.sessionId === snapshot.activeSessionId);
+          const fallbackConnId = activeSessionSnapshot?.connectionId;
+          const finalActiveId = resolveSessionId(snapshot.activeSessionId, fallbackConnId);
+          if (finalActiveId) {
+            await nextTick();
+            if (sessionStore.activeSessionId !== finalActiveId) {
+              if (lastUserSwitchAt.value > restoreStartedAt) {
+                logSync('恢复收尾：检测到用户已手动切换会话，跳过最终激活对齐');
+              } else {
+                logSync(`恢复收尾，最终对齐激活会话至: ${finalActiveId}`);
+                sessionStore.activateSession(finalActiveId, { silent: true });
+              }
             }
           }
         }
-      }
 
-      // 8. 恢复弹窗编辑器显隐状态
-      if (snapshot.fileEditor?.isOpen) {
-        const targetSessionId = resolveSessionId(snapshot.activeSessionId) || sessionStore.activeSessionId;
-        logSync(`从云端快照恢复弹窗编辑器为打开状态 (sessionId: ${targetSessionId})`);
-        fileEditorStore.openPopup('', targetSessionId);
+        // 8. 恢复弹窗编辑器显隐状态
+        if (snapshot.fileEditor?.isOpen) {
+          const targetSessionId = resolveSessionId(snapshot.activeSessionId) || sessionStore.activeSessionId;
+          logSync(`从云端快照恢复弹窗编辑器为打开状态 (sessionId: ${targetSessionId})`);
+          fileEditorStore.openPopup('', targetSessionId);
+        } else {
+          fileEditorStore.closePopup();
+          logSync('从云端快照恢复弹窗编辑器为关闭状态');
+        }
+
+        logSync('工作区面板内容恢复完成。');
+      };
+
+      // 首屏要的东西（标签栏 / 激活 / 文件管理器路径）到这里就齐了。
+      // 挂载前预取时把慢活儿欠着，等首帧画完再补 —— 这样"打开网页"和"拉云端状态"
+      // 两件事是并行的，而不是先给用户看一个空工作区、再花几百毫秒往里填。
+      if (opts?.deferTail) {
+        pendingWorkspaceTail = runTail;
       } else {
-        fileEditorStore.closePopup();
-        logSync('从云端快照恢复弹窗编辑器为关闭状态');
+        await runTail();
       }
 
       hasRestoredOnce = true;
-      logSync('恭喜！工作区全量状态无缝恢复完成！');
+      logSync('工作区首屏状态已就位（会话/顺序/激活/文件管理器路径）。');
     } catch (err: any) {
       logSyncError('恢复工作区发生错误:', err);
     } finally {
@@ -620,6 +749,77 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
         }
       }, 1500);
     }
+  };
+
+  /**
+   * 补跑恢复流程里「欠着」的慢活儿（等 SFTP / 编辑器 / 文件管理器面板 / 弹窗显隐）。
+   * 幂等：同一批只跑一次。
+   */
+  const runPendingWorkspaceTail = async (): Promise<void> => {
+    if (tailTask) return tailTask;
+    const task = pendingWorkspaceTail;
+    if (!task) return;
+    pendingWorkspaceTail = null;
+    tailTask = (async () => {
+      // 让首帧先真正画出来，再开始动 pane 里的东西
+      await nextTick();
+      try {
+        await task();
+      } catch (err: any) {
+        logSyncError('恢复收尾（SFTP/编辑器/文件管理器）失败:', err);
+      } finally {
+        tailTask = null;
+      }
+    })();
+    return tailTask;
+  };
+
+  /**
+   * 拉快照并恢复「决定首屏长什么样」的那一段（会话 / 顺序 / 激活 / 文件管理器路径）。
+   *
+   * 真正的请求由 `prewarmWorkspaceSync()` 在 `app.mount()` 之前就发出去了，
+   * 与路由 chunk 的下载并行；这里只是取用那份已经 resolve 的结果。
+   * 于是本函数里的每个 `await` 都是微任务 —— 会话在首帧绘制前就进了 store，
+   * 用户不会先看到一个"没有任何会话"的空工作区。
+   *
+   * 幂等：重复调用返回同一个 promise。
+   */
+  const prefetchWorkspaceSnapshot = (): Promise<boolean> => {
+    if (isDesktopApp() || !syncEnabled.value) return Promise.resolve(false);
+    if (prefetchTask) return prefetchTask;
+
+    prefetchTask = (async () => {
+      try {
+        logSync('正在取用云端工作区快照...');
+        // 挂载前预取过就直接用那一枪的结果（它此刻早已 resolve，恢复流程只剩微任务）
+        const data = await usePrewarm<any | null>(PREWARM_KEYS.snapshot, () =>
+          apiClient
+            .get('/workspace-sync')
+            .then((res) => (res.data?.success && res.data?.data ? res.data.data : null)),
+        );
+        if (!data) return false;
+
+        const { state: cloudState, activeClientId } = data;
+        logSync(`获取到云端快照，最后活跃客户端: ${activeClientId}，当前客户端: ${clientId.value}`);
+
+        if (!cloudState || !cloudState.syncEnabled) {
+          logSync('云端快照未开启同步或为空，跳过状态恢复');
+          return false;
+        }
+
+        // 接管租约在 restore 内部与「连接列表」并行发起，别在这里再叠加一次网络往返
+        await restoreWorkspaceFromSnapshot(consumePendingRemovedSessions(cloudState), {
+          deferTail: true,
+        });
+        prefetchedRestore = true;
+        return true;
+      } catch (err: any) {
+        logSyncWarn('（挂载前）预取工作区快照失败:', err?.message);
+        return false;
+      }
+    })();
+
+    return prefetchTask;
   };
 
   // 监听活动会话切换，自动触发云端状态防抖保存
@@ -648,24 +848,26 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
 
   // 初始化同步服务 (页面加载时调用，仅 Web 端有效)
   const initSync = async () => {
-    if (isDesktopApp() || !syncEnabled.value) return;
+    if (isDesktopApp() || !syncEnabled.value) {
+      isInitialized.value = true;
+      return;
+    }
 
     try {
-      logSync('正在拉取云端工作区快照进行初始化...');
-      const res = await apiClient.get('/workspace-sync');
-      if (res.data?.success && res.data?.data) {
-        const { state: cloudState, activeClientId } = res.data.data;
-        logSync(`获取到云端快照，最后活跃客户端: ${activeClientId}，当前客户端: ${clientId.value}`);
-
-        // 声明接管（后端会自动挂起旧端活动会话）
-        await claimTakeover();
-
-        if (cloudState && cloudState.syncEnabled) {
-          await restoreWorkspaceFromSnapshot(consumePendingRemovedSessions(cloudState));
-        } else {
-          logSync('云端快照未开启同步或为空，跳过状态恢复');
-        }
+      /**
+       * 挂载前已经预取并恢复过：这里绝对不能再拉一次快照。
+       * 再拉一次会让后端把租约重新算一遍、还会拿同一份数据重新建会话，
+       * 而首屏早就正确了 —— 此时唯一还没做的只有收尾慢活儿。
+       */
+      if (prefetchedRestore) {
+        logSync('工作区已在挂载前预取恢复，跳过重复拉取，仅补跑收尾');
+        void runPendingWorkspaceTail();
+        return;
       }
+
+      // 没有预取（例如直接落在 /connections 再切进工作区）：这里补上，语义与预取一致
+      await prefetchWorkspaceSnapshot();
+      void runPendingWorkspaceTail();
     } catch (err: any) {
       logSyncWarn('初始化工作区同步失败:', err.message);
     } finally {
@@ -726,6 +928,8 @@ export const useWorkspaceSyncStore = defineStore('workspaceSync', () => {
     handleTakeoverKickout,
     restoreWorkspaceFromSnapshot,
     restoreWorkspaceFromCloud,
+    prefetchWorkspaceSnapshot,
+    runPendingWorkspaceTail,
     initSync,
   };
 });

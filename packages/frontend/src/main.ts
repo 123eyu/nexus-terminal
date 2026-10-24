@@ -7,6 +7,7 @@ import i18n from './i18n';
 import { useAuthStore } from './stores/auth.store'; 
 import { useSettingsStore } from './stores/settings.store'; 
 import { useAppearanceStore } from './stores/appearance.store'; 
+import { prewarmWorkspaceSync } from './stores/workspaceSync.store';
 import './style.css';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import 'splitpanes/dist/splitpanes.css';
@@ -87,8 +88,43 @@ app.use(i18n); // 使用 i18n
           : error
       );
     });
+    /**
+     * 挂载前预取「恢复工作区要用的四个往返」—— 让首帧就带着会话。
+     *
+     * 以前是「挂载 → 画出空工作区 → WorkspaceView.onMounted 才拉快照 → 再填会话」，
+     * 用户看到的就是"先一个没有会话的空工作区，等一下会话才长出来"。
+     * 现在这些请求和路由 chunk 的下载**并行**发起：等挂载时数据已经在内存里，
+     * 恢复流程 `await` 到的全是已 resolve 的 promise，只剩微任务 —— 标签在首帧绘制前
+     * 就已经在 store 里了。不是拿遮罩去盖住中间那段，而是把那段本身消掉。
+     *
+     * 幂等：路由守卫与 WorkspaceView 都会触发，只有第一次真的发请求。
+     */
+    let workspacePrefetch: Promise<void> | null = null;
+    const beginWorkspacePrefetch = (): Promise<void> => {
+      if (workspacePrefetch) return workspacePrefetch;
+      workspacePrefetch = prewarmWorkspaceSync();
+      return workspacePrefetch;
+    };
+
+    // 本守卫注册在 router/index.ts 的守卫之后，看到的是「重定向后的最终目标」；
+    // 而懒加载 chunk 是在 beforeEach 之后才发起的 —— 正好可以在这里抢跑。
+    router.beforeEach((to) => {
+      if (to.name === 'Workspace') void beginWorkspacePrefetch();
+      return true;
+    });
+
     app.use(router); // 在这里启用路由，确保守卫能获取到最新状态
     await router.isReady(); // 等待路由初始化完成 (特别是异步路由加载)
+
+    // 直达工作区时，等预取齐了再挂载。上限 5 秒：接口挂了也不能让整页永远白着，
+    // 超时就正常挂载 —— 恢复流程取用未完成的预取，行为退化成"数据晚到一点"。
+    if (router.currentRoute.value.name === 'Workspace') {
+      await Promise.race([
+        beginWorkspacePrefetch().catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
+
     app.mount('#app');
     console.log("[main.ts] 应用已挂载。");
 
