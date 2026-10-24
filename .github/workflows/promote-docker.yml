@@ -1,0 +1,199 @@
+name: Promote Docker Image
+
+# 把已经验过的 test 镜像「复制」成正式标签：版本号 + v版本号 + latest。
+#
+# 关键点：不重新构建，也不 docker pull/tag/push ——
+#   · 不重新构建 → 线上跑的就是你在 test 上验过的那一个 manifest（digest 完全一致）
+#   · 不用 pull/tag/push → 那样会把多架构 manifest 拍成构建机自己的单架构
+#
+# 用的是 `docker buildx imagetools create`：只读一次 manifest，写一个新的标签指针，几秒钟完成。
+# 等价的手动命令（在 CI 的 Step Summary 里也会打印出来）：
+#   docker buildx imagetools create \
+#     -t heavrnl/nexus-terminal:0.9.15 \
+#     -t heavrnl/nexus-terminal:v0.9.15 \
+#     -t heavrnl/nexus-terminal:latest \
+#     heavrnl/nexus-terminal@sha256:xxxx
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（如 0.9.15，可带 v）'
+        required: true
+      source:
+        description: '源标签（默认 test；也可填 sha-xxxxxxx 之类的具体标签）'
+        required: false
+        default: 'test'
+      digest:
+        description: '可选：直接指定 manifest digest（填了就忽略 source，最精确）'
+        required: false
+        default: ''
+      force:
+        description: '版本号标签已存在且 digest 不同时仍然覆盖（默认拒绝）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-docker
+  cancel-in-progress: false
+
+env:
+  IMAGE: heavrnl/nexus-terminal
+
+jobs:
+  promote:
+    name: Retag manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检查凭据
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ] \
+            || { echo "❌ 缺少 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"; exit 1; }
+
+      - name: 解析版本号
+        id: version
+        run: |
+          set -euo pipefail
+          raw="${{ inputs.version }}"
+          raw="${raw#v}"
+          printf '%s' "$raw" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
+            || { echo "❌ 版本号格式不对: '$raw'"; exit 1; }
+          echo "version=$raw" >> "$GITHUB_OUTPUT"
+          echo "版本：$raw"
+
+      - name: 配置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # tag 是浮动的（test 随时会被下一次测试覆盖），digest 不会。
+      # 所以先把源 digest 读出来，后面所有操作都只认这个 digest。
+      - name: 解析源 manifest digest
+        id: src
+        env:
+          SRC_TAG: ${{ inputs.source }}
+          SRC_DIGEST: ${{ inputs.digest }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SRC_DIGEST" ]; then
+            d="$SRC_DIGEST"
+            echo "来源：显式 digest"
+          else
+            d="$(docker buildx imagetools inspect "$IMAGE:$SRC_TAG" \
+                 --format '{{.Manifest.Digest}}' || true)"
+            [ -n "$d" ] || { echo "❌ 找不到源标签 $IMAGE:$SRC_TAG"; exit 1; }
+            echo "来源：$IMAGE:$SRC_TAG"
+          fi
+          printf '%s' "$d" | grep -Eq '^sha256:[0-9a-f]{64}$' \
+            || { echo "❌ digest 不合法: '$d'"; exit 1; }
+          echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "digest：$d"
+
+      - name: 确认源镜像架构完整
+        env:
+          DIGEST: ${{ steps.src.outputs.digest }}
+        run: |
+          set -euo pipefail
+          fmt='{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}={{.Digest}} {{end}}'
+          list="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format "$fmt")"
+          echo "$list"
+          echo "$list" | grep -q 'linux/amd64=' || { echo "❌ 源镜像缺少 linux/amd64"; exit 1; }
+          echo "$list" | grep -q 'linux/arm64=' || { echo "❌ 源镜像缺少 linux/arm64"; exit 1; }
+          echo "✅ 源镜像 amd64 + arm64 齐全"
+
+      # latest 本来就存在，覆盖它是「提升」的本意；
+      # 但版本号标签一旦发出去就不该被悄悄改指向，所以只拦这两个。
+      - name: 检查版本号标签是否已被占用
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.src.outputs.digest }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          for tag in "$VER" "v$VER"; do
+            existing="$(docker buildx imagetools inspect "$IMAGE:$tag" \
+                        --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+            if [ -z "$existing" ]; then
+              echo "· $tag 尚未发布，可以写"
+              continue
+            fi
+            if [ "$existing" = "$DIGEST" ]; then
+              echo "· $tag 已经指向同一个 digest，跳过"
+              continue
+            fi
+            if [ "$FORCE" = "true" ]; then
+              echo "⚠️ $tag 已存在（$existing → $DIGEST），按 force 覆盖"
+            else
+              echo "❌ $tag 已存在且 digest 不同（现有 $existing，要发布 $DIGEST）"
+              echo "   版本号发出去就不该改指向；确认要覆盖请勾选 force，或换一个版本号。"
+              exit 1
+            fi
+          done
+
+      - name: 复制 manifest 到正式标签
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.src.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "$IMAGE:$VER" \
+            -t "$IMAGE:v$VER" \
+            -t "$IMAGE:latest" \
+            "$IMAGE@$DIGEST"
+
+      # 不比对「index digest 是否相等」：imagetools 会重建 index，顶层 digest 可能变；
+      # 真正要保证的是每个平台下面那个子 manifest 一模一样（层、配置、入口都没动）。
+      - name: 校验三个标签与源镜像逐平台一致
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.src.outputs.digest }}
+        run: |
+          set -euo pipefail
+          fmt='{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}}={{.Digest}} {{end}}'
+          src="$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format "$fmt")"
+          echo "源：$src"
+          for tag in "$VER" "v$VER" latest; do
+            got="$(docker buildx imagetools inspect "$IMAGE:$tag" --format "$fmt")"
+            if [ "$got" != "$src" ]; then
+              echo "❌ $IMAGE:$tag 与源镜像不一致"
+              echo "  源：$src"
+              echo "  实：$got"
+              exit 1
+            fi
+            echo "✅ $tag 与源镜像逐平台一致"
+          done
+
+      - name: 输出发布摘要
+        env:
+          VER: ${{ steps.version.outputs.version }}
+          DIGEST: ${{ steps.src.outputs.digest }}
+          SRC_TAG: ${{ inputs.source }}
+        run: |
+          {
+            echo "### 🚀 已发布正式版（未重新构建）"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 版本 | \`$VER\` |"
+            echo "| 来源 | \`$IMAGE:$SRC_TAG\` |"
+            echo "| digest | \`$DIGEST\` |"
+            echo "| 标签 | \`$VER\` / \`v$VER\` / \`latest\` |"
+            echo ""
+            echo "拉取：\`docker pull $IMAGE:$VER\`"
+            echo ""
+            echo "> 与测试镜像逐平台 digest 一致，线上跑的就是你验过的那份，没有重新构建。"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,20 +1,32 @@
 name: Build & Push Docker Image
 
+# 两条路径：
+#   1. 打 v* tag → 直接构建并发布正式版（版本号 + v版本号 + latest + sha）
+#   2. 先手动跑一次 channel=test → 只推 test + sha，latest 和版本号一个字都不动
+#      自己拉 test 验完，再跑 promote-docker.yml 把那个 manifest 复制成正式标签
+#      （不重新构建，几秒钟完成，多架构一起搬过去）
+#
+# 为什么要分通道：以前手动 dispatch 默认就会更新 latest，而且版本号读 package.json，
+# 随便跑一下「试试」就等于用未发布的代码顶掉了线上 latest。
+
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
+      channel:
+        description: '构建通道：test 只推 test 标签（不动 latest / 版本号）；release 直接发正式版'
+        required: true
+        type: choice
+        options:
+          - test
+          - release
+        default: test
       version:
-        description: '版本号（留空读 package.json）'
+        description: '版本号（仅 release 通道用；留空读 package.json）'
         required: false
         default: ''
-      latest:
-        description: '同时更新 latest'
-        required: false
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -117,6 +129,30 @@ jobs:
             || { echo "❌ 版本号格式不对: '$raw'"; exit 1; }
           echo "version=$raw" >> "$GITHUB_OUTPUT"
 
+      - name: 判定构建通道
+        id: channel
+        run: |
+          set -euo pipefail
+          # 打 tag 一定是正式版；手动触发看 channel 输入
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            is_release=true
+          elif [ "${{ inputs.channel }}" = "release" ]; then
+            is_release=true
+          else
+            is_release=false
+          fi
+          if [ "$is_release" = "true" ]; then
+            echo "is_release=true"  >> "$GITHUB_OUTPUT"
+            echo "is_test=false"    >> "$GITHUB_OUTPUT"
+            echo "primary_tag=${{ steps.version.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "✅ 通道：release（版本号 + v版本号 + latest + sha）"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "is_test=true"     >> "$GITHUB_OUTPUT"
+            echo "primary_tag=test" >> "$GITHUB_OUTPUT"
+            echo "🧪 通道：test（只推 test + sha，绝不碰 latest 和版本号）"
+          fi
+
       - name: 配置 Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -126,16 +162,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # test 通道刻意不打版本号：package.json 里的 0.9.14 可能早就发过了，
+      # 拿它覆盖正式标签等于用未验证的代码顶掉线上。
       - name: 生成标签
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=v${{ steps.version.outputs.version }}
             type=sha,prefix=sha-,format=short
-            type=raw,value=latest,enable=${{ github.event_name != 'workflow_dispatch' || inputs.latest }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.channel.outputs.is_release }}
+            type=raw,value=v${{ steps.version.outputs.version }},enable=${{ steps.channel.outputs.is_release }}
+            type=raw,value=latest,enable=${{ steps.channel.outputs.is_release }}
+            type=raw,value=test,enable=${{ steps.channel.outputs.is_test }}
 
       - name: 下载 digest
         uses: actions/download-artifact@v4
@@ -159,20 +198,40 @@ jobs:
       - name: 校验 manifest
         run: |
           set -euo pipefail
-          out="$(docker buildx imagetools inspect "${{ env.IMAGE }}:${{ steps.version.outputs.version }}")"
+          out="$(docker buildx imagetools inspect "${{ env.IMAGE }}:${{ steps.channel.outputs.primary_tag }}")"
           echo "$out"
           echo "$out" | grep -q 'linux/amd64' || { echo "❌ 缺少 linux/amd64"; exit 1; }
           echo "$out" | grep -q 'linux/arm64' || { echo "❌ 缺少 linux/arm64"; exit 1; }
           echo "✅ amd64 + arm64 均已发布"
 
+      # 记下这个 manifest 的 digest：正式发布时按它「复制」标签，
+      # 保证线上跑的就是刚刚在 test 上验过的那一份镜像（tag 会浮动，digest 不会）。
+      - name: 记录 manifest digest
+        id: digest
+        run: |
+          set -euo pipefail
+          d="$(docker buildx imagetools inspect "${{ env.IMAGE }}:${{ steps.channel.outputs.primary_tag }}" \
+               --format '{{.Manifest.Digest}}' || true)"
+          [ -n "$d" ] || { echo "❌ 读不到 manifest digest"; exit 1; }
+          echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "digest: $d"
+
       - name: 输出发布摘要
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          IS_RELEASE: ${{ steps.channel.outputs.is_release }}
         run: |
           {
-            echo "### 🐳 Docker 镜像已发布"
-            echo ""
-            echo "版本：\`${{ steps.version.outputs.version }}\`"
+            if [ "$IS_RELEASE" = "true" ]; then
+              echo "### 🐳 Docker 正式版已发布"
+              echo ""
+              echo "版本：\`${{ steps.version.outputs.version }}\`"
+            else
+              echo "### 🧪 Docker 测试版已推送（latest 与版本号未改动）"
+              echo ""
+              echo "代码里的版本号：\`${{ steps.version.outputs.version }}\`（test 通道不打这个标签）"
+            fi
             echo ""
             echo "| 标签 |"
             echo "| --- |"
@@ -180,5 +239,25 @@ jobs:
               [ -n "$t" ] && echo "| \`$t\` |"
             done
             echo ""
-            echo "拉取：\`docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.version }}\`"
+            echo "digest：\`$DIGEST\`"
+            echo ""
+            if [ "$IS_RELEASE" = "true" ]; then
+              echo "拉取：\`docker pull ${{ env.IMAGE }}:${{ steps.version.outputs.version }}\`"
+            else
+              echo "拉取测试镜像：\`docker pull ${{ env.IMAGE }}:test\`"
+              echo ""
+              echo "**⚠️ \`test\` 是浮动标签，随时会被下一次测试构建覆盖，不要用于生产。**"
+              echo ""
+              echo "验证没问题后，二选一发布（都不重新构建，直接复制这个 manifest）："
+              echo ""
+              echo "1. Actions 里跑 **Promote Docker Image**，版本号填 \`${{ steps.version.outputs.version }}\`"
+              echo "2. 本地执行："
+              echo '```bash'
+              echo "docker buildx imagetools create \\"
+              echo "  -t ${{ env.IMAGE }}:${{ steps.version.outputs.version }} \\"
+              echo "  -t ${{ env.IMAGE }}:v${{ steps.version.outputs.version }} \\"
+              echo "  -t ${{ env.IMAGE }}:latest \\"
+              echo "  ${{ env.IMAGE }}@$DIGEST"
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

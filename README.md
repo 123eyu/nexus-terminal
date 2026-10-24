@@ -133,6 +133,10 @@ docker compose pull
 ```bash
 docker compose up -d
 ```
+
+> 想提前试新版本可以拉 `test` 标签（`heavrnl/nexus-terminal:test`）：它是跟着最新代码走的测试镜像，
+> 随时会被下一次构建覆盖，不保证可用，**不要用在生产**。生产请用版本号或 `latest`。
+
 ## 📚 使用指南
 
 ### 挂起会话组件
