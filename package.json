@@ -1,6 +1,6 @@
 {
   "name": "nexus-terminal",
-  "version": "0.9.15",
+  "version": "0.9.16",
   "main": "index.js",
   "private": true,
   "engines": {
