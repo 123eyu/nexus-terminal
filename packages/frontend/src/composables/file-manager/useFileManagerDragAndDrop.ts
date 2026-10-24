@@ -206,9 +206,10 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
           if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
         }
       } else if (event.dataTransfer) {
-        // 鼠标在某行上：跨主机/跨目录始终允许放置到当前目录
+        // 鼠标落在某一行上：高亮由行处理函数决定（拖到文件夹行要高亮那个文件夹）。
+        // ⚠️ 这里绝不能再把整块列表的放置蒙版打开 —— 蒙版是 z-40 铺满整个列表区的，
+        // 一旦打开就把文件夹行的虚线框整个盖住，用户看不出自己要放进哪个文件夹。
         if (crossHost || payload.sourceDirectory !== currentPath.value) {
-          isContainerDropTarget.value = true;
           event.dataTransfer.dropEffect = dropEffect;
         }
       }
