@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import TerminalTabBar from '../components/TerminalTabBar.vue';
 import LayoutRenderer from '../components/LayoutRenderer.vue';
@@ -64,6 +64,63 @@ const handleCloseSessionsToLeft = (targetSessionId: string) => {
 const handleRequestEditConnectionFromPopup = (conn: ConnectionInfo) => {
   emit('request-edit-connection', conn);
 };
+
+/**
+ * 会话沙箱的分批挂载。
+ *
+ * 每个会话的沙箱（LayoutRenderer + xterm + 文件管理器 + 分屏）都是常驻的，为的是
+ * 切会话 0ms —— 但**首次**把它们全部挂出来会变成一整段主线程长任务：实测 9 个会话
+ * 恢复时首帧要 500ms+（dev 下被切成几十个 50ms 小任务、累计 5s），表现为"刷新后卡住，
+ * 然后所有内容一起冒出来"。
+ *
+ * 所以：首帧只挂「当前活动会话」，其余会话在第一帧画完之后分批补挂（每个间隔 30ms，
+ * 不堆成新的长任务）。补完之后依旧全部常驻，切会话照旧 0ms。
+ */
+const renderedSessionIds = ref<Set<string>>(new Set());
+const mountedSessions = computed(() => props.sessions.filter(s => renderedSessionIds.value.has(s.sessionId)));
+
+const markSessionRendered = (sessionId: string) => {
+  if (renderedSessionIds.value.has(sessionId)) return;
+  const next = new Set(renderedSessionIds.value);
+  next.add(sessionId);
+  renderedSessionIds.value = next;
+};
+
+/** 待补挂队列 + 唯一一个定时器：重复排程不会堆出多条链 */
+const pendingMountQueue: string[] = [];
+let mountTimer: number | null = null;
+
+const pumpMountQueue = () => {
+  mountTimer = null;
+  const id = pendingMountQueue.shift();
+  if (!id) return;
+  markSessionRendered(id);
+  if (pendingMountQueue.length > 0) mountTimer = window.setTimeout(pumpMountQueue, 30);
+};
+
+const scheduleSessionMounts = () => {
+  // 被切到的会话必须立刻有，否则切换后是空白
+  if (props.activeSessionId) markSessionRendered(props.activeSessionId);
+  for (const s of props.sessions) {
+    if (!renderedSessionIds.value.has(s.sessionId) && !pendingMountQueue.includes(s.sessionId)) {
+      pendingMountQueue.push(s.sessionId);
+    }
+  }
+  // 等第一帧真正绘制出去再开始补挂
+  if (pendingMountQueue.length > 0 && mountTimer === null) {
+    mountTimer = window.setTimeout(pumpMountQueue, 80);
+  }
+};
+
+onMounted(() => scheduleSessionMounts());
+onBeforeUnmount(() => {
+  if (mountTimer !== null) window.clearTimeout(mountTimer);
+  mountTimer = null;
+  pendingMountQueue.length = 0;
+});
+
+watch(() => props.sessions.map(s => s.sessionId).join(','), () => scheduleSessionMounts());
+watch(() => props.activeSessionId, (id) => { if (id) markSessionRendered(id); });
 
 // 监听会话列表变化，关闭的会话及时从 layoutStore 缓存中释放
 watch(() => props.sessions, (newSessions, oldSessions) => {
@@ -130,7 +187,7 @@ watch(
       <!-- 多会话独立布局沙箱：每个会话根据其绑定的预设独立常驻，切换会话使用纯 CSS v-show 实现 0 毫秒秒切！ -->
       <template v-if="props.sessions.length > 0">
         <div
-          v-for="sessionTab in props.sessions"
+          v-for="sessionTab in mountedSessions"
           :key="`session-layout-box-${sessionTab.sessionId}`"
           v-show="sessionTab.sessionId === props.activeSessionId"
           class="layout-renderer-wrapper w-full h-full flex flex-col overflow-hidden"
