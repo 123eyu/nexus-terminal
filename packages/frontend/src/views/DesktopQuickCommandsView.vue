@@ -1299,8 +1299,8 @@ watch(storageKey, (newKey) => {
   }
 });
 
-// 后端异步拉取完成时，更新至最新持久化设置
-watch(() => componentStateStore.isLoaded, () => {
+// 后端异步拉取完成 / 被其它设备同步改动时，更新至最新持久化设置
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   const saved = componentStateStore.getState<QuickCommandsViewMode>(storageKey.value, currentViewMode.value);
   if (saved && ['grid', 'list', 'pills'].includes(saved)) {
     currentViewMode.value = saved;
@@ -1361,8 +1361,20 @@ watch(storageFolderLayoutKey, (newKey) => {
   }
 });
 
+// 后端异步拉取完成 / 被其它设备同步改动时，跟进文件夹布局
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
+  const saved = componentStateStore.getState<FolderLayoutMode>(storageFolderLayoutKey.value, folderLayoutMode.value);
+  if (saved && (saved === 'accordion' || saved === 'sidebar')) {
+    folderLayoutMode.value = saved;
+  }
+});
+
 // 监听状态变动持久化
 watch(folderLayoutMode, (newMode) => {
+  // 值来自「同步重载」时不要回写：否则 重载 → 回写 → 新 HLC → 对端又拉取 → 再回写，
+  // 两台设备会互相把同一个值来回推，永远不收敛。
+  const stored = componentStateStore.getState<FolderLayoutMode>(storageFolderLayoutKey.value);
+  if (stored === newMode) return;
   componentStateStore.setState(storageFolderLayoutKey.value, newMode);
   try {
     localStorage.setItem('nexus:qc_folder_layout_mode', newMode);

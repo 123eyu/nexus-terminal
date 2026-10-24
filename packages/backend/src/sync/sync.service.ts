@@ -987,18 +987,25 @@ export const syncService = {
           `SELECT updated_at FROM settings WHERE key = ?`,
           [settingKey]
         );
+        // v1（全量/手动同步）用 updated_at（秒级）做 LWW，v2（增量）用 updated_hlc。
+        // 两个引擎必须互相同步版本元数据，否则「v1 写进去的值在 v2 眼里是旧的」，
+        // 下一次增量同步就会被对端的旧值按 stale 顶回来 —— 这正是「手动同步完，
+        // 刷新网页又变回原来的设置」。
+        const appliedHlc = `${String(Date.now()).padStart(13, '0')}-00000-v1apply`;
         if (!local) {
           await runDb(
             db,
-            `INSERT INTO settings (key, value, created_at, updated_at, uuid) VALUES (?, ?, ?, ?, ?)`,
-            [settingKey, settingVal, nowSec, item.updated_at || nowSec, item.uuid]
+            `INSERT INTO settings (key, value, created_at, updated_at, uuid, updated_hlc) VALUES (?, ?, ?, ?, ?, ?)`,
+            [settingKey, settingVal, nowSec, item.updated_at || nowSec, item.uuid, appliedHlc]
           );
           pushed++;
-        } else if ((item.updated_at || nowSec) >= (local.updated_at || 0)) {
+        } else if ((item.updated_at || nowSec) > (local.updated_at || 0)) {
+          // 注意用严格大于：秒级时间戳下两端常常落在同一秒，
+          // 用 >= 会让「刚在本地改完」的值被同一秒的旧值顶回去。
           await runDb(
             db,
-            `UPDATE settings SET value = ?, uuid = COALESCE(settings.uuid, ?), updated_at = ? WHERE key = ?`,
-            [settingVal, item.uuid, item.updated_at || nowSec, settingKey]
+            `UPDATE settings SET value = ?, uuid = COALESCE(settings.uuid, ?), updated_at = ?, updated_hlc = ? WHERE key = ?`,
+            [settingVal, item.uuid, item.updated_at || nowSec, appliedHlc, settingKey]
           );
           pushed++;
         } else {

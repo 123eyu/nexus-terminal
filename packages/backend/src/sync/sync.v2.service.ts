@@ -3,6 +3,7 @@ import { getDbInstance, runDb, getDb, allDb, acquireApplyLock, applyContext } fr
 import { envelopeCryptoService } from './envelope-crypto.service';
 import { syncEventsManager } from './sync.events';
 import { broadcastSyncInvalidated } from './sync.ws-broadcaster';
+import { broadcastFrontendEvent } from '../websocket/frontend-events';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
@@ -174,6 +175,13 @@ export const syncV2Service = {
         await runDb(db, 'PRAGMA defer_foreign_keys = ON');
         await runDb(db, 'UPDATE sync_state SET applying = 1 WHERE id = 1');
 
+        // 记录本批远端变更里最大的 HLC 时间戳。收尾时必须并进本机 hlc_ms：
+        // HLC 的作用是「逻辑时钟」，收到别人的时间戳就要把自己的拨到不比它小。
+        // 否则一旦某台机器系统时钟比云端慢（Windows 常见），它此后产生的每个 HLC
+        // 都永远小于云端已存版本，push 会在对端被静默判为 stale —— 表现就是
+        // 「这台机器怎么改，另一边都收不到」，而且刷新也回退成旧值。
+        let maxRemoteHlcMs = 0;
+
         for (let i = 0; i < changes.length; i++) {
           const item = changes[i];
           const savepointName = `sp_sync_${i}`;
@@ -193,6 +201,7 @@ export const syncV2Service = {
             let effectiveHlc = item.hlc;
             const hlcParts = effectiveHlc.split('-');
             const itemTimeMs = parseInt(hlcParts[0] || '0', 10);
+            if (itemTimeMs > maxRemoteHlcMs) maxRemoteHlcMs = itemTimeMs; // 时钟吸收在下面统一提交
             if (itemTimeMs > nowMs + fiveMinutesMs) {
               console.warn(`[SyncV2] 远端记录 ${item.tbl}:${item.row_id} HLC 超前超过 5 分钟 (${itemTimeMs} > ${nowMs})，执行时钟钳制！`);
               effectiveHlc = `${String(nowMs + 1).padStart(13, '0')}-00000-${originDeviceId}`;
@@ -281,11 +290,17 @@ export const syncV2Service = {
               }
               const settingValue = typeof data.value === 'string' ? data.value : String(data.value || '');
               const nowSec = Math.floor(nowMs / 1000);
+              // updated_at 必须表示「这条值是什么时候变成这样的」，而不是「本机什么时候收到」。
+              // 以前这里填本机 nowSec，等于每次 v2 应用都把本地行的时间戳抬到比云端还新，
+              // 于是 v1 全量同步（它只看 updated_at 秒级 LWW）之后永远认为本地更新、
+              // 一直拒收云端值 —— 手动同步完再刷新，界面就「变回原来的设置」。
+              // 用远端 HLC 的毫秒位换算成秒，两个引擎的版本元数据才对得上。
+              const settingUpdatedSec = itemTimeMs > 0 ? Math.floor(itemTimeMs / 1000) : nowSec;
               if (existingLive) {
                 await runDb(
                   db,
                   `UPDATE settings SET value = ?, updated_hlc = ?, updated_at = ? WHERE uuid = ?`,
-                  [settingValue, effectiveHlc, nowSec, item.row_id]
+                  [settingValue, effectiveHlc, settingUpdatedSec, item.row_id]
                 );
               } else {
                 // 若 uuid 未命中，检查 key 是否存在
@@ -294,13 +309,13 @@ export const syncV2Service = {
                   await runDb(
                     db,
                     `UPDATE settings SET value = ?, uuid = ?, updated_hlc = ?, updated_at = ? WHERE key = ?`,
-                    [settingValue, item.row_id, effectiveHlc, nowSec, settingKey]
+                    [settingValue, item.row_id, effectiveHlc, settingUpdatedSec, settingKey]
                   );
                 } else {
                   await runDb(
                     db,
                     `INSERT INTO settings (key, value, created_at, updated_at, uuid, updated_hlc) VALUES (?, ?, ?, ?, ?, ?)`,
-                    [settingKey, settingValue, nowSec, nowSec, item.row_id, effectiveHlc]
+                    [settingKey, settingValue, nowSec, settingUpdatedSec, item.row_id, effectiveHlc]
                   );
                 }
               }
@@ -641,13 +656,17 @@ export const syncV2Service = {
           }
         }
 
-        // 4. 推进本机 HLC 状态
+        // 4. 推进本机 HLC 状态：
+        //    hlc_ms 必须同时并上「本批收到的最大远端时间戳」与「本机当前时间」。
+        //    只并本机时间的话，时钟偏慢的一端永远不会前进到云端水位，
+        //    之后它推上去的每条变更都会被对端按 stale 丢掉。
         await runDb(
           db,
           `UPDATE sync_state SET
-            hlc_ms = MAX(hlc_ms, ${nowMs}),
+            hlc_ms = MAX(hlc_ms, ?, ?),
             applying = 0
-           WHERE id = 1`
+           WHERE id = 1`,
+          [maxRemoteHlcMs, nowMs]
         );
 
         await runDb(db, 'COMMIT');
@@ -683,6 +702,17 @@ export const syncV2Service = {
     if (maxSeq > 0) {
       syncEventsManager.broadcastChange(maxSeq, device_id);
       broadcastSyncInvalidated(maxSeq);
+      // ★ 关键补充：这个节点上可能还挂着浏览器（web 版）。
+      // 远端（桌面客户端）推上来的变更此刻已经落库，但以前只通知了 /ws/sync 上的
+      // 后端客户端，网页侧收不到任何信号 —— 必须整页刷新才能看到新值，
+      // 也就是「桌面端改了，web 端没及时变化」。
+      // 只在这里补一次（远端变更入站），不要塞进 broadcastSyncInvalidated：
+      // 那个函数被每次本地写库唤醒，会给前端造成每条命令都全量刷新的抖动。
+      broadcastFrontendEvent({
+        type: 'sync:invalidated',
+        seq: maxSeq,
+        origin: device_id
+      });
     }
 
     return {
@@ -1211,6 +1241,15 @@ export const syncV2Service = {
               if (pushRes && pushRes.success && pushRes.data) {
                 const data: PushResponseResult = pushRes.data;
                 totalPushed += (data.accepted || []).length;
+                if ((data.stale || []).length > 0 && (data.accepted || []).length === 0) {
+                  // 全部被判旧版本 = 云端已有更新的 HLC。以前这里完全静默，
+                  // 用户只能看到「改了但另一边不动」，排查时毫无线索。
+                  console.warn(
+                    `[SyncV2:Client] 本批 ${data.stale.length} 条变更被云端判为旧版本(stale)，未落库：` +
+                    `${data.stale.slice(0, 3).map(s => `${s.tbl}:${s.row_id}`).join(', ')}` +
+                    `（若持续出现，多半是本机系统时钟比云端慢）`
+                  );
+                }
                 // 推进该批次中最大的 seq
                 const batchMaxSeq = Math.max(...subChunk.map(c => c.seq || 0));
                 if (batchMaxSeq > 0) {
@@ -1252,10 +1291,26 @@ export const syncV2Service = {
     // --- 步骤 2: PULL 云端变更并循环排空 ---
     let hasMore = true;
     while (hasMore) {
-      const pullRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/pull?device_id=${deviceId}&cursor=${pullCursor}&limit=200`, {
-        method: 'GET',
-        headers: { 'x-device-token': deviceToken }
-      });
+      let pullRes: any;
+      try {
+        pullRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/pull?device_id=${deviceId}&cursor=${pullCursor}&limit=200`, {
+          method: 'GET',
+          headers: { 'x-device-token': deviceToken }
+        });
+      } catch (pullErr: any) {
+        const msg = String(pullErr?.message || '');
+        // 410 是「云端把老变更日志 GC 掉了，游标已不可用」。以前这里直接 throw，
+        // 调度器只会不停退避重试同一个废游标 —— 拉取永久卡死（表现就是「另一边改了，
+        // 这台机器永远收不到」）。必须走一次快照重建把状态对齐并换新游标。
+        if (msg.includes('410') || msg.includes('CURSOR_EXPIRED') || msg.includes('游标已过期')) {
+          console.warn('[SyncV2:Client] 拉取游标已过期 (410)，开始执行全量快照重建...');
+          const rebuilt = await this.rebuildFromSnapshot(cleanUrl, deviceToken, pairingSecret);
+          totalPulled += rebuilt.applied;
+          pullCursor = rebuilt.cursor;
+          break;
+        }
+        throw pullErr;
+      }
 
       if (!pullRes || !pullRes.success || !pullRes.data) {
         break;
@@ -1276,6 +1331,62 @@ export const syncV2Service = {
     }
 
     return { pushed: totalPushed, pulled: totalPulled, conflicts: 0 };
+  },
+
+  /**
+   * 全量快照重建 (客户端侧)：把云端快照当成一整批「远端变更」应用，
+   * 再把 pull_cursor 换成快照游标。用于初次加入集群或拉取游标过期 (410) 后的自愈。
+   *
+   * 幂等：每个实体都带 updated_hlc，应用时仍走 HLC 比较，本地更新的行不会被降级。
+   */
+  async rebuildFromSnapshot(
+    cleanUrl: string,
+    deviceToken: string,
+    pairingSecret: string
+  ): Promise<{ applied: number; cursor: number }> {
+    const db = await getDbInstance();
+    let page = 1;
+    let applied = 0;
+    let cursor = 0;
+
+    for (;;) {
+      const res = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/snapshot?page=${page}&page_size=200`, {
+        method: 'GET',
+        headers: { 'x-device-token': deviceToken }
+      });
+      if (!res || !res.success || !res.data) throw new Error('快照重建失败：云端响应异常');
+
+      const snap = res.data as SnapshotResponseResult;
+      cursor = snap.snapshot_cursor || cursor;
+
+      const changes: SyncV2ChangeItem[] = [];
+      for (const [tbl, rows] of Object.entries(snap.entities || {})) {
+        if (!Array.isArray(rows)) continue;
+        for (const row of rows as any[]) {
+          if (!row?.uuid || !row?.updated_hlc) continue;
+          changes.push({ tbl, row_id: row.uuid, op: 'U', hlc: row.updated_hlc, data: row });
+        }
+      }
+      for (const t of snap.tombstones || []) {
+        changes.push({ tbl: t.tbl, row_id: t.row_id, op: 'D', hlc: t.deleted_hlc });
+      }
+
+      if (changes.length > 0) {
+        // 分片应用，避免单个事务过大
+        for (let i = 0; i < changes.length; i += 100) {
+          const r = await this.applyRemoteChanges(changes.slice(i, i + 100), 'vps-snapshot', pairingSecret, false);
+          applied += r.accepted.length;
+        }
+      }
+
+      if (!snap.has_more) break;
+      page += 1;
+      if (page > 200) break; // 防御：异常分页保护
+    }
+
+    await runDb(db, `UPDATE sync_state SET pull_cursor = ? WHERE id = 1`, [cursor]);
+    console.log(`[SyncV2:Client] 快照重建完成：应用 ${applied} 条，新游标 ${cursor}`);
+    return { applied, cursor };
   },
 
   /**

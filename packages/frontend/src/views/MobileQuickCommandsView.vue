@@ -937,8 +937,8 @@ watch(storageKey, (newKey) => {
   }
 });
 
-// 后端异步拉取完成时，更新至最新持久化设置
-watch(() => componentStateStore.isLoaded, () => {
+// 后端异步拉取完成 / 被其它设备同步改动时，更新至最新持久化设置
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   const saved = componentStateStore.getState<QuickCommandsViewMode>(storageKey.value, currentViewMode.value);
   if (saved && ['grid', 'list', 'pills'].includes(saved)) {
     currentViewMode.value = saved;

@@ -271,9 +271,15 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     }
     writeDesktopSettings(settings);
 
-    // 仅在双向合并 (bidirectional) 且全量同步（未指定模块）时协同执行 v2 增量游标同步；
-    // 若指定了覆盖模式 (cloud_to_local 或 local_to_cloud) 或模块筛选，绝对严禁执行 v2 双向混合，防止破坏单向覆盖语义！
-    if (mode === 'bidirectional' && (!modules || modules.length === 0)) {
+    // 双向合并时协同执行 v2 增量游标同步。
+    // 以前这里要求「未指定模块」才跑，而前端每次都会带上所选模块（默认全选 5 个），
+    // 结果手动「立即同步」永远只走 v1（秒级 LWW），自动同步却走 v2（HLC），
+    // 两套判定互相打架，最容易出现「同步完刷新又变回去」。
+    // 现在：只要模块覆盖了全部业务模块，就一并跑 v2。
+    const ALL_SYNC_MODULES = ['appearance', 'layout', 'commandHistory', 'quickCommands', 'connections'];
+    const modulesCoverAll =
+      !modules || modules.length === 0 || ALL_SYNC_MODULES.every(m => (modules as string[]).includes(m));
+    if (mode === 'bidirectional' && modulesCoverAll) {
       try {
         const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
         result.stats.pushed += v2Stats.pushed;

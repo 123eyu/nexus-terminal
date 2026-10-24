@@ -71,8 +71,8 @@ watch(storageKey, (newKey) => {
   internalShowFiles.value = componentStateStore.getState<boolean>(newKey, false);
 });
 
-// 后端异步拉取完成时，更新至最新持久化设置
-watch(() => componentStateStore.isLoaded, () => {
+// 后端异步拉取完成 / 被其它设备同步改动时，更新至最新持久化设置
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   internalShowFiles.value = componentStateStore.getState<boolean>(storageKey.value, internalShowFiles.value);
 });
 

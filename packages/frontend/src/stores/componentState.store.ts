@@ -8,6 +8,15 @@ export const useComponentStateStore = defineStore('componentState', () => {
   // 状态字典：存储如 "qc_view_mode:desktop:pane-1": "grid"
   const states = ref<Record<string, any>>({});
   const isLoaded = ref(false);
+  /**
+   * 版本号：每次「从后端整体重载」都会 +1。
+   *
+   * 已挂载的组件（文件管理器 / 快捷指令 / 目录树…）都是把状态读进本地 ref 之后就不再管了，
+   * 所以另一台设备（比如桌面客户端）改了视图模式，即使数据已经被同步到本机数据库，
+   * 页面上的组件也不会重读 —— 表现就是「另一边改了，这边没反应，得刷新整页」。
+   * 让这些组件 watch 这个版本号即可无感跟进。
+   */
+  const revision = ref(0);
 
   // 初始化：先从 localStorage 加载缓存，然后从后端拉取最新数据
   const initialize = async () => {
@@ -32,6 +41,29 @@ export const useComponentStateStore = defineStore('componentState', () => {
       console.warn('[ComponentStateStore] 获取后端组件状态失败，使用本地缓存:', error);
     } finally {
       isLoaded.value = true;
+      revision.value += 1;
+    }
+  };
+
+  /**
+   * 从后端整体重载（供同步完成/被其他设备改动时调用）
+   * 与 initialize 的区别：不再拿 localStorage 兜底合并 —— 那边可能是旧值，
+   * 合并回去等于把刚同步下来的改动又盖掉。
+   */
+  const reloadFromServer = async () => {
+    try {
+      const response = await apiClient.get<Record<string, any>>('/settings/component-instance-states');
+      if (response && response.data && typeof response.data === 'object') {
+        const next = response.data;
+        // 内容没变就别动 revision：同步失效信号很密集（每条命令历史都会广播一次），
+        // 每次都 +1 会让文件管理器/快捷指令白白重跑一遍 watcher，白屏抖动。
+        if (JSON.stringify(next) === JSON.stringify(states.value)) return;
+        states.value = { ...next };
+        syncToLocalStorage();
+        revision.value += 1;
+      }
+    } catch (error) {
+      console.warn('[ComponentStateStore] 重新拉取组件状态失败:', error);
     }
   };
 
@@ -160,7 +192,9 @@ export const useComponentStateStore = defineStore('componentState', () => {
   return {
     states,
     isLoaded,
+    revision,
     initialize,
+    reloadFromServer,
     getState,
     setState,
     removeState,

@@ -281,7 +281,8 @@ watch(viewModeStorageKey, (newKey) => {
   viewMode.value = componentStateStore.getState<'list' | 'tile'>(newKey, 'list');
 });
 
-watch(() => componentStateStore.isLoaded, () => {
+// 后端异步拉取完成 / 被其它设备同步改动（revision 变化）时，跟进最新视图模式
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   viewMode.value = componentStateStore.getState<'list' | 'tile'>(viewModeStorageKey.value, viewMode.value);
 });
 
@@ -307,7 +308,8 @@ watch(syncModeStorageKey, (newKey) => {
   terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(newKey, 'off');
 });
 
-watch(() => componentStateStore.isLoaded, () => {
+// 后端异步拉取完成 / 被其它设备同步改动（revision 变化）时，跟进最新路径同步模式
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, terminalSyncMode.value);
 });
 

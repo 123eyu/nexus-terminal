@@ -47,7 +47,7 @@ export function useFileManagerColumnReorder(options: {
   };
 
   watch(
-    [() => instanceId, () => componentStateStore.isLoaded],
+    [() => instanceId, () => componentStateStore.isLoaded, () => componentStateStore.revision],
     () => {
       initColumnOrder();
     },

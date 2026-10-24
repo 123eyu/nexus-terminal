@@ -326,6 +326,14 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         const settingsStore = useSettingsStore();
         await settingsStore.loadInitialSettings();
       })());
+      // 组件实例级状态（文件管理器平铺/路径同步、快捷指令视图与文件夹布局、目录树开关…）
+      // 存在 settings 的 componentInstanceStates 里，loadInitialSettings 不会重建它。
+      // 以前漏了这一块，所以另一台设备改了视图模式，这边必须整页刷新才看得到。
+      refreshTasks.push((async () => {
+        const { useComponentStateStore } = await import('./componentState.store');
+        const componentStateStore = useComponentStateStore();
+        await componentStateStore.reloadFromServer();
+      })());
       // 预设（含"指定连接"绑定）是独立的 settings 键，settings store 不会重建它，
       // 不显式重载的话，另一台设备新建的布局要刷新整页才出现。
       refreshTasks.push((async () => {
