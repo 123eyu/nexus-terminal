@@ -133,7 +133,6 @@ watch(() => props.paneId, () => close());
         :class="isConnected ? 'bg-emerald-500' : 'bg-text-secondary/40'"
       ></span>
       <span class="truncate">{{ label }}</span>
-      <i v-if="isPinned" class="fas fa-thumbtack text-[8px] flex-shrink-0 opacity-70"></i>
       <i class="fas fa-caret-down text-[9px] flex-shrink-0 opacity-60"></i>
     </button>
 
