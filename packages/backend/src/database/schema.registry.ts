@@ -24,6 +24,12 @@ export interface TableDefinition {
  * Assumes terminalThemeRepository.initializePresetThemes might need the db instance.
  */
 const initTerminalThemesTable = async (db: Database): Promise<void> => {
+    // ⚠️ 建表 SQL 里只跑第一条语句（runDb → sqlite3 run），所以索引必须写在 init 里
+    try {
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_terminal_themes_uuid ON terminal_themes(uuid);`);
+    } catch (err: any) {
+        console.error('[DB Init] 创建 terminal_themes 索引失败:', err.message);
+    }
     // Pass the db instance to the repository function
     // Note: This might require modifying initializePresetThemes if it doesn't accept db
     await terminalThemeRepository.initializePresetThemes(db, presetTerminalThemes);
@@ -35,10 +41,23 @@ const initTerminalThemesTable = async (db: Database): Promise<void> => {
  * Assumes appearanceRepository.ensureDefaultSettingsExist might need the db instance.
  */
 const initAppearanceSettingsTable = async (db: Database): Promise<void> => {
+    try {
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_appearance_settings_uuid ON appearance_settings(uuid);`);
+    } catch (err: any) {
+        console.error('[DB Init] 创建 appearance_settings 索引失败:', err.message);
+    }
     // Pass the db instance to the repository function
     // Note: This might require modifying ensureDefaultSettingsExist if it doesn't accept db
     await appearanceRepository.ensureDefaultSettingsExist(db);
     console.log('[DB Init] 外观设置初始化检查完成。');
+};
+
+const initFavoritePathsTable = async (db: Database): Promise<void> => {
+    try {
+        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_favorite_paths_uuid ON favorite_paths(uuid);`);
+    } catch (err: any) {
+        console.error('[DB Init] 创建 favorite_paths 索引失败:', err.message);
+    }
 };
 
 
@@ -112,7 +131,7 @@ export const tableDefinitions: TableDefinition[] = [
         sql: schemaSql.createQuickCommandsTableSQL,
         init: initQuickCommandsTable
     },
-    { name: 'favorite_paths', sql: schemaSql.createFavoritePathsTableSQL }, // Added Favorite Paths table
+    { name: 'favorite_paths', sql: schemaSql.createFavoritePathsTableSQL, init: initFavoritePathsTable }, // Added Favorite Paths table
 
     // Appearance related tables (often depend on others or have init logic)
     {

@@ -205,15 +205,24 @@ export class SyncThrottleScheduler {
     const db = await getDbInstance();
     console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
 
-    const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags', 'command_history', 'port_forwards'];
+    const tables = [
+      'connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags',
+      'command_history', 'port_forwards',
+      // 这三张以前只走 v1（手动全量），首次激活时必须补录一次，否则老数据永远上不了云
+      'appearance_settings', 'terminal_themes', 'favorite_paths'
+    ];
     let totalCatchup = 0;
 
     for (const tbl of tables) {
+      // 内置 preset 主题（400+ 条）两端一致，只同步自定义主题，否则激活时一次补录几百条垃圾变更
+      const onlyUserThemes = tbl === 'terminal_themes' ? ` AND theme_type = 'user'` : '';
       // 查出尚未记录在 sync_changes 中的本地记录
       const unrecordedRows = await allDb<{ uuid: string }>(
         db,
         `SELECT uuid FROM ${tbl}
-         WHERE uuid NOT IN (SELECT row_id FROM sync_changes WHERE tbl = '${tbl}')`
+         WHERE uuid IS NOT NULL AND uuid != ''
+           ${onlyUserThemes}
+           AND uuid NOT IN (SELECT row_id FROM sync_changes WHERE tbl = '${tbl}')`
       );
 
       for (const r of unrecordedRows) {

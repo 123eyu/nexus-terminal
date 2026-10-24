@@ -17,6 +17,14 @@ export interface SyncV2ChangeItem {
   data?: any;     // 当 op='U' 时携带白名单字段；当 op='D' 时为 null
 }
 
+/** terminal_themes 表里的配色列（结构化传输时压成一个 colors 字典，避免 20 个字段各写一遍） */
+const TERMINAL_THEME_COLOR_KEYS = [
+  'foreground', 'background', 'cursor', 'cursor_accent', 'selection_background',
+  'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
+  'bright_black', 'bright_red', 'bright_green', 'bright_yellow',
+  'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white'
+] as const;
+
 export interface PushRequestPayload {
   device_id: string;
   changes: SyncV2ChangeItem[];
@@ -111,6 +119,27 @@ export interface SnapshotResponseResult {
       target_host: string | null;
       target_port: number | null;
       auto_start: number;
+      updated_hlc: string;
+    }>;
+    appearance_settings?: Array<{
+      uuid: string;
+      key: string;
+      value: string;
+      updated_hlc: string;
+    }>;
+    terminal_themes?: Array<{
+      uuid: string;
+      name: string;
+      theme_type: 'preset' | 'user';
+      colors: Record<string, string | null>;
+      updated_hlc: string;
+    }>;
+    favorite_paths?: Array<{
+      uuid: string;
+      name: string | null;
+      path: string;
+      is_file: number;
+      last_used_at: number | null;
       updated_hlc: string;
     }>;
   };
@@ -266,10 +295,12 @@ export const syncV2Service = {
               continue;
             }
 
+            // 主键是 `key` 的表（settings / appearance_settings）不能查 id
+            const usesKeyPk = item.tbl === 'settings' || item.tbl === 'appearance_settings';
             const existingLive = await getDb<{ id?: number; key?: string; updated_hlc: string }>(
               db,
-              item.tbl === 'settings'
-                ? `SELECT key, updated_hlc FROM settings WHERE uuid = ?`
+              usesKeyPk
+                ? `SELECT key, updated_hlc FROM ${item.tbl} WHERE uuid = ?`
                 : `SELECT id, updated_hlc FROM ${item.tbl} WHERE uuid = ?`,
               [item.row_id]
             );
@@ -620,6 +651,109 @@ export const syncV2Service = {
                   [item.row_id, cmdText, cmdTs, effectiveHlc]
                 );
               }
+            } else if (item.tbl === 'appearance_settings') {
+              const appearanceKey = data.key;
+              if (typeof appearanceKey !== 'string' || appearanceKey === '') {
+                throw new Error('外观设置缺少 key');
+              }
+              const appearanceValue = typeof data.value === 'string' ? data.value : String(data.value || '');
+              const appearanceUpdatedSec = itemTimeMs > 0 ? Math.floor(itemTimeMs / 1000) : Math.floor(nowMs / 1000);
+              if (existingLive) {
+                await runDb(
+                  db,
+                  `UPDATE appearance_settings SET value = ?, updated_hlc = ?, updated_at = ? WHERE uuid = ?`,
+                  [appearanceValue, effectiveHlc, appearanceUpdatedSec, item.row_id]
+                );
+              } else {
+                // uuid 没命中就按 key 对齐（老库 uuid 是后补的，或对方先建了这个键）
+                const byKey = await getDb<{ key: string }>(db, `SELECT key FROM appearance_settings WHERE key = ?`, [appearanceKey]);
+                if (byKey) {
+                  await runDb(
+                    db,
+                    `UPDATE appearance_settings SET value = ?, uuid = ?, updated_hlc = ?, updated_at = ? WHERE key = ?`,
+                    [appearanceValue, item.row_id, effectiveHlc, appearanceUpdatedSec, appearanceKey]
+                  );
+                } else {
+                  await runDb(
+                    db,
+                    `INSERT INTO appearance_settings (key, value, created_at, updated_at, uuid, updated_hlc) VALUES (?, ?, ?, ?, ?, ?)`,
+                    [appearanceKey, appearanceValue, Math.floor(nowMs / 1000), appearanceUpdatedSec, item.row_id, effectiveHlc]
+                  );
+                }
+              }
+            } else if (item.tbl === 'terminal_themes') {
+              const themeName = typeof data.name === 'string' ? data.name : '';
+              if (!themeName) throw new Error('终端主题缺少 name');
+              const themeType = data.theme_type === 'preset' ? 'preset' : 'user';
+              if (themeType === 'preset') {
+                // 内置预设两端一致，写进去只会用对端 seed 的配色覆盖本机 seed
+                stale.push({ tbl: item.tbl, row_id: item.row_id, reason: '内置预设主题不参与同步' });
+                await runDb(db, `RELEASE SAVEPOINT ${savepointName}`);
+                continue;
+              }
+              const colors = (data.colors && typeof data.colors === 'object') ? data.colors : {};
+              const colorCols = TERMINAL_THEME_COLOR_KEYS.join(', ');
+              // UPDATE 的 SET 子句必须是 `col = ?`，只拼列名会变成 `SET a, b, c` 语法错误
+              const colorSet = TERMINAL_THEME_COLOR_KEYS.map(k => `${k} = ?`).join(', ');
+              const colorMarks = TERMINAL_THEME_COLOR_KEYS.map(() => '?').join(', ');
+              const colorValues = TERMINAL_THEME_COLOR_KEYS.map(k => (colors[k] ?? null) as string | null);
+
+              // name 上有 UNIQUE 约束：uuid 没命中时必须按 name 对齐，否则同名主题 INSERT 会失败
+              let themeId: number | null = existingLive ? (existingLive.id ?? null) : null;
+              if (!themeId) {
+                const byName = await getDb<{ id: number }>(db, `SELECT id FROM terminal_themes WHERE name = ?`, [themeName]);
+                if (byName) themeId = byName.id;
+              }
+
+              if (themeId) {
+                await runDb(
+                  db,
+                  `UPDATE terminal_themes SET name = ?, theme_type = ?, ${colorSet}, uuid = ?, updated_hlc = ?, updated_at = ? WHERE id = ?`,
+                  [themeName, themeType, ...colorValues, item.row_id, effectiveHlc, Math.floor(nowMs / 1000), themeId]
+                );
+              } else {
+                await runDb(
+                  db,
+                  `INSERT INTO terminal_themes (name, theme_type, ${colorCols}, uuid, updated_hlc, created_at, updated_at)
+                   VALUES (?, ?, ${colorMarks}, ?, ?, ?, ?)`,
+                  [
+                    themeName, themeType, ...colorValues, item.row_id, effectiveHlc,
+                    Math.floor(nowMs / 1000), Math.floor(nowMs / 1000)
+                  ]
+                );
+              }
+            } else if (item.tbl === 'favorite_paths') {
+              const favPath = typeof data.path === 'string' ? data.path : '';
+              if (!favPath) throw new Error('常用路径缺少 path');
+              const favName = data.name ?? null;
+              const favIsFile = data.is_file ? 1 : 0;
+              const favLastUsed = data.last_used_at ?? null;
+
+              let favId: number | null = existingLive ? (existingLive.id ?? null) : null;
+              if (!favId) {
+                // 同一条路径在两端各自生成过不同 uuid，按 path 对齐
+                const byPath = await getDb<{ id: number }>(db, `SELECT id FROM favorite_paths WHERE path = ? LIMIT 1`, [favPath]);
+                if (byPath) favId = byPath.id;
+              }
+
+              if (favId) {
+                await runDb(
+                  db,
+                  `UPDATE favorite_paths SET name = ?, path = ?, is_file = ?, last_used_at = ?, uuid = ?, updated_hlc = ?, updated_at = ?
+                   WHERE id = ?`,
+                  [favName, favPath, favIsFile, favLastUsed, item.row_id, effectiveHlc, Math.floor(nowMs / 1000), favId]
+                );
+              } else {
+                await runDb(
+                  db,
+                  `INSERT INTO favorite_paths (name, path, is_file, last_used_at, uuid, updated_hlc, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    favName, favPath, favIsFile, favLastUsed, item.row_id, effectiveHlc,
+                    Math.floor(nowMs / 1000), Math.floor(nowMs / 1000)
+                  ]
+                );
+              }
             }
 
             // 清理墓碑
@@ -959,6 +1093,49 @@ export const syncV2Service = {
               }
             });
           }
+        } else if (row.tbl === 'appearance_settings') {
+          const s = await getDb<any>(db, `SELECT * FROM appearance_settings WHERE uuid = ?`, [row.row_id]);
+          if (s) {
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: s.updated_hlc || `${Date.now()}-00000-server`,
+              data: { key: s.key, value: s.value }
+            });
+          }
+        } else if (row.tbl === 'terminal_themes') {
+          const t = await getDb<any>(db, `SELECT * FROM terminal_themes WHERE uuid = ?`, [row.row_id]);
+          if (t && t.theme_type === 'user') {
+            const colors: Record<string, string | null> = {};
+            for (const k of TERMINAL_THEME_COLOR_KEYS) colors[k] = t[k] ?? null;
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: t.updated_hlc || `${Date.now()}-00000-server`,
+              data: { name: t.name, theme_type: t.theme_type, colors }
+            });
+          }
+        } else if (row.tbl === 'favorite_paths') {
+          const f = await getDb<any>(db, `SELECT * FROM favorite_paths WHERE uuid = ?`, [row.row_id]);
+          if (f) {
+            resultChanges.push({
+              seq: row.seq,
+              tbl: row.tbl,
+              row_id: row.row_id,
+              op: 'U',
+              hlc: f.updated_hlc || `${Date.now()}-00000-server`,
+              data: {
+                name: f.name ?? null,
+                path: f.path,
+                is_file: f.is_file ? 1 : 0,
+                last_used_at: f.last_used_at ?? null
+              }
+            });
+          }
         }
       }
     }
@@ -1187,6 +1364,49 @@ export const syncV2Service = {
               data: {
                 command: ch.command,
                 timestamp: ch.timestamp
+              }
+            });
+          }
+        } else if (r.tbl === 'appearance_settings') {
+          const s = await getDb<any>(db, `SELECT * FROM appearance_settings WHERE uuid = ?`, [r.row_id]);
+          if (s) {
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: s.updated_hlc || `${Date.now()}-00000-local`,
+              data: { key: s.key, value: s.value }
+            });
+          }
+        } else if (r.tbl === 'terminal_themes') {
+          const t = await getDb<any>(db, `SELECT * FROM terminal_themes WHERE uuid = ?`, [r.row_id]);
+          if (t && t.theme_type === 'user') {
+            const colors: Record<string, string | null> = {};
+            for (const k of TERMINAL_THEME_COLOR_KEYS) colors[k] = t[k] ?? null;
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: t.updated_hlc || `${Date.now()}-00000-local`,
+              data: { name: t.name, theme_type: t.theme_type, colors }
+            });
+          }
+        } else if (r.tbl === 'favorite_paths') {
+          const f = await getDb<any>(db, `SELECT * FROM favorite_paths WHERE uuid = ?`, [r.row_id]);
+          if (f) {
+            list.push({
+              seq: r.seq,
+              tbl: r.tbl,
+              row_id: r.row_id,
+              op: 'U',
+              hlc: f.updated_hlc || `${Date.now()}-00000-local`,
+              data: {
+                name: f.name ?? null,
+                path: f.path,
+                is_file: f.is_file ? 1 : 0,
+                last_used_at: f.last_used_at ?? null
               }
             });
           }
@@ -1617,7 +1837,48 @@ export const syncV2Service = {
         updated_hlc: pf.updated_hlc || `${Date.now()}-00000-server`
       }));
 
-    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length + portForwards.length;
+    // 10.6 提取 appearance_settings（终端背景图/字体/自定义 UI 主题等按 key 存的项）
+    const rawAppearance = await allDb<any>(db, `SELECT * FROM appearance_settings ORDER BY key ASC`);
+    const appearanceSettings = rawAppearance
+      .filter(s => !!s.uuid)
+      .map(s => ({
+        uuid: s.uuid,
+        key: s.key,
+        value: s.value,
+        updated_hlc: s.updated_hlc || `${Date.now()}-00000-server`
+      }));
+
+    // 10.7 提取 terminal_themes（只含自定义主题；preset 两端一致，不进快照）
+    const rawThemes = await allDb<any>(db, `SELECT * FROM terminal_themes WHERE theme_type = 'user' ORDER BY id ASC`);
+    const terminalThemes = rawThemes
+      .filter(t => !!t.uuid)
+      .map(t => {
+        const colors: Record<string, string | null> = {};
+        for (const k of TERMINAL_THEME_COLOR_KEYS) colors[k] = t[k] ?? null;
+        return {
+          uuid: t.uuid,
+          name: t.name,
+          theme_type: t.theme_type,
+          colors,
+          updated_hlc: t.updated_hlc || `${Date.now()}-00000-server`
+        };
+      });
+
+    // 10.8 提取 favorite_paths（常用路径，身份是 path）
+    const rawFavoritePaths = await allDb<any>(db, `SELECT * FROM favorite_paths ORDER BY id ASC`);
+    const favoritePaths = rawFavoritePaths
+      .filter(f => !!f.uuid)
+      .map(f => ({
+        uuid: f.uuid,
+        name: f.name ?? null,
+        path: f.path,
+        is_file: f.is_file ? 1 : 0,
+        last_used_at: f.last_used_at ?? null,
+        updated_hlc: f.updated_hlc || `${Date.now()}-00000-server`
+      }));
+
+    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length + portForwards.length
+      + appearanceSettings.length + terminalThemes.length + favoritePaths.length;
 
     return {
       snapshot_cursor: snapshotCursor,
@@ -1634,7 +1895,10 @@ export const syncV2Service = {
         connections,
         settings,
         command_history,
-        port_forwards: portForwards
+        port_forwards: portForwards,
+        appearance_settings: appearanceSettings,
+        terminal_themes: terminalThemes,
+        favorite_paths: favoritePaths
       },
       tombstones,
       server_time: serverTime

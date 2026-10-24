@@ -858,6 +858,67 @@ const definedMigrations: Migration[] = [
             }
             console.log(`[Migrations] Migration 25: port_forwards 已补上 uuid / updated_hlc（回填 ${rows.length} 条），可参与双端同步。`);
         }
+    },
+    {
+        id: 26,
+        name: 'Add uuid / updated_hlc to appearance_settings, terminal_themes, favorite_paths for v2 sync',
+        check: async (db: Database): Promise<boolean> => {
+            // 新库由 schema.ts 建表时就带上了；只有旧库需要补列
+            if (await tableExists(db, 'appearance_settings')) {
+                if (!(await columnExists(db, 'appearance_settings', 'uuid'))) return true;
+            }
+            if (await tableExists(db, 'terminal_themes')) {
+                if (!(await columnExists(db, 'terminal_themes', 'uuid'))) return true;
+            }
+            if (await tableExists(db, 'favorite_paths')) {
+                if (!(await columnExists(db, 'favorite_paths', 'uuid'))) return true;
+            }
+            return false;
+        },
+        sql: `
+            ALTER TABLE appearance_settings ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE appearance_settings ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_appearance_settings_uuid ON appearance_settings(uuid);
+            ALTER TABLE terminal_themes ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE terminal_themes ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_terminal_themes_uuid ON terminal_themes(uuid);
+            ALTER TABLE favorite_paths ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE favorite_paths ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_favorite_paths_uuid ON favorite_paths(uuid);
+        `,
+        execute: async (db: Database): Promise<void> => {
+            // 补完列必须回填 uuid，否则这些老数据永远进不了同步。
+            // uuid 用「业务主键」确定性生成（外观设置=key、主题=name、常用路径=path），
+            // 这样两台机器上同名/同路径的记录会落到同一个 uuid 上，靠 HLC 判新旧，
+            // 而不是各生成一个随机 id 变成两份重复数据。
+            const hlcExpr = `(SELECT printf('%013d-%05d-%s', hlc_ms, hlc_ctr, device_id) FROM sync_state WHERE id = 1)`;
+
+            const backfill = async (table: string, pkColumn: string, nsKey: (row: any) => string): Promise<number> => {
+                if (!(await tableExists(db, table))) return 0;
+                if (!(await columnExists(db, table, 'uuid'))) return 0;
+                const rows = await new Promise<any[]>((resolve, reject) => {
+                    db.all(`SELECT * FROM ${table} WHERE uuid IS NULL OR uuid = ''`, (err, list: any[]) => {
+                        if (err) reject(err); else resolve(list || []);
+                    });
+                }).catch(() => [] as any[]);
+                for (const row of rows) {
+                    const uuid = generateDeterministicSettingUuid(nsKey(row));
+                    await new Promise<void>((resolve, reject) => {
+                        db.run(`UPDATE ${table} SET uuid = ?, updated_hlc = ${hlcExpr} WHERE ${pkColumn} = ?`, [uuid, row[pkColumn]], (err) => {
+                            if (err) reject(err); else resolve();
+                        });
+                    });
+                }
+                return rows.length;
+            };
+
+            const a = await backfill('appearance_settings', 'key', (r) => `nexus-appearance:${r.key}`);
+            const t = await backfill('terminal_themes', 'id', (r) => `nexus-theme:${r.name ?? r.id}`);
+            const f = await backfill('favorite_paths', 'id', (r) => `nexus-favpath:${r.path ?? r.id}`);
+            console.log(
+                `[Migrations] Migration 26: 外观设置 ${a} 条 / 终端主题 ${t} 条 / 常用路径 ${f} 条 已补上 uuid，可参与 v2 增量同步。`
+            );
+        }
     }
 ];
 

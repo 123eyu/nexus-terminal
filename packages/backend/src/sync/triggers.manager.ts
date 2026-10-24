@@ -81,6 +81,32 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     updateOfColumns: [
       'command', 'timestamp'
     ]
+  },
+  {
+    // 外观设置（终端背景图/字体/自定义 UI 主题…）。key 作主键，和 settings 一样一个键一行。
+    tableName: 'appearance_settings',
+    updateOfColumns: [
+      'value'
+    ],
+    primaryKeyColumn: 'key'
+  },
+  {
+    // 自定义终端配色主题。身份是 name（表上 UNIQUE），跨端对齐也按 name。
+    tableName: 'terminal_themes',
+    updateOfColumns: [
+      'name', 'theme_type', 'foreground', 'background', 'cursor', 'cursor_accent',
+      'selection_background', 'black', 'red', 'green', 'yellow', 'blue', 'magenta',
+      'cyan', 'white', 'bright_black', 'bright_red', 'bright_green', 'bright_yellow',
+      'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white'
+    ]
+  },
+  {
+    // 常用路径。刻意不含 last_used_at：它每用一次就变，进触发器会让同步被刷屏；
+    // 它仍然会随其它字段一起被推上去，只是不单独触发。
+    tableName: 'favorite_paths',
+    updateOfColumns: [
+      'name', 'path', 'is_file'
+    ]
   }
 ];
 
@@ -93,11 +119,17 @@ function generateTableTriggersSql(cfg: TableTriggerConfig): string {
 
   const extraCondition = tableName === 'settings'
     ? `\n    AND NEW.key NOT IN ('desktop_sync_config', 'syncApiKey') AND NEW.key NOT LIKE 'desktop_%'`
-    : '';
+    // 内置 preset 主题（400+ 条）每台机器都一样，参与同步只是白白刷 400 行变更，
+    // 还会让后装的一端用自己 seed 出来的 HLC 顶掉对端 —— 和 v1 一样只同步自定义主题。
+    : tableName === 'terminal_themes'
+      ? `\n    AND NEW.theme_type = 'user'`
+      : '';
 
   const extraDeleteCondition = tableName === 'settings'
     ? `\n    AND OLD.key NOT IN ('desktop_sync_config', 'syncApiKey') AND OLD.key NOT LIKE 'desktop_%'`
-    : '';
+    : tableName === 'terminal_themes'
+      ? `\n    AND OLD.theme_type = 'user'`
+      : '';
 
   return `
     -- ${tableName} AFTER INSERT

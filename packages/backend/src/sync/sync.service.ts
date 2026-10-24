@@ -1030,7 +1030,9 @@ export const syncService = {
             [item.data.key, item.data.value, nowSec, item.updated_at || nowSec]
           );
           pushed++;
-        } else if ((item.updated_at || nowSec) >= (local.updated_at || 0)) {
+        } else if ((item.updated_at || nowSec) > (local.updated_at || 0)) {
+          // 与 settings 一致：秒级时间戳下必须用严格大于，
+          // 否则同一秒内刚改完的值会被对端的旧值顶回去
           await runDb(
             db,
             `UPDATE appearance_settings SET value = ?, updated_at = ? WHERE key = ?`,

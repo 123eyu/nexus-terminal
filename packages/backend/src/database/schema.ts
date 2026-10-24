@@ -232,7 +232,9 @@ CREATE TABLE IF NOT EXISTS terminal_themes (
     bright_cyan TEXT,
     bright_white TEXT,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    uuid TEXT NULL,
+    updated_hlc TEXT NOT NULL DEFAULT ''
 );
 `;
 
@@ -241,7 +243,9 @@ CREATE TABLE IF NOT EXISTS appearance_settings (
     key TEXT PRIMARY KEY NOT NULL,
     value TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    uuid TEXT NULL,
+    updated_hlc TEXT NOT NULL DEFAULT ''
 );
 `;
 export const createFavoritePathsTableSQL = `
@@ -252,7 +256,9 @@ CREATE TABLE IF NOT EXISTS favorite_paths (
     is_file INTEGER NOT NULL DEFAULT 0,
     last_used_at INTEGER NULL, 
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    uuid TEXT NULL,
+    updated_hlc TEXT NOT NULL DEFAULT ''
 );
 `;
 
