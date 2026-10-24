@@ -162,7 +162,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # test 通道刻意不打版本号：package.json 里的 0.9.14 可能早就发过了，
+      # test 通道刻意不打版本号：package.json 里的版本号可能早就发过了，
       # 拿它覆盖正式标签等于用未验证的代码顶掉线上。
       - name: 生成标签
         id: meta
