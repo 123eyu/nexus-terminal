@@ -2003,6 +2003,17 @@
       "autoTerminated": "中断されたセッション「{name}」は、理由: {reason} によりバックエンドによって自動終了されました。"
     }
   },
+  "transferMiniPanel": {
+    "title": "ホスト間転送",
+    "activeCount": "{count} 件進行中",
+    "allDone": "すべて完了",
+    "hasError": "{count} 件失敗",
+    "failed": "転送に失敗しました",
+    "preparing": "準備中…",
+    "expand": "展開",
+    "collapse": "折りたたむ",
+    "close": "閉じる"
+  },
   "transferProgressModal": {
     "title": "ファイル転送進捗",
     "subtitle": "最近のファイル転送タスク",

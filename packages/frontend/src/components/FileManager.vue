@@ -40,6 +40,7 @@ import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
 import { useComponentStateStore } from '../stores/componentState.store';
 import { useLayoutStore } from '../stores/layout.store';
+import { useTransferMiniPanelStore } from '../stores/transferMiniPanel.store';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import {
   useFileManagerColumnReorder,
@@ -272,6 +273,7 @@ const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? '
 
 const componentStateStore = useComponentStateStore();
 const layoutStore = useLayoutStore();
+const transferMiniPanelStore = useTransferMiniPanelStore();
 
 const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${instanceStorageId.value}`);
 
@@ -1261,7 +1263,8 @@ const handleCrossHostItemsDropped = async (payload: NexusSftpDragPayload, target
       remoteTargetPath: targetDirectory,
       transferMethod: 'auto',
     });
-    emitWorkspaceEvent('ui:openTransferProgressModal');
+    // 只用右下角小窗，别为一次顺手拖拽盖上半个屏幕的进度弹窗
+    transferMiniPanelStore.open();
   } catch (error: any) {
     console.error('[FileManager] 跨主机传输发起失败:', error);
     const errorMessage = error?.response?.data?.message || error?.message || t('fileManager.crossHostTransfer.failed');

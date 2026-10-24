@@ -2090,6 +2090,17 @@
       "exportLog": "导出日志"
     }
   },
+  "transferMiniPanel": {
+    "title": "跨主机传输",
+    "activeCount": "{count} 项进行中",
+    "allDone": "已全部完成",
+    "hasError": "{count} 项失败",
+    "failed": "传输失败",
+    "preparing": "正在准备…",
+    "expand": "展开",
+    "collapse": "收起",
+    "close": "关闭"
+  },
   "transferProgressModal": {
     "title": "文件传输进度",
     "subtitle": "最近的文件传输任务",

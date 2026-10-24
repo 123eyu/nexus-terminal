@@ -2123,6 +2123,17 @@
       "logExportError": "Failed to export suspended session log: {error}"
     }
   },
+  "transferMiniPanel": {
+    "title": "Cross-host transfer",
+    "activeCount": "{count} in progress",
+    "allDone": "All completed",
+    "hasError": "{count} failed",
+    "failed": "Transfer failed",
+    "preparing": "Preparing…",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "close": "Close"
+  },
   "transferProgressModal": {
     "title": "File Transfer Progress",
     "subtitle": "Recent file transfers",

@@ -6,12 +6,14 @@ import { useLayoutStore, type LayoutNode } from '../stores/layout.store'; // +++
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
 import { useFoldersStore } from '../stores/folders.store';
+import { useTransferMiniPanelStore } from '../stores/transferMiniPanel.store';
 import AddConnectionFormComponent from '../components/AddConnectionForm.vue';
 import DesktopWorkspaceView from './DesktopWorkspaceView.vue';
 import MobileWorkspaceView from './MobileWorkspaceView.vue';
 import LayoutConfigurator from '../components/LayoutConfigurator.vue';
 import FileManagerModal from '../components/FileManagerModal.vue'; 
 import TransferProgressModal from '../components/TransferProgressModal.vue';
+import TransferMiniPanel from '../components/TransferMiniPanel.vue';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
 import WorkspaceTakeoverOverlay from '../components/WorkspaceTakeoverOverlay.vue';
 import type { QuickCommandFE } from '../stores/quickCommands.store';
@@ -41,6 +43,7 @@ const layoutStore = useLayoutStore();
 const commandHistoryStore = useCommandHistoryStore();
 const connectionsStore = useConnectionsStore(); 
 const foldersStore = useFoldersStore();
+const transferMiniPanelStore = useTransferMiniPanelStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
 const { isMobile } = useDeviceDetection();
 
@@ -1032,6 +1035,9 @@ const closeFileManagerModal = () => {
       v-model:visible="showTransferProgressModal"
       :is-mobile="isMobile"
     />
+
+    <!-- 跨主机拖拽传输的右下角小窗：全部成功自行销毁，有失败则保留到用户关闭 -->
+    <TransferMiniPanel v-if="transferMiniPanelStore.visible" />
 
     <!-- Quick Command Add Modal -->
     <AddEditQuickCommandForm
