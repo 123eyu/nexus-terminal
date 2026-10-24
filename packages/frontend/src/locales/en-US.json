@@ -852,6 +852,18 @@
         "newFolder": "Enter folder name"
       },
       "chmodHelp": "Enter permissions in octal format (e.g., 755 or 0755)."
+    },
+    "hostSelector": {
+      "placeholder": "Select host",
+      "searchPlaceholder": "Search name or address",
+      "empty": "No SSH connection available",
+      "tooltip": "Browsing {host} (click to switch)",
+      "followActive": "Follow active session"
+    },
+    "crossHostTransfer": {
+      "started": "Copying {count} item(s) to {target}",
+      "failed": "Failed to start cross-host transfer",
+      "missingConnection": "Source or target connection is missing"
     }
   },
   "statusMonitor": {

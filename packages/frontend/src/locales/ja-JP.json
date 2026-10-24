@@ -698,6 +698,18 @@
         "newFolder": "フォルダー名を入力"
       },
       "chmodHelp": "8進数形式で権限を入力してください (例: 755 または 0755)。"
+    },
+    "hostSelector": {
+      "placeholder": "ホストを選択",
+      "searchPlaceholder": "ホスト名 / アドレスを検索",
+      "empty": "利用できる SSH 接続がありません",
+      "tooltip": "表示中のホスト：{host}（クリックで切替）",
+      "followActive": "現在のセッションに追従"
+    },
+    "crossHostTransfer": {
+      "started": "{count} 件を {target} にコピーしています",
+      "failed": "ホスト間転送を開始できませんでした",
+      "missingConnection": "送信元または送信先の接続情報がありません"
     }
   },
   "focusSwitcher": {

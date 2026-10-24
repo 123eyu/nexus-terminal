@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { ConnectionInfo } from '../stores/connections.store';
-import { computed, defineAsyncComponent, type PropType, type Component, ref, watch, onMounted, onBeforeUnmount, nextTick, type CSSProperties } from 'vue'; // Added onBeforeUnmount, nextTick and CSSProperties
+import { computed, defineAsyncComponent, type PropType, type Component, ref, watch, watchEffect, onMounted, onBeforeUnmount, nextTick, type CSSProperties } from 'vue'; // Added onBeforeUnmount, nextTick and CSSProperties
 import { useI18n } from 'vue-i18n';
 import { useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import '@fortawesome/fontawesome-free/css/all.min.css';
 import { Splitpanes, Pane } from 'splitpanes';
 import { useLayoutStore, type LayoutNode, type PaneName } from '../stores/layout.store';
 import { useSessionStore } from '../stores/session.store';
+import { useFileManagerHostsStore } from '../stores/fileManagerHosts.store';
+import { useConnectionsStore } from '../stores/connections.store';
 import { useFileEditorStore } from '../stores/fileEditor.store'; 
 import { useSettingsStore } from '../stores/settings.store';
 import { useAppearanceStore } from '../stores/appearance.store'; // +++ Import appearance store +++
@@ -62,6 +64,8 @@ const props = defineProps({
 
 const layoutStore = useLayoutStore();
 const sessionStore = useSessionStore();
+const fileManagerHostsStore = useFileManagerHostsStore();
+const connectionsStore = useConnectionsStore();
 const fileEditorStore = useFileEditorStore(); 
 const settingsStore = useSettingsStore(); 
 const { t } = useI18n();
@@ -166,6 +170,60 @@ const hasSshSessions = computed(() => {
 const sshSessions = computed(() =>
   Array.from(sessionStore.sessions.entries()).filter(([, sessionState]) => sessionState.kind === 'ssh')
 );
+
+/**
+ * 主布局里文件管理器 pane 的实例 ID。
+ * 与模板里传给 FileManager 的 instance-id 必须严格一致，否则找不到自己的主机绑定。
+ */
+const mainPaneInstanceId = computed(() => props.layoutNode.id || 'main-fm');
+
+/**
+ * 文件管理器 pane 当前该显示哪条会话。
+ *
+ * 没绑定主机 → 跟随活动会话（老行为）；
+ * 绑定了 → 显示那台主机的会话，**即使活动标签已经切到别的机器**。
+ * 这就是"把文件管理器从当前会话里解绑"的全部实现。
+ */
+const effectiveFileManagerSessionId = computed(() => {
+  if (props.layoutNode.component !== 'fileManager') return props.activeSessionId;
+  return fileManagerHostsStore.sessionIdFor(mainPaneInstanceId.value) || props.activeSessionId;
+});
+
+/** 左右侧栏的文件管理器各自独立绑定，互不影响 */
+const sidebarFileManagerSessionId = computed(() => ({
+  left: fileManagerHostsStore.sessionIdFor('sidebar-left') || props.activeSessionId,
+  right: fileManagerHostsStore.sessionIdFor('sidebar-right') || props.activeSessionId,
+}));
+
+/**
+ * 补建无终端会话。
+ *
+ * 绑定是持久化的（localStorage），但会话不是 —— 刷新后必须先有会话，
+ * pane 才认得出自己该显示哪一台。连接列表可能还没拉回来，所以这里显式
+ * 依赖 `connections.length`，列表一到就自动补。
+ */
+watchEffect(() => {
+  // 依赖连接列表：它决定 ensureSession 能不能把连接解析成配置
+  void connectionsStore.connections.length;
+
+  if (props.layoutNode.component === 'fileManager') {
+    const paneId = mainPaneInstanceId.value;
+    if (fileManagerHostsStore.isBound(paneId)) fileManagerHostsStore.restore(paneId);
+  }
+
+  const side = activeLeftSidebarPane.value === 'fileManager'
+    ? 'sidebar-left'
+    : activeRightSidebarPane.value === 'fileManager' ? 'sidebar-right' : null;
+  if (side && fileManagerHostsStore.isBound(side)) fileManagerHostsStore.restore(side);
+});
+
+// pane 真的从布局里消失了才释放绑定与它专属的无终端会话；
+// 切换标签页不会走到这里（v-show 而已），所以不会把连接关掉。
+onBeforeUnmount(() => {
+  if (props.layoutNode.component === 'fileManager') {
+    void fileManagerHostsStore.release(mainPaneInstanceId.value);
+  }
+});
 
 // 判断侧栏面板是否必须依赖活动会话（仅 editor 和 fileManager 依赖具体会话，其余如连接列表、快捷指令等均为全局独立面板）
 const isSessionDependentSidebarPane = (paneName: PaneName | null): boolean => {
@@ -922,9 +980,9 @@ onBeforeUnmount(() => {
                       <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                         <component
                           :is="componentMap.fileManager"
-                          v-show="sessionId === activeSessionId"
+                          v-show="sessionId === effectiveFileManagerSessionId"
                           :session-id="sessionId"
-                          :instance-id="layoutNode.id || 'main-fm'"
+                          :instance-id="mainPaneInstanceId"
                           :db-connection-id="String(sessionState.connectionId)"
                           :ws-deps="{
                             sendMessage: sessionState.wsManager.sendMessage,
@@ -935,7 +993,7 @@ onBeforeUnmount(() => {
                           class="flex-grow min-h-0 overflow-auto"
                         />
                       </template>
-                      <div v-if="!activeSessionId || sshSessions.length === 0" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
+                      <div v-if="!effectiveFileManagerSessionId || sshSessions.length === 0" class="flex-grow flex justify-center items-center text-center text-text-secondary bg-header text-sm p-4">
                         <div class="flex flex-col items-center justify-center p-8 w-full h-full">
                           <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                           <span class="text-lg font-medium text-text-secondary mb-2">{{ t('layout.noActiveSession.title') }}</span>
@@ -1005,7 +1063,7 @@ onBeforeUnmount(() => {
                     <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                       <component
                         :is="componentMap.fileManager"
-                        v-show="sessionId === activeSessionId"
+                        v-show="sessionId === sidebarFileManagerSessionId.left"
                         :session-id="sessionId"
                         instance-id="sidebar-left"
                         :db-connection-id="String(sessionState.connectionId)"
@@ -1018,7 +1076,7 @@ onBeforeUnmount(() => {
                         class="flex flex-col flex-grow min-h-0 overflow-auto"
                       />
                     </template>
-                    <div v-if="!activeSessionId || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                    <div v-if="!sidebarFileManagerSessionId.left || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>
@@ -1062,7 +1120,7 @@ onBeforeUnmount(() => {
                     <template v-for="[sessionId, sessionState] in sshSessions" :key="sessionId">
                       <component
                         :is="componentMap.fileManager"
-                        v-show="sessionId === activeSessionId"
+                        v-show="sessionId === sidebarFileManagerSessionId.right"
                         :session-id="sessionId"
                         instance-id="sidebar-right"
                         :db-connection-id="String(sessionState.connectionId)"
@@ -1075,7 +1133,7 @@ onBeforeUnmount(() => {
                         class="flex flex-col flex-grow min-h-0 overflow-auto"
                       />
                     </template>
-                    <div v-if="!activeSessionId || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
+                    <div v-if="!sidebarFileManagerSessionId.right || sshSessions.length === 0" class="flex flex-col flex-grow justify-center items-center text-center text-text-secondary p-4">
                       <div class="flex flex-col items-center justify-center p-8">
                         <i class="fas fa-plug text-4xl mb-3 text-text-secondary"></i>
                         <span class="text-lg font-medium mb-2">{{ t('layout.noActiveSession.title') }}</span>

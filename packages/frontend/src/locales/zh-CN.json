@@ -851,6 +851,18 @@
         "newFolder": "输入文件夹名称"
       },
       "chmodHelp": "请输入八进制格式的权限 (例如 755 或 0755)。"
+    },
+    "hostSelector": {
+      "placeholder": "选择主机",
+      "searchPlaceholder": "搜索主机名 / 地址",
+      "empty": "没有可用的 SSH 连接",
+      "tooltip": "当前浏览的主机：{host}（点击切换）",
+      "followActive": "跟随当前会话"
+    },
+    "crossHostTransfer": {
+      "started": "正在把 {count} 个项目复制到 {target}",
+      "failed": "跨主机传输发起失败",
+      "missingConnection": "源或目标连接信息缺失，无法传输"
     }
   },
   "statusMonitor": {

@@ -62,6 +62,13 @@ export interface SessionState {
   isResuming?: boolean; // 标记会话是否正在从挂起状态恢复
   isMarkedForSuspend?: boolean; // +++ 标记会话是否已被用户请求标记为待挂起 +++
   createdAt: number; // 记录会话创建的时间戳，用于排序
+  /**
+   * 无终端会话：为「文件管理器想看某台主机、但那台主机没有开终端」而生。
+   *
+   * 它照样建 wsManager / terminalManager，只是**不激活、不进标签栏、不进 sessionOrder**，
+   * 由创建它的文件管理器 pane 负责关闭。别让它出现在任何"用户可见的会话列表"里。
+   */
+  headless?: boolean;
   disposables?: (() => void)[]; // 用于存储清理函数，例如取消注册消息处理器
   pendingOutput?: string[]; // 用于暂存恢复会话时，在终端实例准备好之前收到的输出
   shouldActivateOnResume?: boolean; // 标记从挂起恢复就绪后是否激活此会话（默认为 true，若为 false 则保持静默后台恢复）

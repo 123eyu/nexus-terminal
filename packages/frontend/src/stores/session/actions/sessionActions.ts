@@ -42,7 +42,14 @@ export const openNewSession = (
         t: ReturnType<typeof useI18n>['t'];
     },
     existingSessionId?: string, // 可选的预定义会话 ID
-    shouldActivate: boolean = true // 是否在创建后立即激活此会话，默认为 true
+    shouldActivate: boolean = true, // 是否在创建后立即激活此会话，默认为 true
+    options?: {
+        /**
+         * 无终端会话：不激活、不进标签栏、不进 sessionOrder。
+         * 目前只有「文件管理器绑定到一台没开终端的主机」会用到（见 fileManagerHosts.store）。
+         */
+        headless?: boolean;
+    }
 ): string | undefined => {
   const { connectionsStore, t } = dependencies;
   let connInfo: ConnectionInfo | undefined;
@@ -90,6 +97,7 @@ export const openNewSession = (
       commandInputContent: ref(''),
       isMarkedForSuspend: false,
       createdAt: Date.now(),
+      headless: options?.headless === true,
       disposables: [],
   };
 
@@ -143,7 +151,9 @@ export const openNewSession = (
   if (shouldActivate) {
     activeSessionId.value = newSessionId;
   }
-  if (!sessionOrder.value.includes(newSessionId)) {
+  // 无终端会话不进 sessionOrder：它是文件管理器的私有通道，
+  // 混进顺序表会被持久化到 localStorage，重启后变成"幽灵标签占位"。
+  if (!options?.headless && !sessionOrder.value.includes(newSessionId)) {
     sessionOrder.value = [...sessionOrder.value, newSessionId];
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('sessionOrder', JSON.stringify(sessionOrder.value));
@@ -198,7 +208,10 @@ export const openNewSession = (
         console.log(`[SessionActions/ssh:connected] 会话存储已更新，新键为 ${backendSID}。`);
 
         // 关键修复：同步将 sessionOrder 中的 matchedKey 原位替换为 backendSID，绝不破坏用户排好的顺序！
-        if (sessionOrder.value.includes(matchedKey)) {
+        // 无终端会话本来就不在 sessionOrder 里，这里同样一个字都别写进去。
+        if (newSession.headless) {
+          // no-op：文件管理器的私有会话不参与标签顺序
+        } else if (sessionOrder.value.includes(matchedKey)) {
           const nextOrder = sessionOrder.value.map(id => id === matchedKey ? backendSID : id);
           sessionOrder.value = nextOrder;
           if (typeof localStorage !== 'undefined') {

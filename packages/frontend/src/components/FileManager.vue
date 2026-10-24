@@ -11,7 +11,7 @@ import { useSettingsStore } from '../stores/settings.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useFileManagerContextMenu, type ClipboardState, type CompressFormat } from '../composables/file-manager/useFileManagerContextMenu';
 import { useFileManagerSelection } from '../composables/file-manager/useFileManagerSelection';
-import { useFileManagerDragAndDrop } from '../composables/file-manager/useFileManagerDragAndDrop';
+import { useFileManagerDragAndDrop, type NexusSftpDragPayload } from '../composables/file-manager/useFileManagerDragAndDrop';
 import { useFileManagerKeyboardNavigation } from '../composables/file-manager/useFileManagerKeyboardNavigation';
 import { useFileManagerVirtualScroll } from '../composables/file-manager/useFileManagerVirtualScroll';
 import { useFileManagerColumnResize } from '../composables/file-manager/useFileManagerColumnResize';
@@ -28,12 +28,14 @@ import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
 import FileManagerHeader from './FileManagerHeader.vue';
 import FileManagerBreadcrumbs from './FileManagerBreadcrumbs.vue';
+import FileManagerHostSelector from './FileManagerHostSelector.vue';
 import DirectoryTree from './DirectoryTree.vue';
 import MobileFileManagerList from './MobileFileManagerList.vue';
 import MobileFileActionSheet from './MobileFileActionSheet.vue';
 import type { FileListItem, TerminalSyncMode } from '../types/sftp.types';
 import type { WebSocketMessage } from '../types/websocket.types';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
+import apiClient from '../utils/apiClient';
 import { getFileIconClass } from '../utils/fileIcons';
 import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFormatters';
 import { useComponentStateStore } from '../stores/componentState.store';
@@ -1219,6 +1221,54 @@ const handleMoveItems = (sourcePaths: string[], destinationDir: string) => {
 };
 
 // --- 拖放逻辑 (使用 Composable) ---
+/**
+ * 别的 pane 把文件拖到我这台机器上。
+ *
+ * 走的是后端既有的「服务器间传输」：后端自己连源机、连目标机，源机文件原样保留
+ * （跨机拖拽只能是复制，不能是移动 —— 移动要删源，断线就不可恢复）。
+ */
+const handleCrossHostItemsDropped = async (payload: NexusSftpDragPayload, targetDirectory: string) => {
+  const targetConnectionId = numericConnectionId.value;
+  const sourceConnectionId = parseInt(String(payload.connectionId), 10);
+
+  if (!targetConnectionId || !sourceConnectionId) {
+    uiNotificationsStore.showError(t('fileManager.crossHostTransfer.missingConnection'));
+    return;
+  }
+  if (sourceConnectionId === targetConnectionId) {
+    // 同机不该走到这里（同机走 rename），留个日志方便排查
+    console.warn('[FileManager] 跨主机拖拽收到同机载荷，已忽略');
+    return;
+  }
+
+  const sourceItems = payload.items.map(item => ({
+    name: item.filename,
+    path: item.fullPath,
+    type: (item.isDirectory ? 'directory' : 'file') as 'directory' | 'file',
+  }));
+
+  console.log(`[FileManager] 跨主机传输 ${sourceConnectionId} -> ${targetConnectionId}: ${sourceItems.length} 项 -> ${targetDirectory}`);
+  uiNotificationsStore.showInfo(t('fileManager.crossHostTransfer.started', {
+    count: sourceItems.length,
+    target: targetDirectory,
+  }));
+
+  try {
+    await apiClient.post('/transfers/send', {
+      sourceConnectionId,
+      connectionIds: [targetConnectionId],
+      sourceItems,
+      remoteTargetPath: targetDirectory,
+      transferMethod: 'auto',
+    });
+    emitWorkspaceEvent('ui:openTransferProgressModal');
+  } catch (error: any) {
+    console.error('[FileManager] 跨主机传输发起失败:', error);
+    const errorMessage = error?.response?.data?.message || error?.message || t('fileManager.crossHostTransfer.failed');
+    uiNotificationsStore.showError(errorMessage);
+  }
+};
+
 const {
   // isDraggingOver, // 不再直接使用容器的悬停状态
   showExternalDropOverlay, // 控制蒙版显示
@@ -1238,6 +1288,7 @@ const {
   handleDropOnRow,
 } = useFileManagerDragAndDrop({
   sessionId: computed(() => props.sessionId),
+  currentConnectionId: computed(() => props.dbConnectionId),
   instanceId: props.instanceId,
   isConnected: computed(() => props.wsDeps.isConnected.value), 
   currentPath: computed(() => currentSftpManager.value?.currentPath.value ?? '/'),
@@ -1247,6 +1298,7 @@ const {
   },
   onFileUpload: startFileUpload,
   onMoveItems: handleMoveItems,
+  onCrossHostItemsDropped: handleCrossHostItemsDropped,
   selectedItems: selectedItems,
   fileList: computed(() => currentSftpManager.value?.fileList.value ?? []),
 });
@@ -1942,20 +1994,35 @@ defineExpose({ focusSearchInput, startPathEdit });
       @keydown-search="handleKeydown"
     />
 
-    <!-- 第二层：全宽 Windows Explorer 风格面包屑交互地址栏 -->
-    <FileManagerBreadcrumbs
-      ref="breadcrumbsRef"
-      class="flex-shrink-0"
-      :current-path="currentSftpManager?.currentPath?.value ?? '/'"
-      :is-connected="Boolean(props.wsDeps.isConnected.value)"
-      :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
-      :is-mobile="props.isMobile"
-      :sftp-manager="currentSftpManager"
-      @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
-      @open-file="handleBreadcrumbOpenFile"
-      @open-favorite-file="handleFavoriteOpenFile"
-      @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
-    />
+    <!-- 第二层：主机 + 面包屑交互地址栏。
+         主机选择器挂在路径最左端，读起来就是 host:/var/log/nginx ——
+         放工具栏的话，那行已经十个控件了，再加一个下拉会把右侧文字标签挤成图标 -->
+    <div class="flex items-stretch flex-shrink-0 min-w-0">
+      <div
+        v-if="!props.isMobile"
+        class="flex items-center pl-1.5 pr-1 bg-header/90 border-b border-border/70 border-r border-border/60"
+      >
+        <FileManagerHostSelector
+          :pane-id="props.instanceId"
+          :current-connection-id="props.dbConnectionId"
+          :is-connected="Boolean(props.wsDeps.isConnected.value)"
+          :is-mobile="props.isMobile"
+        />
+      </div>
+      <FileManagerBreadcrumbs
+        ref="breadcrumbsRef"
+        class="flex-shrink-0 flex-grow min-w-0"
+        :current-path="currentSftpManager?.currentPath?.value ?? '/'"
+        :is-connected="Boolean(props.wsDeps.isConnected.value)"
+        :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
+        :is-mobile="props.isMobile"
+        :sftp-manager="currentSftpManager"
+        @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
+        @open-file="handleBreadcrumbOpenFile"
+        @open-favorite-file="handleFavoriteOpenFile"
+        @refresh="() => currentSftpManager?.loadDirectory(currentSftpManager?.currentPath?.value ?? '/', true)"
+      />
+    </div>
 
     <!-- 第三层：桌面端独立搜索栏（点击顶栏搜索按钮后在下方新建一行，支持当前选中目录即时搜索）
          固定后常驻显示，关闭按钮只清空内容、不收起整条搜索栏 -->

@@ -12,6 +12,14 @@ export interface NexusSftpDragItem {
 // 定义跨窗格/内部 SFTP 拖拽载荷
 export interface NexusSftpDragPayload {
   sessionId: string;
+  /**
+   * 发起拖拽的那个 pane 所属的**数据库连接 ID**。
+   *
+   * 判"同机"只能用这个，不能用 sessionId：同一台主机开了两个终端时是两个 session，
+   * 但它们其实是同一个文件系统，重命名照样成立。反过来，绑定到另一台主机的
+   * 文件管理器 pane 用的是无终端会话，sessionId 不同、connectionId 也不同 —— 那才是跨机。
+   */
+  connectionId: string;
   instanceId: string;
   sourceDirectory: string;
   items: NexusSftpDragItem[];
@@ -23,6 +31,8 @@ export const activeSftpDragPayload = ref<NexusSftpDragPayload | null>(null);
 // 定义 Composable 的输入参数类型
 export interface UseFileManagerDragAndDropOptions {
   sessionId: Ref<string>;
+  /** 当前 pane 所属的数据库连接 ID，用于判断拖过来的是不是同一台机器 */
+  currentConnectionId: Ref<string>;
   instanceId: string;
   isConnected: Ref<boolean>;
   currentPath: Ref<string>;
@@ -33,11 +43,17 @@ export interface UseFileManagerDragAndDropOptions {
   onFileUpload: (file: File, relativePath?: string) => void;
   onItemMove?: (sourceItem: FileListItem, newFullPath: string) => void;
   onMoveItems: (sourcePaths: string[], destinationDir: string, sourceDir?: string) => void;
+  /**
+   * 跨主机落下：不能再走 sftp:rename（两台机器之间没有可重命名的共同文件系统），
+   * 要交给后端的「服务器间传输」去推。
+   */
+  onCrossHostItemsDropped?: (payload: NexusSftpDragPayload, targetDirectory: string) => void;
 }
 
 export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOptions) {
   const {
     sessionId,
+    currentConnectionId,
     instanceId,
     isConnected,
     currentPath,
@@ -45,9 +61,16 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     joinPath,
     onFileUpload,
     onMoveItems,
+    onCrossHostItemsDropped,
     selectedItems,
     fileList,
   } = options;
+
+  /** 拖过来的是另一台机器 —— 只能是复制，绝不能是重命名 */
+  const isCrossHost = (payload: NexusSftpDragPayload | null): boolean => {
+    if (!payload) return false;
+    return String(payload.connectionId) !== String(currentConnectionId.value);
+  };
 
   // --- 拖放状态 Refs ---
   const showExternalDropOverlay = ref(false); // 控制外部桌面文件拖拽上传蒙版的显示
@@ -141,7 +164,9 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       // 属于 SFTP 项目拖拽（跨窗格或本窗格）
       const targetElement = event.target as HTMLElement;
       const targetRow = targetElement.closest('tr, [data-filename]');
-      if (!targetRow && payload.sourceDirectory !== currentPath.value) {
+      const crossHost = isCrossHost(payload);
+      // 跨主机的两个 pane 很可能停在同一个路径（比如都在 /root），不能拿路径相等当作"同处一室"
+      if (!targetRow && (crossHost || payload.sourceDirectory !== currentPath.value)) {
         isContainerDropTarget.value = true;
       }
     }
@@ -166,22 +191,25 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       event.preventDefault();
       const targetElement = event.target as HTMLElement;
       const targetRow = targetElement.closest('tr, [data-filename]');
+      const crossHost = isCrossHost(payload);
+      // 跨主机永远是复制；同机同目录不接收
+      const dropEffect: 'copy' | 'move' | 'none' = crossHost ? 'copy' : 'move';
 
       if (!targetRow) {
         // 鼠标在行之外的列表空白区域
         dragOverTarget.value = null;
-        if (payload.sourceDirectory !== currentPath.value) {
+        if (crossHost || payload.sourceDirectory !== currentPath.value) {
           isContainerDropTarget.value = true;
-          if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+          if (event.dataTransfer) event.dataTransfer.dropEffect = dropEffect;
         } else {
           isContainerDropTarget.value = false;
           if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
         }
       } else if (event.dataTransfer) {
-        // 鼠标在某行上：如果跨窗格拖拽，始终允许放置到当前目录
-        if (payload.sourceDirectory !== currentPath.value) {
+        // 鼠标在某行上：跨主机/跨目录始终允许放置到当前目录
+        if (crossHost || payload.sourceDirectory !== currentPath.value) {
           isContainerDropTarget.value = true;
-          event.dataTransfer.dropEffect = 'move';
+          event.dataTransfer.dropEffect = dropEffect;
         }
       }
 
@@ -276,6 +304,16 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     }
 
     const targetDirectory = currentPath.value;
+
+    // 跨主机：交给后端「服务器间传输」，源机的文件保持原样
+    if (isCrossHost(payload)) {
+      console.log(`[DragDrop] 跨主机复制 ${payload.items.length} 个项目到 ${targetDirectory}`);
+      onCrossHostItemsDropped?.(payload, targetDirectory);
+      draggedItem.value = null;
+      activeSftpDragPayload.value = null;
+      return;
+    }
+
     // 如果源目录就是当前目录，说明是在同一目录内放到了空白处，无需操作
     if (payload.sourceDirectory === targetDirectory) {
       draggedItem.value = null;
@@ -312,6 +350,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
 
     const payload: NexusSftpDragPayload = {
       sessionId: sessionId.value,
+      connectionId: String(currentConnectionId.value),
       instanceId,
       sourceDirectory: currentPath.value,
       items: itemsToDrag.map(it => ({
@@ -360,17 +399,20 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     checkAndTriggerAutoScroll(event);
 
     const isTargetDir = targetItem.filename === '..' || targetItem.attrs.isDirectory;
+    const crossHost = isCrossHost(payload);
+    const crossPane = crossHost || payload.sourceDirectory !== currentPath.value;
+    const dropEffect: 'copy' | 'move' = crossHost ? 'copy' : 'move';
 
     // 跨窗格拖拽场景
-    if (payload.sourceDirectory !== currentPath.value) {
+    if (crossPane) {
       if (isTargetDir) {
         // 跨窗格拖拽到目标文件夹或 ..
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        if (event.dataTransfer) event.dataTransfer.dropEffect = dropEffect;
         dragOverTarget.value = targetItem.filename;
         isContainerDropTarget.value = false;
       } else {
         // 跨窗格拖拽到普通文件行 -> 目标为当前窗格的当前目录！
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        if (event.dataTransfer) event.dataTransfer.dropEffect = dropEffect;
         dragOverTarget.value = null;
         isContainerDropTarget.value = true;
       }
@@ -429,6 +471,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
     }
 
     const isTargetDir = targetItem.filename === '..' || targetItem.attrs.isDirectory;
+    const crossHost = isCrossHost(payload);
 
     // 计算放置的目标目录
     let targetDirectory = '';
@@ -438,7 +481,7 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       targetDirectory = joinPath(currentPath.value, targetItem.filename);
     } else {
       // 目标是普通文件行
-      if (payload.sourceDirectory !== currentPath.value) {
+      if (crossHost || payload.sourceDirectory !== currentPath.value) {
         // 跨窗格拖拽落在普通文件行上，意图为移动到当前窗格的当前目录！
         targetDirectory = currentPath.value;
       } else {
@@ -449,19 +492,25 @@ export function useFileManagerDragAndDrop(options: UseFileManagerDragAndDropOpti
       }
     }
 
-    // 不能移动到源目录相同的子目录（自身）
-    if (payload.sourceDirectory === currentPath.value && payload.items.some(it => it.filename === targetItem.filename)) {
+    // 跨主机没有"自身"的概念（不同机器上的同名文件互不相干）
+    if (!crossHost && payload.sourceDirectory === currentPath.value && payload.items.some(it => it.filename === targetItem.filename)) {
       draggedItem.value = null;
       activeSftpDragPayload.value = null;
+      return;
+    }
+
+    draggedItem.value = null;
+    activeSftpDragPayload.value = null;
+
+    if (crossHost) {
+      console.log(`[DragDrop] 跨主机复制 ${payload.items.length} 个项目到目标目录: ${targetDirectory}`);
+      onCrossHostItemsDropped?.(payload, targetDirectory);
       return;
     }
 
     const sourcePaths = payload.items.map(it => it.fullPath);
     console.log(`[DragDrop] 移动 ${sourcePaths.length} 个项目到目标目录: ${targetDirectory}`);
     onMoveItems(sourcePaths, targetDirectory, payload.sourceDirectory);
-
-    draggedItem.value = null;
-    activeSftpDragPayload.value = null;
   };
 
   return {

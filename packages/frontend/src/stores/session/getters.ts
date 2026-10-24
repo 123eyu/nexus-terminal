@@ -14,17 +14,20 @@ const toTabInfo = (session: SessionState): SessionTabInfoWithStatus => ({
 });
 
 export const sessionTabs = computed(() => {
-  return Array.from(sessions.value.values()).map(session => ({
-    sessionId: session.sessionId,
-    connectionName: session.connectionName,
-    kind: session.kind,
-  }));
+  return Array.from(sessions.value.values())
+    .filter(session => !session.headless)
+    .map(session => ({
+      sessionId: session.sessionId,
+      connectionName: session.connectionName,
+      kind: session.kind,
+    }));
 });
 
 // 包含状态的标签页信息
 export const sessionTabsWithStatus = computed((): SessionTabInfoWithStatus[] => {
   const order = sessionOrder.value || [];
-  const sessionList = Array.from(sessions.value.values());
+  // 无终端会话是文件管理器的私有通道，任何面向用户的会话列表都不该看见它
+  const sessionList = Array.from(sessions.value.values()).filter(session => !session.headless);
 
   if (order.length > 0) {
     // 按照响应式 sessionOrder 排序

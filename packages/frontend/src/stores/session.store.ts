@@ -47,13 +47,15 @@ export const useSessionStore = defineStore('session', () => {
   const openNewSession = (
     connectionId: number | string,
     existingSessionId?: string,
-    shouldActivate: boolean = true
+    shouldActivate: boolean = true,
+    options?: { headless?: boolean }
   ) =>
     sessionActions.openNewSession(
       connectionId,
       { connectionsStore, t },
       existingSessionId,
-      shouldActivate
+      shouldActivate,
+      options
     );
   const activateSession = (sessionId: string, opts?: { silent?: boolean }) => sessionActions.activateSession(sessionId, opts);
   // 关闭标签默认「转入后台挂起」而不是断开 SSH，所以要透传 options 并返回 Promise
