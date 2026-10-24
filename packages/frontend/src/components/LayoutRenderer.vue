@@ -180,19 +180,25 @@ const mainPaneInstanceId = computed(() => props.layoutNode.id || 'main-fm');
 /**
  * 文件管理器 pane 当前该显示哪条会话。
  *
- * 没绑定主机 → 跟随活动会话（老行为）；
+ * 没绑定主机 → 跟随**本布局**的会话（默认行为，也就是"每个布局里的文件管理器先看自己那台"）；
  * 绑定了 → 显示那台主机的会话，**即使活动标签已经切到别的机器**。
- * 这就是"把文件管理器从当前会话里解绑"的全部实现。
+ *
+ * 绑定按「所属会话」隔离：在 A 会话的文件管理器切到 C，打开 B 会话时它仍然是 B 自己。
+ * 早期绑定只按 paneId 存，而各会话的布局树都从同一预设克隆（pane id 相同），
+ * 于是一处切换全站生效 —— 那是 bug，不是特性。
  */
 const effectiveFileManagerSessionId = computed(() => {
   if (props.layoutNode.component !== 'fileManager') return props.activeSessionId;
-  return fileManagerHostsStore.sessionIdFor(mainPaneInstanceId.value) || props.activeSessionId;
+  return (
+    fileManagerHostsStore.sessionIdFor(mainPaneInstanceId.value, props.activeSessionId)
+    || props.activeSessionId
+  );
 });
 
-/** 左右侧栏的文件管理器各自独立绑定，互不影响 */
+/** 左右侧栏的文件管理器各自独立绑定，互不影响（同样按本布局的会话隔离） */
 const sidebarFileManagerSessionId = computed(() => ({
-  left: fileManagerHostsStore.sessionIdFor('sidebar-left') || props.activeSessionId,
-  right: fileManagerHostsStore.sessionIdFor('sidebar-right') || props.activeSessionId,
+  left: fileManagerHostsStore.sessionIdFor('sidebar-left', props.activeSessionId) || props.activeSessionId,
+  right: fileManagerHostsStore.sessionIdFor('sidebar-right', props.activeSessionId) || props.activeSessionId,
 }));
 
 /**
@@ -208,20 +214,29 @@ watchEffect(() => {
 
   if (props.layoutNode.component === 'fileManager') {
     const paneId = mainPaneInstanceId.value;
-    if (fileManagerHostsStore.isBound(paneId)) fileManagerHostsStore.restore(paneId);
+    // 旧格式（全局共享）的绑定由第一个打开该 pane 的布局认领，之后其他布局互不影响
+    fileManagerHostsStore.adoptLegacyBinding(paneId, props.activeSessionId);
+    if (fileManagerHostsStore.isBound(paneId, props.activeSessionId)) {
+      fileManagerHostsStore.restore(paneId, props.activeSessionId);
+    }
   }
 
   const side = activeLeftSidebarPane.value === 'fileManager'
     ? 'sidebar-left'
     : activeRightSidebarPane.value === 'fileManager' ? 'sidebar-right' : null;
-  if (side && fileManagerHostsStore.isBound(side)) fileManagerHostsStore.restore(side);
+  if (side) {
+    fileManagerHostsStore.adoptLegacyBinding(side, props.activeSessionId);
+    if (fileManagerHostsStore.isBound(side, props.activeSessionId)) {
+      fileManagerHostsStore.restore(side, props.activeSessionId);
+    }
+  }
 });
 
 // pane 真的从布局里消失了才释放绑定与它专属的无终端会话；
 // 切换标签页不会走到这里（v-show 而已），所以不会把连接关掉。
 onBeforeUnmount(() => {
   if (props.layoutNode.component === 'fileManager') {
-    void fileManagerHostsStore.release(mainPaneInstanceId.value);
+    void fileManagerHostsStore.release(mainPaneInstanceId.value, props.activeSessionId);
   }
 });
 
@@ -982,6 +997,8 @@ onBeforeUnmount(() => {
                           :is="componentMap.fileManager"
                           v-show="sessionId === effectiveFileManagerSessionId"
                           :session-id="sessionId"
+                          :owner-session-id="props.activeSessionId"
+                          :is-foreground="sessionId === effectiveFileManagerSessionId"
                           :instance-id="mainPaneInstanceId"
                           :db-connection-id="String(sessionState.connectionId)"
                           :ws-deps="{
@@ -1065,6 +1082,8 @@ onBeforeUnmount(() => {
                         :is="componentMap.fileManager"
                         v-show="sessionId === sidebarFileManagerSessionId.left"
                         :session-id="sessionId"
+                        :owner-session-id="props.activeSessionId"
+                        :is-foreground="sessionId === sidebarFileManagerSessionId.left"
                         instance-id="sidebar-left"
                         :db-connection-id="String(sessionState.connectionId)"
                         :ws-deps="{
@@ -1122,6 +1141,8 @@ onBeforeUnmount(() => {
                         :is="componentMap.fileManager"
                         v-show="sessionId === sidebarFileManagerSessionId.right"
                         :session-id="sessionId"
+                        :owner-session-id="props.activeSessionId"
+                        :is-foreground="sessionId === sidebarFileManagerSessionId.right"
                         instance-id="sidebar-right"
                         :db-connection-id="String(sessionState.connectionId)"
                         :ws-deps="{
