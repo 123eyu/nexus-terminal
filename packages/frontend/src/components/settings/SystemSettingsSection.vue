@@ -294,13 +294,16 @@
             </div>
           </div>
 
-          <!-- 同步内容范围选择 (外观样式、工作区布局、命令历史、快捷指令、连接) -->
+          <!-- 同步内容范围：大类 + 可展开的细项 -->
           <div class="pt-2 border-t border-border/40">
             <div class="flex items-center justify-between mb-2">
               <label class="text-xs font-medium text-text-secondary">
                 {{ $t('settings.desktop.syncModulesTitle', '同步内容范围') }}
               </label>
               <div class="flex items-center gap-2 text-xs">
+                <span class="text-text-secondary/70">
+                  {{ desktopSyncStore.selectedModules.length }}/{{ ALL_SYNC_ITEM_KEYS.length }}
+                </span>
                 <button
                   type="button"
                   @click="handleSelectAllModules"
@@ -318,23 +321,70 @@
                 </button>
               </div>
             </div>
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <label
-                v-for="item in SYNC_MODULE_OPTIONS"
-                :key="item.key"
-                class="flex items-center gap-2 p-2 rounded-lg border border-border/60 bg-background/50 hover:bg-header/40 cursor-pointer select-none transition-colors"
-                :class="{ 'border-primary/60 bg-primary/5': desktopSyncStore.selectedModules.includes(item.key) }"
+
+            <div class="space-y-1.5">
+              <div
+                v-for="cat in SYNC_CATEGORIES"
+                :key="cat.key"
+                class="rounded-lg border border-border/60 bg-background/50 overflow-hidden"
               >
-                <input
-                  type="checkbox"
-                  :value="item.key"
-                  :checked="desktopSyncStore.selectedModules.includes(item.key)"
-                  @change="handleToggleModule(item.key)"
-                  class="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer"
-                />
-                <span class="text-xs font-medium text-foreground">{{ item.label }}</span>
-              </label>
+                <!-- 大类行 -->
+                <div class="flex items-center gap-2 px-2.5 py-1.5 hover:bg-header/40 transition-colors">
+                  <input
+                    type="checkbox"
+                    :checked="isCategoryFullySelected(cat.key)"
+                    :indeterminate="isCategoryPartiallySelected(cat.key)"
+                    @change="handleToggleCategory(cat.key)"
+                    class="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer shrink-0"
+                  />
+                  <button
+                    type="button"
+                    @click="toggleCategoryExpanded(cat.key)"
+                    class="flex-1 flex items-center gap-2 text-left cursor-pointer min-w-0"
+                  >
+                    <span class="text-xs font-medium text-foreground shrink-0">{{ cat.label }}</span>
+                    <span class="text-[11px] text-text-secondary/70 truncate">{{ cat.description }}</span>
+                    <span class="ml-auto flex items-center gap-1.5 shrink-0">
+                      <span class="text-[10px] text-text-secondary/70 tabular-nums">
+                        {{ selectedCountInCategory(cat.key) }}/{{ SYNC_CATEGORY_ITEM_KEYS[cat.key].length }}
+                      </span>
+                      <i
+                        class="fas text-[10px] text-text-secondary"
+                        :class="expandedCategories.includes(cat.key) ? 'fa-chevron-up' : 'fa-chevron-down'"
+                      ></i>
+                    </span>
+                  </button>
+                </div>
+
+                <!-- 细项（展开后可见） -->
+                <div
+                  v-if="expandedCategories.includes(cat.key)"
+                  class="px-2.5 pb-2 pt-0.5 grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1 border-t border-border/40"
+                >
+                  <label
+                    v-for="item in cat.items"
+                    :key="item.key"
+                    class="flex items-start gap-2 py-1 cursor-pointer select-none rounded hover:bg-header/30 px-1"
+                    :title="item.description"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="desktopSyncStore.selectedModules.includes(item.key)"
+                      @change="handleToggleModule(item.key)"
+                      class="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5 cursor-pointer mt-0.5 shrink-0"
+                    />
+                    <span class="min-w-0">
+                      <span class="block text-[11px] font-medium text-foreground leading-tight">{{ item.label }}</span>
+                      <span class="block text-[10px] text-text-secondary/70 leading-tight truncate">{{ item.description }}</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
             </div>
+
+            <p v-if="desktopSyncStore.selectedModules.length === 0" class="text-[11px] text-warning mt-1.5">
+              至少需要保留一项同步内容
+            </p>
           </div>
 
           <!-- 对齐策略 (极简单行) -->
@@ -423,7 +473,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useSettingsStore } from '../../stores/settings.store';
-import { useDesktopSyncStore, SYNC_MODULE_OPTIONS, type SyncModuleKey } from '../../stores/desktopSync.store';
+import {
+  useDesktopSyncStore,
+  SYNC_CATEGORIES,
+  SYNC_CATEGORY_ITEM_KEYS,
+  ALL_SYNC_ITEM_KEYS,
+  type SyncCategoryKey,
+  type SyncItemKey
+} from '../../stores/desktopSync.store';
 import { useWorkspaceSyncStore } from '../../stores/workspaceSync.store';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
@@ -598,7 +655,43 @@ const syncApiKey = ref('');
 const showApiKey = ref(false);
 const isSavingSync = ref(false);
 
-const handleToggleModule = (key: SyncModuleKey) => {
+// --- 同步范围（大类 + 细项）---
+const expandedCategories = ref<SyncCategoryKey[]>(['connections']);
+
+const toggleCategoryExpanded = (key: SyncCategoryKey) => {
+  const idx = expandedCategories.value.indexOf(key);
+  if (idx > -1) expandedCategories.value.splice(idx, 1);
+  else expandedCategories.value.push(key);
+};
+
+const selectedCountInCategory = (key: SyncCategoryKey) => {
+  return SYNC_CATEGORY_ITEM_KEYS[key].filter(k => desktopSyncStore.selectedModules.includes(k)).length;
+};
+
+const isCategoryFullySelected = (key: SyncCategoryKey) => {
+  return selectedCountInCategory(key) === SYNC_CATEGORY_ITEM_KEYS[key].length;
+};
+
+const isCategoryPartiallySelected = (key: SyncCategoryKey) => {
+  const count = selectedCountInCategory(key);
+  return count > 0 && count < SYNC_CATEGORY_ITEM_KEYS[key].length;
+};
+
+const handleToggleCategory = (key: SyncCategoryKey) => {
+  const catKeys = SYNC_CATEGORY_ITEM_KEYS[key];
+  const current = [...desktopSyncStore.selectedModules];
+  if (isCategoryFullySelected(key)) {
+    // 整类取消；若取消后一项都不剩则保留（至少一项的防呆）
+    const next = current.filter(k => !catKeys.includes(k));
+    if (next.length === 0) return;
+    desktopSyncStore.setSelectedModules(next);
+  } else {
+    const next = new Set<SyncItemKey>([...current, ...catKeys]);
+    desktopSyncStore.setSelectedModules([...next]);
+  }
+};
+
+const handleToggleModule = (key: SyncItemKey) => {
   const current = [...desktopSyncStore.selectedModules];
   const idx = current.indexOf(key);
   if (idx > -1) {
@@ -613,14 +706,13 @@ const handleToggleModule = (key: SyncModuleKey) => {
 };
 
 const handleSelectAllModules = () => {
-  desktopSyncStore.setSelectedModules(SYNC_MODULE_OPTIONS.map(o => o.key));
+  desktopSyncStore.setSelectedModules([...ALL_SYNC_ITEM_KEYS]);
 };
 
 const handleInvertModules = () => {
-  const allKeys = SYNC_MODULE_OPTIONS.map(o => o.key);
-  const inverted = allKeys.filter(k => !desktopSyncStore.selectedModules.includes(k));
+  const inverted = ALL_SYNC_ITEM_KEYS.filter(k => !desktopSyncStore.selectedModules.includes(k));
   if (inverted.length === 0) {
-    desktopSyncStore.setSelectedModules(allKeys);
+    desktopSyncStore.setSelectedModules([...ALL_SYNC_ITEM_KEYS]);
   } else {
     desktopSyncStore.setSelectedModules(inverted);
   }

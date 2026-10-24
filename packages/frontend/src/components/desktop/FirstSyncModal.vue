@@ -43,8 +43,7 @@
               class="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium text-[11px]"
             >
               {{ item }}
-            </span>
-          </div>
+            </span>          </div>
         </div>
 
         <!-- 账号安全隔离提示 -->
@@ -169,7 +168,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { useDesktopSyncStore, SYNC_MODULE_OPTIONS, type SyncMode } from '../../stores/desktopSync.store';
+import { useDesktopSyncStore, SYNC_CATEGORIES, type SyncMode } from '../../stores/desktopSync.store';
 
 const desktopSyncStore = useDesktopSyncStore();
 const selectedMode = ref<SyncMode>(desktopSyncStore.syncMode || 'bidirectional');
@@ -181,9 +180,15 @@ watch(() => desktopSyncStore.showFirstSyncModal, (isOpen) => {
 });
 
 const activeModuleLabels = computed(() => {
-  return SYNC_MODULE_OPTIONS
-    .filter(opt => desktopSyncStore.selectedModules.includes(opt.key))
-    .map(opt => opt.label);
+  // 按大类汇总，只勾了部分子项时显示「3/5」，避免弹一屏 19 个小标签
+  return SYNC_CATEGORIES
+    .map(cat => {
+      const enabled = cat.items.filter(i => desktopSyncStore.selectedModules.includes(i.key));
+      if (enabled.length === 0) return '';
+      if (enabled.length === cat.items.length) return cat.label;
+      return `${cat.label} ${enabled.length}/${cat.items.length}`;
+    })
+    .filter(Boolean);
 });
 
 const handleClose = () => {

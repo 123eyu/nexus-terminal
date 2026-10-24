@@ -4,6 +4,24 @@ import { syncV2Service } from './sync.v2.service';
 import { getServerSyncApiKey } from './sync.middleware';
 import { syncEventsManager } from './sync.events';
 
+/**
+ * 解析「同步范围」（细项 key 列表）。
+ * 支持三种写法：query 里逗号分隔的字符串、重复 query 参数、body 里的数组。
+ * 不传 / 空 = 全同步（老客户端不回退）。
+ */
+function parseModules(raw: any): string[] | undefined {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) {
+    const list = raw.filter((v): v is string => typeof v === 'string' && v.length > 0);
+    return list.length > 0 ? list : undefined;
+  }
+  if (typeof raw === 'string') {
+    const list = raw.split(',').map(s => s.trim()).filter(Boolean);
+    return list.length > 0 ? list : undefined;
+  }
+  return undefined;
+}
+
 export const syncV2Controller = {
   /**
    * 处理桌面端推上来的变更集
@@ -17,7 +35,7 @@ export const syncV2Controller = {
       }
 
       const pairingSecret = (await getServerSyncApiKey()) || 'nexus-default-key';
-      const result = await syncV2Service.handlePush(payload, pairingSecret);
+      const result = await syncV2Service.handlePush(payload, pairingSecret, parseModules(payload.modules));
 
       res.json({
         success: true,
@@ -39,7 +57,7 @@ export const syncV2Controller = {
       const limit = parseInt((req.query.limit as string) || '200', 10);
 
       const pairingSecret = (await getServerSyncApiKey()) || 'nexus-default-key';
-      const result = await syncV2Service.handlePull(deviceId, cursor, limit, pairingSecret);
+      const result = await syncV2Service.handlePull(deviceId, cursor, limit, pairingSecret, parseModules(req.query.modules));
 
       res.json({
         success: true,
@@ -63,7 +81,7 @@ export const syncV2Controller = {
       const pageSize = parseInt((req.query.page_size as string) || '200', 10);
 
       const pairingSecret = (await getServerSyncApiKey()) || 'nexus-default-key';
-      const result = await syncV2Service.getSnapshot(page, pageSize, pairingSecret);
+      const result = await syncV2Service.getSnapshot(page, pageSize, pairingSecret, parseModules(req.query.modules));
 
       res.json({
         success: true,

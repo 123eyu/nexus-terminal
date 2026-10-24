@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { getDataDir } from '../services/storage-path.service';
-import { syncService } from '../sync/sync.service';
+import { syncService, type SyncModuleKey } from '../sync/sync.service';
 import { syncV2Service } from '../sync/sync.v2.service';
 import { syncThrottleScheduler } from '../sync/sync.scheduler';
 import { syncWsClient } from '../sync/sync.ws-client';
+import { resolveSyncItems } from '../sync/sync.items';
 
 import { settingsRepository } from './settings.repository';
 
@@ -261,7 +262,20 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
 
     const lastSyncTime = settings.syncLastTime || 0;
     const mode = req.body.mode || 'bidirectional';
-    const modules = Array.isArray(req.body.modules) ? req.body.modules : undefined;
+    const modules = Array.isArray(req.body.modules)
+      ? (req.body.modules.filter((m: unknown) => typeof m === 'string') as SyncModuleKey[])
+      : undefined;
+
+    // 同步范围（细项）发生变化时要退游标，否则「关掉的子项」期间的变更永久错过，
+    // 重新勾上也得等下一次全量快照才会有数据。
+    // 只比「新增了哪些子项」——收窄范围不需要重对齐，那样只是白跑一轮。
+    const nextItems = [...resolveSyncItems(modules)];
+    const prevItems = Array.isArray(settings.syncItems) ? (settings.syncItems as string[]) : null;
+    if (prevItems && nextItems.some(item => !prevItems.includes(item))) {
+      await syncV2Service.resetSyncCursors();
+    }
+    settings.syncItems = nextItems;
+
     const result = await syncService.triggerClientSync(vpsUrl, apiKey, lastSyncTime, mode, modules);
 
     // 同步成功，更新本地最后同步时间戳与当前同步模式偏好
@@ -275,13 +289,11 @@ router.post('/sync/trigger', async (req: Request, res: Response): Promise<void> 
     // 以前这里要求「未指定模块」才跑，而前端每次都会带上所选模块（默认全选 5 个），
     // 结果手动「立即同步」永远只走 v1（秒级 LWW），自动同步却走 v2（HLC），
     // 两套判定互相打架，最容易出现「同步完刷新又变回去」。
-    // 现在：只要模块覆盖了全部业务模块，就一并跑 v2。
-    const ALL_SYNC_MODULES = ['appearance', 'layout', 'commandHistory', 'quickCommands', 'connections'];
-    const modulesCoverAll =
-      !modules || modules.length === 0 || ALL_SYNC_MODULES.every(m => (modules as string[]).includes(m));
-    if (mode === 'bidirectional' && modulesCoverAll) {
+    // 现在：双向模式下都跑 v2，并把它收到的同步范围一并带下去，
+    // 让 v1 / v2 两条通路对「哪些子项要同步」保持同一套判断。
+    if (mode === 'bidirectional') {
       try {
-        const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
+        const v2Stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey, modules);
         result.stats.pushed += v2Stats.pushed;
         result.stats.pulled += v2Stats.pulled;
       } catch (v2Err: any) {

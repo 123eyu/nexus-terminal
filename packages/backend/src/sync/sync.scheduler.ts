@@ -149,13 +149,19 @@ export class SyncThrottleScheduler {
 
       const hasLocalChanges = maxLocalSeqRow?.maxSeq && maxLocalSeqRow.maxSeq > pushCursor;
 
-      // 检查当前配置的同步模式
+      // 检查当前配置的同步模式 + 同步范围（细项）
       let currentSyncMode = 'bidirectional';
+      let currentSyncItems: string[] | undefined;
       try {
         const jsonPath = path.join(getDataDir(), 'desktop-settings.json');
         if (fs.existsSync(jsonPath)) {
           const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
           if (parsed.syncMode) currentSyncMode = parsed.syncMode;
+          // 自动同步必须和手动同步用同一套范围，否则「手动只同步布局」之后，
+          // 后台自动同步会把用户关掉的连接/命令历史又全推上去。
+          if (Array.isArray(parsed.syncItems) && parsed.syncItems.length > 0) {
+            currentSyncItems = parsed.syncItems.filter((v: unknown): v is string => typeof v === 'string');
+          }
         }
       } catch {}
 
@@ -171,7 +177,7 @@ export class SyncThrottleScheduler {
 
       // 如果有本地变更，或者是由兜底定时器/手动/WS长连接通知调用的，发起一轮同步
       if (hasLocalChanges || reason === 'manual' || reason === 'scheduled' || reason.startsWith('ws_')) {
-        const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey);
+        const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey, currentSyncItems);
         if (stats.pushed > 0 || stats.pulled > 0) {
           console.log(`[SyncScheduler] 自动同步完成 (触发源: ${reason})，推送: ${stats.pushed}，拉取: ${stats.pulled}`);
           notifyLocalFrontendSyncDone(stats);

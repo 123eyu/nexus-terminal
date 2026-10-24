@@ -4,36 +4,156 @@ import axios from 'axios';
 import { isDesktopApp } from '../utils/platform';
 import { useConnectionsStore } from './connections.store';
 
-export type SyncModuleKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
+export type SyncCategoryKey = 'appearance' | 'layout' | 'commandHistory' | 'quickCommands' | 'connections';
 
-export interface SyncModuleOption {
-  key: SyncModuleKey;
+export type SyncItemKey =
+  | 'connections.hosts'
+  | 'connections.tags'
+  | 'connections.keys'
+  | 'connections.proxies'
+  | 'connections.favoritePaths'
+  | 'quickCommands.items'
+  | 'quickCommands.tags'
+  | 'appearance.terminalTheme'
+  | 'appearance.font'
+  | 'appearance.background'
+  | 'appearance.textEffect'
+  | 'appearance.uiTheme'
+  | 'appearance.highlight'
+  | 'appearance.misc'
+  | 'layout.presets'
+  | 'layout.componentStates'
+  | 'layout.focusSwitcher'
+  | 'layout.uiSettings'
+  | 'commandHistory.history';
+
+/** 兼容旧写法：同步范围里既可能是大类，也可能是子项 */
+export type SyncModuleKey = SyncCategoryKey | SyncItemKey;
+
+export interface SyncItemOption {
+  key: SyncItemKey;
   label: string;
   description: string;
 }
 
-export const SYNC_MODULE_OPTIONS: SyncModuleOption[] = [
-  { key: 'appearance', label: '外观样式', description: '终端背景、配色主题与界面外观设置' },
-  { key: 'layout', label: '工作区布局', description: '面板布局树、侧栏与界面布局设置' },
-  { key: 'commandHistory', label: '命令历史', description: '终端历史执行命令记录' },
-  { key: 'quickCommands', label: '快捷指令', description: '常用快捷指令及其分类标签' },
-  { key: 'connections', label: '连接', description: 'SSH 连接、代理、密钥、分组与常用路径' },
+export interface SyncCategoryOption {
+  key: SyncCategoryKey;
+  label: string;
+  description: string;
+  items: SyncItemOption[];
+}
+
+/**
+ * 同步范围清单。必须与后端 `packages/backend/src/sync/sync.items.ts` 一一对应，
+ * 少一个子项后端就会把「用户关掉的内容」当成未登记项放行。
+ */
+export const SYNC_CATEGORIES: SyncCategoryOption[] = [
+  {
+    key: 'connections',
+    label: '连接与资产',
+    description: 'SSH 连接、分组、密钥、代理与常用路径',
+    items: [
+      { key: 'connections.hosts', label: '连接', description: '主机信息、跳板/代理绑定、端口转发、文件夹配色' },
+      { key: 'connections.tags', label: '分组标签', description: '连接分组及其颜色' },
+      { key: 'connections.keys', label: 'SSH 密钥', description: '密钥与口令（信封加密传输）' },
+      { key: 'connections.proxies', label: '代理服务器', description: 'SOCKS / HTTP 代理配置' },
+      { key: 'connections.favoritePaths', label: '常用路径', description: '文件管理器中收藏的路径' },
+    ],
+  },
+  {
+    key: 'quickCommands',
+    label: '快捷指令',
+    description: '快捷指令条目与分类标签',
+    items: [
+      { key: 'quickCommands.items', label: '快捷指令', description: '指令内容、变量与颜色' },
+      { key: 'quickCommands.tags', label: '指令分类标签', description: '快捷指令的分类标签' },
+    ],
+  },
+  {
+    key: 'appearance',
+    label: '外观样式',
+    description: '终端配色、字体、背景图与界面外观',
+    items: [
+      { key: 'appearance.terminalTheme', label: '终端配色主题', description: '当前配色主题与自定义主题' },
+      { key: 'appearance.font', label: '字体与字号', description: '终端/编辑器字体、字号' },
+      { key: 'appearance.background', label: '背景图', description: '终端与页面背景图、遮罩透明度' },
+      { key: 'appearance.textEffect', label: '文字特效', description: '文字描边与阴影' },
+      { key: 'appearance.uiTheme', label: '自定义 UI 主题', description: '自定义界面配色变量' },
+      { key: 'appearance.highlight', label: '高亮规则', description: '终端输出关键字高亮' },
+      { key: 'appearance.misc', label: '其它外观设置', description: '未归入以上分类的外观项' },
+    ],
+  },
+  {
+    key: 'layout',
+    label: '工作区布局',
+    description: '面板布局、视图状态与界面设置',
+    items: [
+      { key: 'layout.presets', label: '布局预设', description: '布局预设及其「指定连接」绑定' },
+      { key: 'layout.componentStates', label: '面板视图状态', description: '文件管理器平铺/路径同步、快捷指令视图等' },
+      { key: 'layout.focusSwitcher', label: '焦点切换顺序', description: 'Alt+ 快捷键与切换顺序' },
+      { key: 'layout.uiSettings', label: '界面设置', description: '其余界面偏好（主题模式、字号缩进等）' },
+    ],
+  },
+  {
+    key: 'commandHistory',
+    label: '命令历史',
+    description: '终端执行过的命令记录',
+    items: [
+      { key: 'commandHistory.history', label: '历史命令', description: '终端执行过的命令记录' },
+    ],
+  },
 ];
 
-const DEFAULT_MODULES: SyncModuleKey[] = ['appearance', 'layout', 'commandHistory', 'quickCommands', 'connections'];
+/** 所有子项（扁平） */
+export const SYNC_ITEM_OPTIONS: SyncItemOption[] = SYNC_CATEGORIES.flatMap(c => c.items);
+export const ALL_SYNC_ITEM_KEYS: SyncItemKey[] = SYNC_ITEM_OPTIONS.map(o => o.key);
 
-function loadPersistedModules(): SyncModuleKey[] {
+/** 大类 → 子项 key */
+export const SYNC_CATEGORY_ITEM_KEYS: Record<SyncCategoryKey, SyncItemKey[]> = SYNC_CATEGORIES.reduce(
+  (acc, cat) => {
+    acc[cat.key] = cat.items.map(i => i.key);
+    return acc;
+  },
+  {} as Record<SyncCategoryKey, SyncItemKey[]>
+);
+
+const ITEM_KEY_SET = new Set<string>(ALL_SYNC_ITEM_KEYS);
+const CATEGORY_KEY_SET = new Set<string>(SYNC_CATEGORIES.map(c => c.key));
+
+/**
+ * 把任意来源的选择归一化成子项 key 数组。
+ * - 不传 / 空 → 全开
+ * - 旧版本存下来的大类 key（'appearance' …）→ 展开成该大类的全部子项
+ * - 无法识别的值直接忽略；一个都不认 → 全开（宁可多同步，也不要「同步完什么也没发生」）
+ */
+export function normalizeSyncSelection(input?: readonly string[] | null): SyncItemKey[] {
+  if (!input || input.length === 0) return [...ALL_SYNC_ITEM_KEYS];
+  const picked = new Set<SyncItemKey>();
+  for (const raw of input) {
+    if (!raw) continue;
+    if (ITEM_KEY_SET.has(raw)) picked.add(raw as SyncItemKey);
+    else if (CATEGORY_KEY_SET.has(raw)) {
+      for (const item of SYNC_CATEGORY_ITEM_KEYS[raw as SyncCategoryKey]) picked.add(item);
+    }
+  }
+  return picked.size > 0 ? ALL_SYNC_ITEM_KEYS.filter(k => picked.has(k)) : [...ALL_SYNC_ITEM_KEYS];
+}
+
+const STORAGE_KEY_SELECTED_MODULES = 'nexus_sync_selected_modules';
+
+function loadPersistedModules(): SyncItemKey[] {
   try {
-    const raw = localStorage.getItem('nexus_sync_selected_modules');
+    const raw = localStorage.getItem(STORAGE_KEY_SELECTED_MODULES);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return normalizeSyncSelection(parsed.filter((v: unknown): v is string => typeof v === 'string'));
       }
     }
   } catch {}
-  return [...DEFAULT_MODULES];
+  return [...ALL_SYNC_ITEM_KEYS];
 }
+
 
 export type SyncMode = 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
 
@@ -62,7 +182,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   const syncMode = ref<SyncMode>(loadPersistedSyncMode());
   const lastSyncTime = ref<number>(0);
   const autoSyncOnOpen = ref<boolean>(false);
-  const selectedModules = ref<SyncModuleKey[]>(loadPersistedModules());
+  const selectedModules = ref<SyncItemKey[]>(loadPersistedModules());
 
   const setSyncMode = (mode: SyncMode) => {
     syncMode.value = mode;
@@ -72,9 +192,10 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
   };
 
   const setSelectedModules = (modules: SyncModuleKey[]) => {
-    selectedModules.value = [...modules];
+    const normalized = normalizeSyncSelection(modules);
+    selectedModules.value = normalized;
     try {
-      localStorage.setItem('nexus_sync_selected_modules', JSON.stringify(modules));
+      localStorage.setItem(STORAGE_KEY_SELECTED_MODULES, JSON.stringify(normalized));
     } catch {}
   };
 
@@ -262,35 +383,18 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
    */
   const refreshAllStores = async (modules?: SyncModuleKey[]) => {
     // 若未指定模块，默认全量刷新所有模块，确保界面绝对与数据库保持同步
-    const active = modules || DEFAULT_MODULES;
-    console.log('[DesktopSyncStore] 正在无感刷新本地各模块 Store 数据...', active);
+    const items = new Set<SyncItemKey>(normalizeSyncSelection(modules ?? selectedModules.value));
+    const has = (key: SyncItemKey) => items.has(key);
+    const anyAppearance = SYNC_CATEGORY_ITEM_KEYS.appearance.some(k => items.has(k));
+    const anyLayout = SYNC_CATEGORY_ITEM_KEYS.layout.some(k => items.has(k));
+    console.log('[DesktopSyncStore] 正在无感刷新本地各模块 Store 数据...', [...items]);
 
     const refreshTasks: Promise<any>[] = [];
 
-    if (active.includes('connections')) {
+    if (has('connections.hosts')) {
       refreshTasks.push((async () => {
         const connectionsStore = useConnectionsStore();
         await connectionsStore.fetchConnections();
-      })());
-      refreshTasks.push((async () => {
-        const { useTagsStore } = await import('./tags.store');
-        const tagsStore = useTagsStore();
-        await tagsStore.fetchTags();
-      })());
-      refreshTasks.push((async () => {
-        const { useSshKeysStore } = await import('./sshKeys.store');
-        const sshKeysStore = useSshKeysStore();
-        await sshKeysStore.fetchSshKeys();
-      })());
-      refreshTasks.push((async () => {
-        const { useProxiesStore } = await import('./proxies.store');
-        const proxiesStore = useProxiesStore();
-        await proxiesStore.fetchProxies();
-      })());
-      refreshTasks.push((async () => {
-        const { useFavoritePathsStore } = await import('./favoritePaths.store');
-        const favoritePathsStore = useFavoritePathsStore();
-        await favoritePathsStore.fetchFavoritePaths((_k, d) => d);
       })());
       refreshTasks.push((async () => {
         const { useFileColorHighlightsStore } = await import('./fileColorHighlights.store');
@@ -298,13 +402,43 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         await highlightsStore.reloadLoadedHighlights();
       })());
     }
+    if (has('connections.tags')) {
+      refreshTasks.push((async () => {
+        const { useTagsStore } = await import('./tags.store');
+        const tagsStore = useTagsStore();
+        await tagsStore.fetchTags();
+      })());
+    }
+    if (has('connections.keys')) {
+      refreshTasks.push((async () => {
+        const { useSshKeysStore } = await import('./sshKeys.store');
+        const sshKeysStore = useSshKeysStore();
+        await sshKeysStore.fetchSshKeys();
+      })());
+    }
+    if (has('connections.proxies')) {
+      refreshTasks.push((async () => {
+        const { useProxiesStore } = await import('./proxies.store');
+        const proxiesStore = useProxiesStore();
+        await proxiesStore.fetchProxies();
+      })());
+    }
+    if (has('connections.favoritePaths')) {
+      refreshTasks.push((async () => {
+        const { useFavoritePathsStore } = await import('./favoritePaths.store');
+        const favoritePathsStore = useFavoritePathsStore();
+        await favoritePathsStore.fetchFavoritePaths((_k, d) => d);
+      })());
+    }
 
-    if (active.includes('quickCommands')) {
+    if (has('quickCommands.items')) {
       refreshTasks.push((async () => {
         const { useQuickCommandsStore } = await import('./quickCommands.store');
         const qcStore = useQuickCommandsStore();
         await qcStore.fetchQuickCommands(true);
       })());
+    }
+    if (has('quickCommands.tags')) {
       refreshTasks.push((async () => {
         const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
         const qcTagsStore = useQuickCommandTagsStore();
@@ -312,7 +446,7 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       })());
     }
 
-    if (active.includes('appearance')) {
+    if (anyAppearance) {
       refreshTasks.push((async () => {
         const { useAppearanceStore } = await import('./appearance.store');
         const appearanceStore = useAppearanceStore();
@@ -320,39 +454,49 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
       })());
     }
 
-    if (active.includes('layout')) {
-      refreshTasks.push((async () => {
-        const { useSettingsStore } = await import('./settings.store');
-        const settingsStore = useSettingsStore();
-        await settingsStore.loadInitialSettings();
-      })());
+    if (anyLayout) {
+      // 界面设置（主题模式、缩进等）走 settings store 的初始化，
+      // 只勾了「布局预设」时不必重拉整份设置。
+      if (has('layout.uiSettings')) {
+        refreshTasks.push((async () => {
+          const { useSettingsStore } = await import('./settings.store');
+          const settingsStore = useSettingsStore();
+          await settingsStore.loadInitialSettings();
+        })());
+      }
       // 组件实例级状态（文件管理器平铺/路径同步、快捷指令视图与文件夹布局、目录树开关…）
       // 存在 settings 的 componentInstanceStates 里，loadInitialSettings 不会重建它。
       // 以前漏了这一块，所以另一台设备改了视图模式，这边必须整页刷新才看得到。
-      refreshTasks.push((async () => {
-        const { useComponentStateStore } = await import('./componentState.store');
-        const componentStateStore = useComponentStateStore();
-        await componentStateStore.reloadFromServer();
-      })());
+      if (has('layout.componentStates')) {
+        refreshTasks.push((async () => {
+          const { useComponentStateStore } = await import('./componentState.store');
+          const componentStateStore = useComponentStateStore();
+          await componentStateStore.reloadFromServer();
+        })());
+      }
       // 预设（含"指定连接"绑定）是独立的 settings 键，settings store 不会重建它，
       // 不显式重载的话，另一台设备新建的布局要刷新整页才出现。
-      refreshTasks.push((async () => {
-        const { useLayoutStore } = await import('./layout.store');
-        const layoutStore = useLayoutStore();
-        await layoutStore.reloadPresetsFromServer();
-      })());
+      if (has('layout.presets')) {
+        refreshTasks.push((async () => {
+          const { useLayoutStore } = await import('./layout.store');
+          const layoutStore = useLayoutStore();
+          await layoutStore.reloadPresetsFromServer();
+        })());
+      }
       // 焦点切换顺序 + 各项 Alt+ 快捷键存在 settings.focusSwitcherSequence，
       // 数据本身会同步，但这个 store 只在实例化时拉一次自己的接口
       // （/settings/focus-switcher-sequence，不在 settings schema 里），
       // 不重载的话另一台改了顺序，这边按 Alt+Tab 还是老顺序，必须整页刷新。
-      refreshTasks.push((async () => {
-        const { useFocusSwitcherStore } = await import('./focusSwitcher.store');
-        const focusSwitcherStore = useFocusSwitcherStore();
-        await focusSwitcherStore.loadConfigurationFromBackend();
-      })());
+      if (has('layout.focusSwitcher')) {
+        refreshTasks.push((async () => {
+          const { useFocusSwitcherStore } = await import('./focusSwitcher.store');
+          const focusSwitcherStore = useFocusSwitcherStore();
+          await focusSwitcherStore.loadConfigurationFromBackend();
+        })());
+      }
     }
 
-    if (active.includes('commandHistory')) {
+    if (has('commandHistory.history')) {
       refreshTasks.push((async () => {
         const { useCommandHistoryStore } = await import('./commandHistory.store');
         const cmdHistStore = useCommandHistoryStore();

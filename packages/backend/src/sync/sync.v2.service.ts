@@ -7,6 +7,14 @@ import { broadcastFrontendEvent } from '../websocket/frontend-events';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
+import {
+  CATEGORY_ITEMS,
+  isAppearanceKeyEnabled,
+  isSettingsKeyEnabled,
+  isTableEnabled,
+  resolveSyncItems,
+  SyncItemKey
+} from './sync.items';
 
 export interface SyncV2ChangeItem {
   seq?: number;
@@ -24,6 +32,40 @@ const TERMINAL_THEME_COLOR_KEYS = [
   'bright_black', 'bright_red', 'bright_green', 'bright_yellow',
   'bright_blue', 'bright_magenta', 'bright_cyan', 'bright_white'
 ] as const;
+
+/**
+ * settings / appearance_settings 是「一张表装多种内容」的混合表，
+ * 在同步范围里要按 key 再分一次组；其余表整表对应一个子项。
+ */
+const MIXED_TABLE_CATEGORY_ITEMS: Record<string, readonly SyncItemKey[]> = {
+  settings: CATEGORY_ITEMS.layout,
+  appearance_settings: CATEGORY_ITEMS.appearance,
+};
+
+function isMixedTable(table: string): boolean {
+  return table === 'settings' || table === 'appearance_settings';
+}
+
+/** 混合表的删除墓碑里没有 key，只有当整个大类都启用时才敢删（否则可能删掉用户保留了的数据） */
+function isMixedCategoryFullyEnabled(enabled: Set<SyncItemKey>, table: string): boolean {
+  const items = MIXED_TABLE_CATEGORY_ITEMS[table];
+  return !!items && items.every(i => enabled.has(i));
+}
+
+/**
+ * 这条变更是否落在本次同步范围内。
+ * 混合表按 key 细分（settings → 布局预设/组件状态/焦点切换顺序/界面设置），
+ * 普通表整表对应一个子项；未登记的表一律放行（宁可多同步，也不要静默丢数据）。
+ */
+function isChangeInScope(enabled: Set<SyncItemKey>, tbl: string, op: 'U' | 'D', data?: any): boolean {
+  if (isMixedTable(tbl)) {
+    const key = op === 'U' ? String(data?.key || '') : '';
+    if (!key) return isMixedCategoryFullyEnabled(enabled, tbl);
+    return tbl === 'settings' ? isSettingsKeyEnabled(enabled, key) : isAppearanceKeyEnabled(enabled, key);
+  }
+  return isTableEnabled(enabled, tbl);
+}
+
 
 export interface PushRequestPayload {
   device_id: string;
@@ -186,7 +228,8 @@ export const syncV2Service = {
     changes: SyncV2ChangeItem[],
     originDeviceId: string,
     pairingSecret: string,
-    isServerSide: boolean = false
+    isServerSide: boolean = false,
+    modules?: readonly string[] | null
   ): Promise<{ accepted: PushResponseResult['accepted']; stale: PushResponseResult['stale']; rejected: PushResponseResult['rejected'] }> {
     const db = await getDbInstance();
     const releaseLock = await acquireApplyLock();
@@ -194,6 +237,8 @@ export const syncV2Service = {
     const accepted: PushResponseResult['accepted'] = [];
     const stale: PushResponseResult['stale'] = [];
     const rejected: PushResponseResult['rejected'] = [];
+    // 同步范围（细项）。不传 = 全开，兼容老客户端。
+    const enabledItems = resolveSyncItems(modules);
 
     const nowMs = Date.now();
     const fiveMinutesMs = 5 * 60 * 1000;
@@ -213,6 +258,8 @@ export const syncV2Service = {
 
         for (let i = 0; i < changes.length; i++) {
           const item = changes[i];
+          // 不在本次同步范围内：既不落库也不算失败，直接跳过
+          if (!isChangeInScope(enabledItems, item.tbl, item.op, item.data)) continue;
           const savepointName = `sp_sync_${i}`;
           // NOT NULL 外键的子表（如 port_forwards.connection_id）在父记录没到时就落不了库，
           // 本条注定回滚。待解析登记必须活到回滚之后，所以先攒在这里，catch 里再写。
@@ -820,11 +867,11 @@ export const syncV2Service = {
   /**
    * 服务端处理桌面端的 PUSH 请求
    */
-  async handlePush(payload: PushRequestPayload, pairingSecret: string): Promise<PushResponseResult> {
+  async handlePush(payload: PushRequestPayload, pairingSecret: string, modules?: readonly string[] | null): Promise<PushResponseResult> {
     const { device_id, changes } = payload;
     const serverTime = Math.floor(Date.now() / 1000);
 
-    const { accepted, stale, rejected } = await this.applyRemoteChanges(changes, device_id, pairingSecret, true);
+    const { accepted, stale, rejected } = await this.applyRemoteChanges(changes, device_id, pairingSecret, true, modules);
 
     // 统计本次变更入库产生的最大 seq 并通过 SSE 广播通知其他在线客户端
     let maxSeq = 0;
@@ -860,7 +907,7 @@ export const syncV2Service = {
   /**
    * 服务端处理桌面端的 PULL 请求 (基于单调递增 seq 游标)
    */
-  async handlePull(deviceId: string, cursor: number, limit: number = 200, pairingSecret: string): Promise<PullResponseResult> {
+  async handlePull(deviceId: string, cursor: number, limit: number = 200, pairingSecret: string, modules?: readonly string[] | null): Promise<PullResponseResult> {
     const db = await getDbInstance();
     const serverTime = Math.floor(Date.now() / 1000);
 
@@ -885,12 +932,36 @@ export const syncV2Service = {
     const hasMore = changesRows.length > limit;
     const itemsToProcess = hasMore ? changesRows.slice(0, limit) : changesRows;
 
+    const enabledItems = resolveSyncItems(modules);
     let nextCursor = cursor;
     const resultChanges: SyncV2ChangeItem[] = [];
 
     // 去重并提取记录当前完整状态
     for (const row of itemsToProcess) {
       nextCursor = Math.max(nextCursor, row.seq);
+
+      // 同步范围过滤。游标照常前进：这些变更对「这台设备」来说属于有意不同步的内容，
+      // 停在这里只会把后面所有真实变更一起堵死。
+      if (!isTableEnabled(enabledItems, row.tbl)) continue;
+      if (isMixedTable(row.tbl)) {
+        // 混合表要先拿到 key 才能判断；墓碑拿不到 key，只有整个大类全开时才下发
+        if (row.op === 'D') {
+          if (!isMixedCategoryFullyEnabled(enabledItems, row.tbl)) continue;
+        } else {
+          const keyRow = await getDb<{ key: string }>(db, `SELECT key FROM ${row.tbl} WHERE uuid = ?`, [row.row_id]);
+          const key = keyRow?.key || '';
+          // 值已被本地清掉（例如云端删了行但墓碑丢了）：按删除处理，同样受大类全开限制
+          if (!key) {
+            if (!isMixedCategoryFullyEnabled(enabledItems, row.tbl)) continue;
+          } else if (
+            row.tbl === 'settings'
+              ? !isSettingsKeyEnabled(enabledItems, key)
+              : !isAppearanceKeyEnabled(enabledItems, key)
+          ) {
+            continue;
+          }
+        }
+      }
 
       if (row.op === 'D') {
         const tomb = await getDb<{ deleted_hlc: string }>(
@@ -1152,7 +1223,7 @@ export const syncV2Service = {
   /**
    * 桌面端提取本地未确认的变更 (seq > push_cursor) 并打包
    */
-  async extractLocalChangesToPush(pairingSecret: string): Promise<{ changes: SyncV2ChangeItem[]; maxSeq: number }> {
+  async extractLocalChangesToPush(pairingSecret: string, modules?: readonly string[] | null): Promise<{ changes: SyncV2ChangeItem[]; maxSeq: number }> {
     const db = await getDbInstance();
     const state = await getDb<{ push_cursor: number }>(db, `SELECT push_cursor FROM sync_state WHERE id = 1`);
     const pushCursor = state?.push_cursor || 0;
@@ -1165,11 +1236,30 @@ export const syncV2Service = {
       [pushCursor]
     );
 
+    const enabledItems = resolveSyncItems(modules);
     let maxSeq = pushCursor;
     const list: SyncV2ChangeItem[] = [];
 
     for (const r of rows) {
       maxSeq = Math.max(maxSeq, r.seq);
+
+      // 同步范围过滤：maxSeq 仍然覆盖这些被跳过的行，
+      // 否则游标会卡在一条永远不推的变更上，后面的数据全部堵死。
+      if (!isTableEnabled(enabledItems, r.tbl)) continue;
+      if (isMixedTable(r.tbl)) {
+        if (r.op === 'D') {
+          if (!isMixedCategoryFullyEnabled(enabledItems, r.tbl)) continue;
+        } else {
+          const keyRow = await getDb<{ key: string }>(db, `SELECT key FROM ${r.tbl} WHERE uuid = ?`, [r.row_id]);
+          const key = keyRow?.key || '';
+          if (!key) {
+            if (!isMixedCategoryFullyEnabled(enabledItems, r.tbl)) continue;
+          } else if (r.tbl === 'settings' ? !isSettingsKeyEnabled(enabledItems, key) : !isAppearanceKeyEnabled(enabledItems, key)) {
+            continue;
+          }
+        }
+      }
+
       if (r.op === 'D') {
         const tomb = await getDb<{ deleted_hlc: string }>(
           db,
@@ -1423,7 +1513,8 @@ export const syncV2Service = {
   async executeSyncCycle(
     vpsUrl: string,
     deviceToken: string,
-    pairingSecret: string
+    pairingSecret: string,
+    modules?: readonly string[] | null
   ): Promise<{ pushed: number; pulled: number; conflicts: number }> {
     const db = await getDbInstance();
     const state = await getDb<{ device_id: string; pull_cursor: number }>(db, `SELECT device_id, pull_cursor FROM sync_state WHERE id = 1`);
@@ -1431,12 +1522,14 @@ export const syncV2Service = {
     let pullCursor = state?.pull_cursor || 0;
 
     const cleanUrl = vpsUrl.replace(/\/+$/, '');
+    // 同步范围（细项）。空 = 全开，老版本客户端不带这个参数时行为不变。
+    const scopeParam = modules && modules.length > 0 ? `&modules=${encodeURIComponent(modules.join(','))}` : '';
     let totalPushed = 0;
     let totalPulled = 0;
 
     // --- 步骤 1: PUSH 本地变更 (安全切片分批与 413 弹性防护) ---
     try {
-      const { changes: localChanges } = await this.extractLocalChangesToPush(pairingSecret);
+      const { changes: localChanges, maxSeq: scannedMaxSeq } = await this.extractLocalChangesToPush(pairingSecret, modules);
       if (localChanges.length > 0) {
         console.log(`[SyncV2:Client] 检测到 ${localChanges.length} 条本地变更待推送，采用小批次切片防溢出传输...`);
 
@@ -1455,7 +1548,7 @@ export const syncV2Service = {
               const pushRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/push`, {
                 method: 'POST',
                 headers: { 'x-device-token': deviceToken },
-                body: { device_id: deviceId, changes: subChunk }
+                body: { device_id: deviceId, changes: subChunk, modules: modules && modules.length > 0 ? [...modules] : undefined }
               });
 
               if (pushRes && pushRes.success && pushRes.data) {
@@ -1504,6 +1597,13 @@ export const syncV2Service = {
           }
         }
       }
+
+      // 被同步范围过滤掉的变更不会出现在 localChanges 里，但它们占着 seq。
+      // 游标必须推到「本轮扫描到的最大 seq」，否则下轮又从头扫同一批过滤项、永远返回空，
+      // 后面的真实变更就彻底堵死了。放在这里（try 内、循环之后）保证推送失败时不会被推进。
+      if (scannedMaxSeq > 0) {
+        await runDb(db, `UPDATE sync_state SET push_cursor = MAX(push_cursor, ?) WHERE id = 1`, [scannedMaxSeq]);
+      }
     } catch (pushErr: any) {
       console.warn('[SyncV2:Client] PUSH 本地变更流程遇到告警，已安全隔离，继续执行 PULL 拉取:', pushErr.message);
     }
@@ -1513,7 +1613,7 @@ export const syncV2Service = {
     while (hasMore) {
       let pullRes: any;
       try {
-        pullRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/pull?device_id=${deviceId}&cursor=${pullCursor}&limit=200`, {
+        pullRes = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/pull?device_id=${deviceId}&cursor=${pullCursor}&limit=200${scopeParam}`, {
           method: 'GET',
           headers: { 'x-device-token': deviceToken }
         });
@@ -1524,7 +1624,7 @@ export const syncV2Service = {
         // 这台机器永远收不到」）。必须走一次快照重建把状态对齐并换新游标。
         if (msg.includes('410') || msg.includes('CURSOR_EXPIRED') || msg.includes('游标已过期')) {
           console.warn('[SyncV2:Client] 拉取游标已过期 (410)，开始执行全量快照重建...');
-          const rebuilt = await this.rebuildFromSnapshot(cleanUrl, deviceToken, pairingSecret);
+          const rebuilt = await this.rebuildFromSnapshot(cleanUrl, deviceToken, pairingSecret, modules);
           totalPulled += rebuilt.applied;
           pullCursor = rebuilt.cursor;
           break;
@@ -1539,7 +1639,7 @@ export const syncV2Service = {
       const pullData: PullResponseResult = pullRes.data;
       if (pullData.changes.length > 0) {
         console.log(`[SyncV2:Client] 收到云端 ${pullData.changes.length} 条变更，正在应用...`);
-        const applyRes = await this.applyRemoteChanges(pullData.changes, 'vps-server', pairingSecret, false);
+        const applyRes = await this.applyRemoteChanges(pullData.changes, 'vps-server', pairingSecret, false, modules);
         totalPulled += applyRes.accepted.length;
       }
 
@@ -1554,6 +1654,19 @@ export const syncV2Service = {
   },
 
   /**
+   * 把 PUSH / PULL 游标退回原点，强制下一轮重新对齐一次完整增量。
+   *
+   * 用在「同步范围（细项）发生变化」时：增量游标是按 seq 单向前进的，
+   * 某子项关闭期间产生的变更早已被跳过，重新勾上时如果不退游标，
+   * 就得等到下一次全量快照/重建才会有数据回来。
+   */
+  async resetSyncCursors(): Promise<void> {
+    const db = await getDbInstance();
+    await runDb(db, `UPDATE sync_state SET push_cursor = 0, pull_cursor = 0 WHERE id = 1`);
+    console.log('[SyncV2] 同步范围已变化，PUSH/PULL 游标已归零，下一轮将重新对齐完整增量');
+  },
+
+  /**
    * 全量快照重建 (客户端侧)：把云端快照当成一整批「远端变更」应用，
    * 再把 pull_cursor 换成快照游标。用于初次加入集群或拉取游标过期 (410) 后的自愈。
    *
@@ -1562,15 +1675,17 @@ export const syncV2Service = {
   async rebuildFromSnapshot(
     cleanUrl: string,
     deviceToken: string,
-    pairingSecret: string
+    pairingSecret: string,
+    modules?: readonly string[] | null
   ): Promise<{ applied: number; cursor: number }> {
     const db = await getDbInstance();
     let page = 1;
     let applied = 0;
     let cursor = 0;
+    const scopeParam = modules && modules.length > 0 ? `&modules=${encodeURIComponent(modules.join(','))}` : '';
 
     for (;;) {
-      const res = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/snapshot?page=${page}&page_size=200`, {
+      const res = await this.sendHttpJson(`${cleanUrl}/api/sync/v2/snapshot?page=${page}&page_size=200${scopeParam}`, {
         method: 'GET',
         headers: { 'x-device-token': deviceToken }
       });
@@ -1594,7 +1709,7 @@ export const syncV2Service = {
       if (changes.length > 0) {
         // 分片应用，避免单个事务过大
         for (let i = 0; i < changes.length; i += 100) {
-          const r = await this.applyRemoteChanges(changes.slice(i, i + 100), 'vps-snapshot', pairingSecret, false);
+          const r = await this.applyRemoteChanges(changes.slice(i, i + 100), 'vps-snapshot', pairingSecret, false, modules);
           applied += r.accepted.length;
         }
       }
@@ -1668,9 +1783,13 @@ export const syncV2Service = {
   /**
    * 服务端快照接口：用于客户端初次同步或 410 游标过期后的全量状态重建
    */
-  async getSnapshot(page: number = 1, pageSize: number = 200, pairingSecret: string): Promise<SnapshotResponseResult> {
+  async getSnapshot(page: number = 1, pageSize: number = 200, pairingSecret: string, modules?: readonly string[] | null): Promise<SnapshotResponseResult> {
     const db = await getDbInstance();
     const serverTime = Math.floor(Date.now() / 1000);
+    const enabledItems = resolveSyncItems(modules);
+    const want = (tbl: string) => isTableEnabled(enabledItems, tbl);
+    const wantKey = (tbl: string, key: string) =>
+      tbl === 'settings' ? isSettingsKeyEnabled(enabledItems, key) : isAppearanceKeyEnabled(enabledItems, key);
 
     // 1. 获取当前系统最新 seq 作为快照游标
     const maxSeqRow = await getDb<{ maxSeq: number }>(db, `SELECT COALESCE(MAX(seq), 0) as maxSeq FROM sync_changes`);
@@ -1679,9 +1798,15 @@ export const syncV2Service = {
     // 2. 提取有效墓碑列表 (仅第 1 页携带)
     let tombstones: Array<{ tbl: string; row_id: string; deleted_hlc: string; deleted_at: number }> = [];
     if (page === 1) {
-      tombstones = await allDb<{ tbl: string; row_id: string; deleted_hlc: string; deleted_at: number }>(
+      const allTombstones = await allDb<{ tbl: string; row_id: string; deleted_hlc: string; deleted_at: number }>(
         db,
         `SELECT tbl, row_id, deleted_hlc, deleted_at FROM sync_tombstones ORDER BY deleted_at DESC`
+      );
+      // 混合表的墓碑没有 key，只有整个大类全开时才下发
+      tombstones = allTombstones.filter(t =>
+        isMixedTable(t.tbl)
+          ? isMixedCategoryFullyEnabled(enabledItems, t.tbl)
+          : isTableEnabled(enabledItems, t.tbl)
       );
     }
 
@@ -1877,8 +2002,25 @@ export const syncV2Service = {
         updated_hlc: f.updated_hlc || `${Date.now()}-00000-server`
       }));
 
-    const totalCount = tags.length + quickCommandTags.length + sshKeys.length + proxies.length + quickCommands.length + connections.length + settings.length + command_history.length + portForwards.length
-      + appearanceSettings.length + terminalThemes.length + favoritePaths.length;
+    // 11. 按同步范围（细项）裁剪
+    //     混合表 settings / appearance_settings 再按 key 分一次组，
+    //     其余表整表开或整表关。关闭的子项返回空数组，不参与 total_count。
+    const scoped = {
+      tags: want('tags') ? tags : [],
+      quick_command_tags: want('quick_command_tags') ? quickCommandTags : [],
+      ssh_keys: want('ssh_keys') ? sshKeys : [],
+      proxies: want('proxies') ? proxies : [],
+      quick_commands: want('quick_commands') ? quickCommands : [],
+      connections: want('connections') ? connections : [],
+      settings: settings.filter(s => wantKey('settings', s.key)),
+      command_history: want('command_history') ? command_history : [],
+      port_forwards: want('port_forwards') ? portForwards : [],
+      appearance_settings: appearanceSettings.filter(s => wantKey('appearance_settings', s.key)),
+      terminal_themes: want('terminal_themes') ? terminalThemes : [],
+      favorite_paths: want('favorite_paths') ? favoritePaths : []
+    };
+
+    const totalCount = Object.values(scoped).reduce((sum, list) => sum + list.length, 0);
 
     return {
       snapshot_cursor: snapshotCursor,
@@ -1887,18 +2029,18 @@ export const syncV2Service = {
       total_count: totalCount,
       has_more: false,
       entities: {
-        tags,
-        quick_command_tags: quickCommandTags,
-        ssh_keys: sshKeys,
-        proxies,
-        quick_commands: quickCommands,
-        connections,
-        settings,
-        command_history,
-        port_forwards: portForwards,
-        appearance_settings: appearanceSettings,
-        terminal_themes: terminalThemes,
-        favorite_paths: favoritePaths
+        tags: scoped.tags,
+        quick_command_tags: scoped.quick_command_tags,
+        ssh_keys: scoped.ssh_keys,
+        proxies: scoped.proxies,
+        quick_commands: scoped.quick_commands,
+        connections: scoped.connections,
+        settings: scoped.settings,
+        command_history: scoped.command_history,
+        port_forwards: scoped.port_forwards,
+        appearance_settings: scoped.appearance_settings,
+        terminal_themes: scoped.terminal_themes,
+        favorite_paths: scoped.favorite_paths
       },
       tombstones,
       server_time: serverTime
