@@ -132,7 +132,6 @@ watch(() => props.paneId, () => close());
         class="w-1.5 h-1.5 rounded-full flex-shrink-0"
         :class="isConnected ? 'bg-emerald-500' : 'bg-text-secondary/40'"
       ></span>
-      <i class="fas fa-server text-[10px] flex-shrink-0 opacity-80"></i>
       <span class="truncate">{{ label }}</span>
       <i v-if="isPinned" class="fas fa-thumbtack text-[8px] flex-shrink-0 opacity-70"></i>
       <i class="fas fa-caret-down text-[9px] flex-shrink-0 opacity-60"></i>
