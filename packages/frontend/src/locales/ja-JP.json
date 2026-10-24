@@ -150,6 +150,8 @@
       "morePreview": "他 {count} 件の接続は非表示",
       "syntaxTitle": "対応フォーマットとオプション",
       "syntaxFormats": "よく使う書き方",
+      "copySample": "コピー",
+      "copied": "コピーしました",
       "syntaxFlags": "使用できるオプション",
       "syntaxRangeHint": "（IP 範囲は複数ホストに展開されます）",
       "syntaxCommentHint": "# または // で始まる行はスキップされます。パスワードに空白がある場合は引用符で囲んでください",

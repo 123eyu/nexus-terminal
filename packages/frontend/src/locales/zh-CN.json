@@ -286,6 +286,8 @@
       "morePreview": "还有 {count} 个连接未显示",
       "syntaxTitle": "支持的写法与参数",
       "syntaxFormats": "常见写法",
+      "copySample": "复制",
+      "copied": "已复制",
       "syntaxFlags": "可用参数",
       "syntaxRangeHint": "（IP 范围会展开成多台）",
       "syntaxCommentHint": "# 或 // 开头的行会被跳过；密码里有空格时用引号包起来",

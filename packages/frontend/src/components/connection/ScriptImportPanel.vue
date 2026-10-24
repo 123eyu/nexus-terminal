@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   parseScriptText,
   type ParsedScriptConnection,
   type ParsedScriptRow,
 } from '../../utils/scriptConnectionParser';
+// 统一的复制封装：局域网 HTTP（非安全上下文）下 navigator.clipboard 不可用，内部有 textarea 降级
+import { copyToClipboard } from '../../utils/clipboard';
 
 /**
  * 脚本批量导入面板（桌面 / 移动共用）。
@@ -80,6 +82,40 @@ const clearText = () => {
   text.value = '';
 };
 
+/**
+ * 「常见写法」里那几行的纯文本版本。
+ *
+ * ⚠️ 必须和模板里渲染的逐字一致，但不能带上「（IP 范围会展开成多台）」这类提示 ——
+ * 复制出去是要直接粘进脚本框解析的，多一个中文括号整行就废了。
+ */
+const syntaxSampleText = computed(() =>
+  [
+    'user@host:port -p 密码',
+    'ssh -p 2222 -i 密钥名 user@host',
+    'ssh://user:密码@host:22',
+    'host:port:user:密码',
+    '10.0.0.10~12',
+  ].join('\n')
+);
+
+const copied = ref(false);
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copySyntaxSample = async () => {
+  const done = await copyToClipboard(syntaxSampleText.value);
+  if (!done) return;
+  copied.value = true;
+  if (copiedTimer) clearTimeout(copiedTimer);
+  copiedTimer = setTimeout(() => {
+    copied.value = false;
+    copiedTimer = null;
+  }, 1600);
+};
+
+onUnmounted(() => {
+  if (copiedTimer) clearTimeout(copiedTimer);
+});
+
 const syntaxFlags = computed(() => [
   { flag: '-p / -k', desc: t('connections.script.flagCredential', '密码 / SSH 密钥名') },
   { flag: '-name', desc: t('connections.script.flagName', '显示名称') },
@@ -101,7 +137,8 @@ const inputClass = computed(() =>
 </script>
 
 <template>
-  <div class="space-y-2.5">
+  <!-- select-text：外层模态框整块加了 select-none（防误选），这里要把脚本区域解放出来 -->
+  <div class="space-y-2.5 select-text">
     <!-- 工具栏：实时统计 + 示例 / 清空 -->
     <div class="flex items-center justify-between gap-2 flex-wrap">
       <div class="flex items-center gap-1.5 flex-wrap text-[11px]">
@@ -211,8 +248,18 @@ const inputClass = computed(() =>
       </button>
       <div v-if="showSyntax" class="mt-1.5 rounded-xl border border-border/50 bg-muted/20 p-2.5 space-y-2">
         <div class="space-y-1">
-          <div class="text-[11px] font-medium text-foreground">{{ t('connections.script.syntaxFormats', '常见写法') }}</div>
-          <div class="text-[11px] font-mono text-text-secondary leading-relaxed break-all">
+          <div class="flex items-center justify-between gap-2">
+            <div class="text-[11px] font-medium text-foreground">{{ t('connections.script.syntaxFormats', '常见写法') }}</div>
+            <button
+              type="button"
+              class="text-[11px] text-primary hover:text-primary-hover px-1.5 py-0.5 rounded-md hover:bg-primary/10 transition-colors cursor-pointer shrink-0"
+              @click="copySyntaxSample"
+            >
+              <i :class="['fas text-[10px] mr-1', copied ? 'fa-check' : 'fa-copy']"></i>
+              {{ copied ? t('connections.script.copied', '已复制') : t('connections.script.copySample', '复制') }}
+            </button>
+          </div>
+          <div class="text-[11px] font-mono text-text-secondary leading-relaxed break-all select-text">
             user@host:port -p 密码<br />
             ssh -p 2222 -i 密钥名 user@host<br />
             ssh://user:密码@host:22<br />

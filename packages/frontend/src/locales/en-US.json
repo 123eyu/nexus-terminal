@@ -287,6 +287,8 @@
       "morePreview": "{count} more connection(s) not shown",
       "syntaxTitle": "Supported formats & flags",
       "syntaxFormats": "Common formats",
+      "copySample": "Copy",
+      "copied": "Copied",
       "syntaxFlags": "Flags",
       "syntaxRangeHint": "(an IP range expands to multiple hosts)",
       "syntaxCommentHint": "Lines starting with # or // are skipped; quote the password if it contains spaces",
