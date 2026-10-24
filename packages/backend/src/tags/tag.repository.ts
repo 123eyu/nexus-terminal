@@ -12,7 +12,7 @@ export interface TagData {
 }
 
 /**
- * 获取所有标签
+ * 获取所有文件夹
  */
 export const findAllTags = async (): Promise<TagData[]> => {
     try {
@@ -20,13 +20,13 @@ export const findAllTags = async (): Promise<TagData[]> => {
         const rows = await allDb<TagData>(db, `SELECT * FROM tags ORDER BY name ASC`);
         return rows;
     } catch (err: any) {
-        console.error('[仓库] 查询标签列表时出错:', err.message);
-        throw new Error('获取标签列表失败');
+        console.error('[仓库] 查询文件夹列表时出错:', err.message);
+        throw new Error('获取文件夹列表失败');
     }
 };
 
 /**
- * 根据 ID 获取单个标签
+ * 根据 ID 获取单个文件夹
  */
 export const findTagById = async (id: number): Promise<TagData | null> => {
      try {
@@ -34,14 +34,14 @@ export const findTagById = async (id: number): Promise<TagData | null> => {
         const row = await getDbRow<TagData>(db, `SELECT * FROM tags WHERE id = ?`, [id]);
         return row || null;
      } catch (err: any) {
-        console.error(`[仓库] 查询标签 ${id} 时出错:`, err.message);
-        throw new Error('获取标签信息失败');
+        console.error(`[仓库] 查询文件夹 ${id} 时出错:`, err.message);
+        throw new Error('获取文件夹信息失败');
      }
  };
 
 
 /**
- * 创建新标签
+ * 创建新文件夹
  */
 export const createTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
     const now = Math.floor(Date.now() / 1000);
@@ -50,20 +50,20 @@ export const createTag = async (name: string, backgroundColor?: string | null): 
         const db = await getDbInstance();
         const result = await runDb(db, sql, [name, backgroundColor || null, now, now]);
         if (typeof result.lastID !== 'number' || result.lastID <= 0) {
-             throw new Error('创建标签后未能获取有效的 lastID');
+             throw new Error('创建文件夹后未能获取有效的 lastID');
         }
         return result.lastID;
     } catch (err: any) {
-        console.error('[仓库] 创建标签时出错:', err.message);
+        console.error('[仓库] 创建文件夹时出错:', err.message);
         if (err.message.includes('UNIQUE constraint failed')) {
-             throw new Error(`标签名称 "${name}" 已存在。`);
+             throw new Error(`文件夹名称 "${name}" 已存在。`);
         }
-        throw new Error(`创建标签失败: ${err.message}`);
+        throw new Error(`创建文件夹失败: ${err.message}`);
     }
 };
 
 /**
- * 更新标签名称与背景颜色
+ * 更新文件夹名称与背景颜色
  */
 export const updateTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
     const now = Math.floor(Date.now() / 1000);
@@ -86,16 +86,16 @@ export const updateTag = async (id: number, name?: string, backgroundColor?: str
         const result = await runDb(db, sql, params);
         return result.changes > 0;
     } catch (err: any) {
-         console.error(`[仓库] 更新标签 ${id} 时出错:`, err.message);
+         console.error(`[仓库] 更新文件夹 ${id} 时出错:`, err.message);
          if (err.message.includes('UNIQUE constraint failed')) {
-             throw new Error(`标签名称 "${name}" 已存在。`);
+             throw new Error(`文件夹名称 "${name}" 已存在。`);
          }
-         throw new Error(`更新标签失败: ${err.message}`);
+         throw new Error(`更新文件夹失败: ${err.message}`);
     }
 };
 
 /**
- * 删除标签
+ * 删除文件夹
  */
 export const deleteTag = async (id: number): Promise<boolean> => {
     const sql = `DELETE FROM tags WHERE id = ?`;
@@ -104,13 +104,13 @@ export const deleteTag = async (id: number): Promise<boolean> => {
         const result = await runDb(db, sql, [id]);
         return result.changes > 0;
     } catch (err: any) {
-        console.error(`[仓库] 删除标签 ${id} 时出错:`, err.message);
-        throw new Error('删除标签失败');
+        console.error(`[仓库] 删除文件夹 ${id} 时出错:`, err.message);
+        throw new Error('删除文件夹失败');
     }
 };
 
 /**
- * 更新标签与连接的关联关系
+ * 更新文件夹与连接的关联关系
  */
 export const updateTagConnections = async (tagId: number, connectionIds: number[]): Promise<void> => {
     const db = await getDbInstance();
@@ -118,7 +118,7 @@ export const updateTagConnections = async (tagId: number, connectionIds: number[
         // 开始事务
         await runDb(db, 'BEGIN TRANSACTION');
 
-        // 1. 删除该标签旧的连接关联
+        // 1. 删除该文件夹旧的连接关联
         const deleteSql = `DELETE FROM connection_tags WHERE tag_id = ?`;
         await runDb(db, deleteSql, [tagId]);
 
@@ -138,7 +138,7 @@ export const updateTagConnections = async (tagId: number, connectionIds: number[
     } catch (err: any) {
         // 如果发生错误，回滚事务
         await runDb(db, 'ROLLBACK');
-        console.error(`[仓库] 更新标签 ${tagId} 的连接关联时出错:`, err.message);
-        throw new Error(`更新标签连接关联失败: ${err.message}`);
+        console.error(`[仓库] 更新文件夹 ${tagId} 的连接关联时出错:`, err.message);
+        throw new Error(`更新文件夹连接关联失败: ${err.message}`);
     }
 };

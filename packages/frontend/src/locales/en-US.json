@@ -316,7 +316,7 @@
       "port": "Port",
       "user": "User",
       "authMethod": "Auth Method",
-      "tags": "Tags",
+      "tags": "Folder",
       "lastConnected": "Last Connected",
       "actions": "Actions"
     },
@@ -380,7 +380,7 @@
       "keyUpdateNote": "Leave private key and passphrase blank to keep the existing key.",
       "proxy": "Proxy:",
       "noProxy": "No Proxy",
-      "tags": "Tags:",
+      "tags": "Folder",
       "notes": "Notes:",
       "notesPlaceholder": "Enter connection notes...",
       "connectionMode": "Proxy Type:",
@@ -496,7 +496,7 @@
     "status": {
       "never": "Never"
     },
-    "untaggedGroup": "Untagged",
+    "untaggedGroup": "Uncategorized",
     "noUntaggedConnections": "No untagged connections found."
   },
   "proxies": {
@@ -870,26 +870,26 @@
     "copyIpError": "Failed to copy IP"
   },
   "tags": {
-    "title": "Tag Management",
-    "addTag": "Add New Tag",
-    "loading": "Loading tags...",
-    "error": "Failed to load tags: {error}",
-    "noTags": "No tags yet. Click 'Add New Tag' to create one!",
+    "title": "Folder Management",
+    "addTag": "New Folder",
+    "loading": "Loading folders...",
+    "error": "Failed to load folders: {error}",
+    "noTags": "No folders yet. Click 'New Folder' to create one!",
     "prompts": {
-      "confirmDelete": "Are you sure you want to delete the tag \"{name}\"? This cannot be undone."
+      "confirmDelete": "Are you sure you want to delete the folder \"{name}\"? This cannot be undone."
     },
-    "inputPlaceholder": "Type to search or create tags...",
-    "removeSelection": "Remove this tag selection",
-    "deleteTagGlobally": "Delete this tag globally",
-    "createSuccess": "Tag created successfully.",
-    "updateSuccess": "Tag updated successfully.",
-    "deleteSuccess": "Tag \"{name}\" deleted successfully.",
-    "deleteFailed": "Failed to delete tag \"{name}\": {error}",
-    "errorDelete": "Error deleting tag: {error}",
-    "createFailed": "Failed to create tag \"{name}\": {error}",
-    "deleteSuccessWithName": "Tag \"{name}\" deleted",
-    "deleteFailedWithName": "Failed to delete tag \"{name}\": {error}",
-    "deleteConfirm": "Delete tag \"{name}\" everywhere? This cannot be undone."
+    "inputPlaceholder": "Type to search or create folders...",
+    "removeSelection": "Clear selection",
+    "deleteTagGlobally": "Delete this folder",
+    "createSuccess": "Folder created.",
+    "updateSuccess": "Folder updated.",
+    "deleteSuccess": "Folder \"{name}\" deleted.",
+    "deleteFailed": "Failed to delete folder \"{name}\": {error}",
+    "errorDelete": "Error deleting folder: {error}",
+    "createFailed": "Failed to create folder \"{name}\": {error}",
+    "deleteSuccessWithName": "Folder \"{name}\" deleted",
+    "deleteFailedWithName": "Failed to delete folder \"{name}\": {error}",
+    "deleteConfirm": "Delete folder \"{name}\"? This cannot be undone."
   },
   "settings": {
     "testTimeout": {
@@ -931,13 +931,13 @@
       },
       "datasets": {
         "connections": "Connections",
-        "tags": "Tags",
-        "connectionTags": "Connection tag links",
+        "tags": "Folders",
+        "connectionTags": "Connection–folder links",
         "proxies": "Proxies",
         "sshKeys": "SSH keys",
         "quickCommands": "Quick commands",
-        "quickCommandTags": "Quick command tags",
-        "quickCommandTagAssociations": "Quick command tag links",
+        "quickCommandTags": "Quick command folders",
+        "quickCommandTagAssociations": "Quick command–folder links",
         "terminalThemes": "Terminal themes",
         "favoritePaths": "Favorite paths",
         "portForwards": "Port forwarding rules",
@@ -1213,9 +1213,9 @@
         "PROXY_CREATED": "Proxy Created",
         "PROXY_UPDATED": "Proxy Updated",
         "PROXY_DELETED": "Proxy Deleted",
-        "TAG_CREATED": "Tag Created",
-        "TAG_UPDATED": "Tag Updated",
-        "TAG_DELETED": "Tag Deleted",
+        "TAG_CREATED": "Folder Created",
+        "TAG_UPDATED": "Folder Updated",
+        "TAG_DELETED": "Folder Deleted",
         "SETTINGS_UPDATED": "Settings Updated",
         "IP_WHITELIST_UPDATED": "IP Whitelist Updated",
         "IP_BLOCKED": "IP Blocked",
@@ -1280,7 +1280,7 @@
       "fileManagerGroupTitle": "File Management & Code Editor",
       "fileManagerGroupDesc": "Configure editor popup windows, tab sharing across sessions and delete confirmations",
       "viewGroupTitle": "Workspace & Sidebar Views",
-      "viewGroupDesc": "Customize sidebar drawer pinning, connection tags and quick command tag badges",
+      "viewGroupDesc": "Customize sidebar drawer behavior, connection folder filtering and quick command folder display",
       "monitoringGroupTitle": "System Monitoring & Containers",
       "monitoringGroupDesc": "Manage host performance refresh intervals, IP address exposure and Docker monitoring",
       "sidebarPersistentTitle": "Sidebar Behavior",
@@ -1288,20 +1288,20 @@
       "sidebarPersistentDescription": "When enabled, clicking outside the sidebar will not automatically collapse it.",
       "success": {
         "sidebarPersistentSaved": "Sidebar setting saved.",
-        "showConnectionTagsSaved": "Connection tags visibility setting saved.",
-        "showQuickCommandTagsSaved": "Quick command tags visibility setting saved."
+        "showConnectionTagsSaved": "Connection folder grouping setting saved.",
+        "showQuickCommandTagsSaved": "Quick command folder grouping setting saved."
       },
       "error": {
         "sidebarPersistentSaveFailed": "Failed to save sidebar setting.",
-        "showConnectionTagsSaveFailed": "Failed to save connection tags visibility setting.",
-        "showQuickCommandTagsSaveFailed": "Failed to save quick command tags visibility setting."
+        "showConnectionTagsSaveFailed": "Failed to save connection folder grouping setting.",
+        "showQuickCommandTagsSaveFailed": "Failed to save quick command folder grouping setting."
       },
-      "showConnectionTagsTitle": "Show Connection Tags",
-      "showConnectionTagsLabel": "Show tags in connection list",
-      "showConnectionTagsDescription": "Disable to hide tags in the connection list and exclude them from search.",
-      "showQuickCommandTagsTitle": "Show Quick Command Tags",
-      "showQuickCommandTagsLabel": "Show tags in quick command list",
-      "showQuickCommandTagsDescription": "Disable to hide tags in the quick command list and exclude them from search.",
+      "showConnectionTagsTitle": "Group Connections by Folder",
+      "showConnectionTagsLabel": "Group the connection list by folder",
+      "showConnectionTagsDescription": "Disable to show a flat connection list and exclude folder names from search.",
+      "showQuickCommandTagsTitle": "Group Quick Commands by Folder",
+      "showQuickCommandTagsLabel": "Group the quick command list by folder",
+      "showQuickCommandTagsDescription": "Disable to show a flat quick command list and exclude folder names from search.",
       "fileManagerDeleteConfirmTitle": "File Manager Delete Confirmation",
       "fileManagerShowDeleteConfirmationLabel": "Show confirmation dialog when deleting files or folders",
       "fileManagerDeleteConfirmSuccess": "File manager delete confirmation setting saved.",
@@ -1592,9 +1592,9 @@
       "PROXY_CREATED": "Proxy Created",
       "PROXY_UPDATED": "Proxy Updated",
       "PROXY_DELETED": "Proxy Deleted",
-      "TAG_CREATED": "Tag Created",
-      "TAG_UPDATED": "Tag Updated",
-      "TAG_DELETED": "Tag Deleted",
+      "TAG_CREATED": "Folder Created",
+      "TAG_UPDATED": "Folder Updated",
+      "TAG_DELETED": "Folder Deleted",
       "SETTINGS_UPDATED": "Settings Updated",
       "IP_WHITELIST_UPDATED": "IP Whitelist Updated",
       "NOTIFICATION_SETTING_CREATED": "Notification Setting Created",
@@ -1618,12 +1618,12 @@
     }
   },
   "workspaceConnectionList": {
-    "untagged": "Untagged",
+    "untagged": "Uncategorized",
     "searchPlaceholder": "Search name or host...",
     "noResults": "No connections found matching \"{searchTerm}\".",
-    "allConnectionsTaggedSuccess": "All connections tagged successfully.",
-    "noConnectionsToTag": "No connections to tag.",
-    "clickToEditTag": "Click to edit tag name",
+    "allConnectionsTaggedSuccess": "All connections moved into this folder.",
+    "noConnectionsToTag": "No connections to categorize.",
+    "clickToEditTag": "Click to edit folder name",
     "connectAllInGroup": "Connect All in Group (SSH)",
     "connectingAllInGroup": "Connecting all in group '{groupName}'...",
     "noConnectionsInGroup": "No connections to connect in group '{groupName}'.",
@@ -1638,10 +1638,10 @@
       "selectAll": "Select All",
       "deselectAll": "Deselect All",
       "noConnectionsFound": "No connections found.",
-      "saveSuccess": "Tag connections updated successfully.",
-      "saveFailed": "Failed to update tag connections.",
-      "menuItem": "Manage Tag",
-      "cannotManageUntagged": "Cannot manage connections for 'Untagged' group.",
+      "saveSuccess": "Folder assignments updated.",
+      "saveFailed": "Failed to update folder assignments.",
+      "menuItem": "Manage Folder",
+      "cannotManageUntagged": "Cannot manage connections in the 'Uncategorized' group.",
       "invertSelection": "Invert Selection"
     },
     "deleteAllConnectionsInGroupMenu": "Delete All Connections in Group",
@@ -1851,8 +1851,8 @@
       "commandPlaceholder": "e.g.,",
       "errorCommandRequired": "Command cannot be empty",
       "add": "Add",
-      "tags": "Tags:",
-      "tagsPlaceholder": "Select or create tags...",
+      "tags": "Folder",
+      "tagsPlaceholder": "Select or create a folder...",
       "variablesTitle": "Variable Management",
       "noVariables": "No variables yet. Click the button below to add one.",
       "variableNamePlaceholder": "Variable Name",
@@ -1872,12 +1872,12 @@
       "send": "Send",
       "filledCounter": "Filled {filled}/{total}"
     },
-    "untagged": "Untagged",
+    "untagged": "Uncategorized",
     "tags": {
-      "clickToEditTag": "Click to edit tag name",
-      "createSuccess": "Tag created",
-      "noCommandsToAssign": "No commands available to tag",
-      "updateSuccess": "Tag updated"
+      "clickToEditTag": "Click to edit folder name",
+      "createSuccess": "Folder created",
+      "noCommandsToAssign": "No commands to categorize",
+      "updateSuccess": "Folder updated"
     },
     "actions": {
       "sendToAllSessions": "Send to All Sessions",
@@ -1999,9 +1999,9 @@
       "created": "Created"
     },
     "filterTags": {
-      "all": "All Tags"
+      "all": "All Folders"
     },
-    "noConnectionsWithTag": "No connections found with this tag",
+    "noConnectionsWithTag": "No connections in this folder",
     "noConnectionsMatchSearch": "No connections match your search.",
     "searchConnectionsPlaceholder": "Search connections..."
   },
@@ -2182,14 +2182,14 @@
     "loadingConnections": "Loading connections...",
     "noConnections": "No connections available. Please add connections first.",
     "noConnectionsFound": "No connections found matching your search.",
-    "untaggedConnections": "Untagged",
+    "untaggedConnections": "Uncategorized",
     "itemsToSendTitle": "Items to send:",
     "noItemsSelected": "No items selected to send.",
     "sendButton": "Send",
     "cancelButton": "Cancel",
     "errorFetchingData": "Error fetching data for modal.",
     "errorFetchingConnections": "Error fetching connections.",
-    "errorFetchingTags": "Error fetching tags.",
+    "errorFetchingTags": "Error fetching folders.",
     "validationError": "Please select at least one connection and specify a target path.",
     "transferInitiated": "Transfer task created",
     "transferInitiatedGeneric": "Transfer task created successfully.",

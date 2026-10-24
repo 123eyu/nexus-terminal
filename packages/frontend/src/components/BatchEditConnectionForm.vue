@@ -7,7 +7,6 @@ import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useProxiesStore } from '../stores/proxies.store';
 import { useTagsStore, type TagInfo } from '../stores/tags.store';
 import { useSshKeysStore, type SshKeyBasicInfo } from '../stores/sshKeys.store';
-import TagInput from './TagInput.vue';
 import SshKeySelector from './SshKeySelector.vue';
 import AppSelect from './common/AppSelect.vue';
 
@@ -167,28 +166,18 @@ const handleCancel = () => {
   emit('update:visible', false);
 };
 
-const handleCreateTag = async (name: string) => {
-  const newTag = await tagsStore.addTag(name);
-  if (newTag) {
-    uiNotificationsStore.addNotification({ message: t('tags.createSuccess', { name }), type: 'success' });
-  } else {
-    uiNotificationsStore.addNotification({ message: t('tags.createFailed', { name, error: tagsStore.error || 'Unknown error' }), type: 'error' });
-  }
-};
-
-const handleDeleteTag = async (tagId: number) => {
-  const success = await tagsStore.deleteTag(tagId);
-  if (success) {
-    const deletedTagName = availableTags.value.find(tag => tag.id === tagId)?.name || String(tagId);
-    uiNotificationsStore.addNotification({ message: t('tags.deleteSuccessWithName', { name: deletedTagName }), type: 'success' });
-    if (formData.value.tag_ids) {
-      formData.value.tag_ids = formData.value.tag_ids.filter(id => id !== tagId);
-    }
-  } else {
-    const deletedTagName = availableTags.value.find(tag => tag.id === tagId)?.name || String(tagId);
-    uiNotificationsStore.addNotification({ message: t('tags.deleteFailedWithName', { name: deletedTagName, error: tagsStore.error || 'Unknown error' }), type: 'error' });
-  }
-};
+// 所属文件夹：一个连接只属于一个文件夹，所以批量设置也是单选。
+// undefined = 不更改，null = 移出文件夹（未分类），number = 归入该文件夹。
+const batchFolderId = computed<number | null | undefined>({
+  get: () => {
+    const ids = formData.value.tag_ids;
+    if (ids === undefined) return undefined;
+    return ids.length > 0 ? ids[0] : null;
+  },
+  set: (val) => {
+    formData.value.tag_ids = val === undefined ? undefined : (val === null ? [] : [val]);
+  },
+});
 
 onMounted(() => {
   if (props.visible) {
@@ -281,17 +270,14 @@ onMounted(() => {
                 </AppSelect>
               </div>
               <div>
-                <label class="block text-sm font-medium text-text-secondary">{{ t('connections.table.tags', '标签') }}</label>
-                <TagInput
-                  :modelValue="formData.tag_ids || []"
-                  @update:modelValue="val => formData.tag_ids = val"
-                  :availableTags="availableTags"
-                  @create-tag="handleCreateTag"
-                  @delete-tag="handleDeleteTag"
-                  :allow-create="true"
-                  :allow-delete="true"
-                  class="mt-1"
-                />
+                <label class="block text-sm font-medium text-text-secondary">{{ t('connections.table.tags', '文件夹') }}</label>
+                <AppSelect v-model="batchFolderId" class="mt-1 block w-full h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer">
+                  <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
+                  <option :value="null">{{ t('folders.uncategorized', '未分类') }}</option>
+                  <option v-for="folder in availableTags" :key="folder.id" :value="folder.id">
+                    {{ folder.name }}
+                  </option>
+                </AppSelect>
               </div>
               <!-- Notes section moved here, no separate enable checkbox for notes itself -->
               <div class="pt-2">

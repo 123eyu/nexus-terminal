@@ -27,9 +27,9 @@
       "SSH_CONNECT_FAILURE": "SSH 接続失敗",
       "SSH_CONNECT_SUCCESS": "SSH 接続成功",
       "SSH_SHELL_FAILURE": "SSH Shell オープン失敗",
-      "TAG_CREATED": "タグ作成",
-      "TAG_DELETED": "タグ削除",
-      "TAG_UPDATED": "タグ更新",
+      "TAG_CREATED": "フォルダ作成",
+      "TAG_DELETED": "フォルダ削除",
+      "TAG_UPDATED": "フォルダ更新",
       "PASSKEY_REGISTERED": "パスキー登録済み",
       "PASSKEY_AUTH_SUCCESS": "パスキー認証成功",
       "PASSKEY_AUTH_FAILURE": "パスキー認証失敗",
@@ -250,7 +250,7 @@
       "sectionAdvanced": "詳細設定",
       "sectionAuth": "認証情報",
       "sectionBasic": "基本情報",
-      "tags": "タグ:",
+      "tags": "フォルダ",
       "notes": "備考：",
       "notesPlaceholder": "接続に関する備考を入力してください...",
       "connectionMode": "プロキシタイプ:",
@@ -353,7 +353,7 @@
       "lastConnected": "最終接続",
       "name": "名前",
       "port": "ポート",
-      "tags": "タグ",
+      "tags": "フォルダ",
       "user": "ユーザー名"
     },
     "test": {
@@ -366,7 +366,7 @@
       "success": "接続テストに成功しました！",
       "testingInProgress": "テスト実行中..."
     },
-    "untaggedGroup": "タグなし"
+    "untaggedGroup": "未分類"
   },
   "dashboard": {
     "connectionList": "接続リスト",
@@ -384,9 +384,9 @@
       "updated": "更新日時"
     },
     "filterTags": {
-      "all": "すべてのタグ"
+      "all": "すべてのフォルダ"
     },
-    "noConnectionsWithTag": "このタグには接続記録がありません",
+    "noConnectionsWithTag": "このフォルダには接続がありません",
     "noConnectionsMatchSearch": "検索条件に一致する接続はありません。",
     "searchConnectionsPlaceholder": "接続を検索...",
     "viewAllConnections": "すべての接続を表示",
@@ -965,8 +965,8 @@
     "dragResize": "ドラッグしてサイドバーの幅を調整",
     "form": {
       "add": "追加",
-      "tags": "タグ:",
-      "tagsPlaceholder": "タグを選択または作成...",
+      "tags": "フォルダ",
+      "tagsPlaceholder": "フォルダを選択または作成...",
       "command": "コマンド:",
       "commandPlaceholder": "例：",
       "errorCommandRequired": "コマンドは空にできません",
@@ -993,9 +993,9 @@
       "send": "送信",
       "filledCounter": "入力済み {filled}/{total}"
     },
-    "untagged": "タグなし",
+    "untagged": "未分類",
     "tags": {
-      "clickToEditTag": "クリックしてタグ名を編集"
+      "clickToEditTag": "クリックしてフォルダ名を編集"
     },
     "searchPlaceholder": "名前またはコマンドを検索...",
     "sortByName": "名前",
@@ -1182,13 +1182,13 @@
       },
       "datasets": {
         "connections": "接続",
-        "tags": "タグ",
-        "connectionTags": "接続タグの関連",
+        "tags": "フォルダ",
+        "connectionTags": "接続とフォルダの関連",
         "proxies": "プロキシ",
         "sshKeys": "SSH 鍵",
         "quickCommands": "クイックコマンド",
-        "quickCommandTags": "クイックコマンドのタグ",
-        "quickCommandTagAssociations": "クイックコマンドタグの関連",
+        "quickCommandTags": "クイックコマンドのフォルダ",
+        "quickCommandTagAssociations": "クイックコマンドとフォルダの関連",
         "terminalThemes": "ターミナルテーマ",
         "favoritePaths": "お気に入りパス",
         "portForwards": "ポート転送ルール",
@@ -1383,9 +1383,9 @@
         "SSH_CONNECT_FAILURE": "SSH 接続失敗",
         "SSH_CONNECT_SUCCESS": "SSH 接続成功",
         "SSH_SHELL_FAILURE": "SSH Shell オープン失敗",
-        "TAG_CREATED": "タグ作成",
-        "TAG_DELETED": "タグ削除",
-        "TAG_UPDATED": "タグ更新"
+        "TAG_CREATED": "フォルダ作成",
+        "TAG_DELETED": "フォルダ削除",
+        "TAG_UPDATED": "フォルダ更新"
       },
       "form": {
         "addTitle": "通知チャンネルの追加",
@@ -1543,16 +1543,16 @@
     "workspace": {
       "error": {
         "sidebarPersistentSaveFailed": "サイドバーの設定の保存に失敗しました。",
-        "showConnectionTagsSaveFailed": "接続タグ表示設定の保存に失敗しました。",
-        "showQuickCommandTagsSaveFailed": "クイックコマンドタグ表示設定の保存に失敗しました。"
+        "showConnectionTagsSaveFailed": "接続のフォルダグループ化設定の保存に失敗しました。",
+        "showQuickCommandTagsSaveFailed": "クイックコマンドのフォルダグループ化設定の保存に失敗しました。"
       },
       "sidebarPersistentDescription": "有効にすると、サイドバーの外側をクリックしてもサイドバーは自動的に折りたたまれません。",
       "sidebarPersistentLabel": "ポップアップ後にサイドバーを固定 (自動的に折りたたまない)",
       "sidebarPersistentTitle": "サイドバーの動作",
       "success": {
         "sidebarPersistentSaved": "サイドバーの設定を保存しました。",
-        "showConnectionTagsSaved": "接続タグ表示設定を保存しました。",
-        "showQuickCommandTagsSaved": "クイックコマンドタグ表示設定を保存しました。"
+        "showConnectionTagsSaved": "接続のフォルダグループ化設定を保存しました。",
+        "showQuickCommandTagsSaved": "クイックコマンドのフォルダグループ化設定を保存しました。"
       },
       "title": "ワークスペースとターミナル",
       "terminalGroupTitle": "ターミナルとコンソール",
@@ -1560,15 +1560,15 @@
       "fileManagerGroupTitle": "ファイル管理とエディタ",
       "fileManagerGroupDesc": "エディタのポップアップ、セッション間のタブ共有、削除確認などの設定",
       "viewGroupTitle": "ワークスペースとサイドバー表示",
-      "viewGroupDesc": "サイドバーの固定動作、接続タグおよびクイックコマンドタグの表示設定",
+      "viewGroupDesc": "サイドバーの動作、接続リストのフォルダ絞り込み、クイックコマンドのフォルダ表示を設定",
       "monitoringGroupTitle": "システム監視とコンテナ",
       "monitoringGroupDesc": "リソース監視の間隔、IPアドレス表示、Dockerコンテナ監視の設定",
-      "showConnectionTagsTitle": "接続タグを表示",
-      "showConnectionTagsLabel": "接続リストにタグを表示",
-      "showConnectionTagsDescription": "無効にすると、接続リストのタグが非表示になり、検索から除外されます。",
-      "showQuickCommandTagsTitle": "クイックコマンドタグを表示",
-      "showQuickCommandTagsLabel": "クイックコマンドリストにタグを表示",
-      "showQuickCommandTagsDescription": "無効にすると、クイックコマンドリストのタグが非表示になり、検索から除外されます。",
+      "showConnectionTagsTitle": "接続をフォルダでグループ化",
+      "showConnectionTagsLabel": "接続リストをフォルダでグループ化",
+      "showConnectionTagsDescription": "無効にすると接続リストはフラット表示になり、検索からフォルダ名が除外されます。",
+      "showQuickCommandTagsTitle": "クイックコマンドをフォルダでグループ化",
+      "showQuickCommandTagsLabel": "クイックコマンドリストをフォルダでグループ化",
+      "showQuickCommandTagsDescription": "無効にするとクイックコマンドリストはフラット表示になり、検索からフォルダ名が除外されます。",
       "fileManagerDeleteConfirmTitle": "ファイルマネージャー削除確認",
       "fileManagerShowDeleteConfirmationLabel": "ファイルまたはフォルダーを削除する際に確認ダイアログを表示する",
       "fileManagerDeleteConfirmSuccess": "ファイルマネージャーの削除確認設定を保存しました。",
@@ -1880,22 +1880,22 @@
     "noThemesFound": "一致するテーマが見つかりません"
   },
   "tags": {
-    "addTag": "新しいタグを追加",
-    "deleteTagGlobally": "このタグをグローバルに削除",
-    "error": "タグリストのロードに失敗しました: {error}",
-    "inputPlaceholder": "検索またはタグを作成...",
-    "loading": "タグをロード中...",
-    "noTags": "タグがありません。'新しいタグを追加'をクリックして作成してください。",
+    "addTag": "新しいフォルダを作成",
+    "deleteTagGlobally": "このフォルダを削除",
+    "error": "フォルダ一覧の読み込みに失敗しました: {error}",
+    "inputPlaceholder": "検索またはフォルダを作成...",
+    "loading": "フォルダを読み込み中...",
+    "noTags": "フォルダがありません。「新しいフォルダを作成」をクリックして作成してください。",
     "prompts": {
-      "confirmDelete": "\"{name}\"タグを削除しますか？この操作は元に戻せません。"
+      "confirmDelete": "フォルダ「{name}」を削除しますか？この操作は元に戻せません。"
     },
-    "removeSelection": "このタグの選択を解除",
-    "title": "タグ管理",
-    "createSuccess": "タグが正常に作成されました。",
-    "updateSuccess": "タグが正常に更新されました。",
-    "deleteSuccess": "タグ「{name}」が正常に削除されました。",
-    "deleteFailed": "タグ「{name}」の削除に失敗しました: {error}",
-    "errorDelete": "タグの削除中にエラーが発生しました: {error}"
+    "removeSelection": "選択を解除",
+    "title": "フォルダ管理",
+    "createSuccess": "フォルダを作成しました。",
+    "updateSuccess": "フォルダを更新しました。",
+    "deleteSuccess": "フォルダ「{name}」を削除しました。",
+    "deleteFailed": "フォルダ「{name}」の削除に失敗しました: {error}",
+    "errorDelete": "フォルダの削除中にエラーが発生しました: {error}"
   },
   "terminalTabBar": {
     "selectServerTitle": "接続するサーバーを選択",
@@ -1904,10 +1904,10 @@
   "workspaceConnectionList": {
     "noResults": "\"{searchTerm}\"に一致する接続は見つかりませんでした。",
     "searchPlaceholder": "名前またはホストを検索...",
-    "untagged": "タグなし",
-    "allConnectionsTaggedSuccess": "すべての接続にタグが正常に追加されました。",
-    "noConnectionsToTag": "タグ付けする接続はありません。",
-    "clickToEditTag": "クリックしてタグ名を編集",
+    "untagged": "未分類",
+    "allConnectionsTaggedSuccess": "すべての接続をこのフォルダに移動しました。",
+    "noConnectionsToTag": "分類する接続はありません。",
+    "clickToEditTag": "クリックしてフォルダ名を編集",
     "connectAllInGroup": "グループ内のすべてに接続 (SSH)",
     "connectingAllInGroup": "グループ '{groupName}' 内のすべてに接続しています...",
     "noConnectionsInGroup": "グループ '{groupName}' 内に接続可能な項目がありません。",
@@ -1922,10 +1922,10 @@
       "selectAll": "すべて選択",
       "deselectAll": "すべて選択解除",
       "noConnectionsFound": "接続が見つかりません。",
-      "saveSuccess": "タグ接続が正常に更新されました。",
-      "saveFailed": "タグ接続の更新に失敗しました。",
-      "menuItem": "タグを管理",
-      "cannotManageUntagged": "「タグなし」グループの接続は管理できません。",
+      "saveSuccess": "フォルダの割り当てを更新しました。",
+      "saveFailed": "フォルダの割り当ての更新に失敗しました。",
+      "menuItem": "フォルダを管理",
+      "cannotManageUntagged": "「未分類」グループの接続は管理できません。",
       "invertSelection": "選択を反転"
     },
     "deleteAllConnectionsInGroupMenu": "グループ内の全接続を削除",
@@ -2061,14 +2061,14 @@
     "loadingConnections": "接続を読み込み中...",
     "noConnections": "利用可能な接続がありません。まず接続を追加してください。",
     "noConnectionsFound": "検索に一致する接続が見つかりませんでした。",
-    "untaggedConnections": "タグなし",
+    "untaggedConnections": "未分類",
     "itemsToSendTitle": "送信するアイテム:",
     "noItemsSelected": "送信するアイテムが選択されていません。",
     "sendButton": "送信",
     "cancelButton": "キャンセル",
     "errorFetchingData": "モーダルデータの取得中にエラーが発生しました。",
     "errorFetchingConnections": "接続データの取得中にエラーが発生しました。",
-    "errorFetchingTags": "タグデータの取得中にエラーが発生しました。",
+    "errorFetchingTags": "フォルダデータの取得中にエラーが発生しました。",
     "validationError": "少なくとも1つの接続を選択し、ターゲットパスを指定してください。",
     "transferInitiated": "転送タスクが作成されました",
     "transferInitiatedGeneric": "転送タスクが正常に作成されました。",

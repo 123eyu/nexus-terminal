@@ -315,7 +315,7 @@
       "port": "端口",
       "user": "用户名",
       "authMethod": "认证方式",
-      "tags": "标签",
+      "tags": "文件夹",
       "lastConnected": "上次连接",
       "actions": "操作"
     },
@@ -378,7 +378,7 @@
       "keyUpdateNote": "将私钥和密码短语留空以保留现有密钥。",
       "proxy": "代理:",
       "noProxy": "无代理",
-      "tags": "标签:",
+      "tags": "所属文件夹",
       "notes": "备注:",
       "notesPlaceholder": "输入连接备注...",
       "connectionMode": "代理类型:",
@@ -495,7 +495,7 @@
     "status": {
       "never": "从未"
     },
-    "untaggedGroup": "未标记",
+    "untaggedGroup": "未分类",
     "noUntaggedConnections": "没有未标记的连接。"
   },
   "proxies": {
@@ -869,26 +869,26 @@
     "copyIpError": "复制 IP 失败"
   },
   "tags": {
-    "title": "标签管理",
-    "addTag": "添加新标签",
-    "loading": "正在加载标签...",
-    "error": "加载标签列表失败: {error}",
-    "noTags": "还没有任何标签。点击'添加新标签'来创建一个吧！",
+    "title": "文件夹管理",
+    "addTag": "新建文件夹",
+    "loading": "正在加载文件夹...",
+    "error": "加载文件夹列表失败: {error}",
+    "noTags": "还没有任何文件夹。点击“新建文件夹”来创建一个吧！",
     "prompts": {
-      "confirmDelete": "确定要删除标签 \"{name}\" 吗？此操作不可撤销。"
+      "confirmDelete": "确定要删除文件夹 \"{name}\" 吗？此操作不可撤销。"
     },
-    "inputPlaceholder": "输入搜索或创建标签...",
-    "removeSelection": "移除此标签选择",
-    "deleteTagGlobally": "全局删除此标签",
-    "createSuccess": "标签创建成功。",
-    "updateSuccess": "标签更新成功。",
-    "deleteSuccess": "标签 \"{name}\" 删除成功。",
-    "deleteFailed": "标签 \"{name}\" 删除失败: {error}",
-    "errorDelete": "删除标签时出错: {error}",
-    "createFailed": "创建标签「{name}」失败：{error}",
-    "deleteSuccessWithName": "已删除标签「{name}」",
-    "deleteFailedWithName": "删除标签「{name}」失败：{error}",
-    "deleteConfirm": "确定要全局删除标签“{name}”吗？此操作无法撤销。"
+    "inputPlaceholder": "输入搜索或创建文件夹...",
+    "removeSelection": "移除选择",
+    "deleteTagGlobally": "删除此文件夹",
+    "createSuccess": "文件夹创建成功。",
+    "updateSuccess": "文件夹更新成功。",
+    "deleteSuccess": "文件夹 \"{name}\" 删除成功。",
+    "deleteFailed": "文件夹 \"{name}\" 删除失败: {error}",
+    "errorDelete": "删除文件夹时出错: {error}",
+    "createFailed": "创建文件夹「{name}」失败：{error}",
+    "deleteSuccessWithName": "已删除文件夹「{name}」",
+    "deleteFailedWithName": "删除文件夹「{name}」失败：{error}",
+    "deleteConfirm": "确定要删除文件夹“{name}”吗？此操作无法撤销。"
   },
   "settings": {
     "testTimeout": {
@@ -1128,9 +1128,9 @@
         "PROXY_CREATED": "代理已创建",
         "PROXY_UPDATED": "代理已更新",
         "PROXY_DELETED": "代理已删除",
-        "TAG_CREATED": "标签已创建",
-        "TAG_UPDATED": "标签已更新",
-        "TAG_DELETED": "标签已删除",
+        "TAG_CREATED": "文件夹已创建",
+        "TAG_UPDATED": "文件夹已更新",
+        "TAG_DELETED": "文件夹已删除",
         "SETTINGS_UPDATED": "设置已更新",
         "IP_WHITELIST_UPDATED": "IP 白名单已更新",
         "IP_BLOCKED": "IP 已封禁",
@@ -1194,7 +1194,7 @@
       "fileManagerGroupTitle": "文件管理与代码编辑",
       "fileManagerGroupDesc": "配置文件编辑器展现形态、弹窗模式、多会话标签共享与防误触确认",
       "viewGroupTitle": "工作区与侧边栏视图",
-      "viewGroupDesc": "定制侧边栏抽屉交互、连接列表标签过滤与快捷指令标签展示",
+      "viewGroupDesc": "定制侧边栏抽屉交互、连接列表文件夹过滤与快捷指令文件夹展示",
       "monitoringGroupTitle": "系统监控与容器服务",
       "monitoringGroupDesc": "管理服务器实时性能指标刷新频率、IP 暴露以及 Docker 容器状态监控",
       "sidebarPersistentTitle": "侧边栏行为",
@@ -1202,20 +1202,20 @@
       "sidebarPersistentDescription": "开启后，点击侧边栏外部区域不会自动收回侧边栏。",
       "success": {
         "sidebarPersistentSaved": "侧边栏设置已保存。",
-        "showConnectionTagsSaved": "连接标签显示设置已保存。",
-        "showQuickCommandTagsSaved": "快捷指令标签显示设置已保存。"
+        "showConnectionTagsSaved": "连接文件夹分组设置已保存。",
+        "showQuickCommandTagsSaved": "快捷指令文件夹分组设置已保存。"
       },
       "error": {
         "sidebarPersistentSaveFailed": "保存侧边栏设置失败。",
-        "showConnectionTagsSaveFailed": "保存连接标签显示设置失败。",
-        "showQuickCommandTagsSaveFailed": "保存快捷指令标签显示设置失败。"
+        "showConnectionTagsSaveFailed": "保存连接文件夹分组设置失败。",
+        "showQuickCommandTagsSaveFailed": "保存快捷指令文件夹分组设置失败。"
       },
-      "showConnectionTagsTitle": "显示连接标签",
-      "showConnectionTagsLabel": "在连接列表中显示标签",
-      "showConnectionTagsDescription": "关闭后将隐藏连接列表中的标签，并从搜索中排除标签。",
-      "showQuickCommandTagsTitle": "显示快捷指令标签",
-      "showQuickCommandTagsLabel": "在快捷指令列表中显示标签",
-      "showQuickCommandTagsDescription": "关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。",
+      "showConnectionTagsTitle": "按文件夹分组显示连接",
+      "showConnectionTagsLabel": "连接列表按文件夹分组",
+      "showConnectionTagsDescription": "关闭后连接列表改为平铺显示，并从搜索中排除文件夹名。",
+      "showQuickCommandTagsTitle": "按文件夹分组显示快捷指令",
+      "showQuickCommandTagsLabel": "快捷指令列表按文件夹分组",
+      "showQuickCommandTagsDescription": "关闭后快捷指令列表改为平铺显示，并从搜索中排除文件夹名。",
       "fileManagerDeleteConfirmTitle": "文件管理器删除确认",
       "fileManagerShowDeleteConfirmationLabel": "删除文件或文件夹时显示确认提示框",
       "fileManagerDeleteConfirmSuccess": "文件管理器删除确认设置已保存。",
@@ -1378,13 +1378,13 @@
       },
       "datasets": {
         "connections": "连接",
-        "tags": "标签",
-        "connectionTags": "连接标签关联",
+        "tags": "文件夹",
+        "connectionTags": "连接与文件夹关联",
         "proxies": "代理服务器",
         "sshKeys": "SSH 密钥",
         "quickCommands": "快捷指令",
-        "quickCommandTags": "快捷指令标签",
-        "quickCommandTagAssociations": "快捷指令标签关联",
+        "quickCommandTags": "快捷指令文件夹",
+        "quickCommandTagAssociations": "快捷指令与文件夹关联",
         "terminalThemes": "终端主题",
         "favoritePaths": "收藏路径",
         "portForwards": "端口转发规则",
@@ -1591,9 +1591,9 @@
       "PROXY_CREATED": "代理已创建",
       "PROXY_UPDATED": "代理已更新",
       "PROXY_DELETED": "代理已删除",
-      "TAG_CREATED": "标签已创建",
-      "TAG_UPDATED": "标签已更新",
-      "TAG_DELETED": "标签已删除",
+      "TAG_CREATED": "文件夹已创建",
+      "TAG_UPDATED": "文件夹已更新",
+      "TAG_DELETED": "文件夹已删除",
       "SETTINGS_UPDATED": "设置已更新",
       "IP_WHITELIST_UPDATED": "IP 白名单已更新",
       "NOTIFICATION_SETTING_CREATED": "通知设置已创建",
@@ -1617,12 +1617,12 @@
     }
   },
   "workspaceConnectionList": {
-    "untagged": "未标记",
+    "untagged": "未分类",
     "searchPlaceholder": "搜索名称或主机...",
     "noResults": "未找到匹配 \"{searchTerm}\" 的连接。",
-    "allConnectionsTaggedSuccess": "所有连接已成功添加标签。",
-    "noConnectionsToTag": "没有需要添加标签的连接。",
-    "clickToEditTag": "点击编辑标签名称",
+    "allConnectionsTaggedSuccess": "所有连接已归入该文件夹。",
+    "noConnectionsToTag": "没有需要归类的连接。",
+    "clickToEditTag": "点击编辑文件夹名称",
     "connectAllInGroup": "连接组内全部 (SSH)",
     "connectingAllInGroup": "正在连接组 '{groupName}' 中的所有连接...",
     "noConnectionsInGroup": "组 '{groupName}' 中没有可连接的项。",
@@ -1637,10 +1637,10 @@
       "selectAll": "全选",
       "deselectAll": "取消全选",
       "noConnectionsFound": "未找到连接。",
-      "saveSuccess": "标签连接更新成功。",
-      "saveFailed": "更新标签连接失败。",
-      "menuItem": "管理标签",
-      "cannotManageUntagged": "无法管理“未标记”分组的连接。",
+      "saveSuccess": "文件夹归类更新成功。",
+      "saveFailed": "更新文件夹归类失败。",
+      "menuItem": "管理文件夹",
+      "cannotManageUntagged": "无法管理“未分类”分组的连接。",
       "invertSelection": "反选"
     },
     "deleteAllConnectionsInGroupMenu": "删除分组内所有连接",
@@ -1850,8 +1850,8 @@
       "commandPlaceholder": "例如：",
       "errorCommandRequired": "指令内容不能为空",
       "add": "添加",
-      "tags": "标签:",
-      "tagsPlaceholder": "选择或创建标签...",
+      "tags": "所属文件夹",
+      "tagsPlaceholder": "选择或创建文件夹...",
       "variablesTitle": "变量管理",
       "noVariables": "暂无变量。点击下方按钮添加。",
       "variableNamePlaceholder": "变量名",
@@ -1871,12 +1871,12 @@
       "send": "发送",
       "filledCounter": "已填 {filled}/{total}"
     },
-    "untagged": "未标记",
+    "untagged": "未分类",
     "tags": {
-      "clickToEditTag": "点击编辑标签名称",
-      "createSuccess": "标签创建成功",
-      "noCommandsToAssign": "没有可分配标签的指令",
-      "updateSuccess": "标签更新成功"
+      "clickToEditTag": "点击编辑文件夹名称",
+      "createSuccess": "文件夹创建成功",
+      "noCommandsToAssign": "没有可归类的指令",
+      "updateSuccess": "文件夹更新成功"
     },
     "actions": {
       "sendToAllSessions": "发送到全部会话",
@@ -1998,9 +1998,9 @@
       "created": "创建时间"
     },
     "filterTags": {
-      "all": "所有标签"
+      "all": "所有文件夹"
     },
-    "noConnectionsWithTag": "该标签下没有连接记录",
+    "noConnectionsWithTag": "该文件夹下没有连接记录",
     "noConnectionsMatchSearch": "没有连接匹配搜索条件",
     "searchConnectionsPlaceholder": "搜索连接..."
   },
@@ -2149,14 +2149,14 @@
     "loadingConnections": "正在加载连接...",
     "noConnections": "没有可用的连接。请先添加连接。",
     "noConnectionsFound": "未找到匹配搜索的连接。",
-    "untaggedConnections": "未标记",
+    "untaggedConnections": "未分类",
     "itemsToSendTitle": "待发送项目:",
     "noItemsSelected": "未选择待发送的项目。",
     "sendButton": "发送",
     "cancelButton": "取消",
     "errorFetchingData": "获取模态框数据时出错。",
     "errorFetchingConnections": "获取连接数据时出错。",
-    "errorFetchingTags": "获取标签数据时出错。",
+    "errorFetchingTags": "获取文件夹数据时出错。",
     "validationError": "请至少选择一个连接并指定目标路径。",
     "transferInitiated": "传输任务已创建",
     "transferInitiatedGeneric": "传输任务创建成功。",

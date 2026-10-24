@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import MobileTagInput from '../../MobileTagInput.vue';
+import FolderSelect from '../../FolderSelect.vue';
 import MobileSelectDrawer, { type MobileSelectOption } from '../../common/MobileSelectDrawer.vue';
 import type { ProxyInfo } from '../../../stores/proxies.store';
 import type { TagInfo } from '../../../stores/tags.store';
@@ -51,9 +51,13 @@ const handleCreateTagEvent = (tagName: string) => {
   emit('create-tag', tagName);
 };
 
-const handleDeleteTagEvent = (tagId: number) => {
-  emit('delete-tag', tagId);
-};
+// 所属文件夹单选：跟桌面端一致，一个连接只属于一个文件夹（数据层仍是 tag_ids 数组，这里只取第一个）
+const selectedFolderId = computed({
+  get: () => (props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null),
+  set: (val: number | null) => {
+    props.formData.tag_ids = val !== null ? [val] : [];
+  },
+});
 
 const setConnectionMode = (mode: 'proxy' | 'jump') => {
   if (props.advancedConnectionMode === mode) return;
@@ -128,7 +132,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             {{ t('connections.form.sectionAdvanced', '高级选项') }}
           </div>
           <div class="text-[10px] text-text-secondary/70 truncate mt-0.5 max-w-[190px]">
-            代理、跳板机、标签、备注
+            代理、跳板机、文件夹、备注
           </div>
         </div>
       </div>
@@ -301,21 +305,20 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
         </div>
       </div>
 
-      <!-- 2. 分类标签管理 (采用全新的移动端专属药丸交互) -->
+      <!-- 2. 所属文件夹（单选，与桌面端一致） -->
       <div class="space-y-1.5 pt-1">
         <label class="block text-xs font-medium text-text-secondary">
-          {{ t('connections.form.tags', '分类标签') }}
+          <i class="fas fa-folder text-amber-400 mr-1"></i>
+          {{ t('connections.form.tags', '所属文件夹') }}
         </label>
-        <MobileTagInput
-          v-model="props.formData.tag_ids"
-          :available-tags="props.tags"
+        <FolderSelect
+          v-model="selectedFolderId"
+          :folders="props.tags"
           :allow-create="true"
-          :allow-delete="true"
-          @create-tag="handleCreateTagEvent"
-          @delete-tag="handleDeleteTagEvent"
-          :placeholder="t('tags.inputPlaceholder', '添加或点选标签...')"
+          @create-folder="handleCreateTagEvent"
+          :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
         />
-        <div v-if="props.isTagLoading && props.tags.length === 0" class="text-[11px] text-text-secondary">{{ t('tags.loading', '加载标签中...') }}</div>
+        <div v-if="props.isTagLoading && props.tags.length === 0" class="text-[11px] text-text-secondary">{{ t('common.loading', '加载中...') }}</div>
         <div v-if="props.tagStoreError" class="text-[11px] text-red-400">{{ t('tags.error', { error: props.tagStoreError }) }}</div>
       </div>
 

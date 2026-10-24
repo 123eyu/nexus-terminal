@@ -11,7 +11,7 @@ export interface QuickCommandTag {
 }
 
 /**
- * 获取所有快捷指令标签
+ * 获取所有快捷指令文件夹
  */
 export const findAllQuickCommandTags = async (): Promise<QuickCommandTag[]> => {
     try {
@@ -19,13 +19,13 @@ export const findAllQuickCommandTags = async (): Promise<QuickCommandTag[]> => {
         const rows = await allDb<QuickCommandTag>(db, `SELECT * FROM quick_command_tags ORDER BY name ASC`);
         return rows;
     } catch (err: any) {
-        console.error('[仓库] 查询快捷指令标签列表时出错:', err.message);
-        throw new Error('获取快捷指令标签列表失败');
+        console.error('[仓库] 查询快捷指令文件夹列表时出错:', err.message);
+        throw new Error('获取快捷指令文件夹列表失败');
     }
 };
 
 /**
- * 根据 ID 获取单个快捷指令标签
+ * 根据 ID 获取单个快捷指令文件夹
  */
 export const findQuickCommandTagById = async (id: number): Promise<QuickCommandTag | null> => {
      try {
@@ -33,13 +33,13 @@ export const findQuickCommandTagById = async (id: number): Promise<QuickCommandT
         const row = await getDbRow<QuickCommandTag>(db, `SELECT * FROM quick_command_tags WHERE id = ?`, [id]);
         return row || null;
      } catch (err: any) {
-        console.error(`[仓库] 查询快捷指令标签 ${id} 时出错:`, err.message);
-        throw new Error('获取快捷指令标签信息失败');
+        console.error(`[仓库] 查询快捷指令文件夹 ${id} 时出错:`, err.message);
+        throw new Error('获取快捷指令文件夹信息失败');
      }
  };
 
 /**
- * 创建新快捷指令标签
+ * 创建新快捷指令文件夹
  */
 export const createQuickCommandTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
     const now = Math.floor(Date.now() / 1000);
@@ -48,20 +48,20 @@ export const createQuickCommandTag = async (name: string, backgroundColor?: stri
         const db = await getDbInstance();
         const result = await runDb(db, sql, [name, backgroundColor || null, now, now]);
         if (typeof result.lastID !== 'number' || result.lastID <= 0) {
-             throw new Error('创建快捷指令标签后未能获取有效的 lastID');
+             throw new Error('创建快捷指令文件夹后未能获取有效的 lastID');
         }
         return result.lastID;
     } catch (err: any) {
-        console.error('[仓库] 创建快捷指令标签时出错:', err.message);
+        console.error('[仓库] 创建快捷指令文件夹时出错:', err.message);
         if (err.message.includes('UNIQUE constraint failed')) {
-             throw new Error(`快捷指令标签名称 "${name}" 已存在。`);
+             throw new Error(`快捷指令文件夹名称 "${name}" 已存在。`);
         }
-        throw new Error(`创建快捷指令标签失败: ${err.message}`);
+        throw new Error(`创建快捷指令文件夹失败: ${err.message}`);
     }
 };
 
 /**
- * 更新快捷指令标签名称与背景颜色
+ * 更新快捷指令文件夹名称与背景颜色
  */
 export const updateQuickCommandTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
     const now = Math.floor(Date.now() / 1000);
@@ -84,18 +84,18 @@ export const updateQuickCommandTag = async (id: number, name?: string, backgroun
         const result = await runDb(db, sql, params);
         return result.changes > 0;
     } catch (err: any) {
-         console.error(`[仓库] 更新快捷指令标签 ${id} 时出错:`, err.message);
+         console.error(`[仓库] 更新快捷指令文件夹 ${id} 时出错:`, err.message);
          if (err.message.includes('UNIQUE constraint failed')) {
-             throw new Error(`快捷指令标签名称 "${name}" 已存在。`);
+             throw new Error(`快捷指令文件夹名称 "${name}" 已存在。`);
          }
-         throw new Error(`更新快捷指令标签失败: ${err.message}`);
+         throw new Error(`更新快捷指令文件夹失败: ${err.message}`);
     }
 };
 
 /**
- * 删除快捷指令标签 (可选择是否连带删除其中的快捷指令)
- * @param id 标签 ID
- * @param deleteCommands 是否连同该标签内的快捷指令一起删除
+ * 删除快捷指令文件夹 (可选择是否连带删除其中的快捷指令)
+ * @param id 文件夹 ID
+ * @param deleteCommands 是否连同该文件夹内的快捷指令一起删除
  */
 export const deleteQuickCommandTag = async (id: number, deleteCommands: boolean = false): Promise<boolean> => {
     const db = await getDbInstance();
@@ -103,7 +103,7 @@ export const deleteQuickCommandTag = async (id: number, deleteCommands: boolean 
         await runDb(db, 'BEGIN TRANSACTION');
 
         if (deleteCommands) {
-            // 找出属于该标签的所有快捷指令 ID
+            // 找出属于该文件夹的所有快捷指令 ID
             const rows = await allDb<{ quick_command_id: number }>(
                 db,
                 'SELECT DISTINCT quick_command_id FROM quick_command_tag_associations WHERE tag_id = ?',
@@ -112,32 +112,32 @@ export const deleteQuickCommandTag = async (id: number, deleteCommands: boolean 
             const cmdIds = rows.map(r => r.quick_command_id);
             if (cmdIds.length > 0) {
                 const placeholders = cmdIds.map(() => '?').join(',');
-                // 1. 删除这些指令相关的全部标签关联
+                // 1. 删除这些指令相关的全部文件夹关联
                 await runDb(db, `DELETE FROM quick_command_tag_associations WHERE quick_command_id IN (${placeholders})`, cmdIds);
                 // 2. 删除快捷指令本体
                 await runDb(db, `DELETE FROM quick_commands WHERE id IN (${placeholders})`, cmdIds);
             }
         }
 
-        // 无论是否删除指令，均显式清理该标签在关联表中的记录，确保零孤儿记录残留
+        // 无论是否删除指令，均显式清理该文件夹在关联表中的记录，确保零孤儿记录残留
         await runDb(db, 'DELETE FROM quick_command_tag_associations WHERE tag_id = ?', [id]);
 
-        // 删除快捷指令标签本身
+        // 删除快捷指令文件夹本身
         const result = await runDb(db, 'DELETE FROM quick_command_tags WHERE id = ?', [id]);
 
         await runDb(db, 'COMMIT');
         return result.changes > 0;
     } catch (err: any) {
         await runDb(db, 'ROLLBACK');
-        console.error(`[仓库] 删除快捷指令标签 ${id} 时出错:`, err.message);
-        throw new Error('删除快捷指令标签失败');
+        console.error(`[仓库] 删除快捷指令文件夹 ${id} 时出错:`, err.message);
+        throw new Error('删除快捷指令文件夹失败');
     }
 };
 
 /**
- * 设置单个快捷指令的标签关联 (先删除旧关联，再插入新关联)
+ * 设置单个快捷指令的文件夹关联 (先删除旧关联，再插入新关联)
  * @param commandId - 快捷指令 ID
- * @param tagIds - 新的标签 ID 数组 (空数组表示清除所有关联)
+ * @param tagIds - 新的文件夹 ID 数组 (空数组表示清除所有关联)
  * @returns Promise<void>
  */
 export const setCommandTagAssociations = async (commandId: number, tagIds: number[]): Promise<void> => {
@@ -165,16 +165,16 @@ export const setCommandTagAssociations = async (commandId: number, tagIds: numbe
         }
         await runDb(db, 'COMMIT');
     } catch (err: any) {
-        console.error('设置快捷指令标签关联时出错:', err.message);
+        console.error('设置快捷指令文件夹关联时出错:', err.message);
         await runDb(db, 'ROLLBACK'); // 出错时回滚
-        throw new Error('无法设置快捷指令标签关联');
+        throw new Error('无法设置快捷指令文件夹关联');
     }
 };
 
 /**
- * 将单个标签批量添加到多个快捷指令
- * @param commandIds - 需要添加标签的快捷指令 ID 数组
- * @param tagId - 要添加的标签 ID
+ * 将单个文件夹批量添加到多个快捷指令
+ * @param commandIds - 需要添加文件夹的快捷指令 ID 数组
+ * @param tagId - 要添加的文件夹 ID
  * @returns Promise<void>
  */
 export const addTagToCommands = async (commandIds: number[], tagId: number): Promise<void> => {
@@ -198,25 +198,25 @@ export const addTagToCommands = async (commandIds: number[], tagId: number): Pro
         }
         await stmt.finalize(); // 完成批量插入
         await runDb(db, 'COMMIT');
-        console.log(`[Repo] addTagToCommands: 成功将标签 ${tagId} 关联到 ${commandIds.length} 个指令。`);
+        console.log(`[Repo] addTagToCommands: 成功将文件夹 ${tagId} 关联到 ${commandIds.length} 个指令。`);
     } catch (err: any) {
-        console.error(`[Repo] addTagToCommands: 批量关联标签 ${tagId} 到指令时出错:`, err.message);
+        console.error(`[Repo] addTagToCommands: 批量关联文件夹 ${tagId} 到指令时出错:`, err.message);
         await runDb(db, 'ROLLBACK');
-        throw new Error('无法批量关联标签到快捷指令');
+        throw new Error('无法批量关联文件夹到快捷指令');
     }
 };
 
 /**
- * 更新指定快捷指令的标签关联 (使用事务)
+ * 更新指定快捷指令的文件夹关联 (使用事务)
  * @param commandId 快捷指令 ID
- * @param tagIds 新的快捷指令标签 ID 数组 (空数组表示清除所有标签)
+ * @param tagIds 新的快捷指令文件夹 ID 数组 (空数组表示清除所有文件夹)
  */
 // Removed the duplicate function declaration that returned Promise<boolean>
 
 /**
- * 查找指定快捷指令的所有标签
+ * 查找指定快捷指令的所有文件夹
  * @param commandId 快捷指令 ID
- * @returns 标签对象数组 { id: number, name: string }[]
+ * @returns 文件夹对象数组 { id: number, name: string }[]
  */
 export const findTagsByCommandId = async (commandId: number): Promise<QuickCommandTag[]> => {
     const sql = `
@@ -230,7 +230,7 @@ export const findTagsByCommandId = async (commandId: number): Promise<QuickComma
         const rows = await allDb<QuickCommandTag>(db, sql, [commandId]);
         return rows;
     } catch (err: any) {
-        console.error(`Repository: 查询快捷指令 ${commandId} 的标签时出错:`, err.message);
-        throw new Error('获取快捷指令标签失败');
+        console.error(`Repository: 查询快捷指令 ${commandId} 的文件夹时出错:`, err.message);
+        throw new Error('获取快捷指令文件夹失败');
     }
 };

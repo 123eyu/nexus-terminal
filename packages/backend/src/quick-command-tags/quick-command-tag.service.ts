@@ -2,28 +2,28 @@ import * as QuickCommandTagRepository from '../quick-command-tags/quick-command-
 import { QuickCommandTag } from '../quick-command-tags/quick-command-tag.repository';
 
 /**
- * 获取所有快捷指令标签
+ * 获取所有快捷指令文件夹
  */
 export const getAllQuickCommandTags = async (): Promise<QuickCommandTag[]> => {
     return QuickCommandTagRepository.findAllQuickCommandTags();
 };
 
 /**
- * 根据 ID 获取单个快捷指令标签
+ * 根据 ID 获取单个快捷指令文件夹
  */
 export const getQuickCommandTagById = async (id: number): Promise<QuickCommandTag | null> => {
     return QuickCommandTagRepository.findQuickCommandTagById(id);
 };
 
 /**
- * 添加新的快捷指令标签
- * @param name 标签名称
+ * 添加新的快捷指令文件夹
+ * @param name 文件夹名称
  * @param backgroundColor 背景颜色 (可选)
- * @returns 返回新标签的 ID
+ * @returns 返回新文件夹的 ID
  */
 export const addQuickCommandTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
     if (!name || name.trim().length === 0) {
-        throw new Error('标签名称不能为空');
+        throw new Error('文件夹名称不能为空');
     }
     const trimmedName = name.trim();
     // 可以在这里添加更多验证逻辑，例如检查名称格式等
@@ -32,15 +32,15 @@ export const addQuickCommandTag = async (name: string, backgroundColor?: string 
         return newId;
     } catch (error: any) {
         // Service 层可以重新抛出或处理 Repository 抛出的错误
-        console.error(`[Service] 添加快捷指令标签 "${trimmedName}" 失败:`, error.message);
+        console.error(`[Service] 添加快捷指令文件夹 "${trimmedName}" 失败:`, error.message);
         throw error; // 重新抛出，让 Controller 处理 HTTP 响应
     }
 };
 
 /**
- * 更新快捷指令标签
- * @param id 标签 ID
- * @param name 新的标签名称 (可选)
+ * 更新快捷指令文件夹
+ * @param id 文件夹 ID
+ * @param name 新的文件夹名称 (可选)
  * @param backgroundColor 新的背景颜色 (可选)
  * @returns 返回是否成功更新
  */
@@ -48,7 +48,7 @@ export const updateQuickCommandTag = async (id: number, name?: string, backgroun
     let trimmedName: string | undefined = undefined;
     if (typeof name !== 'undefined') {
         if (!name || name.trim().length === 0) {
-            throw new Error('标签名称不能为空');
+            throw new Error('文件夹名称不能为空');
         }
         trimmedName = name.trim();
     }
@@ -56,45 +56,45 @@ export const updateQuickCommandTag = async (id: number, name?: string, backgroun
     try {
         const success = await QuickCommandTagRepository.updateQuickCommandTag(id, trimmedName, backgroundColor);
         if (!success) {
-             // 可能需要检查标签是否存在，或者让 Repository 处理
-             console.warn(`[Service] 尝试更新不存在的快捷指令标签 ID: ${id}`);
+             // 可能需要检查文件夹是否存在，或者让 Repository 处理
+             console.warn(`[Service] 尝试更新不存在的快捷指令文件夹 ID: ${id}`);
         }
         return success;
     } catch (error: any) {
-        console.error(`[Service] 更新快捷指令标签 ${id} 失败:`, error.message);
+        console.error(`[Service] 更新快捷指令文件夹 ${id} 失败:`, error.message);
         throw error;
     }
 };
 
 /**
- * 删除快捷指令标签
- * @param id 标签 ID
- * @param deleteCommands 是否连带删除该标签下的快捷指令
+ * 删除快捷指令文件夹
+ * @param id 文件夹 ID
+ * @param deleteCommands 是否连带删除该文件夹下的快捷指令
  * @returns 返回是否成功删除
  */
 export const deleteQuickCommandTag = async (id: number, deleteCommands: boolean = false): Promise<boolean> => {
     try {
         const success = await QuickCommandTagRepository.deleteQuickCommandTag(id, deleteCommands);
          if (!success) {
-             console.warn(`[Service] 尝试删除不存在的快捷指令标签 ID: ${id}`);
+             console.warn(`[Service] 尝试删除不存在的快捷指令文件夹 ID: ${id}`);
          }
         return success;
     } catch (error: any) {
-        console.error(`[Service] 删除快捷指令标签 ${id} 失败:`, error.message);
+        console.error(`[Service] 删除快捷指令文件夹 ${id} 失败:`, error.message);
         throw error;
     }
 };
 
 /**
- * 设置指定快捷指令的标签关联
+ * 设置指定快捷指令的文件夹关联
  * @param commandId 快捷指令 ID
- * @param tagIds 新的快捷指令标签 ID 数组
+ * @param tagIds 新的快捷指令文件夹 ID 数组
  * @returns Promise<void>
  */
 export const setCommandTags = async (commandId: number, tagIds: number[]): Promise<void> => {
     // 验证 tagIds 是否为数字数组 (基本验证)
     if (!Array.isArray(tagIds) || !tagIds.every(id => typeof id === 'number')) {
-        throw new Error('标签 ID 列表必须是一个数字数组');
+        throw new Error('文件夹 ID 列表必须是一个数字数组');
     }
     // 可以在这里添加更复杂的验证，例如检查 tagIds 是否都存在于 quick_command_tags 表中
     // 但 Repository 中的 setCommandTagAssociations 已包含基本的检查和错误处理
@@ -104,21 +104,21 @@ export const setCommandTags = async (commandId: number, tagIds: number[]): Promi
         await QuickCommandTagRepository.setCommandTagAssociations(commandId, tagIds);
         // Service 函数也返回 void，所以不需要 return
     } catch (error: any) {
-        console.error(`[Service] 设置快捷指令 ${commandId} 的标签失败:`, error.message);
+        console.error(`[Service] 设置快捷指令 ${commandId} 的文件夹失败:`, error.message);
         throw error;
     }
 };
 
 /**
- * 获取指定快捷指令的所有标签
+ * 获取指定快捷指令的所有文件夹
  * @param commandId 快捷指令 ID
- * @returns 标签对象数组
+ * @returns 文件夹对象数组
  */
 export const getTagsForCommand = async (commandId: number): Promise<QuickCommandTag[]> => {
     try {
         return await QuickCommandTagRepository.findTagsByCommandId(commandId);
     } catch (error: any) {
-        console.error(`[Service] 获取快捷指令 ${commandId} 的标签失败:`, error.message);
+        console.error(`[Service] 获取快捷指令 ${commandId} 的文件夹失败:`, error.message);
         throw error;
     }
 };

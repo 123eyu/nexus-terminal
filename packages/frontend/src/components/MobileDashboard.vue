@@ -417,14 +417,14 @@ onMounted(async () => {
           </div>
         </div>
 
-        <!-- 统计 2: 标签数 -->
+        <!-- 统计 2: 文件夹数 -->
         <div 
           @click="activeTab = 'servers'"
           class="p-2.5 rounded-xl bg-card/75 border border-border/80 shadow-sm flex flex-col justify-between active:bg-muted/40 transition cursor-pointer"
         >
           <div class="flex items-center justify-between text-muted-foreground">
-            <span class="text-[11px] font-medium">标签分类</span>
-            <i class="fas fa-tags text-xs text-amber-500/80"></i>
+            <span class="text-[11px] font-medium">文件夹</span>
+            <i class="fas fa-folder text-xs text-amber-500/80"></i>
           </div>
           <div class="mt-1 flex items-baseline justify-between">
             <span class="text-xl font-bold text-foreground font-mono">{{ tags.length }}</span>
@@ -505,7 +505,7 @@ onMounted(async () => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="搜索名称、IP、用户名、端口或标签..."
+            placeholder="搜索名称、IP、用户名、端口或文件夹..."
             class="w-full h-10 pl-9 pr-8 bg-card border border-border/80 rounded-xl text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition"
           />
           <button
@@ -517,7 +517,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- 水平可滚动标签胶囊过滤栏 (Filter Chips) -->
+        <!-- 水平可滚动文件夹胶囊过滤栏 (Filter Chips) -->
         <div class="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-0.5">
           <button
             v-for="item in allTagItems"
@@ -530,7 +530,7 @@ onMounted(async () => {
                 : 'bg-card/90 text-muted-foreground border-border hover:border-border/80 active:bg-muted'
             ]"
           >
-            <i v-if="item.id !== null" class="fas fa-tag text-[9px] opacity-70"></i>
+            <i v-if="item.id !== null" class="fas fa-folder text-[9px] opacity-70"></i>
             <span>{{ item.name }}</span>
           </button>
         </div>
@@ -637,9 +637,9 @@ onMounted(async () => {
               </button>
             </div>
 
-            <!-- 中间行：标签与上次连接时间 -->
+            <!-- 中间行：文件夹与上次连接时间 -->
             <div class="mt-2.5 pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
-              <!-- 标签胶囊 -->
+              <!-- 文件夹胶囊 -->
               <div class="flex flex-wrap gap-1 min-w-0 flex-1 mr-2">
                 <template v-if="getConnTagNames(conn.tag_ids).length > 0">
                   <span
@@ -650,7 +650,7 @@ onMounted(async () => {
                     {{ tagName }}
                   </span>
                 </template>
-                <span v-else class="text-[10px] text-muted-foreground/50">无标签</span>
+                <span v-else class="text-[10px] text-muted-foreground/50">未分类</span>
               </div>
 
               <!-- 上次连接 -->

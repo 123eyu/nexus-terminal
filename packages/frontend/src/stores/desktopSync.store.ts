@@ -54,7 +54,7 @@ export const SYNC_CATEGORIES: SyncCategoryOption[] = [
     description: 'SSH 连接、分组、密钥、代理与常用路径',
     items: [
       { key: 'connections.hosts', label: '连接', description: '主机信息、跳板/代理绑定、端口转发、文件夹配色' },
-      { key: 'connections.tags', label: '分组标签', description: '连接分组及其颜色' },
+      { key: 'connections.tags', label: '连接文件夹', description: '文件夹及其背景颜色' },
       { key: 'connections.keys', label: 'SSH 密钥', description: '密钥与口令（信封加密传输）' },
       { key: 'connections.proxies', label: '代理服务器', description: 'SOCKS / HTTP 代理配置' },
       { key: 'connections.favoritePaths', label: '常用路径', description: '文件管理器中收藏的路径' },
@@ -63,10 +63,10 @@ export const SYNC_CATEGORIES: SyncCategoryOption[] = [
   {
     key: 'quickCommands',
     label: '快捷指令',
-    description: '快捷指令条目与分类标签',
+    description: '快捷指令条目与文件夹',
     items: [
       { key: 'quickCommands.items', label: '快捷指令', description: '指令内容、变量与颜色' },
-      { key: 'quickCommands.tags', label: '指令分类标签', description: '快捷指令的分类标签' },
+      { key: 'quickCommands.tags', label: '指令文件夹', description: '快捷指令的文件夹' },
     ],
   },
   {
