@@ -89,42 +89,52 @@ export const useFocusSwitcherStore = defineStore('focusSwitcher', () => {
       const availableIds = new Set(availableInputs.value.map(input => input.id));
 
       // 验证 sequence
+      let nextSequence: string[] = [];
       if (Array.isArray(loadedFullConfig?.sequence) && loadedFullConfig.sequence.every(id => typeof id === 'string' && availableIds.has(id))) {
-        sequenceOrder.value = loadedFullConfig.sequence;
+        nextSequence = loadedFullConfig.sequence;
         // console.log('[FocusSwitcherStore] Successfully loaded and set sequenceOrder:', JSON.stringify(sequenceOrder.value));
       } else {
         console.warn('[FocusSwitcherStore] Invalid or missing sequence in loaded config. Resetting to empty array.');
-        sequenceOrder.value = [];
       }
 
       // 验证 shortcuts (itemConfigs)
+      let nextConfigs: Record<string, FocusItemConfig> = {};
       if (typeof loadedFullConfig?.shortcuts === 'object' && loadedFullConfig.shortcuts !== null) {
-        const validConfigs: Record<string, FocusItemConfig> = {};
         for (const id in loadedFullConfig.shortcuts) {
           if (availableIds.has(id)) { // 只保留有效的 ID
             const config = loadedFullConfig.shortcuts[id];
             if (typeof config === 'object' && config !== null && (config.shortcut === undefined || (typeof config.shortcut === 'string' && config.shortcut.startsWith('Alt+')))) {
-              validConfigs[id] = { shortcut: config.shortcut }; // 只保留 shortcut
+              nextConfigs[id] = { shortcut: config.shortcut }; // 只保留 shortcut
             } else {
                console.warn(`[FocusSwitcherStore] Invalid shortcut config for ID ${id}. Ignoring shortcut.`);
-               validConfigs[id] = {}; // 保留 ID 但清空无效快捷键
+               nextConfigs[id] = {}; // 保留 ID 但清空无效快捷键
             }
           } else {
              console.warn(`[FocusSwitcherStore] Ignoring shortcut config for unknown ID: ${id}`);
           }
         }
-        itemConfigs.value = validConfigs;
-        // console.log('[FocusSwitcherStore] Successfully loaded and set itemConfigs:', JSON.stringify(itemConfigs.value));
       } else {
         console.warn('[FocusSwitcherStore] Invalid or missing shortcuts in loaded config. Resetting to empty object.');
-        itemConfigs.value = {};
+      }
+
+      // 内容没变就别赋值：这个函数现在会被每次云端同步唤醒，
+      // 无脑覆盖会让「焦点切换顺序」配置弹窗里的列表每次同步都重绘一遍。
+      if (JSON.stringify(nextSequence) === JSON.stringify(sequenceOrder.value)) {
+        // 保持原引用
+      } else {
+        sequenceOrder.value = nextSequence;
+      }
+      if (JSON.stringify(nextConfigs) === JSON.stringify(itemConfigs.value)) {
+        // 保持原引用
+      } else {
+        itemConfigs.value = nextConfigs;
       }
 
     } catch (error) {
+      // ⚠️ 失败时绝对不能清空：这个函数会被「云端同步完成」反复调用，
+      // 一次网络抖动就把用户的顺序和快捷键全清掉，看起来就是「同步完顺序没了」。
+      // 初值本来就是 [] / {}，所以「从没成功加载过」也不需要在这里兜底。
       console.error(`[FocusSwitcherStore] Failed to load or parse configuration from backend (${apiUrl}):`, error);
-      sequenceOrder.value = [];
-      itemConfigs.value = {};
-      // console.log('[FocusSwitcherStore] Reset sequenceOrder and itemConfigs due to loading error.');
     }
   }
 

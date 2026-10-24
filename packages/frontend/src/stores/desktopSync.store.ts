@@ -341,6 +341,15 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         const layoutStore = useLayoutStore();
         await layoutStore.reloadPresetsFromServer();
       })());
+      // 焦点切换顺序 + 各项 Alt+ 快捷键存在 settings.focusSwitcherSequence，
+      // 数据本身会同步，但这个 store 只在实例化时拉一次自己的接口
+      // （/settings/focus-switcher-sequence，不在 settings schema 里），
+      // 不重载的话另一台改了顺序，这边按 Alt+Tab 还是老顺序，必须整页刷新。
+      refreshTasks.push((async () => {
+        const { useFocusSwitcherStore } = await import('./focusSwitcher.store');
+        const focusSwitcherStore = useFocusSwitcherStore();
+        await focusSwitcherStore.loadConfigurationFromBackend();
+      })());
     }
 
     if (active.includes('commandHistory')) {
