@@ -2097,7 +2097,6 @@
     "runningTasks": "{count} 个进行中",
     "localSource": "本机",
     "progressUnknown": "进行中",
-    "autoRefreshHint": "每 5 秒自动刷新",
     "loading": "正在加载传输任务...",
     "errorLoadingTitle": "加载错误",
     "errorLoading": "加载传输任务失败：{error}",

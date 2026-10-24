@@ -562,17 +562,6 @@ const handleCancelTask = async (taskId: string) => {
             </div>
           </template>
         </div>
-
-        <!-- Footer -->
-        <footer class="tp-foot">
-          <span class="tp-foot__hint">
-            <i class="fas fa-arrows-rotate"></i>
-            {{ t('transferProgressModal.autoRefreshHint', '每 5 秒自动刷新') }}
-          </span>
-          <button type="button" class="tp-btn" @click="handleClose">
-            {{ t('common.close', '关闭') }}
-          </button>
-        </footer>
       </div>
     </div>
   </Teleport>
@@ -596,8 +585,7 @@ const handleCancelTask = async (taskId: string) => {
 .tp-toggle i,
 .tp-sub i,
 .tp-state__icon i,
-.tp-inline-error i,
-.tp-foot__hint i {
+.tp-inline-error i {
   color: inherit;
 }
 
@@ -1250,27 +1238,7 @@ const handleCancelTask = async (taskId: string) => {
   }
 }
 
-/* ===== 底部 ===== */
-.tp-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex: none;
-  padding: 0.7rem 1rem;
-  border-top: 1px solid var(--border-color);
-  background-color: color-mix(in oklab, var(--header-bg-color, var(--app-bg-color)) 70%, var(--app-bg-color));
-}
-
-.tp-foot__hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 10.5px;
-  color: var(--text-color-secondary);
-  opacity: 0.85;
-}
-
+/* ===== 底部按钮 ===== */
 .tp-btn {
   padding: 0.35rem 1rem;
   font-size: 12px;

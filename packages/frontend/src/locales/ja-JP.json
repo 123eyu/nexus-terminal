@@ -2010,7 +2010,6 @@
     "runningTasks": "{count} 件進行中",
     "localSource": "この端末",
     "progressUnknown": "進行中",
-    "autoRefreshHint": "5 秒ごとに自動更新",
     "loading": "転送タスクを読み込み中...",
     "errorLoadingTitle": "読み込みエラー",
     "errorLoading": "転送タスクの読み込みに失敗しました：{error}",

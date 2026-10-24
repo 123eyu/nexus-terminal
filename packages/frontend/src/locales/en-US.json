@@ -2130,7 +2130,6 @@
     "runningTasks": "{count} active",
     "localSource": "This device",
     "progressUnknown": "In progress",
-    "autoRefreshHint": "Auto-refreshes every 5s",
     "loading": "Loading transfer tasks...",
     "errorLoadingTitle": "Loading Error",
     "errorLoading": "Failed to load transfer tasks: {error}",

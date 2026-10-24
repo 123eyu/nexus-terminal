@@ -315,11 +315,6 @@ const activeSummary = computed(() => {
             </div>
           </template>
         </div>
-
-        <p class="tp-m-foot">
-          <i class="fas fa-arrows-rotate"></i>
-          {{ t('transferProgressModal.autoRefreshHint', '每 5 秒自动刷新') }}
-        </p>
       </template>
     </div>
   </MobileBottomSheet>
@@ -337,8 +332,7 @@ const activeSummary = computed(() => {
 .tp-m-meta i,
 .tp-m-sub i,
 .tp-m-state__icon i,
-.tp-m-inline-error i,
-.tp-m-foot i {
+.tp-m-inline-error i {
   color: inherit;
 }
 
@@ -877,17 +871,6 @@ const activeSummary = computed(() => {
   50% {
     opacity: 0.9;
   }
-}
-
-.tp-m-foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 0.5rem 0 0;
-  font-size: 10px;
-  color: var(--text-color-secondary);
-  opacity: 0.75;
 }
 
 @media (prefers-reduced-motion: reduce) {
