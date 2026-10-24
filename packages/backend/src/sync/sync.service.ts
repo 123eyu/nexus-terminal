@@ -46,8 +46,8 @@ export interface SyncExchangePayload {
   mode?: 'bidirectional' | 'cloud_to_local' | 'local_to_cloud';
   modules?: SyncModuleKey[];
   entities: {
-    tags?: SyncEntityItem[];
-    quick_command_tags?: SyncEntityItem[];
+    folders?: SyncEntityItem[];
+    quick_command_folders?: SyncEntityItem[];
     ssh_keys?: SyncEntityItem[];
     proxies?: SyncEntityItem[];
     connections?: SyncEntityItem[];
@@ -102,15 +102,15 @@ export const syncService = {
       });
     }
 
-    // 2. 导出 Tags
-    let tags: SyncEntityItem[] = [];
-    if (en('connections.tags')) {
+    // 2. 导出 Folders
+    let folders: SyncEntityItem[] = [];
+    if (en('connections.folders')) {
       const tagsRows = await allDb<any>(
         db,
-        `SELECT uuid, name, background_color, created_at, updated_at FROM tags WHERE updated_at > ?`,
+        `SELECT uuid, name, background_color, created_at, updated_at FROM folders WHERE updated_at > ?`,
         [sinceTimestamp]
       );
-      tags = tagsRows.map(r => ({
+      folders = tagsRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at,
         data: { name: r.name, background_color: r.background_color || null, created_at: r.created_at, updated_at: r.updated_at }
@@ -165,7 +165,7 @@ export const syncService = {
       }));
     }
 
-    // 5. 导出 Connections (解析 proxy_uuid, ssh_key_uuid 以及关联的 tag_uuids)
+    // 5. 导出 Connections (解析 proxy_uuid, ssh_key_uuid 以及关联的 folder_uuids)
     let connections: SyncEntityItem[] = [];
     if (en('connections.hosts')) {
       const connectionsRows = await allDb<any>(
@@ -185,7 +185,7 @@ export const syncService = {
       for (const r of connectionsRows) {
         const tagRows = await allDb<{ uuid: string }>(
           db,
-          `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
+          `SELECT t.uuid FROM connection_folders ct JOIN folders t ON ct.folder_id = t.id WHERE ct.connection_id = ?`,
           [r.id]
         );
         const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
@@ -216,7 +216,7 @@ export const syncService = {
             jump_chain: r.jump_chain || null,
             background_color: r.background_color || null,
             file_protocol: r.file_protocol || 'auto',
-            tag_uuids: tagUuids,
+            folder_uuids: tagUuids,
             file_highlights: highlightRows,
             created_at: r.created_at,
             updated_at: r.updated_at
@@ -225,7 +225,7 @@ export const syncService = {
       }
     }
 
-    // 6. 导出 QuickCommands (携带所属文件夹/标签 tag_uuids)
+    // 6. 导出 QuickCommands (携带所属文件夹/文件夹 folder_uuids)
     let quick_commands: SyncEntityItem[] = [];
     if (en('quickCommands.items')) {
       const quickCmdRows = await allDb<any>(
@@ -236,8 +236,8 @@ export const syncService = {
       for (const r of quickCmdRows) {
         const tagRows = await allDb<{ uuid: string }>(
           db,
-          `SELECT qt.uuid FROM quick_command_tag_associations qa
-           JOIN quick_command_tags qt ON qa.tag_id = qt.id
+          `SELECT qt.uuid FROM quick_command_folder_associations qa
+           JOIN quick_command_folders qt ON qa.folder_id = qt.id
            WHERE qa.quick_command_id = ?`,
           [r.id]
         );
@@ -252,7 +252,7 @@ export const syncService = {
             usage_count: r.usage_count,
             variables: r.variables,
             background_color: r.background_color || null,
-            tag_uuids: tagUuids,
+            folder_uuids: tagUuids,
             created_at: r.created_at,
             updated_at: r.updated_at
           }
@@ -263,15 +263,15 @@ export const syncService = {
     // 7. WorkspaceSync (快照)：桌面端数据库同步不推拉动态工作区会话，保持纯净数据同步
     let workspace_sync: SyncEntityItem[] = [];
 
-    // 8. 导出 quick_command_tags
-    let quick_command_tags: SyncEntityItem[] = [];
-    if (en('quickCommands.tags')) {
-      const qcTagsRows = await allDb<any>(
+    // 8. 导出 quick_command_folders
+    let quick_command_folders: SyncEntityItem[] = [];
+    if (en('quickCommands.folders')) {
+      const qcFoldersRows = await allDb<any>(
         db,
-        `SELECT uuid, name, background_color, updated_hlc, created_at, updated_at FROM quick_command_tags WHERE updated_at > ?`,
+        `SELECT uuid, name, background_color, updated_hlc, created_at, updated_at FROM quick_command_folders WHERE updated_at > ?`,
         [sinceTimestamp]
       );
-      quick_command_tags = qcTagsRows.map(r => ({
+      quick_command_folders = qcFoldersRows.map(r => ({
         uuid: r.uuid,
         updated_at: r.updated_at || Math.floor(Date.now() / 1000),
         data: {
@@ -413,8 +413,8 @@ export const syncService = {
 
     return {
       entities: {
-        tags,
-        quick_command_tags,
+        folders,
+        quick_command_folders,
         ssh_keys,
         proxies,
         connections,
@@ -512,16 +512,16 @@ export const syncService = {
             conflictsResolved++;
           }
         }
-      } else if (t.entity_type === 'tags') {
+      } else if (t.entity_type === 'folders') {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
-          `SELECT id, updated_at FROM tags WHERE uuid = ?`,
+          `SELECT id, updated_at FROM folders WHERE uuid = ?`,
           [t.uuid]
         );
         if (local) {
           if (local.updated_at <= t.deleted_at) {
-            await runDb(db, `DELETE FROM tags WHERE uuid = ?`, [t.uuid]);
-            await recordTombstone('tags', t.uuid, t.deleted_at);
+            await runDb(db, `DELETE FROM folders WHERE uuid = ?`, [t.uuid]);
+            await recordTombstone('folders', t.uuid, t.deleted_at);
             pushed++;
           } else {
             conflictsResolved++;
@@ -542,16 +542,16 @@ export const syncService = {
             conflictsResolved++;
           }
         }
-      } else if (t.entity_type === 'quick_command_tags') {
+      } else if (t.entity_type === 'quick_command_folders') {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
-          `SELECT id, updated_at FROM quick_command_tags WHERE uuid = ?`,
+          `SELECT id, updated_at FROM quick_command_folders WHERE uuid = ?`,
           [t.uuid]
         );
         if (local) {
           if (local.updated_at <= t.deleted_at) {
-            await runDb(db, `DELETE FROM quick_command_tags WHERE uuid = ?`, [t.uuid]);
-            await recordTombstone('quick_command_tags', t.uuid, t.deleted_at);
+            await runDb(db, `DELETE FROM quick_command_folders WHERE uuid = ?`, [t.uuid]);
+            await recordTombstone('quick_command_folders', t.uuid, t.deleted_at);
             pushed++;
           } else {
             conflictsResolved++;
@@ -560,23 +560,23 @@ export const syncService = {
       }
     }
 
-    // --- 步骤 2: 合并 Tags ---
-    if (en('connections.tags') && entities.tags) {
-      for (const item of entities.tags) {
+    // --- 步骤 2: 合并 Folders ---
+    if (en('connections.folders') && entities.folders) {
+      for (const item of entities.folders) {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
-          `SELECT id, updated_at FROM tags WHERE uuid = ?`,
+          `SELECT id, updated_at FROM folders WHERE uuid = ?`,
           [item.uuid]
         );
         if (!local) {
           // 检查 name 是否重复
           const existingName = await getDb<{ id: number }>(
             db,
-            `SELECT id FROM tags WHERE name = ?`,
+            `SELECT id FROM folders WHERE name = ?`,
             [item.data.name]
           );
           if (existingName) {
-            await runDb(db, `UPDATE tags SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
+            await runDb(db, `UPDATE folders SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
               item.uuid,
               item.data.background_color || null,
               item.updated_at,
@@ -585,13 +585,13 @@ export const syncService = {
           } else {
             await runDb(
               db,
-              `INSERT INTO tags (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+              `INSERT INTO folders (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
               [item.uuid, item.data.name, item.data.background_color || null, item.data.created_at || item.updated_at, item.updated_at]
             );
           }
           pushed++;
         } else if (item.updated_at > local.updated_at) {
-          await runDb(db, `UPDATE tags SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
+          await runDb(db, `UPDATE folders SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
             item.data.name,
             item.data.background_color || null,
             item.updated_at,
@@ -603,22 +603,22 @@ export const syncService = {
       }
     }
 
-    // --- 步骤 2.5: 合并 quick_command_tags ---
-    if (en('quickCommands.tags') && entities.quick_command_tags) {
-      for (const item of entities.quick_command_tags) {
+    // --- 步骤 2.5: 合并 quick_command_folders ---
+    if (en('quickCommands.folders') && entities.quick_command_folders) {
+      for (const item of entities.quick_command_folders) {
         const local = await getDb<{ id: number; updated_at: number }>(
           db,
-          `SELECT id, updated_at FROM quick_command_tags WHERE uuid = ?`,
+          `SELECT id, updated_at FROM quick_command_folders WHERE uuid = ?`,
           [item.uuid]
         );
         if (!local) {
           const existingName = await getDb<{ id: number }>(
             db,
-            `SELECT id FROM quick_command_tags WHERE name = ?`,
+            `SELECT id FROM quick_command_folders WHERE name = ?`,
             [item.data.name]
           );
           if (existingName) {
-            await runDb(db, `UPDATE quick_command_tags SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
+            await runDb(db, `UPDATE quick_command_folders SET uuid = ?, background_color = ?, updated_at = ? WHERE id = ?`, [
               item.uuid,
               item.data.background_color || null,
               item.updated_at,
@@ -627,13 +627,13 @@ export const syncService = {
           } else {
             await runDb(
               db,
-              `INSERT INTO quick_command_tags (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+              `INSERT INTO quick_command_folders (uuid, name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
               [item.uuid, item.data.name, item.data.background_color || null, item.data.created_at || item.updated_at, item.updated_at]
             );
           }
           pushed++;
         } else if (item.updated_at > local.updated_at) {
-          await runDb(db, `UPDATE quick_command_tags SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
+          await runDb(db, `UPDATE quick_command_folders SET name = ?, background_color = ?, updated_at = ? WHERE uuid = ?`, [
             item.data.name,
             item.data.background_color || null,
             item.updated_at,
@@ -844,13 +844,13 @@ export const syncService = {
           targetConnectionId = local.id;
         }
 
-        // 重新对齐 connection_tags
-        if (targetConnectionId && Array.isArray(item.data.tag_uuids)) {
-          await runDb(db, `DELETE FROM connection_tags WHERE connection_id = ?`, [targetConnectionId]);
-          for (const tUuid of item.data.tag_uuids) {
-            const t = await getDb<{ id: number }>(db, `SELECT id FROM tags WHERE uuid = ?`, [tUuid]);
+        // 重新对齐 connection_folders
+        if (targetConnectionId && Array.isArray(item.data.folder_uuids)) {
+          await runDb(db, `DELETE FROM connection_folders WHERE connection_id = ?`, [targetConnectionId]);
+          for (const tUuid of item.data.folder_uuids) {
+            const t = await getDb<{ id: number }>(db, `SELECT id FROM folders WHERE uuid = ?`, [tUuid]);
             if (t) {
-              await runDb(db, `INSERT OR IGNORE INTO connection_tags (connection_id, tag_id) VALUES (?, ?)`, [
+              await runDb(db, `INSERT OR IGNORE INTO connection_folders (connection_id, folder_id) VALUES (?, ?)`, [
                 targetConnectionId,
                 t.id
               ]);
@@ -923,13 +923,13 @@ export const syncService = {
           qcPhysId = local.id;
         }
 
-        // 对齐快捷命令标签关联 quick_command_tag_associations
-        if (qcPhysId && Array.isArray(item.data.tag_uuids)) {
-          await runDb(db, `DELETE FROM quick_command_tag_associations WHERE quick_command_id = ?`, [qcPhysId]);
-          for (const tUuid of item.data.tag_uuids) {
-            const t = await getDb<{ id: number }>(db, `SELECT id FROM quick_command_tags WHERE uuid = ?`, [tUuid]);
+        // 对齐快捷命令文件夹关联 quick_command_folder_associations
+        if (qcPhysId && Array.isArray(item.data.folder_uuids)) {
+          await runDb(db, `DELETE FROM quick_command_folder_associations WHERE quick_command_id = ?`, [qcPhysId]);
+          for (const tUuid of item.data.folder_uuids) {
+            const t = await getDb<{ id: number }>(db, `SELECT id FROM quick_command_folders WHERE uuid = ?`, [tUuid]);
             if (t) {
-              await runDb(db, `INSERT OR IGNORE INTO quick_command_tag_associations (quick_command_id, tag_id) VALUES (?, ?)`, [
+              await runDb(db, `INSERT OR IGNORE INTO quick_command_folder_associations (quick_command_id, folder_id) VALUES (?, ?)`, [
                 qcPhysId,
                 t.id
               ]);
@@ -1246,7 +1246,7 @@ export const syncService = {
         const isFullSync = !modules || modules.length === 0;
 
         if (en('connections.hosts')) {
-          await runDb(db, 'DELETE FROM connection_tags');
+          await runDb(db, 'DELETE FROM connection_folders');
           await runDb(db, 'DELETE FROM file_color_highlights');
           await runDb(db, 'DELETE FROM port_forwards');
           await runDb(db, 'DELETE FROM connections');
@@ -1254,11 +1254,11 @@ export const syncService = {
           await runDb(db, `DELETE FROM sync_changes WHERE tbl IN ('connections', 'port_forwards', 'file_color_highlights')`);
           await runDb(db, `DELETE FROM sync_pending_references WHERE child_tbl = 'connections'`);
         }
-        if (en('connections.tags')) {
-          await runDb(db, 'DELETE FROM connection_tags');
-          await runDb(db, 'DELETE FROM tags');
-          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'tags'`);
-          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'tags'`);
+        if (en('connections.folders')) {
+          await runDb(db, 'DELETE FROM connection_folders');
+          await runDb(db, 'DELETE FROM folders');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'folders'`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'folders'`);
         }
         if (en('connections.keys')) {
           await runDb(db, 'DELETE FROM ssh_keys');
@@ -1279,16 +1279,16 @@ export const syncService = {
         }
 
         if (en('quickCommands.items')) {
-          await runDb(db, 'DELETE FROM quick_command_tag_associations');
+          await runDb(db, 'DELETE FROM quick_command_folder_associations');
           await runDb(db, 'DELETE FROM quick_commands');
           await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'quick_commands'`);
           await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'quick_commands'`);
         }
-        if (en('quickCommands.tags')) {
-          await runDb(db, 'DELETE FROM quick_command_tag_associations');
-          await runDb(db, 'DELETE FROM quick_command_tags');
-          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'quick_command_tags'`);
-          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'quick_command_tags'`);
+        if (en('quickCommands.folders')) {
+          await runDb(db, 'DELETE FROM quick_command_folder_associations');
+          await runDb(db, 'DELETE FROM quick_command_folders');
+          await runDb(db, `DELETE FROM sync_tombstones WHERE tbl = 'quick_command_folders'`);
+          await runDb(db, `DELETE FROM sync_changes WHERE tbl = 'quick_command_folders'`);
         }
 
         // settings 是混合表：只清掉被启用子项对应的键，避免「只覆盖布局预设」把焦点切换顺序也删了

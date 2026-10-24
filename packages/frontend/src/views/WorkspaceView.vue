@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useLayoutStore, type LayoutNode } from '../stores/layout.store'; // +++ Import LayoutNode +++
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
-import { useTagsStore } from '../stores/tags.store';
+import { useFoldersStore } from '../stores/folders.store';
 import AddConnectionFormComponent from '../components/AddConnectionForm.vue';
 import DesktopWorkspaceView from './DesktopWorkspaceView.vue';
 import MobileWorkspaceView from './MobileWorkspaceView.vue';
@@ -40,7 +40,7 @@ const workspaceSyncStore = useWorkspaceSyncStore();
 const layoutStore = useLayoutStore();
 const commandHistoryStore = useCommandHistoryStore();
 const connectionsStore = useConnectionsStore(); 
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const { isHeaderVisible } = storeToRefs(layoutStore);
 const { isMobile } = useDeviceDetection();
 
@@ -324,7 +324,7 @@ onMounted(() => {
 
   // 保证多端与隐藏侧边栏场景下，连接与标签数据全量就绪
   connectionsStore.fetchConnections().catch((err) => console.error('[工作区] 加载连接列表失败:', err));
-  tagsStore.fetchTags().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
+  foldersStore.fetchFolders().catch((err) => console.error('[工作区] 加载标签列表失败:', err));
 
   // +++ 订阅工作区事件 +++
   // 浏览器刷新/关标签时 Vue 不一定会走 onBeforeUnmount，这里兜一层，

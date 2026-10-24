@@ -6,7 +6,7 @@ import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
 import { hexToRgba, resolveEffectiveColor } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useSessionStore } from '../stores/session.store';
-import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useFoldersStore, type FolderInfo } from '../stores/folders.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import type { SortField, SortOrder } from '../stores/settings.store';
 import { useI18n } from 'vue-i18n';
@@ -24,11 +24,11 @@ const { showConfirmDialog } = useConfirmDialog();
 const { showAlertDialog } = useAlertDialog();
 const connectionsStore = useConnectionsStore();
 const sessionStore = useSessionStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const uiNotificationsStore = useUiNotificationsStore();
 
 const { connections, isLoading: isLoadingConnections } = storeToRefs(connectionsStore);
-const { tags: folders, isLoading: isLoadingFolders } = storeToRefs(tagsStore);
+const { folders: folders, isLoading: isLoadingFolders } = storeToRefs(foldersStore);
 
 const LS_SORT_BY_KEY = 'connections_view_sort_by';
 const LS_SORT_ORDER_KEY = 'connections_view_sort_order';
@@ -74,7 +74,7 @@ const toggleFolderColorPicker = (folderId: number, e: Event) => {
 };
 
 const handleSaveFolderColor = async (folderId: number, color: string | null) => {
-  await tagsStore.updateFolderColor(folderId, color);
+  await foldersStore.updateFolderColor(folderId, color);
   uiNotificationsStore.showSuccess(t('folders.colorUpdated', '文件夹背景颜色已更新'));
   activeColorPickerFolderId.value = null;
   activeColorPickerTriggerEl.value = null;
@@ -101,11 +101,11 @@ const isDeletingSelectedConnections = ref(false);
 // 解析连接项的最终有效背景颜色 (Item 自身 > 所属文件夹 > null)
 const getEffectiveConnectionColor = (conn: ConnectionInfo): string | null => {
   let folderColor: string | null = null;
-  if (conn.tag_ids && conn.tag_ids.length > 0) {
-    const folder = tagsStore.folders.find(f => f.id === conn.tag_ids![0]);
+  if (conn.folder_ids && conn.folder_ids.length > 0) {
+    const folder = foldersStore.folders.find(f => f.id === conn.folder_ids![0]);
     folderColor = folder?.background_color || null;
-  } else if (conn.tags && conn.tags.length > 0) {
-    const folder = tagsStore.folders.find(f => conn.tags?.includes(f.name));
+  } else if (conn.folders && conn.folders.length > 0) {
+    const folder = foldersStore.folders.find(f => conn.folders?.includes(f.name));
     folderColor = folder?.background_color || null;
   }
   return resolveEffectiveColor(conn.background_color, folderColor);
@@ -134,14 +134,14 @@ const sortOptions: { value: SortField; labelKey: string }[] = [
 // 统计数量计算
 const totalConnectionsCount = computed(() => connections.value.length);
 const uncategorizedCount = computed(() => {
-  return connections.value.filter(c => !c.tag_ids || c.tag_ids.length === 0).length;
+  return connections.value.filter(c => !c.folder_ids || c.folder_ids.length === 0).length;
 });
 const folderCountMap = computed(() => {
   const map = new Map<number, number>();
   folders.value.forEach(f => map.set(f.id, 0));
   connections.value.forEach(c => {
-    if (c.tag_ids && c.tag_ids.length > 0) {
-      c.tag_ids.forEach(id => {
+    if (c.folder_ids && c.folder_ids.length > 0) {
+      c.folder_ids.forEach(id => {
         map.set(id, (map.get(id) || 0) + 1);
       });
     }
@@ -176,9 +176,9 @@ const filteredAndSortedConnections = computed(() => {
   if (targetFolder === 'all') {
     folderFiltered = [...connections.value];
   } else if (targetFolder === 'uncategorized') {
-    folderFiltered = connections.value.filter(conn => !conn.tag_ids || conn.tag_ids.length === 0);
+    folderFiltered = connections.value.filter(conn => !conn.folder_ids || conn.folder_ids.length === 0);
   } else {
-    folderFiltered = connections.value.filter(conn => conn.tag_ids?.includes(targetFolder));
+    folderFiltered = connections.value.filter(conn => conn.folder_ids?.includes(targetFolder));
   }
 
   let searchedConnections = folderFiltered;
@@ -235,7 +235,7 @@ onMounted(async () => {
     }
   }
   try {
-    await tagsStore.fetchFolders();
+    await foldersStore.fetchFolders();
   } catch (error) {
     console.error('加载文件夹列表失败:', error);
   }
@@ -322,7 +322,7 @@ const handleConfirmCreateFolder = async () => {
     cancelCreateFolder();
     return;
   }
-  const created = await tagsStore.createFolder(trimmed);
+  const created = await foldersStore.createFolder(trimmed);
   if (created) {
     uiNotificationsStore.showSuccess(t('folders.newFolderSuccess', '文件夹已创建'));
     activeFolder.value = created.id;
@@ -331,7 +331,7 @@ const handleConfirmCreateFolder = async () => {
   newFolderName.value = '';
 };
 
-const startRenameFolder = (folder: TagInfo, e: Event) => {
+const startRenameFolder = (folder: FolderInfo, e: Event) => {
   e.stopPropagation();
   editingFolderId.value = folder.id;
   editingFolderName.value = folder.name;
@@ -351,21 +351,21 @@ const handleConfirmRenameFolder = async (folderId: number) => {
     cancelRenameFolder();
     return;
   }
-  const ok = await tagsStore.renameFolder(folderId, trimmed);
+  const ok = await foldersStore.renameFolder(folderId, trimmed);
   if (ok) {
     uiNotificationsStore.showSuccess(t('folders.renameSuccess', '文件夹名称已修改'));
   }
   cancelRenameFolder();
 };
 
-const handleDeleteFolder = async (folder: TagInfo, e: Event) => {
+const handleDeleteFolder = async (folder: FolderInfo, e: Event) => {
   e.stopPropagation();
   const confirmed = await showConfirmDialog({
     title: t('folders.deleteConfirmTitle', '删除文件夹'),
     message: t('folders.deleteConfirm', { name: folder.name }, `确定要删除文件夹 "${folder.name}" 吗？内部条目将保留并移至“未分类”。`),
   });
   if (confirmed) {
-    const ok = await tagsStore.deleteFolder(folder.id);
+    const ok = await foldersStore.deleteFolder(folder.id);
     if (ok) {
       uiNotificationsStore.showSuccess(t('folders.deleteSuccess', '文件夹已删除'));
       if (activeFolder.value === folder.id) {
@@ -1113,16 +1113,16 @@ const handleConnectAllFilteredConnections = async () => {
                     </h3>
                   </div>
 
-                  <!-- Folder Tag Badge (Clickable to switch folder) -->
+                  <!-- Folder Folder Badge (Clickable to switch folder) -->
                   <div class="flex items-center gap-1 flex-shrink-0">
                     <span
-                      v-if="conn.tag_ids && conn.tag_ids.length > 0"
-                      @click.stop="activeFolder = conn.tag_ids[0]"
+                      v-if="conn.folder_ids && conn.folder_ids.length > 0"
+                      @click.stop="activeFolder = conn.folder_ids[0]"
                       class="px-2 py-0.5 text-[11px] rounded-md bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 cursor-pointer transition-colors flex items-center gap-1 font-medium"
                       :title="t('folders.viewFolderOnly', '仅查看此文件夹')"
                     >
                       <i class="fas fa-folder text-[10px]"></i>
-                      <span class="max-w-[80px] truncate">{{ getFolderName(conn.tag_ids[0]) }}</span>
+                      <span class="max-w-[80px] truncate">{{ getFolderName(conn.folder_ids[0]) }}</span>
                     </span>
 
                     <span

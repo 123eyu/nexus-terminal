@@ -25,31 +25,31 @@ test('resolveFolderColor：颜色为空 / 文件夹不存在 / 无 id 时返回 
   assert.equal(resolveFolderColor(folders, 0), null);
 });
 
-test('resolveCommandFolderColor：分组遍历时以分组 tagId 为准', () => {
-  const cmd = { tagIds: [1] };
+test('resolveCommandFolderColor：分组遍历时以分组 folderId 为准', () => {
+  const cmd = { folderIds: [1] };
   // 分组是 2（无颜色），命令自己挂在 1 上 —— 应该跟随分组
   assert.equal(resolveCommandFolderColor(folders, cmd, 2), null);
   assert.equal(resolveCommandFolderColor(folders, cmd, 1), '#ff0000');
 });
 
-test('resolveCommandFolderColor：没有分组时取命令自己的第一个标签', () => {
-  assert.equal(resolveCommandFolderColor(folders, { tagIds: [1, 2] }), '#ff0000');
-  assert.equal(resolveCommandFolderColor(folders, { tagIds: [] }), null);
+test('resolveCommandFolderColor：没有分组时取命令自己的第一个文件夹', () => {
+  assert.equal(resolveCommandFolderColor(folders, { folderIds: [1, 2] }), '#ff0000');
+  assert.equal(resolveCommandFolderColor(folders, { folderIds: [] }), null);
   assert.equal(resolveCommandFolderColor(folders, {}), null);
 });
 
 test('countCommandsInFolder：all 统计全部', () => {
-  const list = [{ tagIds: [1] }, { tagIds: [2, 1] }, {}];
+  const list = [{ folderIds: [1] }, { folderIds: [2, 1] }, {}];
   assert.equal(countCommandsInFolder(list, 'all'), 3);
 });
 
-test('countCommandsInFolder：untagged 只统计无标签的', () => {
-  const list = [{ tagIds: [1] }, { tagIds: [] }, {}, { tagIds: undefined as any }];
+test('countCommandsInFolder：untagged 只统计无文件夹的', () => {
+  const list = [{ folderIds: [1] }, { folderIds: [] }, {}, { folderIds: undefined as any }];
   assert.equal(countCommandsInFolder(list, 'untagged'), 3);
 });
 
-test('countCommandsInFolder：按标签统计（一条命令可属于多个文件夹）', () => {
-  const list = [{ tagIds: [1] }, { tagIds: [1, 2] }, { tagIds: [2] }, {}];
+test('countCommandsInFolder：按文件夹统计（一条命令可属于多个文件夹）', () => {
+  const list = [{ folderIds: [1] }, { folderIds: [1, 2] }, { folderIds: [2] }, {}];
   assert.equal(countCommandsInFolder(list, 1), 2);
   assert.equal(countCommandsInFolder(list, 2), 2);
   assert.equal(countCommandsInFolder(list, 9), 0);

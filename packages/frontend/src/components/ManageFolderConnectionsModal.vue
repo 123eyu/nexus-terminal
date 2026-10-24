@@ -3,22 +3,22 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
-import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useFoldersStore, type FolderInfo } from '../stores/folders.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 
 interface Props {
-  tagInfo: TagInfo | null; // 传递整个 TagInfo 对象
+  folderInfo: FolderInfo | null; // 传递整个 FolderInfo 对象
   visible: boolean;
 }
 
 const props = defineProps<Props>();
 
-const emit = defineEmits(['update:visible', 'saved', 'tag-deleted']);
+const emit = defineEmits(['update:visible', 'saved', 'folder-deleted']);
 
 const { t } = useI18n();
 const connectionsStore = useConnectionsStore();
-const tagsStore = useTagsStore(); // 如果需要更新标签信息或调用标签相关的 actions
+const foldersStore = useFoldersStore(); // 如果需要更新标签信息或调用标签相关的 actions
 const uiNotificationsStore = useUiNotificationsStore();
 const { showConfirmDialog } = useConfirmDialog();
 
@@ -45,13 +45,13 @@ watch(internalVisible, (newVal) => {
   }
 });
 
-// 当模态框变为可见或 tagInfo 变化时，初始化选中的连接
-watch(() => [internalVisible.value, props.tagInfo], ([isVisible, currentTagInfoUntyped]) => {
-  const currentTagInfo = currentTagInfoUntyped as TagInfo | null; // 明确类型
-  if (isVisible && currentTagInfo && typeof currentTagInfo === 'object' && currentTagInfo !== null && 'id' in currentTagInfo) {
+// 当模态框变为可见或 folderInfo 变化时，初始化选中的连接
+watch(() => [internalVisible.value, props.folderInfo], ([isVisible, currentFolderInfoUntyped]) => {
+  const currentFolderInfo = currentFolderInfoUntyped as FolderInfo | null; // 明确类型
+  if (isVisible && currentFolderInfo && typeof currentFolderInfo === 'object' && currentFolderInfo !== null && 'id' in currentFolderInfo) {
     selectedConnectionIds.value.clear();
     allConnections.value.forEach(conn => {
-      if (conn.tag_ids?.includes(currentTagInfo.id)) {
+      if (conn.folder_ids?.includes(currentFolderInfo.id)) {
         selectedConnectionIds.value.add(conn.id);
       }
     });
@@ -103,21 +103,21 @@ const handleInvertSelection = () => {
 };
 
 const handleSave = async () => {
-  if (!props.tagInfo) return;
+  if (!props.folderInfo) return;
 
-  const currentTagId = props.tagInfo.id;
+  const currentFolderId = props.folderInfo.id;
   const newConnectionIdArray = Array.from(selectedConnectionIds.value);
 
   // 调用 store action 更新标签的连接
-  // 假设 tagsStore 有一个 updateTagConnections action
-  const success = await tagsStore.updateTagConnections(currentTagId, newConnectionIdArray);
+  // 假设 foldersStore 有一个 updateFolderConnections action
+  const success = await foldersStore.updateFolderConnections(currentFolderId, newConnectionIdArray);
 
   if (success) {
-    uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.manageTags.saveSuccess'), type: 'success' });
+    uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.manageFolders.saveSuccess'), type: 'success' });
     emit('saved'); // 通知父组件保存成功，可能需要刷新列表
     emit('update:visible', false);
   } else {
-    uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.manageTags.saveFailed'), type: 'error' });
+    uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.manageFolders.saveFailed'), type: 'error' });
   }
 };
 
@@ -125,21 +125,21 @@ const handleCancel = () => {
   emit('update:visible', false);
 };
 
-const handleDeleteTag = async () => {
-  if (!props.tagInfo) return;
+const handleDeleteFolder = async () => {
+  if (!props.folderInfo) return;
 
-  const tagName = props.tagInfo.name;
+  const folderName = props.folderInfo.name;
   const confirmed = await showConfirmDialog({
-    message: t('tags.prompts.confirmDelete', { name: tagName })
+    message: t('folders.prompts.confirmDelete', { name: folderName })
   });
   if (confirmed) {
-    const success = await tagsStore.deleteTag(props.tagInfo.id);
+    const success = await foldersStore.deleteFolder(props.folderInfo.id);
     if (success) {
-      uiNotificationsStore.addNotification({ message: t('tags.deleteSuccess', { name: tagName }), type: 'success' }); // 需要新的翻译键
-      emit('tag-deleted'); // 通知父组件标签已删除
+      uiNotificationsStore.addNotification({ message: t('folders.deleteSuccess', { name: folderName }), type: 'success' }); // 需要新的翻译键
+      emit('folder-deleted'); // 通知父组件标签已删除
       emit('update:visible', false); // 关闭模态框
     } else {
-      uiNotificationsStore.addNotification({ message: t('tags.deleteFailed', { name: tagName, error: tagsStore.error || 'Unknown error' }), type: 'error' }); // 需要新的翻译键
+      uiNotificationsStore.addNotification({ message: t('folders.deleteFailed', { name: folderName, error: foldersStore.error || 'Unknown error' }), type: 'error' }); // 需要新的翻译键
     }
   }
 };
@@ -161,7 +161,7 @@ onMounted(() => {
     <div class="bg-background text-foreground p-6 rounded-lg shadow-xl border border-border w-full max-w-2xl max-h-[90vh] flex flex-col">
       <!-- Header -->
       <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">
-        {{ t('workspaceConnectionList.manageTags.title') }} - {{ props.tagInfo?.name }}
+        {{ t('workspaceConnectionList.manageFolders.title') }} - {{ props.folderInfo?.name }}
       </h3>
 
       <!-- Controls & List Container -->
@@ -171,26 +171,26 @@ onMounted(() => {
           <input
             type="text"
             v-model="modalSearchTerm"
-            :placeholder="t('workspaceConnectionList.manageTags.searchPlaceholder')"
+            :placeholder="t('workspaceConnectionList.manageFolders.searchPlaceholder')"
             class="flex-grow min-w-0 px-3 py-2 border border-border rounded-md shadow-sm bg-input text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary text-sm"
           />
           <button
             @click="handleSelectAll"
             class="px-4 py-2 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
           >
-            {{ t('workspaceConnectionList.manageTags.selectAll') }}
+            {{ t('workspaceConnectionList.manageFolders.selectAll') }}
           </button>
           <button
             @click="handleDeselectAll"
             class="px-4 py-2 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
           >
-            {{ t('workspaceConnectionList.manageTags.deselectAll') }}
+            {{ t('workspaceConnectionList.manageFolders.deselectAll') }}
           </button>
           <button
             @click="handleInvertSelection"
             class="px-4 py-2 text-sm bg-transparent text-text-secondary border border-border rounded-md shadow-sm hover:bg-border hover:text-foreground focus:outline-none transition duration-150 ease-in-out"
           >
-            {{ t('workspaceConnectionList.manageTags.invertSelection') }}
+            {{ t('workspaceConnectionList.manageFolders.invertSelection') }}
           </button>
         </div>
 
@@ -224,7 +224,7 @@ onMounted(() => {
           </ul>
           <div v-else class="flex flex-col items-center justify-center h-full text-text-secondary p-6">
             <i class="fas fa-search text-2xl mb-3"></i>
-            <p>{{ t('workspaceConnectionList.manageTags.noConnectionsFound') }}</p>
+            <p>{{ t('workspaceConnectionList.manageFolders.noConnectionsFound') }}</p>
           </div>
         </div> <!-- End of new wrapper div -->
         </div>
@@ -233,7 +233,7 @@ onMounted(() => {
       <!-- Footer -->
       <div class="flex justify-end items-center pt-5 mt-auto flex-shrink-0 space-x-3">
         <button
-          @click="handleDeleteTag"
+          @click="handleDeleteFolder"
           class="px-4 py-2 bg-transparent text-error border border-error/70 rounded-md shadow-sm hover:bg-error/10 hover:text-error-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-error transition duration-150 ease-in-out"
         >
           {{ t('common.delete') }}

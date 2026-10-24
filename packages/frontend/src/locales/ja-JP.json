@@ -27,16 +27,16 @@
       "SSH_CONNECT_FAILURE": "SSH 接続失敗",
       "SSH_CONNECT_SUCCESS": "SSH 接続成功",
       "SSH_SHELL_FAILURE": "SSH Shell オープン失敗",
-      "TAG_CREATED": "フォルダ作成",
-      "TAG_DELETED": "フォルダ削除",
-      "TAG_UPDATED": "フォルダ更新",
       "PASSKEY_REGISTERED": "パスキー登録済み",
       "PASSKEY_AUTH_SUCCESS": "パスキー認証成功",
       "PASSKEY_AUTH_FAILURE": "パスキー認証失敗",
       "PASSKEY_DELETED": "パスキー削除済み",
       "PASSKEY_DELETE_UNAUTHORIZED": "パスキー削除権限なし",
       "PASSKEY_NAME_UPDATED": "パスキー名更新済み",
-      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "パスキー名更新権限なし"
+      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "パスキー名更新権限なし",
+      "FOLDER_CREATED": "フォルダ作成",
+      "FOLDER_DELETED": "フォルダ削除",
+      "FOLDER_UPDATED": "フォルダ更新"
     },
     "noLogs": "監査ログが見つかりませんでした。",
     "paginationInfo": "{currentPage} ページ / 全 {totalPages} ページ ({totalLogs} 件のログ)",
@@ -250,7 +250,6 @@
       "sectionAdvanced": "詳細設定",
       "sectionAuth": "認証情報",
       "sectionBasic": "基本情報",
-      "tags": "フォルダ",
       "notes": "備考：",
       "notesPlaceholder": "接続に関する備考を入力してください...",
       "connectionMode": "プロキシタイプ:",
@@ -315,7 +314,6 @@
       "scriptErrorMissingKeyNameForSsh": "スクリプト行 '{line}' (SSHキー認証) にはキー名 (-k) がありません。",
       "scriptErrorMissingPasswordForType": "スクリプト行 '{line}' ({type}タイプ) にはパスワード (-p) がありません。",
       "scriptErrorInternal": "スクリプト入力の処理中に内部解析エラーが発生しました。",
-      "scriptErrorTagNotFound": "スクリプト処理エラー: タグ '{tagName}' が見つかりません。",
       "scriptErrorSshKeyNotFound": "スクリプト処理エラー: SSH キー '{keyName}' が見つかりません。",
       "scriptErrorNothingToProcess": "処理する有効な接続データがありません。",
       "scriptErrorMissingAuthForSsh": "SSH接続にはパスワード (-p) またはキー名 (-k) が必要です",
@@ -328,15 +326,14 @@
       "scriptErrorUnexpectedArgument": "予期しない引数 '{argument}'",
       "scriptErrorEmptyLine": "入力行は空にできません",
       "scriptErrorInvalidUserHostPortFormat": "'{part}' の形式が無効です、期待される形式は 'user@host' または 'user@host:port' です",
-      "scriptTagCreated": "タグ '{tagName}' が作成されました",
-      "scriptErrorTagCreationFailed": "タグ '{tagName}' の作成に失敗しました",
       "scriptModeAddingConnections": "スクリプトモードで {count} 件の接続を追加中...",
       "jumpHostsTitle": "ジャンプホストチェーン設定",
       "jumpHostLabel": "ジャンプホスト",
       "selectJumpHost": "ジャンプホストを選択してください",
       "removeJumpHostTitle": "このジャンプホストを削除",
       "addJumpHost": "ジャンプホストを追加",
-      "noAvailableSshConnectionsForJump": "ジャンプホストとして使用できるSSH接続がありません。先にSSH接続を作成してください。"
+      "noAvailableSshConnectionsForJump": "ジャンプホストとして使用できるSSH接続がありません。先にSSH接続を作成してください。",
+      "folders": "フォルダ"
     },
     "noConnections": "接続がありません。'新しい接続を追加'をクリックして作成してください。",
     "noUntaggedConnections": "タグなしの接続はありません。",
@@ -353,8 +350,8 @@
       "lastConnected": "最終接続",
       "name": "名前",
       "port": "ポート",
-      "tags": "フォルダ",
-      "user": "ユーザー名"
+      "user": "ユーザー名",
+      "folders": "フォルダ"
     },
     "test": {
       "errorMissingFields": "ホスト、ポート、ユーザー名を入力し、認証方法を選択してください。",
@@ -383,14 +380,14 @@
       "type": "タイプ",
       "updated": "更新日時"
     },
-    "filterTags": {
-      "all": "すべてのフォルダ"
-    },
-    "noConnectionsWithTag": "このフォルダには接続がありません",
+    "noConnectionsWithFolder": "このフォルダには接続がありません",
     "noConnectionsMatchSearch": "検索条件に一致する接続はありません。",
     "searchConnectionsPlaceholder": "接続を検索...",
     "viewAllConnections": "すべての接続を表示",
-    "viewFullAuditLog": "完全な監査ログを表示"
+    "viewFullAuditLog": "完全な監査ログを表示",
+    "filterFolders": {
+      "all": "すべてのフォルダ"
+    }
   },
   "dockerManager": {
     "action": {
@@ -885,7 +882,21 @@
     "viewFolderOnly": "このフォルダーのみ表示",
     "allCommands": "すべてのコマンド",
     "colorUpdated": "フォルダー背景色を更新しました",
-    "customColor": "個別背景色"
+    "customColor": "個別背景色",
+    "inputPlaceholder": "検索またはフォルダを作成...",
+    "removeSelection": "選択を解除",
+    "deleteSuccess": "フォルダ「{name}」を削除しました。",
+    "deleteFolderGlobally": "このフォルダを削除",
+    "error": "フォルダ一覧の読み込みに失敗しました: {error}",
+    "loading": "フォルダを読み込み中...",
+    "noTags": "フォルダがありません。「新しいフォルダを作成」をクリックして作成してください。",
+    "prompts": {
+      "confirmDelete": "フォルダ「{name}」を削除しますか？この操作は元に戻せません。"
+    },
+    "createSuccess": "フォルダを作成しました。",
+    "updateSuccess": "フォルダを更新しました。",
+    "deleteFailed": "フォルダ「{name}」の削除に失敗しました: {error}",
+    "errorDelete": "フォルダの削除中にエラーが発生しました: {error}"
   },
   "notificationController": {
     "errorCreateSetting": "通知設定の作成に失敗しました",
@@ -965,8 +976,6 @@
     "dragResize": "ドラッグしてサイドバーの幅を調整",
     "form": {
       "add": "追加",
-      "tags": "フォルダ",
-      "tagsPlaceholder": "フォルダを選択または作成...",
       "command": "コマンド:",
       "commandPlaceholder": "例：",
       "errorCommandRequired": "コマンドは空にできません",
@@ -981,7 +990,9 @@
       "addVariable": "+ 変数を追加",
       "execute": "実行",
       "warningUndefinedVariables": "警告：コマンドテンプレートに未定義の変数があります: {variables}",
-      "errorNoActiveSession": "コマンドを実行するためのアクティブなSSHセッションがありません。"
+      "errorNoActiveSession": "コマンドを実行するためのアクティブなSSHセッションがありません。",
+      "folders": "フォルダ",
+      "foldersPlaceholder": "フォルダを選択または作成..."
     },
     "variablePrompt": {
       "title": "コマンドの変数を入力",
@@ -994,9 +1005,6 @@
       "filledCounter": "入力済み {filled}/{total}"
     },
     "untagged": "未分類",
-    "tags": {
-      "clickToEditTag": "クリックしてフォルダ名を編集"
-    },
     "searchPlaceholder": "名前またはコマンドを検索...",
     "sortByName": "名前",
     "sortByUsage": "使用頻度",
@@ -1012,6 +1020,9 @@
     "notifications": {
       "sentToAllSessions": "コマンドは {count} 個のセッションに送信されました。",
       "noActiveSshSessions": "コマンドを送信するアクティブな SSH セッションはありません。"
+    },
+    "folders": {
+      "clickToEditFolder": "クリックしてフォルダ名を編集"
     }
   },
   "remoteDesktop": {
@@ -1182,13 +1193,9 @@
       },
       "datasets": {
         "connections": "接続",
-        "tags": "フォルダ",
-        "connectionTags": "接続とフォルダの関連",
         "proxies": "プロキシ",
         "sshKeys": "SSH 鍵",
         "quickCommands": "クイックコマンド",
-        "quickCommandTags": "クイックコマンドのフォルダ",
-        "quickCommandTagAssociations": "クイックコマンドとフォルダの関連",
         "terminalThemes": "ターミナルテーマ",
         "favoritePaths": "お気に入りパス",
         "portForwards": "ポート転送ルール",
@@ -1198,7 +1205,11 @@
         "workspace": "ワークスペースのレイアウト",
         "notificationSettings": "通知チャネル",
         "commandHistory": "コマンド履歴",
-        "pathHistory": "パス履歴"
+        "pathHistory": "パス履歴",
+        "folders": "フォルダ",
+        "connectionFolders": "接続とフォルダの関連",
+        "quickCommandFolders": "クイックコマンドのフォルダ",
+        "quickCommandFolderAssociations": "クイックコマンドとフォルダの関連"
       },
       "secretMode": "認証情報の扱い",
       "secretModeEncrypted": "パスワードと秘密鍵を含める",
@@ -1383,9 +1394,9 @@
         "SSH_CONNECT_FAILURE": "SSH 接続失敗",
         "SSH_CONNECT_SUCCESS": "SSH 接続成功",
         "SSH_SHELL_FAILURE": "SSH Shell オープン失敗",
-        "TAG_CREATED": "フォルダ作成",
-        "TAG_DELETED": "フォルダ削除",
-        "TAG_UPDATED": "フォルダ更新"
+        "FOLDER_CREATED": "フォルダ作成",
+        "FOLDER_DELETED": "フォルダ削除",
+        "FOLDER_UPDATED": "フォルダ更新"
       },
       "form": {
         "addTitle": "通知チャンネルの追加",
@@ -1543,16 +1554,16 @@
     "workspace": {
       "error": {
         "sidebarPersistentSaveFailed": "サイドバーの設定の保存に失敗しました。",
-        "showConnectionTagsSaveFailed": "接続のフォルダグループ化設定の保存に失敗しました。",
-        "showQuickCommandTagsSaveFailed": "クイックコマンドのフォルダグループ化設定の保存に失敗しました。"
+        "showConnectionFoldersSaveFailed": "接続のフォルダグループ化設定の保存に失敗しました。",
+        "showQuickCommandFoldersSaveFailed": "クイックコマンドのフォルダグループ化設定の保存に失敗しました。"
       },
       "sidebarPersistentDescription": "有効にすると、サイドバーの外側をクリックしてもサイドバーは自動的に折りたたまれません。",
       "sidebarPersistentLabel": "ポップアップ後にサイドバーを固定 (自動的に折りたたまない)",
       "sidebarPersistentTitle": "サイドバーの動作",
       "success": {
         "sidebarPersistentSaved": "サイドバーの設定を保存しました。",
-        "showConnectionTagsSaved": "接続のフォルダグループ化設定を保存しました。",
-        "showQuickCommandTagsSaved": "クイックコマンドのフォルダグループ化設定を保存しました。"
+        "showConnectionFoldersSaved": "接続のフォルダグループ化設定を保存しました。",
+        "showQuickCommandFoldersSaved": "クイックコマンドのフォルダグループ化設定を保存しました。"
       },
       "title": "ワークスペースとターミナル",
       "terminalGroupTitle": "ターミナルとコンソール",
@@ -1563,12 +1574,6 @@
       "viewGroupDesc": "サイドバーの動作、接続リストのフォルダ絞り込み、クイックコマンドのフォルダ表示を設定",
       "monitoringGroupTitle": "システム監視とコンテナ",
       "monitoringGroupDesc": "リソース監視の間隔、IPアドレス表示、Dockerコンテナ監視の設定",
-      "showConnectionTagsTitle": "接続をフォルダでグループ化",
-      "showConnectionTagsLabel": "接続リストをフォルダでグループ化",
-      "showConnectionTagsDescription": "無効にすると接続リストはフラット表示になり、検索からフォルダ名が除外されます。",
-      "showQuickCommandTagsTitle": "クイックコマンドをフォルダでグループ化",
-      "showQuickCommandTagsLabel": "クイックコマンドリストをフォルダでグループ化",
-      "showQuickCommandTagsDescription": "無効にするとクイックコマンドリストはフラット表示になり、検索からフォルダ名が除外されます。",
       "fileManagerDeleteConfirmTitle": "ファイルマネージャー削除確認",
       "fileManagerShowDeleteConfirmationLabel": "ファイルまたはフォルダーを削除する際に確認ダイアログを表示する",
       "fileManagerDeleteConfirmSuccess": "ファイルマネージャーの削除確認設定を保存しました。",
@@ -1598,7 +1603,13 @@
       "terminalNoWrapTitle": "折り返さない",
       "terminalNoWrapDescription": "有効にすると、ターミナルのテキストは折り返されず、水平スクロールで表示されます。無効時は画面幅に合わせて折り返します",
       "terminalNoWrapSuccess": "ターミナルの折り返しなし設定が保存されました。",
-      "terminalNoWrapError": "ターミナルの折り返しなし設定の保存に失敗しました。"
+      "terminalNoWrapError": "ターミナルの折り返しなし設定の保存に失敗しました。",
+      "showConnectionFoldersTitle": "接続をフォルダでグループ化",
+      "showConnectionFoldersLabel": "接続リストをフォルダでグループ化",
+      "showConnectionFoldersDescription": "無効にすると接続リストはフラット表示になり、検索からフォルダ名が除外されます。",
+      "showQuickCommandFoldersTitle": "クイックコマンドをフォルダでグループ化",
+      "showQuickCommandFoldersLabel": "クイックコマンドリストをフォルダでグループ化",
+      "showQuickCommandFoldersDescription": "無効にするとクイックコマンドリストはフラット表示になり、検索からフォルダ名が除外されます。"
     },
     "statusMonitorShowIp": {
       "title": "ステータスモニターでIPアドレスを表示",
@@ -1879,24 +1890,6 @@
     "unknownTheme": "不明なテーマ",
     "noThemesFound": "一致するテーマが見つかりません"
   },
-  "tags": {
-    "addTag": "新しいフォルダを作成",
-    "deleteTagGlobally": "このフォルダを削除",
-    "error": "フォルダ一覧の読み込みに失敗しました: {error}",
-    "inputPlaceholder": "検索またはフォルダを作成...",
-    "loading": "フォルダを読み込み中...",
-    "noTags": "フォルダがありません。「新しいフォルダを作成」をクリックして作成してください。",
-    "prompts": {
-      "confirmDelete": "フォルダ「{name}」を削除しますか？この操作は元に戻せません。"
-    },
-    "removeSelection": "選択を解除",
-    "title": "フォルダ管理",
-    "createSuccess": "フォルダを作成しました。",
-    "updateSuccess": "フォルダを更新しました。",
-    "deleteSuccess": "フォルダ「{name}」を削除しました。",
-    "deleteFailed": "フォルダ「{name}」の削除に失敗しました: {error}",
-    "errorDelete": "フォルダの削除中にエラーが発生しました: {error}"
-  },
   "terminalTabBar": {
     "selectServerTitle": "接続するサーバーを選択",
     "showTransferProgressTooltip": "転送進捗の表示/非表示"
@@ -1905,9 +1898,9 @@
     "noResults": "\"{searchTerm}\"に一致する接続は見つかりませんでした。",
     "searchPlaceholder": "名前またはホストを検索...",
     "untagged": "未分類",
-    "allConnectionsTaggedSuccess": "すべての接続をこのフォルダに移動しました。",
-    "noConnectionsToTag": "分類する接続はありません。",
-    "clickToEditTag": "クリックしてフォルダ名を編集",
+    "allConnectionsMovedSuccess": "すべての接続をこのフォルダに移動しました。",
+    "noConnectionsToFolder": "分類する接続はありません。",
+    "clickToEditFolder": "クリックしてフォルダ名を編集",
     "connectAllInGroup": "グループ内のすべてに接続 (SSH)",
     "connectingAllInGroup": "グループ '{groupName}' 内のすべてに接続しています...",
     "noConnectionsInGroup": "グループ '{groupName}' 内に接続可能な項目がありません。",
@@ -1916,7 +1909,13 @@
     "noSshConnectionsInGroup": "グループ '{groupName}' 内に接続可能な SSH 接続がありません。",
     "connectAllSshInGroupMenu": "すべて接続",
     "noSshConnectionsToConnectMenu": "SSH 接続なし",
-    "manageTags": {
+    "deleteAllConnectionsInGroupMenu": "グループ内の全接続を削除",
+    "noConnectionsToDeleteInGroup": "グループ '{groupName}' に削除可能な接続がありません。",
+    "confirmDeleteAllConnectionsInGroup": "グループ '{groupName}' 内の全 {count} 個の接続を削除してもよろしいですか？この操作は元に戻せません。",
+    "allConnectionsInGroupDeletedSuccess": "グループ '{groupName}' から {count} 個の接続を正常に削除しました。",
+    "cannotDeleteFromUntagged": "このオプションを使用して「未分類」グループから接続を削除することはできません。",
+    "someConnectionsInGroupDeleteFailed": "グループ '{groupName}' 内の {count} 個の接続の削除に失敗しました。",
+    "manageFolders": {
       "title": "接続フォルダーの管理",
       "searchPlaceholder": "接続を検索...",
       "selectAll": "すべて選択",
@@ -1927,13 +1926,7 @@
       "menuItem": "フォルダを管理",
       "cannotManageUntagged": "「未分類」グループの接続は管理できません。",
       "invertSelection": "選択を反転"
-    },
-    "deleteAllConnectionsInGroupMenu": "グループ内の全接続を削除",
-    "noConnectionsToDeleteInGroup": "グループ '{groupName}' に削除可能な接続がありません。",
-    "confirmDeleteAllConnectionsInGroup": "グループ '{groupName}' 内の全 {count} 個の接続を削除してもよろしいですか？この操作は元に戻せません。",
-    "allConnectionsInGroupDeletedSuccess": "グループ '{groupName}' から {count} 個の接続を正常に削除しました。",
-    "cannotDeleteFromUntagged": "このオプションを使用して「未分類」グループから接続を削除することはできません。",
-    "someConnectionsInGroupDeleteFailed": "グループ '{groupName}' 内の {count} 個の接続の削除に失敗しました。"
+    }
   },
   "sshKeys": {
     "selector": {
@@ -2068,7 +2061,7 @@
     "cancelButton": "キャンセル",
     "errorFetchingData": "モーダルデータの取得中にエラーが発生しました。",
     "errorFetchingConnections": "接続データの取得中にエラーが発生しました。",
-    "errorFetchingTags": "フォルダデータの取得中にエラーが発生しました。",
+    "errorFetchingFolders": "フォルダデータの取得中にエラーが発生しました。",
     "validationError": "少なくとも1つの接続を選択し、ターゲットパスを指定してください。",
     "transferInitiated": "転送タスクが作成されました",
     "transferInitiatedGeneric": "転送タスクが正常に作成されました。",

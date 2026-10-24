@@ -140,7 +140,7 @@
             </label>
             <FolderSelect
               v-model="selectedFolderId"
-              :folders="quickCommandTagsStore.folders"
+              :folders="quickCommandFoldersStore.folders"
               :allow-create="true"
               @create-folder="handleCreateFolder"
               :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
@@ -267,7 +267,7 @@ import type { QuickCommandFE } from '../stores/quickCommands.store';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useResizable } from '../composables/useResizable';
 import { useQuickCommandForm } from '../composables/quickCommands/useQuickCommandForm';
-import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
+import { useQuickCommandFoldersStore } from '../stores/quickCommandFolders.store';
 import { PRESET_COLORS } from '../utils/colorUtils';
 import FolderSelect from './FolderSelect.vue';
 import MobileAddEditQuickCommandForm from './MobileAddEditQuickCommandForm.vue';
@@ -282,8 +282,8 @@ const emit = defineEmits(['close']);
 
 const { isMobile } = useDeviceDetection();
 const { t } = useI18n();
-// 模板里的颜色选择器直接用到了 tags store
-const quickCommandTagsStore = useQuickCommandTagsStore();
+// 模板里的颜色选择器直接用到了 folders store
+const quickCommandFoldersStore = useQuickCommandFoldersStore();
 
 // 桌面端可调整尺寸的弹窗
 const modalContentRef = ref<HTMLElement | null>(null);
@@ -308,7 +308,7 @@ const {
   handleRandomColor,
   initForm,
   handleCreateFolder,
-  handleDeleteTag,
+  handleDeleteFolder,
   handleSubmit,
   closeForm,
   addVariable,

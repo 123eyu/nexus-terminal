@@ -8,7 +8,7 @@ import { SftpTransferService } from './services/sftp-transfer.service';
 import { SftpArchiveService } from './services/sftp-archive.service';
 import { SftpUploadService } from './services/sftp-upload.service';
 import { ScpFileService } from './services/scp-file.service';
-import { findConnectionByIdWithTags } from '../connections/connection.repository';
+import { findConnectionByIdWithFolders } from '../connections/connection.repository';
 import { buildChownCommand } from './chown-command';
 
 /**
@@ -56,7 +56,7 @@ export class SftpService {
         let protocolConfig = state.fileProtocolConfig;
         if (!protocolConfig && state.dbConnectionId) {
             try {
-                const conn = await findConnectionByIdWithTags(state.dbConnectionId);
+                const conn = await findConnectionByIdWithFolders(state.dbConnectionId);
                 if (conn && conn.file_protocol) {
                     protocolConfig = conn.file_protocol;
                     state.fileProtocolConfig = protocolConfig;

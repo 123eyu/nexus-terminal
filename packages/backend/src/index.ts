@@ -82,7 +82,7 @@ import authRouter from './auth/auth.routes';
 import connectionsRouter from './connections/connections.routes';
 import sftpRouter from './sftp/sftp.routes';
 import proxyRoutes from './proxies/proxies.routes';
-import tagsRouter from './tags/tags.routes';
+import foldersRouter from './folders/folders.routes';
 import settingsRoutes from './settings/settings.routes';
 import notificationRoutes from './notifications/notification.routes';
 import auditRoutes from './audit/audit.routes';
@@ -91,7 +91,8 @@ import quickCommandsRoutes from './quick-commands/quick-commands.routes';
 import terminalThemeRoutes from './terminal-themes/terminal-theme.routes';
 import appearanceRoutes from './appearance/appearance.routes';
 import sshKeysRouter from './ssh_keys/ssh_keys.routes'; 
-import quickCommandTagRoutes from './quick-command-tags/quick-command-tag.routes'; 
+import { migrateLegacyDesktopSettings } from './settings/legacy-settings.migration';
+import quickCommandFolderRoutes from './quick-command-folders/quick-command-folder.routes'; 
 import sshSuspendRouter from './ssh-suspend/ssh-suspend.routes';
 import { transfersRoutes } from './transfers/transfers.routes';
 import pathHistoryRoutes from './path-history/path-history.routes';
@@ -322,7 +323,7 @@ const startServer = () => {
     app.use('/api/v1/connections', connectionsRouter);
     app.use('/api/v1/sftp', sftpRouter);
     app.use('/api/v1/proxies', proxyRoutes);
-    app.use('/api/v1/tags', tagsRouter);
+    app.use('/api/v1/folders', foldersRouter);
     app.use('/api/v1/settings', settingsRoutes);
     app.use('/api/v1/notifications', notificationRoutes);
     app.use('/api/v1/audit-logs', auditRoutes);
@@ -331,7 +332,7 @@ const startServer = () => {
     app.use('/api/v1/terminal-themes', terminalThemeRoutes);
     app.use('/api/v1/appearance', appearanceRoutes);
     app.use('/api/v1/ssh-keys', sshKeysRouter); 
-    app.use('/api/v1/quick-command-tags', quickCommandTagRoutes);
+    app.use('/api/v1/quick-command-folders', quickCommandFolderRoutes);
     app.use('/api/v1/ssh-suspend', sshSuspendRouter); 
     app.use('/api/v1/transfers', transfersRoutes());
     app.use('/api/v1/path-history', pathHistoryRoutes);
@@ -416,6 +417,7 @@ const startServer = () => {
 // --- 主程序启动流程 ---
 const main = async () => {
     await initializeEnvironment(); // 首先初始化环境和密钥
+    migrateLegacyDesktopSettings(); // 「标签 → 文件夹」改名：搬掉 desktop-settings.json 里的旧同步范围 key
     await initializeDatabase();   // 然后初始化数据库
     await ensureDesktopAdmin();   // 桌面端首次启动：自动建默认账号（无密码）
     startServer();                // 最后启动服务器

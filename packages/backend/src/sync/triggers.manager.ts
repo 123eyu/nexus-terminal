@@ -45,7 +45,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     ]
   },
   {
-    tableName: 'tags',
+    tableName: 'folders',
     updateOfColumns: [
       'name', 'background_color'
     ]
@@ -57,7 +57,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     ]
   },
   {
-    tableName: 'quick_command_tags',
+    tableName: 'quick_command_folders',
     updateOfColumns: [
       'name', 'background_color'
     ]
@@ -175,13 +175,13 @@ function generateTableTriggersSql(cfg: TableTriggerConfig): string {
 }
 
 /**
- * 生成关联表反向推进触发器 (connection_tags 变动顶父记录)
+ * 生成关联表反向推进触发器 (connection_folders 变动顶父记录)
  */
 function generateAssociationTriggersSql(): string {
   return `
-    -- connection_tags AFTER INSERT
-    DROP TRIGGER IF EXISTS connection_tags_sync_ai;
-    CREATE TRIGGER connection_tags_sync_ai AFTER INSERT ON connection_tags
+    -- connection_folders AFTER INSERT
+    DROP TRIGGER IF EXISTS connection_folders_sync_ai;
+    CREATE TRIGGER connection_folders_sync_ai AFTER INSERT ON connection_folders
     ${WHEN_ACTIVE}
     BEGIN
       ${BUMP_HLC}
@@ -190,9 +190,9 @@ function generateAssociationTriggersSql(): string {
         SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = NEW.connection_id;
     END;
 
-    -- connection_tags AFTER DELETE
-    DROP TRIGGER IF EXISTS connection_tags_sync_ad;
-    CREATE TRIGGER connection_tags_sync_ad AFTER DELETE ON connection_tags
+    -- connection_folders AFTER DELETE
+    DROP TRIGGER IF EXISTS connection_folders_sync_ad;
+    CREATE TRIGGER connection_folders_sync_ad AFTER DELETE ON connection_folders
     ${WHEN_ACTIVE}
     BEGIN
       ${BUMP_HLC}
@@ -201,9 +201,9 @@ function generateAssociationTriggersSql(): string {
         SELECT 'connections', uuid, 'U', NULL FROM connections WHERE id = OLD.connection_id;
     END;
 
-    -- quick_command_tag_associations AFTER INSERT
-    DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ai;
-    CREATE TRIGGER qc_tag_assoc_sync_ai AFTER INSERT ON quick_command_tag_associations
+    -- quick_command_folder_associations AFTER INSERT
+    DROP TRIGGER IF EXISTS qc_folder_assoc_sync_ai;
+    CREATE TRIGGER qc_folder_assoc_sync_ai AFTER INSERT ON quick_command_folder_associations
     ${WHEN_ACTIVE}
     BEGIN
       ${BUMP_HLC}
@@ -212,9 +212,9 @@ function generateAssociationTriggersSql(): string {
         SELECT 'quick_commands', uuid, 'U', NULL FROM quick_commands WHERE id = NEW.quick_command_id;
     END;
 
-    -- quick_command_tag_associations AFTER DELETE
-    DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ad;
-    CREATE TRIGGER qc_tag_assoc_sync_ad AFTER DELETE ON quick_command_tag_associations
+    -- quick_command_folder_associations AFTER DELETE
+    DROP TRIGGER IF EXISTS qc_folder_assoc_sync_ad;
+    CREATE TRIGGER qc_folder_assoc_sync_ad AFTER DELETE ON quick_command_folder_associations
     ${WHEN_ACTIVE}
     BEGIN
       ${BUMP_HLC}
@@ -307,10 +307,10 @@ export async function uninstallSyncTriggers(db: sqlite3.Database): Promise<void>
     triggerNames.push(`${cfg.tableName}_sync_ai`, `${cfg.tableName}_sync_au`, `${cfg.tableName}_sync_ad`);
   }
   triggerNames.push(
-    'connection_tags_sync_ai',
-    'connection_tags_sync_ad',
-    'qc_tag_assoc_sync_ai',
-    'qc_tag_assoc_sync_ad',
+    'connection_folders_sync_ai',
+    'connection_folders_sync_ad',
+    'qc_folder_assoc_sync_ai',
+    'qc_folder_assoc_sync_ad',
     'file_color_highlights_sync_ai',
     'file_color_highlights_sync_au',
     'file_color_highlights_sync_ad'

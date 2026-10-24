@@ -11,7 +11,7 @@
  *  7. 注释与空行：#、//、; 开头直接跳过
  *
  * 与「添加连接」表单对齐的选项（这些是后来加的，老脚本不用改也能跑）：
- *  -folder/-tags  文件夹（表单里是单选，脚本给多个时只取第一个建文件夹关联，其余当标签用）
+ *  -folder/-folders  文件夹（表单里是单选，脚本给多个时只取第一个建文件夹关联，其余忽略）
  *  -protocol      文件传输协议 auto|sftp|scp
  *  -jump          跳板机链，按连接名（逗号或空格分隔，仅 SSH）
  *  -color         卡片背景色，如 -color "#3b82f6"
@@ -36,7 +36,7 @@ export interface ParsedScriptConnection {
   proxyName?: string;
   /** 跳板机链（连接名） */
   jumpNames?: string[];
-  tags?: string[];
+  folders?: string[];
   note?: string;
   fileProtocol?: ScriptFileProtocol;
   backgroundColor?: string;
@@ -259,7 +259,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
           username: cUser,
           auth_method: 'password' as const,
           password: stripQuotes(fourColonMatch[4].trim()),
-          tags: [],
+          folders: [],
           note: '',
           ...(range.hosts.length > 1 ? { rangeSource: cHost } : {}),
         })),
@@ -286,7 +286,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
             username: u,
             auth_method: 'password' as const,
             password: stripQuotes(initialTokens[3]),
-            tags: [],
+            folders: [],
             note: '',
             ...(range.hosts.length > 1 ? { rangeSource: h } : {}),
           })),
@@ -308,7 +308,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
             username: 'root',
             auth_method: 'password' as const,
             password: stripQuotes(initialTokens[2]),
-            tags: [],
+            folders: [],
             note: '',
             ...(range.hosts.length > 1 ? { rangeSource: h } : {}),
           })),
@@ -325,7 +325,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
   let keyName: string | null = null;
   let proxyName: string | null = null;
   let jumpNames: string[] = [];
-  let tags: string[] = [];
+  let folders: string[] = [];
   let note: string | null = null;
   let explicitPort: number | null = null;
   let explicitUser: string | null = null;
@@ -361,7 +361,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
     };
 
     if (flagLower === 'tag' || flagLower === 'tags' || flagLower === 'folder' || flagLower === 'folders' || flagLower === 'dir') {
-      tags.push(...collectValues());
+      folders.push(...collectValues());
       continue;
     }
 
@@ -526,7 +526,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
       ...(keyName ? { keyName } : {}),
       ...(proxyName ? { proxyName } : {}),
       ...(jumpNames.length ? { jumpNames } : {}),
-      tags,
+      folders,
       ...(note !== null ? { note } : {}),
       ...(fileProtocol ? { fileProtocol } : {}),
       ...(backgroundColor ? { backgroundColor } : {}),

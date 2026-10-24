@@ -11,7 +11,7 @@ import type { Locale } from 'date-fns';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
 import { useAuditLogStore } from '../stores/audit.store';
 import { useSessionStore } from '../stores/session.store';
-import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useFoldersStore, type FolderInfo } from '../stores/folders.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddConnectionForm from './AddConnectionForm.vue';
@@ -23,13 +23,13 @@ const router = useRouter();
 const connectionsStore = useConnectionsStore();
 const auditLogStore = useAuditLogStore();
 const sessionStore = useSessionStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const { showConfirmDialog } = useConfirmDialog();
 
 const { connections, isLoading: isLoadingConnections } = storeToRefs(connectionsStore);
 const { logs: auditLogs, isLoading: isLoadingLogs } = storeToRefs(auditLogStore);
-const { tags, isLoading: isLoadingTags } = storeToRefs(tagsStore);
+const { folders, isLoading: isLoadingFolders } = storeToRefs(foldersStore);
 
 const getConnectionCardStyle = (backgroundColor?: string | null) => {
   if (!backgroundColor) return {};
@@ -50,7 +50,7 @@ const LS_ACTIVE_TAB_KEY = 'dashboard_mobile_active_tab';
 // 视图与筛选状态
 const activeTab = ref<'servers' | 'activity'>((localStorage.getItem(LS_ACTIVE_TAB_KEY) as 'servers' | 'activity') || 'servers');
 const searchQuery = ref('');
-const selectedTagId = ref<number | null>(null);
+const selectedFolderId = ref<number | null>(null);
 
 type SortOption = 'last_connected_at' | 'name' | 'type' | 'created_at';
 const sortBy = ref<SortOption>((localStorage.getItem(LS_SORT_BY_KEY) as SortOption) || 'last_connected_at');
@@ -66,13 +66,13 @@ const connToEdit = ref<ConnectionInfo | null>(null);
 const copiedConnId = ref<number | null>(null);
 
 // 标签映射
-const tagMap = computed(() => new Map(tags.value.map(tag => [tag.id, tag.name])));
+const folderMap = computed(() => new Map(folders.value.map(folder => [folder.id, folder.name])));
 
 // 标签列表带“全部”
-const allTagItems = computed(() => {
+const allFolderItems = computed(() => {
   return [
-    { id: null, name: t('dashboard.filterTags.all', '全部') },
-    ...(tags.value as TagInfo[])
+    { id: null, name: t('dashboard.filterFolders.all', '全部') },
+    ...(folders.value as FolderInfo[])
   ];
 });
 
@@ -105,13 +105,13 @@ const currentSortLabel = computed(() => {
 // 过滤和排序连接列表
 const filteredAndSortedConnections = computed(() => {
   const query = searchQuery.value.trim().toLowerCase();
-  const tagFilter = selectedTagId.value;
+  const folderFilter = selectedFolderId.value;
   const factor = sortOrder.value === 'desc' ? -1 : 1;
 
   // 1. 标签与关键词筛选
   let list = connections.value.filter(conn => {
-    if (tagFilter !== null) {
-      if (!conn.tag_ids || !conn.tag_ids.includes(tagFilter)) {
+    if (folderFilter !== null) {
+      if (!conn.folder_ids || !conn.folder_ids.includes(folderFilter)) {
         return false;
       }
     }
@@ -123,18 +123,18 @@ const filteredAndSortedConnections = computed(() => {
     const userMatch = conn.username?.toLowerCase().includes(query);
     const portMatch = conn.port?.toString().includes(query);
 
-    let tagMatch = false;
-    if (conn.tag_ids && conn.tag_ids.length > 0) {
-      for (const tid of conn.tag_ids) {
-        const tName = tagMap.value.get(tid);
+    let folderMatch = false;
+    if (conn.folder_ids && conn.folder_ids.length > 0) {
+      for (const tid of conn.folder_ids) {
+        const tName = folderMap.value.get(tid);
         if (tName && tName.toLowerCase().includes(query)) {
-          tagMatch = true;
+          folderMatch = true;
           break;
         }
       }
     }
 
-    return nameMatch || hostMatch || userMatch || portMatch || tagMatch;
+    return nameMatch || hostMatch || userMatch || portMatch || folderMatch;
   });
 
   // 2. 排序
@@ -203,10 +203,10 @@ const isFailedAction = (actionType: string): boolean => {
 };
 
 // 获取连接对应的标签名列表
-const getConnTagNames = (tagIds?: number[]): string[] => {
-  if (!tagIds || tagIds.length === 0) return [];
-  return tagIds
-    .map(id => tagMap.value.get(id))
+const getConnFolderNames = (folderIds?: number[]): string[] => {
+  if (!folderIds || folderIds.length === 0) return [];
+  return folderIds
+    .map(id => folderMap.value.get(id))
     .filter((name): name is string => !!name);
 };
 
@@ -217,7 +217,7 @@ const handleRefresh = async () => {
   try {
     await Promise.allSettled([
       connectionsStore.fetchConnections(),
-      tagsStore.fetchTags(),
+      foldersStore.fetchFolders(),
       auditLogStore.fetchLogs({
         page: 1,
         limit: 15,
@@ -345,8 +345,8 @@ onMounted(async () => {
   if (connections.value.length === 0) {
     connectionsStore.fetchConnections().catch(console.error);
   }
-  if (tags.value.length === 0) {
-    tagsStore.fetchTags().catch(console.error);
+  if (folders.value.length === 0) {
+    foldersStore.fetchFolders().catch(console.error);
   }
   auditLogStore.fetchLogs({
     page: 1,
@@ -404,7 +404,7 @@ onMounted(async () => {
       <section class="grid grid-cols-3 gap-2">
         <!-- 统计 1: 连接数 -->
         <div 
-          @click="activeTab = 'servers'; selectedTagId = null; searchQuery = ''"
+          @click="activeTab = 'servers'; selectedFolderId = null; searchQuery = ''"
           class="p-2.5 rounded-xl bg-card/75 border border-border/80 shadow-sm flex flex-col justify-between active:bg-muted/40 transition cursor-pointer"
         >
           <div class="flex items-center justify-between text-muted-foreground">
@@ -427,7 +427,7 @@ onMounted(async () => {
             <i class="fas fa-folder text-xs text-amber-500/80"></i>
           </div>
           <div class="mt-1 flex items-baseline justify-between">
-            <span class="text-xl font-bold text-foreground font-mono">{{ tags.length }}</span>
+            <span class="text-xl font-bold text-foreground font-mono">{{ folders.length }}</span>
             <span class="text-[10px] text-muted-foreground">组</span>
           </div>
         </div>
@@ -520,12 +520,12 @@ onMounted(async () => {
         <!-- 水平可滚动文件夹胶囊过滤栏 (Filter Chips) -->
         <div class="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-0.5">
           <button
-            v-for="item in allTagItems"
+            v-for="item in allFolderItems"
             :key="item.id === null ? 'all' : item.id"
-            @click="selectedTagId = item.id"
+            @click="selectedFolderId = item.id"
             :class="[
               'px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all border flex items-center gap-1',
-              selectedTagId === item.id
+              selectedFolderId === item.id
                 ? 'bg-primary text-primary-foreground border-primary font-semibold shadow-sm'
                 : 'bg-card/90 text-muted-foreground border-border hover:border-border/80 active:bg-muted'
             ]"
@@ -641,13 +641,13 @@ onMounted(async () => {
             <div class="mt-2.5 pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
               <!-- 文件夹胶囊 -->
               <div class="flex flex-wrap gap-1 min-w-0 flex-1 mr-2">
-                <template v-if="getConnTagNames(conn.tag_ids).length > 0">
+                <template v-if="getConnFolderNames(conn.folder_ids).length > 0">
                   <span
-                    v-for="tagName in getConnTagNames(conn.tag_ids)"
-                    :key="tagName"
+                    v-for="folderName in getConnFolderNames(conn.folder_ids)"
+                    :key="folderName"
                     class="px-1.5 py-0.2 rounded bg-muted/80 text-muted-foreground border border-border/50 text-[10px] truncate max-w-[100px]"
                   >
-                    {{ tagName }}
+                    {{ folderName }}
                   </span>
                 </template>
                 <span v-else class="text-[10px] text-muted-foreground/50">未分类</span>
@@ -690,8 +690,8 @@ onMounted(async () => {
           </div>
           <div class="flex items-center gap-2 pt-1">
             <button
-              v-if="searchQuery || selectedTagId !== null"
-              @click="searchQuery = ''; selectedTagId = null"
+              v-if="searchQuery || selectedFolderId !== null"
+              @click="searchQuery = ''; selectedFolderId = null"
               class="px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-foreground font-medium active:bg-muted transition"
             >
               清空筛选

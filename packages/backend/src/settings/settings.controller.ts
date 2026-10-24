@@ -483,18 +483,18 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
     }
 }, // <-- Add comma here
 
- // --- Show Connection Tags ---
- async getShowConnectionTags(req: Request, res: Response): Promise<void> {
+ // --- Show Connection Folders ---
+ async getShowConnectionFolders(req: Request, res: Response): Promise<void> {
    try {
-     const isEnabled = await settingsService.getShowConnectionTags();
+     const isEnabled = await settingsService.getShowConnectionFolders();
      res.json({ enabled: isEnabled });
    } catch (error: any) {
-     console.error('[控制器] 获取“显示连接标签”设置时出错:', error);
+     console.error('[控制器] 获取“显示连接文件夹”设置时出错:', error);
      res.status(500).json({ message: '获取“连接文件夹分组”设置失败', error: error.message });
    }
  }, // *** 确保这里有逗号 ***
 
- async setShowConnectionTags(req: Request, res: Response): Promise<void> {
+ async setShowConnectionFolders(req: Request, res: Response): Promise<void> {
    try {
      const { enabled } = req.body;
      console.log('[控制器] 请求体 enabled:', enabled);
@@ -506,32 +506,32 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
      }
 
      
-     await settingsService.setShowConnectionTags(enabled);
+     await settingsService.setShowConnectionFolders(enabled);
      
 
-     auditLogService.logAction('SETTINGS_UPDATED', { updatedKeys: ['showConnectionTags'] });
-     notificationService.sendNotification('SETTINGS_UPDATED', { updatedKeys: ['showConnectionTags'] });
+     auditLogService.logAction('SETTINGS_UPDATED', { updatedKeys: ['showConnectionFolders'] });
+     notificationService.sendNotification('SETTINGS_UPDATED', { updatedKeys: ['showConnectionFolders'] });
 
      
      res.status(200).json({ message: '“连接文件夹分组”设置已成功更新' });
    } catch (error: any) {
-     console.error('[控制器] 设置“显示连接标签”时出错:', error);
+     console.error('[控制器] 设置“显示连接文件夹”时出错:', error);
      res.status(500).json({ message: '设置“连接文件夹分组”失败', error: error.message });
    }
  }, // *** 确保这里有逗号 ***
 
- // --- Show Quick Command Tags ---
- async getShowQuickCommandTags(req: Request, res: Response): Promise<void> {
+ // --- Show Quick Command Folders ---
+ async getShowQuickCommandFolders(req: Request, res: Response): Promise<void> {
    try {
-     const isEnabled = await settingsService.getShowQuickCommandTags();
+     const isEnabled = await settingsService.getShowQuickCommandFolders();
      res.json({ enabled: isEnabled });
    } catch (error: any) {
-     console.error('[控制器] 获取“显示快捷指令标签”设置时出错:', error);
+     console.error('[控制器] 获取“显示快捷指令文件夹”设置时出错:', error);
      res.status(500).json({ message: '获取“快捷指令文件夹分组”设置失败', error: error.message });
    }
  }, // *** 确保这里有逗号 ***
 
- async setShowQuickCommandTags(req: Request, res: Response): Promise<void> {
+ async setShowQuickCommandFolders(req: Request, res: Response): Promise<void> {
    try {
      const { enabled } = req.body;
      console.log('[控制器] 请求体 enabled:', enabled);
@@ -543,16 +543,16 @@ async setCaptchaConfig(req: Request, res: Response): Promise<void> {
      }
 
      
-     await settingsService.setShowQuickCommandTags(enabled);
+     await settingsService.setShowQuickCommandFolders(enabled);
      
 
-     auditLogService.logAction('SETTINGS_UPDATED', { updatedKeys: ['showQuickCommandTags'] });
-     notificationService.sendNotification('SETTINGS_UPDATED', { updatedKeys: ['showQuickCommandTags'] });
+     auditLogService.logAction('SETTINGS_UPDATED', { updatedKeys: ['showQuickCommandFolders'] });
+     notificationService.sendNotification('SETTINGS_UPDATED', { updatedKeys: ['showQuickCommandFolders'] });
 
      
      res.status(200).json({ message: '“快捷指令文件夹分组”设置已成功更新' });
    } catch (error: any) {
-     console.error('[控制器] 设置“显示快捷指令标签”时出错:', error);
+     console.error('[控制器] 设置“显示快捷指令文件夹”时出错:', error);
      res.status(500).json({ message: '设置“快捷指令文件夹分组”失败', error: error.message });
    }
  }, 

@@ -22,13 +22,13 @@ export type SyncCategoryKey = (typeof SYNC_CATEGORY_KEYS)[number];
 export const SYNC_ITEM_KEYS = [
   // 连接与资产
   'connections.hosts',
-  'connections.tags',
+  'connections.folders',
   'connections.keys',
   'connections.proxies',
   'connections.favoritePaths',
   // 快捷指令
   'quickCommands.items',
-  'quickCommands.tags',
+  'quickCommands.folders',
   // 外观样式
   'appearance.terminalTheme',
   'appearance.font',
@@ -52,12 +52,12 @@ export type SyncItemKey = (typeof SYNC_ITEM_KEYS)[number];
 export const CATEGORY_ITEMS: Record<SyncCategoryKey, readonly SyncItemKey[]> = {
   connections: [
     'connections.hosts',
-    'connections.tags',
+    'connections.folders',
     'connections.keys',
     'connections.proxies',
     'connections.favoritePaths',
   ],
-  quickCommands: ['quickCommands.items', 'quickCommands.tags'],
+  quickCommands: ['quickCommands.items', 'quickCommands.folders'],
   appearance: [
     'appearance.terminalTheme',
     'appearance.font',
@@ -114,15 +114,15 @@ export function isItemEnabled(enabled: Set<SyncItemKey>, key: SyncItemKey): bool
 /** 表名 → 子项。v2 的 sync_changes 只有表名，没有业务语义 */
 export const TABLE_SYNC_ITEM: Record<string, SyncItemKey> = {
   connections: 'connections.hosts',
-  connection_tags: 'connections.hosts',
+  connection_folders: 'connections.hosts',
   port_forwards: 'connections.hosts',
   file_color_highlights: 'connections.hosts',
-  tags: 'connections.tags',
+  folders: 'connections.folders',
   ssh_keys: 'connections.keys',
   proxies: 'connections.proxies',
   favorite_paths: 'connections.favoritePaths',
   quick_commands: 'quickCommands.items',
-  quick_command_tags: 'quickCommands.tags',
+  quick_command_folders: 'quickCommands.folders',
   terminal_themes: 'appearance.terminalTheme',
   command_history: 'commandHistory.history',
 };

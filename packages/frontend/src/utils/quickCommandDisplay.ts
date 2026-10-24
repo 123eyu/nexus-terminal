@@ -16,29 +16,29 @@ export interface FolderColorSource {
 /** 文件夹自定义底色；没有则回落到 null（由调用方决定默认色） */
 export function resolveFolderColor(
   folders: ReadonlyArray<FolderColorSource>,
-  tagId?: number | null
+  folderId?: number | null
 ): string | null {
-  if (!tagId) return null;
-  const folder = folders.find((f) => f.id === tagId);
+  if (!folderId) return null;
+  const folder = folders.find((f) => f.id === folderId);
   return folder?.background_color || null;
 }
 
 /**
  * 一条命令当前归属的文件夹底色。
  *
- * 优先用分组传入的 tagId（列表按文件夹分组渲染时），
- * 否则按命令自己的第一个 tagIds 取。
+ * 优先用分组传入的 folderId（列表按文件夹分组渲染时），
+ * 否则按命令自己的第一个 folderIds 取。
  */
 export function resolveCommandFolderColor(
   folders: ReadonlyArray<FolderColorSource>,
-  cmd: Pick<QuickCommandFE, 'tagIds'>,
-  groupTagId?: number | null
+  cmd: Pick<QuickCommandFE, 'folderIds'>,
+  groupFolderId?: number | null
 ): string | null {
-  if (typeof groupTagId === 'number') {
-    return resolveFolderColor(folders, groupTagId);
+  if (typeof groupFolderId === 'number') {
+    return resolveFolderColor(folders, groupFolderId);
   }
-  if (cmd.tagIds && cmd.tagIds.length > 0) {
-    return resolveFolderColor(folders, cmd.tagIds[0]);
+  if (cmd.folderIds && cmd.folderIds.length > 0) {
+    return resolveFolderColor(folders, cmd.folderIds[0]);
   }
   return null;
 }
@@ -49,12 +49,12 @@ export function resolveCommandFolderColor(
  * 'all' = 全部；'untagged' = 没有任何标签的；数字 = 该标签下的。
  */
 export function countCommandsInFolder(
-  commands: ReadonlyArray<Pick<QuickCommandFE, 'tagIds'>>,
+  commands: ReadonlyArray<Pick<QuickCommandFE, 'folderIds'>>,
   folderId: number | 'all' | 'untagged'
 ): number {
   if (folderId === 'all') return commands.length;
   if (folderId === 'untagged') {
-    return commands.filter((cmd) => !cmd.tagIds || cmd.tagIds.length === 0).length;
+    return commands.filter((cmd) => !cmd.folderIds || cmd.folderIds.length === 0).length;
   }
-  return commands.filter((cmd) => cmd.tagIds && cmd.tagIds.includes(folderId)).length;
+  return commands.filter((cmd) => cmd.folderIds && cmd.folderIds.includes(folderId)).length;
 }

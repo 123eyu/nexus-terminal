@@ -52,7 +52,7 @@ test('选项式：用户名/端口/密码/名称/文件夹/备注', () => {
   assert.equal(c.username, 'admin');
   assert.equal(c.password, 'P@ss word');
   assert.equal(c.name, '生产网关');
-  assert.deepEqual(c.tags, ['生产']);
+  assert.deepEqual(c.folders, ['生产']);
   assert.equal(c.note, '别乱动 here');
   assert.equal(c.auth_method, 'password');
 });

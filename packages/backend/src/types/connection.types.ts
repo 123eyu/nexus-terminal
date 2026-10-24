@@ -17,8 +17,8 @@ export interface ConnectionBase {
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
 }
 
-export interface ConnectionWithTags extends ConnectionBase {
-    tag_ids: number[];
+export interface ConnectionWithFolders extends ConnectionBase {
+    folder_ids: number[];
 }
 
 
@@ -35,7 +35,7 @@ export interface CreateConnectionInput {
     ssh_key_id?: number | null; 
     proxy_id?: number | null;
     proxy_type?: 'proxy' | 'jump' | null; 
-    tag_ids?: number[];
+    folder_ids?: number[];
     notes?: string | null;
     jump_chain?: number[] | null;
     background_color?: string | null;
@@ -57,7 +57,7 @@ export interface UpdateConnectionInput {
     proxy_id?: number | null;
     proxy_type?: 'proxy' | 'jump' | null;
     notes?: string | null;
-    tag_ids?: number[];
+    folder_ids?: number[];
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;

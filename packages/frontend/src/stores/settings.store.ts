@@ -59,8 +59,8 @@ interface SettingsState {
   ipBlacklistEnabled?: string;
   dashboardSortBy?: SortField;
   dashboardSortOrder?: SortOrder;
-  showConnectionTags?: string; // 'true' or 'false'
-  showQuickCommandTags?: string; // 'true' or 'false'
+  showConnectionFolders?: string; // 'true' or 'false'
+  showQuickCommandFolders?: string; // 'true' or 'false'
   layoutLocked?: string; // 'true' or 'false' - NEW: 布局锁定状态
   terminalScrollbackLimit?: string; //  终端回滚行数上限 (e.g., '5000', '0' for unlimited)
   fileManagerShowDeleteConfirmation?: string;
@@ -153,19 +153,19 @@ export const useSettingsStore = defineStore('settings', () => {
       // Fetch all settings, including the new ones
       const [
         generalSettingsResponse,
-        showConnectionTagsResponse,
-        showQuickCommandTagsResponse
+        showConnectionFoldersResponse,
+        showQuickCommandFoldersResponse
       ] = await Promise.all([
         apiClient.get<Record<string, string>>('/settings'),
-        apiClient.get<{ enabled: boolean }>('/settings/show-connection-tags'),
-        apiClient.get<{ enabled: boolean }>('/settings/show-quick-command-tags')
+        apiClient.get<{ enabled: boolean }>('/settings/show-connection-folders'),
+        apiClient.get<{ enabled: boolean }>('/settings/show-quick-command-folders')
       ]);
 
       settings.value = { ...settings.value, ...generalSettingsResponse.data };
 
       // 这两个开关有独立接口，以独立接口的返回为准
-      settings.value.showConnectionTags = String(showConnectionTagsResponse.data.enabled);
-      settings.value.showQuickCommandTags = String(showQuickCommandTagsResponse.data.enabled);
+      settings.value.showConnectionFolders = String(showConnectionFoldersResponse.data.enabled);
+      settings.value.showQuickCommandFolders = String(showQuickCommandFoldersResponse.data.enabled);
 
       console.log('[SettingsStore] Fetched settings from backend:', JSON.stringify(settings.value));
 
@@ -324,8 +324,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // Use specific endpoints for boolean settings
     const booleanEndpoints: Partial<Record<keyof SettingsState, string>> = {
-        showConnectionTags: '/settings/show-connection-tags',
-        showQuickCommandTags: '/settings/show-quick-command-tags',
+        showConnectionFolders: '/settings/show-connection-folders',
+        showQuickCommandFolders: '/settings/show-quick-command-folders',
         autoCopyOnSelect: '/settings/auto-copy-on-select',
         // Add other boolean settings with specific endpoints here if needed
     };
@@ -697,12 +697,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const recaptchaSiteKey = computed(() => captchaSettings.value?.recaptchaSiteKey ?? '');
   // DO NOT expose secret keys via getters
 
-  //  Getters for tag visibility
-  const showConnectionTagsBoolean = computed(() => {
-      return settings.value.showConnectionTags !== 'false'; // Default to true
+  //  Getters for folder visibility
+  const showConnectionFoldersBoolean = computed(() => {
+      return settings.value.showConnectionFolders !== 'false'; // Default to true
   });
-  const showQuickCommandTagsBoolean = computed(() => {
-      return settings.value.showQuickCommandTags !== 'false'; // Default to true
+  const showQuickCommandFoldersBoolean = computed(() => {
+      return settings.value.showQuickCommandFolders !== 'false'; // Default to true
   });
 
   //  Getter for layout locked status
@@ -928,9 +928,9 @@ export const useSettingsStore = defineStore('settings', () => {
     dashboardSortBy,
     dashboardSortOrder,
     saveDashboardSortPreference,
-    //  Expose tag visibility getters
-    showConnectionTagsBoolean,
-    showQuickCommandTagsBoolean,
+    //  Expose folder visibility getters
+    showConnectionFoldersBoolean,
+    showQuickCommandFoldersBoolean,
     //  Expose layout locked getter
     layoutLockedBoolean,
     terminalScrollbackLimitNumber, //  Expose terminal scrollback limit getter

@@ -6,8 +6,8 @@ import { QuickCommandSortBy } from './quick-commands.service';
  * 处理添加新快捷指令的请求
  */
 export const addQuickCommand = async (req: Request, res: Response): Promise<void> => {
-    // 从请求体中解构出 name, command, 以及可选的 tagIds, variables 和 background_color
-    const { name, command, tagIds, variables, background_color } = req.body;
+    // 从请求体中解构出 name, command, 以及可选的 folderIds, variables 和 background_color
+    const { name, command, folderIds, variables, background_color } = req.body;
 
     // --- 基本验证 ---
     if (!command || typeof command !== 'string' || command.trim().length === 0) {
@@ -19,9 +19,9 @@ export const addQuickCommand = async (req: Request, res: Response): Promise<void
          res.status(400).json({ message: '名称必须是字符串或 null' });
          return;
     }
-    // 验证 tagIds (如果提供的话)
-    if (tagIds !== undefined && (!Array.isArray(tagIds) || !tagIds.every(id => typeof id === 'number'))) {
-        res.status(400).json({ message: 'tagIds 必须是一个数字数组' });
+    // 验证 folderIds (如果提供的话)
+    if (folderIds !== undefined && (!Array.isArray(folderIds) || !folderIds.every(id => typeof id === 'number'))) {
+        res.status(400).json({ message: 'folderIds 必须是一个数字数组' });
         return;
     }
     // 验证 variables (如果提供的话)
@@ -32,9 +32,9 @@ export const addQuickCommand = async (req: Request, res: Response): Promise<void
  
 
     try {
-        // 将 tagIds, variables 和 background_color 传递给 Service 层
-        const newId = await QuickCommandsService.addQuickCommand(name, command, tagIds, variables, background_color);
-        // 尝试获取新创建的带标签的指令信息返回
+        // 将 folderIds, variables 和 background_color 传递给 Service 层
+        const newId = await QuickCommandsService.addQuickCommand(name, command, folderIds, variables, background_color);
+        // 尝试获取新创建的带文件夹的指令信息返回
         const newCommand = await QuickCommandsService.getQuickCommandById(newId);
         if (newCommand) {
             res.status(201).json({ message: '快捷指令已添加', command: newCommand });
@@ -70,8 +70,8 @@ export const getAllQuickCommands = async (req: Request, res: Response): Promise<
  */
 export const updateQuickCommand = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
-    // 从请求体中解构出 name, command, 以及可选的 tagIds, variables 和 background_color
-    const { name, command, tagIds, variables, background_color } = req.body;
+    // 从请求体中解构出 name, command, 以及可选的 folderIds, variables 和 background_color
+    const { name, command, folderIds, variables, background_color } = req.body;
 
     // --- 基本验证 ---
     if (isNaN(id)) {
@@ -86,10 +86,10 @@ export const updateQuickCommand = async (req: Request, res: Response): Promise<v
          res.status(400).json({ message: '名称必须是字符串或 null' });
          return;
     }
-    // 验证 tagIds (如果提供的话)
-    // 注意: tagIds 为 undefined 表示不更新标签，空数组 [] 表示清除所有标签
-    if (tagIds !== undefined && (!Array.isArray(tagIds) || !tagIds.every(id => typeof id === 'number'))) {
-        res.status(400).json({ message: 'tagIds 必须是一个数字数组' });
+    // 验证 folderIds (如果提供的话)
+    // 注意: folderIds 为 undefined 表示不更新文件夹，空数组 [] 表示清除所有文件夹
+    if (folderIds !== undefined && (!Array.isArray(folderIds) || !folderIds.every(id => typeof id === 'number'))) {
+        res.status(400).json({ message: 'folderIds 必须是一个数字数组' });
         return;
     }
     // 验证 variables (如果提供的话)
@@ -100,10 +100,10 @@ export const updateQuickCommand = async (req: Request, res: Response): Promise<v
     }
 
     try {
-        // 将 tagIds, variables 和 background_color 传递给 Service 层
-        const success = await QuickCommandsService.updateQuickCommand(id, name, command, tagIds, variables, background_color);
+        // 将 folderIds, variables 和 background_color 传递给 Service 层
+        const success = await QuickCommandsService.updateQuickCommand(id, name, command, folderIds, variables, background_color);
         if (success) {
-             // 尝试获取更新后的带标签的指令信息返回
+             // 尝试获取更新后的带文件夹的指令信息返回
             const updatedCommand = await QuickCommandsService.getQuickCommandById(id);
             if (updatedCommand) {
                  res.status(200).json({ message: '快捷指令已更新', command: updatedCommand });
@@ -178,26 +178,26 @@ export const incrementUsage = async (req: Request, res: Response): Promise<void>
 };
 
 /**
- * 批量将标签分配给多个快捷指令
+ * 批量将文件夹分配给多个快捷指令
  */
-export const assignTagToCommands = async (req: Request, res: Response): Promise<void> => { // Add : Promise<void>
-    const { commandIds, tagId } = req.body;
+export const assignFolderToCommands = async (req: Request, res: Response): Promise<void> => { // Add : Promise<void>
+    const { commandIds, folderId } = req.body;
 
     // 基本验证
-    if (!Array.isArray(commandIds) || commandIds.length === 0 || typeof tagId !== 'number') {
-        res.status(400).json({ success: false, message: '请求体必须包含 commandIds (非空数组) 和 tagId (数字)。' });
+    if (!Array.isArray(commandIds) || commandIds.length === 0 || typeof folderId !== 'number') {
+        res.status(400).json({ success: false, message: '请求体必须包含 commandIds (非空数组) 和 folderId (数字)。' });
         return; // Use return without value to exit early
     }
 
     try {
         // 调用 Service 函数处理批量分配
-        console.log(`[Controller] assignTagToCommands: Received commandIds: ${JSON.stringify(commandIds)}, tagId: ${tagId}`); 
-        await QuickCommandsService.assignTagToCommands(commandIds, tagId);
-        res.status(200).json({ success: true, message: `文件夹 ${tagId} 已成功尝试关联到 ${commandIds.length} 个指令。` });
+        console.log(`[Controller] assignFolderToCommands: Received commandIds: ${JSON.stringify(commandIds)}, folderId: ${folderId}`); 
+        await QuickCommandsService.assignFolderToCommands(commandIds, folderId);
+        res.status(200).json({ success: true, message: `文件夹 ${folderId} 已成功尝试关联到 ${commandIds.length} 个指令。` });
     } catch (error: any) {
-        console.error('[Controller] 批量分配标签时出错:', error.message);
+        console.error('[Controller] 批量分配文件夹时出错:', error.message);
         // 根据错误类型返回不同的状态码可能更好，但这里简化处理
-        res.status(500).json({ success: false, message: error.message || '批量分配标签时发生内部服务器错误。' });
+        res.status(500).json({ success: false, message: error.message || '批量分配文件夹时发生内部服务器错误。' });
         // No return needed here, error handling completes the response
     }
 };

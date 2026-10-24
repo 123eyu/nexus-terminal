@@ -5,16 +5,16 @@ import * as SshKeyService from '../ssh_keys/ssh_key.service';
 import { recordTombstone } from '../sync/tombstone.service';
 import {
     ConnectionBase,
-    ConnectionWithTags,
+    ConnectionWithFolders,
     CreateConnectionInput,
     UpdateConnectionInput,
     FullConnectionData,
-    ConnectionWithTags as ConnectionWithTagsType // Alias to avoid conflict with variable name
+    ConnectionWithFolders as ConnectionWithFoldersType // Alias to avoid conflict with variable name
 } from '../types/connection.types';
 import { stopAllForConnection } from '../port-forward/port-forward.service';
 import { deleteRulesByConnection } from '../port-forward/port-forward.repository';
 
-export type { ConnectionBase, ConnectionWithTags, CreateConnectionInput, UpdateConnectionInput };
+export type { ConnectionBase, ConnectionWithFolders, CreateConnectionInput, UpdateConnectionInput };
 
 /**
  * 辅助函数：验证 jump_chain 并处理与 proxy_id 的互斥关系
@@ -42,7 +42,7 @@ const _validateAndProcessJumpChain = async (
         if (connectionId && id === connectionId) {
             throw new Error(`jump_chain 不能包含当前连接自身的 ID (${connectionId})。`);
         }
-        const existingConnection = await ConnectionRepository.findConnectionByIdWithTags(id);
+        const existingConnection = await ConnectionRepository.findConnectionByIdWithFolders(id);
         if (!existingConnection) {
             throw new Error(`jump_chain 中的连接 ID ${id} 未找到。`);
         }
@@ -58,29 +58,29 @@ const _validateAndProcessJumpChain = async (
 const auditLogService = new AuditLogService(); 
 
 /**
- * 获取所有连接（包含标签）
+ * 获取所有连接（包含文件夹）
  */
-export const getAllConnections = async (): Promise<ConnectionWithTags[]> => {
-    // Repository now returns ConnectionWithTags including 'type'
+export const getAllConnections = async (): Promise<ConnectionWithFolders[]> => {
+    // Repository now returns ConnectionWithFolders including 'type'
     // Explicit type assertion to ensure compatibility
-    return ConnectionRepository.findAllConnectionsWithTags() as Promise<ConnectionWithTags[]>;
+    return ConnectionRepository.findAllConnectionsWithFolders() as Promise<ConnectionWithFolders[]>;
 };
 
 /**
- * 根据 ID 获取单个连接（包含标签）
+ * 根据 ID 获取单个连接（包含文件夹）
  */
-export const getConnectionById = async (id: number): Promise<ConnectionWithTags | null> => {
-    // Repository now returns ConnectionWithTags including 'type'
+export const getConnectionById = async (id: number): Promise<ConnectionWithFolders | null> => {
+    // Repository now returns ConnectionWithFolders including 'type'
     // Explicit type assertion to ensure compatibility
-    return ConnectionRepository.findConnectionByIdWithTags(id) as Promise<ConnectionWithTags | null>;
+    return ConnectionRepository.findConnectionByIdWithFolders(id) as Promise<ConnectionWithFolders | null>;
 };
 
 /**
  * 创建新连接
  */
-export const createConnection = async (input: CreateConnectionInput): Promise<ConnectionWithTags> => {
+export const createConnection = async (input: CreateConnectionInput): Promise<ConnectionWithFolders> => {
     // +++ Define a local type alias for clarity, including ssh_key_id +++
-    type ConnectionDataForRepo = Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'tag_ids'> & { jump_chain?: number[] | null; proxy_type?: 'proxy' | 'jump' | null };
+    type ConnectionDataForRepo = Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'folder_ids'> & { jump_chain?: number[] | null; proxy_type?: 'proxy' | 'jump' | null };
 
     console.log('[Service:createConnection] Received input:', JSON.stringify(input, null, 2)); // Log input
 
@@ -218,12 +218,12 @@ notes: input.notes ?? null, // Add notes field
 
     // 4. 在仓库中创建连接记录
     // Pass the potentially modified finalConnectionData
-    const newConnectionId = await ConnectionRepository.createConnection(finalConnectionData as Omit<ConnectionRepository.FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'tag_ids'>);
+    const newConnectionId = await ConnectionRepository.createConnection(finalConnectionData as Omit<ConnectionRepository.FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'folder_ids'>);
 
-    // 5. 处理标签
-    const tagIds = input.tag_ids?.filter(id => typeof id === 'number' && id > 0) ?? [];
-    if (tagIds.length > 0) {
-        await ConnectionRepository.updateConnectionTags(newConnectionId, tagIds);
+    // 5. 处理文件夹
+    const folderIds = input.folder_ids?.filter(id => typeof id === 'number' && id > 0) ?? [];
+    if (folderIds.length > 0) {
+        await ConnectionRepository.updateConnectionFolders(newConnectionId, folderIds);
     }
 
     // 6. 记录审计操作
@@ -235,14 +235,14 @@ notes: input.notes ?? null, // Add notes field
     }
     auditLogService.logAction('CONNECTION_CREATED', { connectionId: newConnection.id, type: newConnection.type, name: newConnection.name, host: newConnection.host }); // Add type to audit log
 
-    // 7. 返回新创建的带标签的连接
+    // 7. 返回新创建的带文件夹的连接
     return newConnection;
 };
 
 /**
  * 更新连接信息
  */
-export const updateConnection = async (id: number, input: UpdateConnectionInput): Promise<ConnectionWithTags | null> => {
+export const updateConnection = async (id: number, input: UpdateConnectionInput): Promise<ConnectionWithFolders | null> => {
     // 1. 获取当前连接数据（包括加密字段）以进行比较
     const currentFullConnection = await ConnectionRepository.findFullConnectionById(id);
     if (!currentFullConnection) {
@@ -251,7 +251,7 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
 
     // 2. 准备更新数据
     // Explicitly type dataToUpdate to match the repository's expected input, including ssh_key_id, jump_chain and proxy_type
-    const dataToUpdate: Partial<Omit<ConnectionRepository.FullConnectionData & { ssh_key_id?: number | null; jump_chain?: number[] | null; proxy_type?: 'proxy' | 'jump' | null }, 'id' | 'created_at' | 'last_connected_at' | 'tag_ids'>> = {};
+    const dataToUpdate: Partial<Omit<ConnectionRepository.FullConnectionData & { ssh_key_id?: number | null; jump_chain?: number[] | null; proxy_type?: 'proxy' | 'jump' | null }, 'id' | 'created_at' | 'last_connected_at' | 'folder_ids'>> = {};
     let needsCredentialUpdate = false;
     // Determine the final type, converting input type to uppercase if provided
     const targetType = input.type?.toUpperCase() as 'SSH' | 'RDP' | 'VNC' | undefined || currentFullConnection.type;
@@ -413,9 +413,9 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     }
 
     // 3. 如果有更改，则更新连接记录
-    const hasNonTagChanges = Object.keys(dataToUpdate).length > 0;
+    const hasNonFolderChanges = Object.keys(dataToUpdate).length > 0;
     let updatedFieldsForAudit: string[] = []; // 跟踪审计日志的字段
-    if (hasNonTagChanges) {
+    if (hasNonFolderChanges) {
         updatedFieldsForAudit = Object.keys(dataToUpdate); // 在更新调用之前获取字段
         console.log(`[Service:updateConnection] Data being passed to ConnectionRepository.updateConnection for ID ${id}:`, JSON.stringify(dataToUpdate, null, 2)); // ADD THIS LOG
         const updated = await ConnectionRepository.updateConnection(id, dataToUpdate);
@@ -425,19 +425,19 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
         }
     }
 
-    // 4. 如果提供了 tag_ids，则处理标签更新
-    if (input.tag_ids !== undefined) {
-        const validTagIds = input.tag_ids.filter(tagId => typeof tagId === 'number' && tagId > 0);
-        await ConnectionRepository.updateConnectionTags(id, validTagIds);
+    // 4. 如果提供了 folder_ids，则处理文件夹更新
+    if (input.folder_ids !== undefined) {
+        const validFolderIds = input.folder_ids.filter(folderId => typeof folderId === 'number' && folderId > 0);
+        await ConnectionRepository.updateConnectionFolders(id, validFolderIds);
     }
-    // 如果 tag_ids 已更新，则将其添加到审计日志
-    if (input.tag_ids !== undefined) {
-        updatedFieldsForAudit.push('tag_ids');
+    // 如果 folder_ids 已更新，则将其添加到审计日志
+    if (input.folder_ids !== undefined) {
+        updatedFieldsForAudit.push('folder_ids');
     }
 
 
     // 5. 如果进行了任何更改，则记录审计操作
-    if (hasNonTagChanges || input.tag_ids !== undefined) {
+    if (hasNonFolderChanges || input.folder_ids !== undefined) {
          // Add type to audit log if it was updated
          const auditDetails: any = { connectionId: id, updatedFields: updatedFieldsForAudit };
          if (dataToUpdate.type) {
@@ -461,7 +461,7 @@ export const deleteConnection = async (id: number): Promise<boolean> => {
         await deleteRulesByConnection(id);
     } catch (e) {}
     try {
-        const existing = await ConnectionRepository.findConnectionByIdWithTags(id);
+        const existing = await ConnectionRepository.findConnectionByIdWithFolders(id);
         if (existing && (existing as any).uuid) {
             await recordTombstone('connection', (existing as any).uuid);
         }
@@ -476,13 +476,13 @@ export const deleteConnection = async (id: number): Promise<boolean> => {
 };
 
 /**
- * 获取连接信息（包含标签）以及解密后的凭证（如果适用）
+ * 获取连接信息（包含文件夹）以及解密后的凭证（如果适用）
  * @param id 连接 ID
- * @returns 包含 ConnectionWithTags 和解密后密码/密钥的对象，或 null
+ * @returns 包含 ConnectionWithFolders 和解密后密码/密钥的对象，或 null
  */
 export const getConnectionWithDecryptedCredentials = async (
     id: number
-): Promise<{ connection: ConnectionWithTags; decryptedPassword?: string; decryptedPrivateKey?: string; decryptedPassphrase?: string } | null> => {
+): Promise<{ connection: ConnectionWithFolders; decryptedPassword?: string; decryptedPrivateKey?: string; decryptedPassphrase?: string } | null> => {
     // 1. 获取完整的连接数据（包含加密字段和可能的 ssh_key_id）
     const fullConnectionDbRow = await ConnectionRepository.findFullConnectionById(id);
     if (!fullConnectionDbRow) {
@@ -500,9 +500,9 @@ export const getConnectionWithDecryptedCredentials = async (
         // Ensure other fields match FullConnectionData if necessary
     } as FullConnectionData & { ssh_key_id: number | null }; // Type assertion
 
-    // 2. 获取带标签的连接数据（用于返回给调用者）
-    const connectionWithTags: ConnectionWithTags | null = await ConnectionRepository.findConnectionByIdWithTags(id);
-    if (!connectionWithTags) {
+    // 2. 获取带文件夹的连接数据（用于返回给调用者）
+    const connectionWithFolders: ConnectionWithFolders | null = await ConnectionRepository.findConnectionByIdWithFolders(id);
+    if (!connectionWithFolders) {
          // This shouldn't happen if findFullConnectionById succeeded, but good practice to check
          console.error(`[Service:getConnWithDecrypt] Mismatch: Full connection found but tagged connection not found for ID: ${id}`);
          // Consider throwing an error or returning a specific error state
@@ -555,7 +555,7 @@ export const getConnectionWithDecryptedCredentials = async (
 
     console.log(`[Service:getConnWithDecrypt] Returning data for ID: ${id}, Auth Method: ${fullConnection.auth_method}`);
     return {
-        connection: connectionWithTags,
+        connection: connectionWithFolders,
         decryptedPassword,
         decryptedPrivateKey,
         decryptedPassphrase,
@@ -568,9 +568,9 @@ export const getConnectionWithDecryptedCredentials = async (
  * 克隆连接
  * @param originalId 要克隆的原始连接 ID
  * @param newName 新连接的名称
- * @returns 克隆后的新连接信息（包含标签）
+ * @returns 克隆后的新连接信息（包含文件夹）
  */
-export const cloneConnection = async (originalId: number, newName: string): Promise<ConnectionWithTags> => {
+export const cloneConnection = async (originalId: number, newName: string): Promise<ConnectionWithFolders> => {
     // 1. 检查新名称是否已存在
     const existingByName = await ConnectionRepository.findConnectionByName(newName);
     if (existingByName) {
@@ -585,7 +585,7 @@ export const cloneConnection = async (originalId: number, newName: string): Prom
 
     // 3. 准备新连接的数据
     // 使用 Omit 来排除不需要的字段，并确保类型正确
-    const dataForNewConnection: Omit<ConnectionRepository.FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'tag_ids'> = {
+    const dataForNewConnection: Omit<ConnectionRepository.FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'folder_ids'> = {
         name: newName,
         type: originalFullConnection.type,
         host: originalFullConnection.host,
@@ -608,11 +608,11 @@ export const cloneConnection = async (originalId: number, newName: string): Prom
     // 4. 创建新连接记录
     const newConnectionId = await ConnectionRepository.createConnection(dataForNewConnection);
 
-    // 5. 复制原始连接的标签
-    const originalTags = await ConnectionRepository.findConnectionTags(originalId);
-    if (originalTags.length > 0) {
-        const tagIds = originalTags.map(tag => tag.id);
-        await ConnectionRepository.updateConnectionTags(newConnectionId, tagIds);
+    // 5. 复制原始连接的文件夹
+    const originalFolders = await ConnectionRepository.findConnectionFolders(originalId);
+    if (originalFolders.length > 0) {
+        const folderIds = originalFolders.map(folder => folder.id);
+        await ConnectionRepository.updateConnectionFolders(newConnectionId, folderIds);
     }
 
     // 6. 记录审计操作
@@ -630,51 +630,51 @@ export const cloneConnection = async (originalId: number, newName: string): Prom
         clonedFromId: originalId // 添加克隆来源信息
     });
 
-    // 7. 返回新创建的带标签的连接
+    // 7. 返回新创建的带文件夹的连接
     return clonedConnection;
 };
-// 注意：updateConnectionTags 现在主要由 updateConnection 内部调用，
-// 或者可以保留用于单独更新单个连接标签的场景（如果需要的话）。
+// 注意：updateConnectionFolders 现在主要由 updateConnection 内部调用，
+// 或者可以保留用于单独更新单个连接文件夹的场景（如果需要的话）。
 // 为了解决嵌套事务问题，我们添加一个新的批量添加函数。
 
 /**
- * 为指定的一组连接添加一个标签
+ * 为指定的一组连接添加一个文件夹
  * @param connectionIds 连接 ID 数组
- * @param tagId 要添加的标签 ID
+ * @param folderId 要添加的文件夹 ID
  */
-export const addTagToConnections = async (connectionIds: number[], tagId: number): Promise<void> => {
-    // 1. 验证 tagId 是否有效（可选，但建议）
-    // const tagExists = await TagRepository.findTagById(tagId); // 需要导入 TagRepository
+export const addFolderToConnections = async (connectionIds: number[], folderId: number): Promise<void> => {
+    // 1. 验证 folderId 是否有效（可选，但建议）
+    // const tagExists = await FolderRepository.findFolderById(folderId); // 需要导入 FolderRepository
     // if (!tagExists) {
-    //     throw new Error(`标签 ID ${tagId} 不存在。`);
+    //     throw new Error(`文件夹 ID ${folderId} 不存在。`);
     // }
 
-    // 2. 调用仓库层批量添加标签
+    // 2. 调用仓库层批量添加文件夹
     try {
-        await ConnectionRepository.addTagToMultipleConnections(connectionIds, tagId);
+        await ConnectionRepository.addFolderToMultipleConnections(connectionIds, folderId);
 
         // 记录审计日志 (可以考虑为批量操作定义新的审计类型)
         // TODO: 定义 'CONNECTIONS_TAG_ADDED' 审计日志类型
-        // auditLogService.logAction('CONNECTIONS_TAG_ADDED', { connectionIds, tagId });
+        // auditLogService.logAction('CONNECTIONS_TAG_ADDED', { connectionIds, folderId });
 
     } catch (error: any) {
-        console.error(`Service: 为连接 ${connectionIds.join(', ')} 添加标签 ${tagId} 时发生错误:`, error);
+        console.error(`Service: 为连接 ${connectionIds.join(', ')} 添加文件夹 ${folderId} 时发生错误:`, error);
         throw error; // 重新抛出错误
     }
 };
 
 /**
- * 更新指定连接的标签关联 (保留此函数用于可能的其他用途，但主要逻辑转移到 addTagToConnections)
+ * 更新指定连接的文件夹关联 (保留此函数用于可能的其他用途，但主要逻辑转移到 addFolderToConnections)
  * @param connectionId 连接 ID
- * @param tagIds 新的标签 ID 数组
+ * @param folderIds 新的文件夹 ID 数组
  * @returns boolean 指示操作是否成功（找到连接并尝试更新）
  */
-export const updateConnectionTags = async (connectionId: number, tagIds: number[]): Promise<boolean> => {
+export const updateConnectionFolders = async (connectionId: number, folderIds: number[]): Promise<boolean> => {
     try {
-        const updated = await ConnectionRepository.updateConnectionTags(connectionId, tagIds);
+        const updated = await ConnectionRepository.updateConnectionFolders(connectionId, folderIds);
         return updated;
     } catch (error: any) {
-        console.error(`Service: 更新连接 ${connectionId} 的标签时发生错误:`, error);
+        console.error(`Service: 更新连接 ${connectionId} 的文件夹时发生错误:`, error);
         throw error;
     }
 };

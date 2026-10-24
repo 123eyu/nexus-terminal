@@ -51,7 +51,24 @@
     "movedSuccessTo": "已移动至 {name}",
     "batchMoveSuccess": "已将 {count} 个连接移动至 {name}",
     "customColor": "独立背景颜色",
-    "colorUpdated": "文件夹背景颜色已更新"
+    "colorUpdated": "文件夹背景颜色已更新",
+    "inputPlaceholder": "输入搜索或创建文件夹...",
+    "removeSelection": "移除选择",
+    "deleteSuccess": "文件夹 \"{name}\" 删除成功。",
+    "loading": "正在加载文件夹...",
+    "error": "加载文件夹列表失败: {error}",
+    "noTags": "还没有任何文件夹。点击“新建文件夹”来创建一个吧！",
+    "prompts": {
+      "confirmDelete": "确定要删除文件夹 \"{name}\" 吗？此操作不可撤销。"
+    },
+    "deleteFolderGlobally": "删除此文件夹",
+    "createSuccess": "文件夹创建成功。",
+    "updateSuccess": "文件夹更新成功。",
+    "deleteFailed": "文件夹 \"{name}\" 删除失败: {error}",
+    "errorDelete": "删除文件夹时出错: {error}",
+    "createFailed": "创建文件夹「{name}」失败：{error}",
+    "deleteSuccessWithName": "已删除文件夹「{name}」",
+    "deleteFailedWithName": "删除文件夹「{name}」失败：{error}"
   },
   "styleCustomizer": {
     "title": "外观自定义",
@@ -315,9 +332,9 @@
       "port": "端口",
       "user": "用户名",
       "authMethod": "认证方式",
-      "tags": "文件夹",
       "lastConnected": "上次连接",
-      "actions": "操作"
+      "actions": "操作",
+      "folders": "文件夹"
     },
     "batchEdit": {
       "toggleLabel": "批量修改",
@@ -378,7 +395,6 @@
       "keyUpdateNote": "将私钥和密码短语留空以保留现有密钥。",
       "proxy": "代理:",
       "noProxy": "无代理",
-      "tags": "所属文件夹",
       "notes": "备注:",
       "notesPlaceholder": "输入连接备注...",
       "connectionMode": "代理类型:",
@@ -450,7 +466,6 @@
       "scriptErrorMissingKeyNameForSsh": "脚本行 '{line}' (SSH密钥认证) 缺少密钥名称 (-k)。",
       "scriptErrorMissingPasswordForType": "脚本行 '{line}' ({type}类型) 缺少密码 (-p)。",
       "scriptErrorInternal": "处理脚本输入时发生内部解析错误。",
-      "scriptErrorTagNotFound": "脚本处理错误：未找到标签 '{tagName}'。",
       "scriptErrorSshKeyNotFound": "脚本处理错误：未找到 SSH 密钥 '{keyName}'。",
       "scriptErrorNothingToProcess": "没有可处理的有效连接数据。",
       "scriptErrorMissingAuthForSsh": "SSH连接必须提供密码 (-p) 或密钥名称 (-k)",
@@ -463,8 +478,6 @@
       "scriptErrorUnexpectedArgument": "意外参数 '{argument}'",
       "scriptErrorEmptyLine": "输入行不能为空",
       "scriptErrorInvalidUserHostPortFormat": "'{part}' 部分格式无效，期望格式为 'user@host' 或 'user@host:port'",
-      "scriptTagCreated": "标签 '{tagName}' 已创建",
-      "scriptErrorTagCreationFailed": "创建标签 '{tagName}' 失败",
       "scriptModeAddingConnections": "正在通过脚本模式添加 {count} 个连接...",
       "jumpHostsTitle": "跳板机链配置",
       "jumpHostLabel": "跳板机",
@@ -472,7 +485,8 @@
       "removeJumpHostTitle": "移除此跳板机",
       "addJumpHost": "添加跳板机",
       "noAvailableSshConnectionsForJump": "没有可用的SSH连接作为跳板机。请先创建一些SSH连接。",
-      "errorDelete": "删除连接失败：{error}"
+      "errorDelete": "删除连接失败：{error}",
+      "folders": "所属文件夹"
     },
     "test": {
       "success": "已用系统默认程序打开（保存后自动同步回远程）",
@@ -868,28 +882,6 @@
     "copyIpHint": "点击复制 IP",
     "copyIpError": "复制 IP 失败"
   },
-  "tags": {
-    "title": "文件夹管理",
-    "addTag": "新建文件夹",
-    "loading": "正在加载文件夹...",
-    "error": "加载文件夹列表失败: {error}",
-    "noTags": "还没有任何文件夹。点击“新建文件夹”来创建一个吧！",
-    "prompts": {
-      "confirmDelete": "确定要删除文件夹 \"{name}\" 吗？此操作不可撤销。"
-    },
-    "inputPlaceholder": "输入搜索或创建文件夹...",
-    "removeSelection": "移除选择",
-    "deleteTagGlobally": "删除此文件夹",
-    "createSuccess": "文件夹创建成功。",
-    "updateSuccess": "文件夹更新成功。",
-    "deleteSuccess": "文件夹 \"{name}\" 删除成功。",
-    "deleteFailed": "文件夹 \"{name}\" 删除失败: {error}",
-    "errorDelete": "删除文件夹时出错: {error}",
-    "createFailed": "创建文件夹「{name}」失败：{error}",
-    "deleteSuccessWithName": "已删除文件夹「{name}」",
-    "deleteFailedWithName": "删除文件夹「{name}」失败：{error}",
-    "deleteConfirm": "确定要删除文件夹“{name}”吗？此操作无法撤销。"
-  },
   "settings": {
     "testTimeout": {
       "title": "测试连接超时",
@@ -1128,9 +1120,6 @@
         "PROXY_CREATED": "代理已创建",
         "PROXY_UPDATED": "代理已更新",
         "PROXY_DELETED": "代理已删除",
-        "TAG_CREATED": "文件夹已创建",
-        "TAG_UPDATED": "文件夹已更新",
-        "TAG_DELETED": "文件夹已删除",
         "SETTINGS_UPDATED": "设置已更新",
         "IP_WHITELIST_UPDATED": "IP 白名单已更新",
         "IP_BLOCKED": "IP 已封禁",
@@ -1141,7 +1130,10 @@
         "SSH_CONNECT_FAILURE": "SSH 连接失败",
         "SSH_SHELL_FAILURE": "SSH Shell 打开失败",
         "DATABASE_MIGRATION": "数据库迁移",
-        "ADMIN_SETUP_COMPLETE": "初始管理员设置完成"
+        "ADMIN_SETUP_COMPLETE": "初始管理员设置完成",
+        "FOLDER_CREATED": "文件夹已创建",
+        "FOLDER_UPDATED": "文件夹已更新",
+        "FOLDER_DELETED": "文件夹已删除"
       }
     },
     "appearance": {
@@ -1202,20 +1194,14 @@
       "sidebarPersistentDescription": "开启后，点击侧边栏外部区域不会自动收回侧边栏。",
       "success": {
         "sidebarPersistentSaved": "侧边栏设置已保存。",
-        "showConnectionTagsSaved": "连接文件夹分组设置已保存。",
-        "showQuickCommandTagsSaved": "快捷指令文件夹分组设置已保存。"
+        "showConnectionFoldersSaved": "连接文件夹分组设置已保存。",
+        "showQuickCommandFoldersSaved": "快捷指令文件夹分组设置已保存。"
       },
       "error": {
         "sidebarPersistentSaveFailed": "保存侧边栏设置失败。",
-        "showConnectionTagsSaveFailed": "保存连接文件夹分组设置失败。",
-        "showQuickCommandTagsSaveFailed": "保存快捷指令文件夹分组设置失败。"
+        "showConnectionFoldersSaveFailed": "保存连接文件夹分组设置失败。",
+        "showQuickCommandFoldersSaveFailed": "保存快捷指令文件夹分组设置失败。"
       },
-      "showConnectionTagsTitle": "按文件夹分组显示连接",
-      "showConnectionTagsLabel": "连接列表按文件夹分组",
-      "showConnectionTagsDescription": "关闭后连接列表改为平铺显示，并从搜索中排除文件夹名。",
-      "showQuickCommandTagsTitle": "按文件夹分组显示快捷指令",
-      "showQuickCommandTagsLabel": "快捷指令列表按文件夹分组",
-      "showQuickCommandTagsDescription": "关闭后快捷指令列表改为平铺显示，并从搜索中排除文件夹名。",
       "fileManagerDeleteConfirmTitle": "文件管理器删除确认",
       "fileManagerShowDeleteConfirmationLabel": "删除文件或文件夹时显示确认提示框",
       "fileManagerDeleteConfirmSuccess": "文件管理器删除确认设置已保存。",
@@ -1266,7 +1252,13 @@
       "terminalSwitchPaneShortcutTitle": "分屏终端切换快捷键",
       "terminalSwitchPaneShortcutDescription": "工作区布局存在多个终端窗格时，按此组合键快速轮流切换活动终端并呈现紫色高亮边框 (默认 Alt+`，例如可配置 Alt+`、Alt+W、Ctrl+Shift+T 等)",
       "terminalSwitchPaneShortcutSuccess": "分屏终端切换快捷键已保存。",
-      "terminalSwitchPaneShortcutError": "保存分屏终端切换快捷键失败。"
+      "terminalSwitchPaneShortcutError": "保存分屏终端切换快捷键失败。",
+      "showConnectionFoldersTitle": "按文件夹分组显示连接",
+      "showConnectionFoldersLabel": "连接列表按文件夹分组",
+      "showConnectionFoldersDescription": "关闭后连接列表改为平铺显示，并从搜索中排除文件夹名。",
+      "showQuickCommandFoldersTitle": "按文件夹分组显示快捷指令",
+      "showQuickCommandFoldersLabel": "快捷指令列表按文件夹分组",
+      "showQuickCommandFoldersDescription": "关闭后快捷指令列表改为平铺显示，并从搜索中排除文件夹名。"
     },
     "statusMonitorShowIp": {
       "title": "状态监视器显示IP地址",
@@ -1378,13 +1370,9 @@
       },
       "datasets": {
         "connections": "连接",
-        "tags": "文件夹",
-        "connectionTags": "连接与文件夹关联",
         "proxies": "代理服务器",
         "sshKeys": "SSH 密钥",
         "quickCommands": "快捷指令",
-        "quickCommandTags": "快捷指令文件夹",
-        "quickCommandTagAssociations": "快捷指令与文件夹关联",
         "terminalThemes": "终端主题",
         "favoritePaths": "收藏路径",
         "portForwards": "端口转发规则",
@@ -1394,7 +1382,11 @@
         "workspace": "工作区布局",
         "notificationSettings": "通知渠道",
         "commandHistory": "命令历史",
-        "pathHistory": "路径历史"
+        "pathHistory": "路径历史",
+        "folders": "文件夹",
+        "connectionFolders": "连接与文件夹关联",
+        "quickCommandFolders": "快捷指令文件夹",
+        "quickCommandFolderAssociations": "快捷指令与文件夹关联"
       },
       "secretMode": "凭据处理方式",
       "secretModeEncrypted": "包含密码和私钥",
@@ -1591,9 +1583,6 @@
       "PROXY_CREATED": "代理已创建",
       "PROXY_UPDATED": "代理已更新",
       "PROXY_DELETED": "代理已删除",
-      "TAG_CREATED": "文件夹已创建",
-      "TAG_UPDATED": "文件夹已更新",
-      "TAG_DELETED": "文件夹已删除",
       "SETTINGS_UPDATED": "设置已更新",
       "IP_WHITELIST_UPDATED": "IP 白名单已更新",
       "NOTIFICATION_SETTING_CREATED": "通知设置已创建",
@@ -1613,16 +1602,19 @@
       "PASSKEY_DELETED": "Passkey 已删除",
       "PASSKEY_DELETE_UNAUTHORIZED": "Passkey 删除未授权",
       "PASSKEY_NAME_UPDATED": "Passkey 名称已更新",
-      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey 名称更新未授权"
+      "PASSKEY_NAME_UPDATE_UNAUTHORIZED": "Passkey 名称更新未授权",
+      "FOLDER_CREATED": "文件夹已创建",
+      "FOLDER_UPDATED": "文件夹已更新",
+      "FOLDER_DELETED": "文件夹已删除"
     }
   },
   "workspaceConnectionList": {
     "untagged": "未分类",
     "searchPlaceholder": "搜索名称或主机...",
     "noResults": "未找到匹配 \"{searchTerm}\" 的连接。",
-    "allConnectionsTaggedSuccess": "所有连接已归入该文件夹。",
-    "noConnectionsToTag": "没有需要归类的连接。",
-    "clickToEditTag": "点击编辑文件夹名称",
+    "allConnectionsMovedSuccess": "所有连接已归入该文件夹。",
+    "noConnectionsToFolder": "没有需要归类的连接。",
+    "clickToEditFolder": "点击编辑文件夹名称",
     "connectAllInGroup": "连接组内全部 (SSH)",
     "connectingAllInGroup": "正在连接组 '{groupName}' 中的所有连接...",
     "noConnectionsInGroup": "组 '{groupName}' 中没有可连接的项。",
@@ -1631,7 +1623,13 @@
     "noSshConnectionsInGroup": "组 '{groupName}' 中没有 SSH 类型的连接可供连接。",
     "connectAllSshInGroupMenu": "连接全部",
     "noSshConnectionsToConnectMenu": "无 SSH 连接",
-    "manageTags": {
+    "deleteAllConnectionsInGroupMenu": "删除分组内所有连接",
+    "noConnectionsToDeleteInGroup": "分组 '{groupName}' 中没有可删除的连接。",
+    "confirmDeleteAllConnectionsInGroup": "确定要删除分组 '{groupName}' 中的全部 {count} 个连接吗？此操作不可撤销。",
+    "allConnectionsInGroupDeletedSuccess": "已成功从分组 '{groupName}' 中删除 {count} 个连接。",
+    "cannotDeleteFromUntagged": "不能使用此选项从“未标记”分组中删除连接。",
+    "someConnectionsInGroupDeleteFailed": "分组 '{groupName}' 中的 {count} 个连接未能删除。",
+    "manageFolders": {
       "title": "管理连接文件夹",
       "searchPlaceholder": "搜索连接...",
       "selectAll": "全选",
@@ -1642,13 +1640,7 @@
       "menuItem": "管理文件夹",
       "cannotManageUntagged": "无法管理“未分类”分组的连接。",
       "invertSelection": "反选"
-    },
-    "deleteAllConnectionsInGroupMenu": "删除分组内所有连接",
-    "noConnectionsToDeleteInGroup": "分组 '{groupName}' 中没有可删除的连接。",
-    "confirmDeleteAllConnectionsInGroup": "确定要删除分组 '{groupName}' 中的全部 {count} 个连接吗？此操作不可撤销。",
-    "allConnectionsInGroupDeletedSuccess": "已成功从分组 '{groupName}' 中删除 {count} 个连接。",
-    "cannotDeleteFromUntagged": "不能使用此选项从“未标记”分组中删除连接。",
-    "someConnectionsInGroupDeleteFailed": "分组 '{groupName}' 中的 {count} 个连接未能删除。"
+    }
   },
   "remoteDesktop": {
     "title": "远程桌面",
@@ -1850,8 +1842,6 @@
       "commandPlaceholder": "例如：",
       "errorCommandRequired": "指令内容不能为空",
       "add": "添加",
-      "tags": "所属文件夹",
-      "tagsPlaceholder": "选择或创建文件夹...",
       "variablesTitle": "变量管理",
       "noVariables": "暂无变量。点击下方按钮添加。",
       "variableNamePlaceholder": "变量名",
@@ -1859,7 +1849,9 @@
       "addVariable": "+ 添加变量",
       "execute": "执行",
       "warningUndefinedVariables": "警告：指令模板中存在未定义的变量: {variables}",
-      "errorNoActiveSession": "没有活动的SSH会话可执行指令。"
+      "errorNoActiveSession": "没有活动的SSH会话可执行指令。",
+      "folders": "所属文件夹",
+      "foldersPlaceholder": "选择或创建文件夹..."
     },
     "variablePrompt": {
       "title": "填写指令变量",
@@ -1872,12 +1864,6 @@
       "filledCounter": "已填 {filled}/{total}"
     },
     "untagged": "未分类",
-    "tags": {
-      "clickToEditTag": "点击编辑文件夹名称",
-      "createSuccess": "文件夹创建成功",
-      "noCommandsToAssign": "没有可归类的指令",
-      "updateSuccess": "文件夹更新成功"
-    },
     "actions": {
       "sendToAllSessions": "发送到全部会话",
       "executeDesc": "在当前活跃终端发送并运行",
@@ -1890,7 +1876,13 @@
       "sentToAllSessions": "指令已发送到 {count} 个会话。",
       "noActiveSshSessions": "没有活动的 SSH 会话可发送指令。"
     },
-    "deleteConfirm": "确定要删除指令 \"{name}\" 吗？"
+    "deleteConfirm": "确定要删除指令 \"{name}\" 吗？",
+    "folders": {
+      "createSuccess": "文件夹创建成功",
+      "noCommandsToAssign": "没有可归类的指令",
+      "clickToEditFolder": "点击编辑文件夹名称",
+      "updateSuccess": "文件夹更新成功"
+    }
   },
   "setup": {
     "title": "初始设置",
@@ -1997,12 +1989,12 @@
       "updated": "修改时间",
       "created": "创建时间"
     },
-    "filterTags": {
-      "all": "所有文件夹"
-    },
-    "noConnectionsWithTag": "该文件夹下没有连接记录",
+    "noConnectionsWithFolder": "该文件夹下没有连接记录",
     "noConnectionsMatchSearch": "没有连接匹配搜索条件",
-    "searchConnectionsPlaceholder": "搜索连接..."
+    "searchConnectionsPlaceholder": "搜索连接...",
+    "filterFolders": {
+      "all": "所有文件夹"
+    }
   },
   "terminalTabBar": {
     "selectServerTitle": "选择要连接的服务器",
@@ -2156,7 +2148,7 @@
     "cancelButton": "取消",
     "errorFetchingData": "获取模态框数据时出错。",
     "errorFetchingConnections": "获取连接数据时出错。",
-    "errorFetchingTags": "获取文件夹数据时出错。",
+    "errorFetchingFolders": "获取文件夹数据时出错。",
     "validationError": "请至少选择一个连接并指定目标路径。",
     "transferInitiated": "传输任务已创建",
     "transferInitiatedGeneric": "传输任务创建成功。",

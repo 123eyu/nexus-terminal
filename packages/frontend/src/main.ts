@@ -15,6 +15,7 @@ import 'element-plus/dist/index.css';
 import { installDebugBridge } from './debug';
 import { showBootFailure, isChunkLoadError } from './utils/bootFallback';
 import { isDesktopApp } from './utils/platform';
+import { migrateLegacyFolderStorage } from './utils/legacyStorageMigration';
 
 
 const pinia = createPinia(); // 创建 Pinia 实例
@@ -34,6 +35,9 @@ app.use(i18n); // 使用 i18n
 // --- 应用初始化逻辑 ---
 // 使用 async IIFE 来允许顶层 await
 (async () => {
+  // 「标签 → 文件夹」改名：先把浏览器里的旧缓存清掉，别让 store 读到 tag_ids 结构
+  migrateLegacyFolderStorage();
+
   const authStore = useAuthStore(pinia); // 实例化 Auth Store
   // **提前实例化 AppearanceStore 以确保 immediate watcher 运行**
   const appearanceStore = useAppearanceStore(pinia);

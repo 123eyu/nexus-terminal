@@ -3,7 +3,7 @@ import { computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { QuickCommandFE } from '../stores/quickCommands.store';
 import { useQuickCommandForm } from '../composables/quickCommands/useQuickCommandForm';
-import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store';
+import { useQuickCommandFoldersStore } from '../stores/quickCommandFolders.store';
 import { PRESET_COLORS } from '../utils/colorUtils';
 import FolderSelect from './FolderSelect.vue';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
@@ -26,8 +26,8 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-// 模板里的颜色选择器直接用到了 tags store
-const quickCommandTagsStore = useQuickCommandTagsStore();
+// 模板里的颜色选择器直接用到了 folders store
+const quickCommandFoldersStore = useQuickCommandFoldersStore();
 
 // 表单逻辑两端共用（见 composables/quickCommands/useQuickCommandForm.ts）
 const {
@@ -41,7 +41,7 @@ const {
   handleRandomColor,
   initForm,
   handleCreateFolder,
-  handleDeleteTag,
+  handleDeleteFolder,
   handleSubmit,
   closeForm,
   addVariable,
@@ -129,7 +129,7 @@ onMounted(() => {
               </label>
               <FolderSelect
                 v-model="selectedFolderId"
-                :folders="quickCommandTagsStore.folders"
+                :folders="quickCommandFoldersStore.folders"
                 :allow-create="true"
                 @create-folder="handleCreateFolder"
                 :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"

@@ -30,20 +30,20 @@ const {
   formTitle,
   submitButtonText,
   proxies,
-  tags,
+  folders,
   connections,
   isProxyLoading,
   proxyStoreError,
-  isTagLoading,
-  tagStoreError,
+  isFolderLoading,
+  folderStoreError,
   advancedConnectionMode,
   addJumpHost,
   removeJumpHost,
   handleSubmit,
   handleDeleteConnection,
   handleTestConnection,
-  handleCreateTag,
-  handleDeleteTag,
+  handleCreateFolder,
+  handleDeleteFolder,
   latencyColor,
   testButtonText,
 } = useAddConnectionForm(props, emit);
@@ -132,10 +132,10 @@ onUnmounted(() => {
         <template v-if="!isScriptModeActive">
           <AddConnectionFormBasicInfo
             :form-data="formData"
-            :folders="tags"
-            :is-folder-loading="isTagLoading"
-            :folder-store-error="tagStoreError"
-            @create-folder="handleCreateTag"
+            :folders="folders"
+            :is-folder-loading="isFolderLoading"
+            :folder-store-error="folderStoreError"
+            @create-folder="handleCreateFolder"
           />
           <AddConnectionFormAuth :form-data="formData" :is-edit-mode="isEditMode" />
           <AddConnectionFormAdvanced

@@ -38,9 +38,9 @@ const routes: Array<RouteRecordRaw> = [
     },
    // 移除：标签管理页面路由
    // {
-   //   path: '/tags',
-   //   name: 'Tags',
-   //   component: () => import('../views/TagsView.vue')
+   //   path: '/folders',
+   //   name: 'Folders',
+   //   component: () => import('../views/FoldersView.vue')
    // },
    // 工作区页面 (不再需要 connectionId 参数)
    {

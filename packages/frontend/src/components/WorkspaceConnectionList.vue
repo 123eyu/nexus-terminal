@@ -5,31 +5,31 @@ import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 
 import { useConnectionsStore, ConnectionInfo } from '../stores/connections.store';
-import { useTagsStore, TagInfo } from '../stores/tags.store'; // 确保 TagInfo 已导入
+import { useFoldersStore, FolderInfo } from '../stores/folders.store'; // 确保 FolderInfo 已导入
 import { useSessionStore } from '../stores/session.store';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store'; // +++ 修正导入大小写 +++
 import { useSettingsStore } from '../stores/settings.store'; 
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
-import ManageTagConnectionsModal from './ManageTagConnectionsModal.vue'; 
+import ManageFolderConnectionsModal from './ManageFolderConnectionsModal.vue'; 
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { hexToRgba, resolveEffectiveColor } from '../utils/colorUtils';
 
 // 获取文件夹背景颜色
 const getFolderColor = (folderId: number | null): string | null => {
   if (folderId === null) return null;
-  const folder = tagsStore.folders.find(f => f.id === folderId);
+  const folder = foldersStore.folders.find(f => f.id === folderId);
   return folder?.background_color || null;
 };
 
 // 解析连接项的最终有效背景颜色 (Item 自身 > 所属文件夹 > null)
 const getEffectiveConnectionColor = (conn: ConnectionInfo): string | null => {
   let folderColor: string | null = null;
-  if (conn.tag_ids && conn.tag_ids.length > 0) {
-    const folder = tagsStore.folders.find(f => f.id === conn.tag_ids![0]);
+  if (conn.folder_ids && conn.folder_ids.length > 0) {
+    const folder = foldersStore.folders.find(f => f.id === conn.folder_ids![0]);
     folderColor = folder?.background_color || null;
-  } else if (conn.tags && conn.tags.length > 0) {
-    const folder = tagsStore.folders.find(f => conn.tags?.includes(f.name));
+  } else if (conn.folders && conn.folders.length > 0) {
+    const folder = foldersStore.folders.find(f => conn.folders?.includes(f.name));
     folderColor = folder?.background_color || null;
   }
   return resolveEffectiveColor(conn.background_color, folderColor);
@@ -56,7 +56,7 @@ const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射
 const { t } = useI18n();
 // const router = useRouter(); // 不再需要
 const connectionsStore = useConnectionsStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const sessionStore = useSessionStore(); // 获取 session store 实例
 const focusSwitcherStore = useFocusSwitcherStore(); // +++ 实例化焦点切换 Store +++
 const uiNotificationsStore = useUiNotificationsStore(); // +++ 修正实例化大小写 +++
@@ -64,8 +64,8 @@ const settingsStore = useSettingsStore(); // 实例化设置 store
 const { showConfirmDialog } = useConfirmDialog();
 
 const { connections, isLoading: connectionsLoading, error: connectionsError } = storeToRefs(connectionsStore);
-const { tags, isLoading: tagsLoading, error: tagsError } = storeToRefs(tagsStore);
-const { showConnectionTagsBoolean } = storeToRefs(settingsStore); // 获取设置项
+const { folders, isLoading: tagsLoading, error: tagsError } = storeToRefs(foldersStore);
+const { showConnectionFoldersBoolean } = storeToRefs(settingsStore); // 获取设置项
 
 // 搜索词
 const searchTerm = ref('');
@@ -149,13 +149,13 @@ const handleMoveSubMenuLeave = () => {
 };
 
 // 标签右键菜单状态
-const tagContextMenuVisible = ref(false);
-const tagContextMenuPosition = ref({ x: 0, y: 0 });
-const contextTargetTagGroup = ref<(typeof filteredAndGroupedConnections.value)[0] | null>(null);
+const folderContextMenuVisible = ref(false);
+const folderContextMenuPosition = ref({ x: 0, y: 0 });
+const contextTargetFolderGroup = ref<(typeof filteredAndGroupedConnections.value)[0] | null>(null);
 
 // +++ 管理标签模态框状态 +++
-const showManageTagModal = ref(false);
-const tagToManage = ref<TagInfo | null>(null);
+const showManageFolderModal = ref(false);
+const folderToManage = ref<FolderInfo | null>(null);
 
 // +++ 本地存储键名 +++
 const EXPANDED_GROUPS_STORAGE_KEY = 'workspaceConnectionListExpandedGroups';
@@ -192,11 +192,11 @@ const listAreaRef = ref<HTMLElement | null>(null); // 列表容器的 ref
 
 // 计算属性：扁平化的、当前可见的连接列表（用于键盘导航）
 // 注意：这个 flatVisibleConnections 依赖于 filteredAndGroupedConnections 和 expandedGroups
-// 当 showConnectionTagsBoolean 为 false 时，它不会被直接使用，但键盘导航逻辑依赖它
+// 当 showConnectionFoldersBoolean 为 false 时，它不会被直接使用，但键盘导航逻辑依赖它
 const flatVisibleConnections = computed(() => {
   const flatList: ConnectionInfo[] = [];
   // 如果显示标签，则只包含展开分组的连接
-  if (showConnectionTagsBoolean.value) {
+  if (showConnectionFoldersBoolean.value) {
       filteredAndGroupedConnections.value.forEach(group => {
         if (expandedGroups.value[group.groupName]) {
           flatList.push(...group.connections);
@@ -220,30 +220,30 @@ const highlightedConnectionId = computed(() => {
 
 
 // +++ 编辑标签状态 +++
-// editingTagId: number -> 编辑现有标签, null -> 编辑 "未标记" 分组 (准备创建新标签)
-const editingTagId = ref<number | null | 'untagged'>(null); // 使用 'untagged' 字符串更清晰地区分
-const editedTagName = ref(''); // 存储 input 中的临时名称
-// const tagInputRef = ref<HTMLInputElement | null>(null); // Removed single ref
-const tagInputRefs = ref(new Map<string | number, HTMLInputElement | null>()); // Map to store refs
+// editingFolderId: number -> 编辑现有标签, null -> 编辑 "未标记" 分组 (准备创建新标签)
+const editingFolderId = ref<number | null | 'untagged'>(null); // 使用 'untagged' 字符串更清晰地区分
+const editedFolderName = ref(''); // 存储 input 中的临时名称
+// const folderInputRef = ref<HTMLInputElement | null>(null); // Removed single ref
+const folderInputRefs = ref(new Map<string | number, HTMLInputElement | null>()); // Map to store refs
 
 // Function to set refs in the map
-const setTagInputRef = (el: any, id: string | number) => {
+const setFolderInputRef = (el: any, id: string | number) => {
   if (el) {
-    tagInputRefs.value.set(id, el as HTMLInputElement);
+    folderInputRefs.value.set(id, el as HTMLInputElement);
   } else {
     // Clean up the ref when the element is unmounted
-    tagInputRefs.value.delete(id);
+    folderInputRefs.value.delete(id);
   }
 };
 
-// 计算属性：过滤并按标签分组连接 (仅在 showConnectionTagsBoolean 为 true 时使用)
+// 计算属性：过滤并按标签分组连接 (仅在 showConnectionFoldersBoolean 为 true 时使用)
 const filteredAndGroupedConnections = computed(() => {
-  const groups: Record<string, { connections: ConnectionInfo[], tagId: number | null }> = {}; // 修改：添加 tagId
+  const groups: Record<string, { connections: ConnectionInfo[], folderId: number | null }> = {}; // 修改：添加 folderId
   const untagged: ConnectionInfo[] = [];
-  const tagMap = new Map(tags.value.map(tag => [tag.id, tag]));
+  const folderMap = new Map(folders.value.map(folder => [folder.id, folder]));
   const lowerSearchTerm = searchTerm.value.toLowerCase();
 
-  // 1. 过滤连接 (New logic: filter by connection name, host, OR tag name)
+  // 1. 过滤连接 (New logic: filter by connection name, host, OR folder name)
   const filteredConnections = connections.value.filter(conn => {
     // Check connection name
     if (conn.name && conn.name.toLowerCase().includes(lowerSearchTerm)) {
@@ -253,12 +253,12 @@ const filteredAndGroupedConnections = computed(() => {
     if (conn.host.toLowerCase().includes(lowerSearchTerm)) {
         return true;
     }
-    // Check associated tag names (Always check tags for filtering, regardless of display setting)
-    if (conn.tag_ids && conn.tag_ids.length > 0) {
-        for (const tagId of conn.tag_ids) {
-            const tag = tagMap.get(tagId); // Use the existing tagMap
-            if (tag && tag.name.toLowerCase().includes(lowerSearchTerm)) {
-                return true; // Match found in tag name
+    // Check associated folder names (Always check folders for filtering, regardless of display setting)
+    if (conn.folder_ids && conn.folder_ids.length > 0) {
+        for (const folderId of conn.folder_ids) {
+            const folder = folderMap.get(folderId); // Use the existing folderMap
+            if (folder && folder.name.toLowerCase().includes(lowerSearchTerm)) {
+                return true; // Match found in folder name
             }
         }
     }
@@ -268,27 +268,27 @@ const filteredAndGroupedConnections = computed(() => {
 
   // 2. 分组过滤后的连接
   filteredConnections.forEach(conn => {
-    if (conn.tag_ids && conn.tag_ids.length > 0) {
+    if (conn.folder_ids && conn.folder_ids.length > 0) {
       let tagged = false;
-      conn.tag_ids.forEach(tagId => {
-        const tag = tagMap.get(tagId);
-        if (tag) {
-          const groupName = tag.name;
+      conn.folder_ids.forEach(folderId => {
+        const folder = folderMap.get(folderId);
+        if (folder) {
+          const groupName = folder.name;
           if (!groups[groupName]) {
-            groups[groupName] = { connections: [], tagId: tag.id }; // 修改：存储 tagId
+            groups[groupName] = { connections: [], folderId: folder.id }; // 修改：存储 folderId
             // Initialize expanded state only if not already set
             if (expandedGroups.value[groupName] === undefined) {
                expandedGroups.value[groupName] = true; // Default to expanded
             }
           }
-          // Avoid duplicates if a connection has multiple tags matching the search
+          // Avoid duplicates if a connection has multiple folders matching the search
           if (!groups[groupName].connections.some(c => c.id === conn.id)) {
               groups[groupName].connections.push(conn);
           }
           tagged = true;
         }
       });
-      // If none of the tags were found in the tagMap (e.g., stale data), treat as untagged
+      // If none of the folders were found in the folderMap (e.g., stale data), treat as untagged
       if (!tagged && !untagged.some(c => c.id === conn.id)) {
           untagged.push(conn);
       }
@@ -307,11 +307,11 @@ const filteredAndGroupedConnections = computed(() => {
   untagged.sort((a, b) => (a.name || a.host).localeCompare(b.name || b.host));
 
   const sortedGroupNames = Object.keys(groups).sort();
-  // 修改：结果包含 tagId
-  const result: { groupName: string; connections: ConnectionInfo[]; tagId: number | null }[] = sortedGroupNames.map(name => ({
+  // 修改：结果包含 folderId
+  const result: { groupName: string; connections: ConnectionInfo[]; folderId: number | null }[] = sortedGroupNames.map(name => ({
       groupName: name,
       connections: groups[name].connections,
-      tagId: groups[name].tagId // 添加 tagId
+      folderId: groups[name].folderId // 添加 folderId
   }));
 
   if (untagged.length > 0) {
@@ -320,17 +320,17 @@ const filteredAndGroupedConnections = computed(() => {
       if (expandedGroups.value[untaggedGroupName] === undefined) {
           expandedGroups.value[untaggedGroupName] = true; // Default to expanded
       }
-      // 未标记的分组没有 tagId
-      result.push({ groupName: untaggedGroupName, connections: untagged, tagId: null });
+      // 未标记的分组没有 folderId
+      result.push({ groupName: untaggedGroupName, connections: untagged, folderId: null });
   }
 
   return result;
 });
 
-// 计算属性，仅过滤，不分组 (用于 showConnectionTagsBoolean 为 false 时)
+// 计算属性，仅过滤，不分组 (用于 showConnectionFoldersBoolean 为 false 时)
 const flatFilteredConnections = computed(() => {
   const lowerSearchTerm = searchTerm.value.toLowerCase();
-  const tagMap = new Map(tags.value.map(tag => [tag.id, tag.name])); // 创建 tagMap 用于搜索
+  const folderMap = new Map(folders.value.map(folder => [folder.id, folder.name])); // 创建 folderMap 用于搜索
 
   const filtered = connections.value.filter(conn => {
     // Check connection name
@@ -341,12 +341,12 @@ const flatFilteredConnections = computed(() => {
     if (conn.host.toLowerCase().includes(lowerSearchTerm)) {
         return true;
     }
-    // Check associated tag names (Always check tags for filtering)
-    if (conn.tag_ids && conn.tag_ids.length > 0) {
-        for (const tagId of conn.tag_ids) {
-            const tagName = tagMap.get(tagId);
-            if (tagName && tagName.toLowerCase().includes(lowerSearchTerm)) {
-                return true; // Match found in tag name
+    // Check associated folder names (Always check folders for filtering)
+    if (conn.folder_ids && conn.folder_ids.length > 0) {
+        for (const folderId of conn.folder_ids) {
+            const folderName = folderMap.get(folderId);
+            if (folderName && folderName.toLowerCase().includes(lowerSearchTerm)) {
+                return true; // Match found in folder name
             }
         }
     }
@@ -361,8 +361,8 @@ const flatFilteredConnections = computed(() => {
 
   // +++ 监听分组状态变化并保存到 localStorage +++
   watch(expandedGroups, (newState) => {
-    // Only save if tags are shown
-    if (showConnectionTagsBoolean.value) {
+    // Only save if folders are shown
+    if (showConnectionFoldersBoolean.value) {
         try {
           localStorage.setItem(EXPANDED_GROUPS_STORAGE_KEY, JSON.stringify(newState));
         } catch (e) {
@@ -382,15 +382,15 @@ const flatFilteredConnections = computed(() => {
   }, { deep: true });
 
   // 监听显示模式变化，重置高亮索引
-  watch(showConnectionTagsBoolean, () => {
+  watch(showConnectionFoldersBoolean, () => {
       highlightedIndex.value = -1;
   });
 
   // +++ 监听编辑状态，自动聚焦输入框 +++
-  watch(editingTagId, async (newId) => {
+  watch(editingFolderId, async (newId) => {
     if (newId !== null) {
       await nextTick();
-      const inputRef = tagInputRefs.value.get(newId); // Get ref from map using the ID
+      const inputRef = folderInputRefs.value.get(newId); // Get ref from map using the ID
       if (inputRef) {
         inputRef.focus();
         inputRef.select();
@@ -559,23 +559,23 @@ const handleMoveConnection = async (conn: ConnectionInfo, folderId: number | nul
 };
 
 // 显示标签右键菜单
-const showTagContextMenu = (event: MouseEvent, groupData: (typeof filteredAndGroupedConnections.value)[0]) => {
+const showFolderContextMenu = (event: MouseEvent, groupData: (typeof filteredAndGroupedConnections.value)[0]) => {
 event.preventDefault();
 event.stopPropagation(); // 阻止事件冒泡到上层，例如关闭连接右键菜单的 document click listener
 closeContextMenu(); // 如果连接的右键菜单是打开的，先关闭它
-contextTargetTagGroup.value = groupData;
-tagContextMenuPosition.value = { x: event.clientX, y: event.clientY };
-tagContextMenuVisible.value = true;
+contextTargetFolderGroup.value = groupData;
+folderContextMenuPosition.value = { x: event.clientX, y: event.clientY };
+folderContextMenuVisible.value = true;
 // 添加全局点击监听器以关闭菜单
-document.addEventListener('click', closeTagContextMenu, { once: true });
+document.addEventListener('click', closeFolderContextMenu, { once: true });
 
 // 使用 nextTick 获取菜单尺寸并调整位置以防止超出屏幕
 nextTick(() => {
-  const menuElement = document.querySelector('.tag-context-menu') as HTMLElement;
+  const menuElement = document.querySelector('.folder-context-menu') as HTMLElement;
   if (menuElement) {
     const menuRect = menuElement.getBoundingClientRect();
-    let finalX = tagContextMenuPosition.value.x;
-    let finalY = tagContextMenuPosition.value.y;
+    let finalX = folderContextMenuPosition.value.x;
+    let finalY = folderContextMenuPosition.value.y;
     const menuWidth = menuRect.width;
     const menuHeight = menuRect.height;
 
@@ -594,26 +594,26 @@ nextTick(() => {
     finalY = Math.max(5, finalY);
 
     // 更新位置
-    if (finalX !== tagContextMenuPosition.value.x || finalY !== tagContextMenuPosition.value.y) {
-      console.log(`[WkspConnList] Adjusting tag context menu position: (${tagContextMenuPosition.value.x}, ${tagContextMenuPosition.value.y}) -> (${finalX}, ${finalY})`);
-      tagContextMenuPosition.value = { x: finalX, y: finalY };
+    if (finalX !== folderContextMenuPosition.value.x || finalY !== folderContextMenuPosition.value.y) {
+      console.log(`[WkspConnList] Adjusting folder context menu position: (${folderContextMenuPosition.value.x}, ${folderContextMenuPosition.value.y}) -> (${finalX}, ${finalY})`);
+      folderContextMenuPosition.value = { x: finalX, y: finalY };
     }
   }
 });
 };
 
 // 关闭标签右键菜单
-const closeTagContextMenu = () => {
-  tagContextMenuVisible.value = false;
-  // contextTargetTagGroup.value = null; // 保留 targetGroup 直到菜单完全消失，以便动画（如果未来添加）
-  document.removeEventListener('click', closeTagContextMenu);
+const closeFolderContextMenu = () => {
+  folderContextMenuVisible.value = false;
+  // contextTargetFolderGroup.value = null; // 保留 targetGroup 直到菜单完全消失，以便动画（如果未来添加）
+  document.removeEventListener('click', closeFolderContextMenu);
 };
 
 // 处理标签右键菜单操作
 // 修改：允许直接传递 groupData，用于新的行内编辑按钮
-const handleTagMenuAction = async (action: 'connectAll' | 'manageTag' | 'deleteAllConnections', directGroupData?: (typeof filteredAndGroupedConnections.value)[0]) => {
-  const group = directGroupData || contextTargetTagGroup.value; // 优先使用直接传递的 groupData
-  closeTagContextMenu(); // 先关闭菜单
+const handleFolderMenuAction = async (action: 'connectAll' | 'manageFolder' | 'deleteAllConnections', directGroupData?: (typeof filteredAndGroupedConnections.value)[0]) => {
+  const group = directGroupData || contextTargetFolderGroup.value; // 优先使用直接传递的 groupData
+  closeFolderContextMenu(); // 先关闭菜单
 
   if (group && action === 'connectAll') {
     const sshConnections = group.connections.filter(conn => conn.type === 'SSH');
@@ -632,24 +632,24 @@ const handleTagMenuAction = async (action: 'connectAll' | 'manageTag' | 'deleteA
         type: 'info',
       });
     }
-  } else if (group && action === 'manageTag') {
-    if (group.tagId !== null) { // 确保不是 "未标记" 分组
-      tagToManage.value = {
-        id: group.tagId,
+  } else if (group && action === 'manageFolder') {
+    if (group.folderId !== null) { // 确保不是 "未标记" 分组
+      folderToManage.value = {
+        id: group.folderId,
         name: group.groupName,
-        created_at: tags.value.find(t => t.id === group.tagId)?.created_at || Date.now() / 1000, // 尝试获取真实时间，否则用当前
-        updated_at: tags.value.find(t => t.id === group.tagId)?.updated_at || Date.now() / 1000,
+        created_at: folders.value.find(t => t.id === group.folderId)?.created_at || Date.now() / 1000, // 尝试获取真实时间，否则用当前
+        updated_at: folders.value.find(t => t.id === group.folderId)?.updated_at || Date.now() / 1000,
       };
-      showManageTagModal.value = true;
+      showManageFolderModal.value = true;
     } else {
       uiNotificationsStore.addNotification({
-        message: t('workspaceConnectionList.manageTags.cannotManageUntagged'), // 需要添加这个翻译
+        message: t('workspaceConnectionList.manageFolders.cannotManageUntagged'), // 需要添加这个翻译
         type: 'warning',
       });
     }
   } else if (group && action === 'deleteAllConnections') {
     // 确保是已标记的组
-    if (group.tagId === null) {
+    if (group.folderId === null) {
         uiNotificationsStore.addNotification({
             message: t('workspaceConnectionList.cannotDeleteFromUntagged'), 
             type: 'warning',
@@ -700,9 +700,9 @@ const handleTagMenuAction = async (action: 'connectAll' | 'manageTag' | 'deleteA
   }
 };
 
-const handleManageTagModalSaved = () => {
+const handleManageFolderModalSaved = () => {
   connectionsStore.fetchConnections(); // 刷新连接列表
-  tagsStore.fetchTags(); // 刷新标签列表，以防标签名称等有变动（虽然此模态框不直接改名）
+  foldersStore.fetchFolders(); // 刷新标签列表，以防标签名称等有变动（虽然此模态框不直接改名）
 };
 
 // 处理失焦事件，清除高亮
@@ -727,8 +727,8 @@ onMounted(() => {
   // focusSearchInput 返回 boolean，符合 () => boolean | Promise<boolean | undefined> 类型
   unregisterFocusAction = focusSwitcherStore.registerFocusAction('connectionListSearch', focusSearchInput);
   connectionsStore.fetchConnections(); // 移到 onMounted
-  tagsStore.fetchTags(); // 移到 onMounted
-  // Load initial expanded state after fetching tags/connections
+  foldersStore.fetchFolders(); // 移到 onMounted
+  // Load initial expanded state after fetching folders/connections
   expandedGroups.value = loadInitialExpandedGroups();
 });
 
@@ -796,27 +796,27 @@ const scrollToHighlighted = async () => {
 };
 
 // +++ 启动编辑标签 (或准备创建新标签) +++
-const startEditingTag = (tagId: number | null, currentName: string) => { // Removed async
-  // 如果 tagId 是 null，表示是 "未标记" 分组
-  editingTagId.value = tagId === null ? 'untagged' : tagId;
-  editedTagName.value = tagId === null ? '' : currentName; // 未标记组开始编辑时清空输入框
+const startEditingFolder = (folderId: number | null, currentName: string) => { // Removed async
+  // 如果 folderId 是 null，表示是 "未标记" 分组
+  editingFolderId.value = folderId === null ? 'untagged' : folderId;
+  editedFolderName.value = folderId === null ? '' : currentName; // 未标记组开始编辑时清空输入框
   // Focus logic moved to watcher
 };
 
 // +++ 完成编辑标签 (或创建新标签并分配) +++
-const finishEditingTag = async () => {
-  const currentEditingId = editingTagId.value;
-  const newName = editedTagName.value.trim();
-  const originalTag = typeof currentEditingId === 'number' ? tags.value.find(t => t.id === currentEditingId) : null;
+const finishEditingFolder = async () => {
+  const currentEditingId = editingFolderId.value;
+  const newName = editedFolderName.value.trim();
+  const originalFolder = typeof currentEditingId === 'number' ? folders.value.find(t => t.id === currentEditingId) : null;
 
   // 如果新名称为空 (除非是 'untagged' 状态，否则取消编辑)
   if (newName === '' && currentEditingId !== 'untagged') {
-      editingTagId.value = null;
+      editingFolderId.value = null;
       return;
   }
   // 如果是 'untagged' 状态且新名称为空，也取消
   if (newName === '' && currentEditingId === 'untagged') {
-       editingTagId.value = null;
+       editingFolderId.value = null;
        return;
    }
 
@@ -825,25 +825,25 @@ const finishEditingTag = async () => {
   try {
       if (currentEditingId === 'untagged') {
           // --- 创建新标签并分配 ---
-          const newTag = await tagsStore.addTag(newName); // Returns TagInfo | null
-          if (newTag) {
-              operationSuccess = true; // Core tag creation succeeded
-              uiNotificationsStore.addNotification({ message: t('tags.createSuccess'), type: 'success' });
-              const untaggedGroup = filteredAndGroupedConnections.value.find(g => g.tagId === null);
+          const newFolder = await foldersStore.addFolder(newName); // Returns FolderInfo | null
+          if (newFolder) {
+              operationSuccess = true; // Core folder creation succeeded
+              uiNotificationsStore.addNotification({ message: t('folders.createSuccess'), type: 'success' });
+              const untaggedGroup = filteredAndGroupedConnections.value.find(g => g.folderId === null);
               const untaggedConnectionIds = untaggedGroup ? untaggedGroup.connections.map(c => c.id) : [];
 
               if (untaggedConnectionIds.length > 0) {
                   // 调用新的 action 批量添加标签
-                  const assignSuccess = await connectionsStore.addTagToConnectionsAction(untaggedConnectionIds, newTag.id);
+                  const assignSuccess = await connectionsStore.addFolderToConnectionsAction(untaggedConnectionIds, newFolder.id);
                   if (assignSuccess) {
-                      uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.allConnectionsTaggedSuccess'), type: 'success' });
+                      uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.allConnectionsMovedSuccess'), type: 'success' });
                   }
                   // Assign failure notification is handled within the action
               } else {
-                   uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.noConnectionsToTag'), type: 'info' });
+                   uiNotificationsStore.addNotification({ message: t('workspaceConnectionList.noConnectionsToFolder'), type: 'info' });
               }
 
-              // 更新展开状态 only if tag creation was successful
+              // 更新展开状态 only if folder creation was successful
               const untaggedGroupName = t('workspaceConnectionList.untagged');
               if (expandedGroups.value[untaggedGroupName] !== undefined) {
                   const currentState = expandedGroups.value[untaggedGroupName];
@@ -851,55 +851,55 @@ const finishEditingTag = async () => {
                   expandedGroups.value[newName] = currentState;
               }
           }
-          // If newTag is null, addTag failed (e.g., name exists), notification handled by store. operationSuccess remains false.
+          // If newFolder is null, addFolder failed (e.g., name exists), notification handled by store. operationSuccess remains false.
       } else if (typeof currentEditingId === 'number') {
           // --- 更新现有标签 ---
-          if (!originalTag) {
-             console.error(`Tag with ID ${currentEditingId} not found for update.`);
+          if (!originalFolder) {
+             console.error(`Folder with ID ${currentEditingId} not found for update.`);
              // Exit edit mode in finally block
-          } else if (originalTag.name === newName) {
+          } else if (originalFolder.name === newName) {
               operationSuccess = true; // No change needed, consider it success for UI state
           } else {
               // 名称已改变，尝试更新
-              const updateResult = await tagsStore.updateTag(currentEditingId, newName); // Returns boolean
+              const updateResult = await foldersStore.updateFolder(currentEditingId, newName); // Returns boolean
               if (updateResult) {
-                  operationSuccess = true; // Core tag update succeeded
-                  uiNotificationsStore.addNotification({ message: t('tags.updateSuccess'), type: 'success' });
-                  // 更新展开状态 only if tag update was successful
-                  if (expandedGroups.value[originalTag.name] !== undefined) {
-                      const currentState = expandedGroups.value[originalTag.name];
-                      delete expandedGroups.value[originalTag.name];
+                  operationSuccess = true; // Core folder update succeeded
+                  uiNotificationsStore.addNotification({ message: t('folders.updateSuccess'), type: 'success' });
+                  // 更新展开状态 only if folder update was successful
+                  if (expandedGroups.value[originalFolder.name] !== undefined) {
+                      const currentState = expandedGroups.value[originalFolder.name];
+                      delete expandedGroups.value[originalFolder.name];
                       expandedGroups.value[newName] = currentState;
                   }
               }
-              // If updateResult is false, updateTag failed (e.g., name exists), notification handled by store. operationSuccess remains false.
+              // If updateResult is false, updateFolder failed (e.g., name exists), notification handled by store. operationSuccess remains false.
           }
       }
   } catch (error: any) {
       // 捕获这两个流程中未被 store action 捕获的意外错误
-      console.error("Error during finishEditingTag:", error);
+      console.error("Error during finishEditingFolder:", error);
       uiNotificationsStore.addNotification({ message: t('common.unexpectedError'), type: 'error' });
       // operationSuccess remains false
   } finally {
       // 无论核心操作成功与否，最终都退出编辑模式
       // 这样即使用户输入了重复名称，收到通知后，输入框也会消失，恢复原状
-      editingTagId.value = null;
+      editingFolderId.value = null;
   }
 };
 
 // +++ 取消编辑（例如按 Esc 键） +++
-const cancelEditingTag = () => {
-  editingTagId.value = null;
+const cancelEditingFolder = () => {
+  editingFolderId.value = null;
 };
 </script>
 
 <template>
   <div class="h-full flex flex-col overflow-hidden bg-background text-foreground">
     <!-- ... Loading/Error states ... -->
-    <div v-if="(connectionsLoading || tagsLoading) && connections.length === 0 && tags.length === 0" class="flex items-center justify-center h-full text-text-secondary">
+    <div v-if="(connectionsLoading || tagsLoading) && connections.length === 0 && folders.length === 0" class="flex items-center justify-center h-full text-text-secondary">
       <i class="fas fa-spinner fa-spin mr-2"></i> {{ t('common.loading') }}
     </div>
-    <div v-else-if="connectionsError || (tagsError && tags.length === 0)" class="flex items-center justify-center h-full text-error px-4 text-center">
+    <div v-else-if="connectionsError || (tagsError && folders.length === 0)" class="flex items-center justify-center h-full text-error px-4 text-center">
       <i class="fas fa-exclamation-triangle mr-2"></i> {{ connectionsError || tagsError }}
     </div>
 
@@ -930,7 +930,7 @@ const cancelEditingTag = () => {
       <div class="flex-grow overflow-y-auto p-2" ref="listAreaRef">
         <!-- No Results / No Connections State -->
         <!-- 修改 v-if 条件，考虑两种模式，并且仅在有搜索词时显示 "No Results" -->
-        <div v-if="((showConnectionTagsBoolean && filteredAndGroupedConnections.length === 0) || (!showConnectionTagsBoolean && flatFilteredConnections.length === 0)) && connections.length > 0 && searchTerm" class="p-6 text-center text-text-secondary">
+        <div v-if="((showConnectionFoldersBoolean && filteredAndGroupedConnections.length === 0) || (!showConnectionFoldersBoolean && flatFilteredConnections.length === 0)) && connections.length > 0 && searchTerm" class="p-6 text-center text-text-secondary">
            <i class="fas fa-search text-xl mb-2"></i>
            <p>{{ t('workspaceConnectionList.noResults') }} "{{ searchTerm }}"</p>
         </div>
@@ -948,14 +948,14 @@ const cancelEditingTag = () => {
         <!-- Groups and Connections (Conditional Rendering) -->
         <div v-else>
           <!-- Grouped View -->
-          <div v-if="showConnectionTagsBoolean">
+          <div v-if="showConnectionFoldersBoolean">
             <div v-for="groupData in filteredAndGroupedConnections" :key="groupData.groupName" class="mb-1 last:mb-0">
               <!-- Group Header -->
               <div
               class="group px-2.5 py-1.5 font-medium flex items-center text-foreground rounded-lg hover:bg-muted/50 transition-colors duration-150"
-              :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
-              @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
-              @contextmenu.prevent="showTagContextMenu($event, groupData)"
+              :class="{ 'cursor-pointer': editingFolderId !== (groupData.folderId === null ? 'untagged' : groupData.folderId) }"
+              @click="editingFolderId !== (groupData.folderId === null ? 'untagged' : groupData.folderId) ? toggleGroup(groupData.groupName) : null"
+              @contextmenu.prevent="showFolderContextMenu($event, groupData)"
             >
               <i
                 :class="['fas', expandedGroups[groupData.groupName] ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-3 text-center text-text-secondary group-hover:text-foreground transition-transform duration-200 ease-in-out', {'transform rotate-0': !expandedGroups[groupData.groupName]}]"
@@ -966,35 +966,35 @@ const cancelEditingTag = () => {
               <i
                 :class="[
                   'fas mr-2 w-4 text-center flex-shrink-0 text-xs',
-                  groupData.tagId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
+                  groupData.folderId === null ? 'fa-inbox text-text-secondary' : (expandedGroups[groupData.groupName] ? 'fa-folder-open text-amber-400' : 'fa-folder text-amber-400')
                 ]"
               ></i>
               <!-- 编辑状态 -->
               <input
-                v-if="editingTagId === (groupData.tagId === null ? 'untagged' : groupData.tagId)"
-                :key="groupData.tagId === null ? 'untagged-input' : `tag-input-${groupData.tagId}`"
-                :ref="(el) => setTagInputRef(el, groupData.tagId === null ? 'untagged' : groupData.tagId)"
+                v-if="editingFolderId === (groupData.folderId === null ? 'untagged' : groupData.folderId)"
+                :key="groupData.folderId === null ? 'untagged-input' : `folder-input-${groupData.folderId}`"
+                :ref="(el) => setFolderInputRef(el, groupData.folderId === null ? 'untagged' : groupData.folderId)"
                 type="text"
-                v-model="editedTagName"
+                v-model="editedFolderName"
                 class="text-xs bg-input border border-primary rounded px-1.5 py-0.5 w-full text-foreground focus:outline-none"
-                @blur="finishEditingTag"
-                @keydown.enter.prevent="finishEditingTag"
-                @keydown.esc.prevent="cancelEditingTag"
+                @blur="finishEditingFolder"
+                @keydown.enter.prevent="finishEditingFolder"
+                @keydown.esc.prevent="cancelEditingFolder"
                 @click.stop
               />
               <!-- 显示状态 -->
               <div v-else class="flex items-center gap-1.5 truncate flex-grow min-w-0">
                 <!-- 文件夹颜色指示圆点 -->
                 <span
-                  v-if="getFolderColor(groupData.tagId)"
+                  v-if="getFolderColor(groupData.folderId)"
                   class="w-2 h-2 rounded-full flex-shrink-0 shadow-xs ring-1 ring-border/50"
-                  :style="{ backgroundColor: getFolderColor(groupData.tagId)! }"
+                  :style="{ backgroundColor: getFolderColor(groupData.folderId)! }"
                 ></span>
                 <span
                   class="text-xs font-semibold inline-block overflow-hidden text-ellipsis whitespace-nowrap"
                   :class="{ 'cursor-pointer hover:underline': true }"
-                  :title="t('workspaceConnectionList.clickToEditTag')"
-                  @click.stop="startEditingTag(groupData.tagId, groupData.groupName)"
+                  :title="t('workspaceConnectionList.clickToEditFolder')"
+                  @click.stop="startEditingFolder(groupData.folderId, groupData.groupName)"
                 >
                   {{ groupData.groupName }}
                 </span>
@@ -1002,10 +1002,10 @@ const cancelEditingTag = () => {
               </div>
               <!-- 文件夹右侧的编辑按钮 -->
               <button
-                v-if="groupData.tagId !== null && editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId)"
-                @click.stop="handleTagMenuAction('manageTag', groupData)"
+                v-if="groupData.folderId !== null && editingFolderId !== (groupData.folderId === null ? 'untagged' : groupData.folderId)"
+                @click.stop="handleFolderMenuAction('manageFolder', groupData)"
                 class="ml-1 px-1 h-5 flex items-center justify-center rounded text-text-secondary hover:text-primary hover:bg-black/10 opacity-0 group-hover:opacity-100 transition-all duration-150 focus:outline-none"
-                :title="t('workspaceConnectionList.manageTags.menuItem')"
+                :title="t('workspaceConnectionList.manageFolders.menuItem')"
               >
                 <i class="fas fa-edit text-[10px]"></i>
               </button>
@@ -1123,9 +1123,9 @@ const cancelEditingTag = () => {
                 <i class="fas fa-inbox text-xs"></i>
                 <span>{{ t('folders.uncategorized', '未分类') }}</span>
               </div>
-              <div v-if="tagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
+              <div v-if="foldersStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
               <div
-                v-for="folder in tagsStore.folders"
+                v-for="folder in foldersStore.folders"
                 :key="folder.id"
                 @click="handleMoveConnection(contextTargetConnection!, folder.id)"
                 class="px-2.5 py-1.5 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate"
@@ -1146,41 +1146,41 @@ const cancelEditingTag = () => {
     <!-- 标签右键菜单 -->
     <teleport to="body">
       <div
-        v-if="tagContextMenuVisible"
-        class="fixed bg-background border border-border/50 shadow-xl rounded-lg py-1.5 z-[9999] min-w-[200px] tag-context-menu"
-        :style="{ top: `${tagContextMenuPosition.y}px`, left: `${tagContextMenuPosition.x}px` }"
+        v-if="folderContextMenuVisible"
+        class="fixed bg-background border border-border/50 shadow-xl rounded-lg py-1.5 z-[9999] min-w-[200px] folder-context-menu"
+        :style="{ top: `${folderContextMenuPosition.y}px`, left: `${folderContextMenuPosition.x}px` }"
         @click.stop
       >
         <ul class="list-none p-0 m-0">
           <li
-            v-if="contextTargetTagGroup && contextTargetTagGroup.connections.some((c: ConnectionInfo) => c.type === 'SSH')"
+            v-if="contextTargetFolderGroup && contextTargetFolderGroup.connections.some((c: ConnectionInfo) => c.type === 'SSH')"
             class="group px-4 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
-            @click="handleTagMenuAction('connectAll')"
+            @click="handleFolderMenuAction('connectAll')"
           >
             <i class="fas fa-network-wired mr-3 w-4 text-center text-text-secondary group-hover:text-primary"></i>
             <span>{{ t('workspaceConnectionList.connectAllSshInGroupMenu') }}</span>
           </li>
            <li
-            v-else-if="contextTargetTagGroup"
+            v-else-if="contextTargetFolderGroup"
             class="group px-4 py-1.5 flex items-center text-text-disabled text-sm rounded-md mx-1 cursor-not-allowed"
           >
             <i class="fas fa-ban mr-3 w-4 text-center text-text-disabled"></i>
             <span>{{ t('workspaceConnectionList.noSshConnectionsToConnectMenu') }}</span>
           </li>
-          <li class="my-1 border-t border-border/50" v-if="contextTargetTagGroup && contextTargetTagGroup.tagId !== null"></li>
+          <li class="my-1 border-t border-border/50" v-if="contextTargetFolderGroup && contextTargetFolderGroup.folderId !== null"></li>
           <li
-            v-if="contextTargetTagGroup && contextTargetTagGroup.tagId !== null"
+            v-if="contextTargetFolderGroup && contextTargetFolderGroup.folderId !== null"
             class="group px-4 py-1.5 cursor-pointer flex items-center text-foreground hover:bg-primary/10 hover:text-primary text-sm transition-colors duration-150 rounded-md mx-1"
-            @click="handleTagMenuAction('manageTag')"
+            @click="handleFolderMenuAction('manageFolder')"
           >
             <i class="fas fa-folder mr-3 w-4 text-center text-amber-400"></i>
-            <span>{{ t('folders.manageFolder', t('workspaceConnectionList.manageTags.menuItem')) }}</span>
+            <span>{{ t('folders.manageFolder', t('workspaceConnectionList.manageFolders.menuItem')) }}</span>
           </li>
-          <li class="my-1 border-t border-border/50" v-if="contextTargetTagGroup && contextTargetTagGroup.tagId !== null && contextTargetTagGroup.connections.length > 0"></li>
+          <li class="my-1 border-t border-border/50" v-if="contextTargetFolderGroup && contextTargetFolderGroup.folderId !== null && contextTargetFolderGroup.connections.length > 0"></li>
           <li
-            v-if="contextTargetTagGroup && contextTargetTagGroup.tagId !== null && contextTargetTagGroup.connections.length > 0"
+            v-if="contextTargetFolderGroup && contextTargetFolderGroup.folderId !== null && contextTargetFolderGroup.connections.length > 0"
             class="group px-4 py-1.5 cursor-pointer flex items-center text-error hover:bg-error/10 text-sm transition-colors duration-150 rounded-md mx-1"
-            @click="handleTagMenuAction('deleteAllConnections')"
+            @click="handleFolderMenuAction('deleteAllConnections')"
           >
             <i class="fas fa-trash-alt mr-3 w-4 text-center text-error/80 group-hover:text-error"></i>
             <span>{{ t('workspaceConnectionList.deleteAllConnectionsInGroupMenu') }}</span>
@@ -1190,10 +1190,10 @@ const cancelEditingTag = () => {
     </teleport>
 
    <teleport to="body">
-     <ManageTagConnectionsModal
-       :tag-info="tagToManage"
-       v-model:visible="showManageTagModal"
-       @saved="handleManageTagModalSaved"
+     <ManageFolderConnectionsModal
+       :folder-info="folderToManage"
+       v-model:visible="showManageFolderModal"
+       @saved="handleManageFolderModalSaved"
      />
    </teleport>
  </div>

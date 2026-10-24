@@ -32,20 +32,20 @@ const {
   formTitle,
   submitButtonText,
   proxies,
-  tags,
+  folders,
   connections,
   isProxyLoading,
   proxyStoreError,
-  isTagLoading,
-  tagStoreError,
+  isFolderLoading,
+  folderStoreError,
   advancedConnectionMode,
   addJumpHost,
   removeJumpHost,
   handleSubmit,
   handleDeleteConnection,
   handleTestConnection,
-  handleCreateTag,
-  handleDeleteTag,
+  handleCreateFolder,
+  handleDeleteFolder,
   latencyColor,
   testButtonText,
 } = useAddConnectionForm(props, emit);
@@ -110,18 +110,18 @@ const handleAdvancedConnectionModeUpdate = (newMode: 'proxy' | 'jump') => {
           <MobileConnectionFormAdvanced
             :form-data="formData"
             :proxies="proxies"
-            :tags="tags"
+            :folders="folders"
             :connections="connections"
             :is-proxy-loading="isProxyLoading"
             :proxy-store-error="proxyStoreError"
-            :is-tag-loading="isTagLoading"
-            :tag-store-error="tagStoreError"
+            :is-folder-loading="isFolderLoading"
+            :folder-store-error="folderStoreError"
             :advanced-connection-mode="advancedConnectionMode"
             @update:advancedConnectionMode="handleAdvancedConnectionModeUpdate"
             :add-jump-host="addJumpHost"
             :remove-jump-host="removeJumpHost"
-            @create-tag="handleCreateTag"
-            @delete-tag="handleDeleteTag"
+            @create-folder="handleCreateFolder"
+            @delete-folder="handleDeleteFolder"
             :is-edit-mode="isEditMode"
           />
         </template>

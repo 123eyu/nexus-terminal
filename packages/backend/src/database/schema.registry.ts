@@ -74,7 +74,9 @@ const initQuickCommandsTable = async (db: Database): Promise<void> => {
     try {
         await runDb(db, `CREATE INDEX IF NOT EXISTS idx_quick_commands_name ON quick_commands(name);`);
         await runDb(db, `CREATE INDEX IF NOT EXISTS idx_quick_commands_usage_count ON quick_commands(usage_count DESC);`);
-        await runDb(db, `CREATE INDEX IF NOT EXISTS idx_qc_tag_associations_tag_id ON quick_command_tag_associations(tag_id);`);
+        // 注意：quick_command_folder_associations 的 folder_id 索引不在这里建 ——
+        // 这张表由迁移 #3 创建，而建表逻辑跑在迁移之前，在这里建会报 "no such table"。
+        // 索引统一放到迁移 #14（新库）与 #27（老库）里创建。
     } catch (err: any) {
         console.error('[DB Init] 创建 quick_commands 索引失败:', err.message);
     }
@@ -100,7 +102,7 @@ export const tableDefinitions: TableDefinition[] = [
     { name: 'notification_settings', sql: schemaSql.createNotificationSettingsTableSQL },
     { name: 'users', sql: schemaSql.createUsersTableSQL },
 
-    // Features like proxies, connections, tags
+    // Features like proxies, connections, folders
     { name: 'proxies', sql: schemaSql.createProxiesTableSQL },
     { name: 'ssh_keys', sql: schemaSql.createSshKeysTableSQL }, // Added SSH Keys table
     { name: 'connections', sql: schemaSql.createConnectionsTableSQL }, // Depends on proxies, ssh_keys
@@ -115,8 +117,8 @@ export const tableDefinitions: TableDefinition[] = [
             }
         }
     },
-    { name: 'tags', sql: schemaSql.createTagsTableSQL },
-    { name: 'connection_tags', sql: schemaSql.createConnectionTagsTableSQL }, // Depends on connections, tags
+    { name: 'folders', sql: schemaSql.createFoldersTableSQL },
+    { name: 'connection_folders', sql: schemaSql.createConnectionFoldersTableSQL }, // Depends on connections, folders
 
     // Other utilities
     { name: 'ip_blacklist', sql: schemaSql.createIpBlacklistTableSQL },

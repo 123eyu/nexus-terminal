@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import FolderSelect from '../../FolderSelect.vue';
 import MobileSelectDrawer, { type MobileSelectOption } from '../../common/MobileSelectDrawer.vue';
 import type { ProxyInfo } from '../../../stores/proxies.store';
-import type { TagInfo } from '../../../stores/tags.store';
+import type { FolderInfo } from '../../../stores/folders.store';
 import type { ConnectionInfo } from '../../../stores/connections.store';
 
 // 定义 Props
@@ -16,7 +16,7 @@ const props = defineProps({
       proxy_id: number | null;
       jump_chain: Array<number | null> | null;
       proxy_type?: 'proxy' | 'jump' | null;
-      tag_ids: number[];
+      folder_ids: number[];
       notes: string;
       file_protocol?: 'auto' | 'sftp' | 'scp';
     }>,
@@ -24,11 +24,11 @@ const props = defineProps({
   },
   proxies: { type: Array as PropType<ProxyInfo[]>, required: true },
   connections: { type: Array as PropType<ConnectionInfo[]>, required: true },
-  tags: { type: Array as PropType<TagInfo[]>, required: true },
+  folders: { type: Array as PropType<FolderInfo[]>, required: true },
   isProxyLoading: { type: Boolean, required: true },
   proxyStoreError: { type: String as PropType<string | null>, required: false, default: null },
-  isTagLoading: { type: Boolean, required: true },
-  tagStoreError: { type: String as PropType<string | null>, required: false, default: null },
+  isFolderLoading: { type: Boolean, required: true },
+  folderStoreError: { type: String as PropType<string | null>, required: false, default: null },
   advancedConnectionMode: { type: String as PropType<'proxy' | 'jump'>, required: true },
   addJumpHost: { type: Function as PropType<() => void>, required: true },
   removeJumpHost: { type: Function as PropType<(index: number) => void>, required: true },
@@ -37,8 +37,8 @@ const props = defineProps({
 
 // 定义 Emits
 const emit = defineEmits<{
-  (e: 'create-tag', tagName: string): void;
-  (e: 'delete-tag', tagId: number): void;
+  (e: 'create-folder', folderName: string): void;
+  (e: 'delete-folder', folderId: number): void;
   (e: 'update:advancedConnectionMode', mode: 'proxy' | 'jump'): void;
 }>();
 
@@ -47,15 +47,15 @@ const { t } = useI18n();
 // 高级选项折叠状态 (移动端默认展开，用户亦可随时折叠)
 const isExpanded = ref(true);
 
-const handleCreateTagEvent = (tagName: string) => {
-  emit('create-tag', tagName);
+const handleCreateFolderEvent = (folderName: string) => {
+  emit('create-folder', folderName);
 };
 
-// 所属文件夹单选：跟桌面端一致，一个连接只属于一个文件夹（数据层仍是 tag_ids 数组，这里只取第一个）
+// 所属文件夹单选：跟桌面端一致，一个连接只属于一个文件夹（数据层仍是 folder_ids 数组，这里只取第一个）
 const selectedFolderId = computed({
-  get: () => (props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null),
+  get: () => (props.formData.folder_ids && props.formData.folder_ids.length > 0 ? props.formData.folder_ids[0] : null),
   set: (val: number | null) => {
-    props.formData.tag_ids = val !== null ? [val] : [];
+    props.formData.folder_ids = val !== null ? [val] : [];
   },
 });
 
@@ -309,17 +309,17 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
       <div class="space-y-1.5 pt-1">
         <label class="block text-xs font-medium text-text-secondary">
           <i class="fas fa-folder text-amber-400 mr-1"></i>
-          {{ t('connections.form.tags', '所属文件夹') }}
+          {{ t('connections.form.folders', '所属文件夹') }}
         </label>
         <FolderSelect
           v-model="selectedFolderId"
-          :folders="props.tags"
+          :folders="props.folders"
           :allow-create="true"
-          @create-folder="handleCreateTagEvent"
+          @create-folder="handleCreateFolderEvent"
           :placeholder="t('folders.selectPlaceholder', '选择所属文件夹...')"
         />
-        <div v-if="props.isTagLoading && props.tags.length === 0" class="text-[11px] text-text-secondary">{{ t('common.loading', '加载中...') }}</div>
-        <div v-if="props.tagStoreError" class="text-[11px] text-red-400">{{ t('tags.error', { error: props.tagStoreError }) }}</div>
+        <div v-if="props.isFolderLoading && props.folders.length === 0" class="text-[11px] text-text-secondary">{{ t('common.loading', '加载中...') }}</div>
+        <div v-if="props.folderStoreError" class="text-[11px] text-red-400">{{ t('folders.error', { error: props.folderStoreError }) }}</div>
       </div>
 
       <!-- 3. 备注信息 -->

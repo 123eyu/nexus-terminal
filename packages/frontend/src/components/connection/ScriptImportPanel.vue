@@ -185,8 +185,8 @@ const inputClass = computed(() =>
         <span class="font-medium text-foreground truncate min-w-0">{{ row.item.name }}</span>
         <span class="font-mono text-text-secondary shrink-0">{{ row.item.host }}:{{ row.item.port }}</span>
         <span class="ml-auto flex items-center gap-1 shrink-0">
-          <span v-if="row.item.tags?.length" class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">
-            <i class="fas fa-folder text-[9px] mr-0.5"></i>{{ row.item.tags[0] }}
+          <span v-if="row.item.folders?.length" class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500">
+            <i class="fas fa-folder text-[9px] mr-0.5"></i>{{ row.item.folders[0] }}
           </span>
           <span v-if="protocolLabel(row.item.fileProtocol)" class="px-1.5 py-0.5 rounded bg-muted/40 text-text-secondary uppercase">
             {{ protocolLabel(row.item.fileProtocol) }}

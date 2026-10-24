@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
-import { useTagsStore } from '../stores/tags.store';
+import { useFoldersStore } from '../stores/folders.store';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { hexToRgba } from '../utils/colorUtils';
@@ -23,19 +23,19 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const connectionsStore = useConnectionsStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const { showConfirmDialog } = useConfirmDialog();
 
 const { connections, isLoading: connectionsLoading } = storeToRefs(connectionsStore);
-const { tags, isLoading: tagsLoading } = storeToRefs(tagsStore);
+const { folders, isLoading: tagsLoading } = storeToRefs(foldersStore);
 
 // 数据加载方法
 const loadConnectionsData = async () => {
   try {
     await Promise.allSettled([
       connectionsStore.fetchConnections(),
-      tagsStore.fetchTags()
+      foldersStore.fetchFolders()
     ]);
   } catch (error) {
     console.error('[MobileDrawer] 加载连接或标签失败:', error);
@@ -44,7 +44,7 @@ const loadConnectionsData = async () => {
 
 // 搜索词与标签过滤
 const searchTerm = ref('');
-const selectedTagId = ref<number | 'untagged' | null>(null);
+const selectedFolderId = ref<number | 'untagged' | null>(null);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
 // 操作菜单状态 (ActionSheet)
@@ -62,13 +62,13 @@ watch(() => props.visible, (isOpen) => {
   if (isOpen) {
     actionSheetTarget.value = null;
     searchTerm.value = '';
-    selectedTagId.value = null;
+    selectedFolderId.value = null;
     loadConnectionsData();
   }
 });
 
-// 计算标签映射表 (tagId -> tagName)
-const tagMap = computed(() => new Map(tags.value.map(tag => [tag.id, tag.name])));
+// 计算标签映射表 (folderId -> folderName)
+const folderMap = computed(() => new Map(folders.value.map(folder => [folder.id, folder.name])));
 
 // 过滤后的连接列表
 const filteredConnections = computed(() => {
@@ -76,11 +76,11 @@ const filteredConnections = computed(() => {
   
   return connections.value.filter(conn => {
     // 1. 标签筛选
-    if (selectedTagId.value !== null) {
-      if (selectedTagId.value === 'untagged') {
-        if (conn.tag_ids && conn.tag_ids.length > 0) return false;
+    if (selectedFolderId.value !== null) {
+      if (selectedFolderId.value === 'untagged') {
+        if (conn.folder_ids && conn.folder_ids.length > 0) return false;
       } else {
-        if (!conn.tag_ids || !conn.tag_ids.includes(selectedTagId.value)) return false;
+        if (!conn.folder_ids || !conn.folder_ids.includes(selectedFolderId.value)) return false;
       }
     }
 
@@ -90,10 +90,10 @@ const filteredConnections = computed(() => {
     if (conn.name && conn.name.toLowerCase().includes(query)) return true;
     if (conn.host && conn.host.toLowerCase().includes(query)) return true;
     if (conn.username && conn.username.toLowerCase().includes(query)) return true;
-    if (conn.tag_ids && conn.tag_ids.length > 0) {
-      for (const tagId of conn.tag_ids) {
-        const tagName = tagMap.value.get(tagId);
-        if (tagName && tagName.toLowerCase().includes(query)) return true;
+    if (conn.folder_ids && conn.folder_ids.length > 0) {
+      for (const folderId of conn.folder_ids) {
+        const folderName = folderMap.value.get(folderId);
+        if (folderName && folderName.toLowerCase().includes(query)) return true;
       }
     }
     return false;
@@ -235,44 +235,44 @@ const handleActionDelete = async () => {
             </div>
           </div>
 
-          <!-- 3. 横向滑动标签胶囊 (Pill Tags) -->
+          <!-- 3. 横向滑动标签胶囊 (Pill Folders) -->
           <div
-            v-if="tags.length > 0"
+            v-if="folders.length > 0"
             class="px-3 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-shrink-0 border-b border-border/20 bg-header/20"
           >
             <!-- 全部 -->
             <button
               class="px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all"
-              :class="selectedTagId === null
+              :class="selectedFolderId === null
                 ? 'bg-primary text-button-text shadow-xs'
                 : 'bg-input/70 text-text-secondary border border-border/40 hover:bg-input active:scale-95'"
-              @click="selectedTagId = null"
+              @click="selectedFolderId = null"
             >
               {{ t('common.all', '全部') }} ({{ connections.length }})
             </button>
 
             <!-- 用户标签 -->
             <button
-              v-for="tag in tags"
-              :key="tag.id"
+              v-for="folder in folders"
+              :key="folder.id"
               class="px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all"
-              :class="selectedTagId === tag.id
+              :class="selectedFolderId === folder.id
                 ? 'bg-primary text-button-text shadow-xs'
                 : 'bg-input/70 text-text-secondary border border-border/40 hover:bg-input active:scale-95'"
-              @click="selectedTagId = tag.id"
+              @click="selectedFolderId = folder.id"
             >
-              {{ tag.name }}
+              {{ folder.name }}
             </button>
 
             <!-- 未标记 -->
             <button
               class="px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all"
-              :class="selectedTagId === 'untagged'
+              :class="selectedFolderId === 'untagged'
                 ? 'bg-primary text-button-text shadow-xs'
                 : 'bg-input/70 text-text-secondary border border-border/40 hover:bg-input active:scale-95'"
-              @click="selectedTagId = 'untagged'"
+              @click="selectedFolderId = 'untagged'"
             >
-              {{ t('workspaceConnectionList.untagged', '未标记') }}
+              {{ t('workspaceConnectionList.untagged', '未分类') }}
             </button>
           </div>
         </template>
@@ -293,13 +293,13 @@ const handleActionDelete = async () => {
 
             <!-- 空状态：无搜索结果 -->
             <div
-              v-else-if="filteredConnections.length === 0 && (searchTerm || selectedTagId !== null)"
+              v-else-if="filteredConnections.length === 0 && (searchTerm || selectedFolderId !== null)"
               class="py-12 text-center text-text-secondary flex flex-col items-center justify-center"
             >
               <i class="fas fa-search text-3xl mb-2.5 opacity-40"></i>
               <p class="text-sm font-medium">{{ t('workspaceConnectionList.noResults', '未找到匹配的服务器') }}</p>
               <button
-                @click="searchTerm = ''; selectedTagId = null;"
+                @click="searchTerm = ''; selectedFolderId = null;"
                 class="mt-3 px-3 py-1.5 text-xs text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
               >
                 {{ t('common.clearFilter', '清空筛选') }}

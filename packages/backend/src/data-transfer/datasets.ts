@@ -43,13 +43,13 @@ export interface DatasetSpec {
 
 const DATASET_LIST: DatasetSpec[] = [
     {
-        key: 'tags',
+        key: 'folders',
         order: 10,
         defaultSelected: true,
         sensitive: false,
         tables: [
             {
-                table: 'tags',
+                table: 'folders',
                 idColumn: 'id',
                 identity: ['name'],
                 dropColumns: [],
@@ -102,13 +102,13 @@ const DATASET_LIST: DatasetSpec[] = [
         ],
     },
     {
-        key: 'quickCommandTags',
+        key: 'quickCommandFolders',
         order: 10,
         defaultSelected: true,
         sensitive: false,
         tables: [
             {
-                table: 'quick_command_tags',
+                table: 'quick_command_folders',
                 idColumn: 'id',
                 identity: ['name'],
             },
@@ -128,33 +128,33 @@ const DATASET_LIST: DatasetSpec[] = [
         ],
     },
     {
-        key: 'connectionTags',
+        key: 'connectionFolders',
         order: 30,
         defaultSelected: true,
         sensitive: false,
         tables: [
             {
-                table: 'connection_tags',
-                identity: ['connection_id', 'tag_id'],
+                table: 'connection_folders',
+                identity: ['connection_id', 'folder_id'],
                 refs: [
                     { column: 'connection_id', dataset: 'connections' },
-                    { column: 'tag_id', dataset: 'tags' },
+                    { column: 'folder_id', dataset: 'folders' },
                 ],
             },
         ],
     },
     {
-        key: 'quickCommandTagAssociations',
+        key: 'quickCommandFolderAssociations',
         order: 30,
         defaultSelected: true,
         sensitive: false,
         tables: [
             {
-                table: 'quick_command_tag_associations',
-                identity: ['quick_command_id', 'tag_id'],
+                table: 'quick_command_folder_associations',
+                identity: ['quick_command_id', 'folder_id'],
                 refs: [
                     { column: 'quick_command_id', dataset: 'quickCommands' },
-                    { column: 'tag_id', dataset: 'quickCommandTags' },
+                    { column: 'folder_id', dataset: 'quickCommandFolders' },
                 ],
             },
         ],

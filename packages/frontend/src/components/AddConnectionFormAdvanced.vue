@@ -14,7 +14,7 @@ const props = defineProps({
       proxy_id: number | null;
       jump_chain: Array<number | null> | null;
       proxy_type?: 'proxy' | 'jump' | null;
-      tag_ids: number[];
+      folder_ids: number[];
       notes: string;
       file_protocol?: 'auto' | 'sftp' | 'scp';
     }>,

@@ -2,11 +2,13 @@ import { Database } from 'sqlite3';
 import crypto from 'crypto';
 
 /**
- * 根据标签名称生成全局确定性的 UUID v5 (基于 SHA-1 与固定命名空间)
- * 保证相同名称的标签在任何设备、任何时点生成的 UUID 完全一致，天然自动合并
+ * 根据文件夹名称生成全局确定性的 UUID v5 (基于 SHA-1 与固定命名空间)
+ * 保证相同名称的文件夹在任何设备、任何时点生成的 UUID 完全一致，天然自动合并
  */
-export function generateDeterministicTagUuid(name: string): string {
+export function generateDeterministicFolderUuid(name: string): string {
     const normalized = (name || '').trim().toLowerCase();
+    // ⚠️ 命名空间字符串保持 'nexus-tag-ns:' 不能改：它是 uuid 的输入，一改所有已有文件夹的 uuid 都会变，
+    // 跨端按 uuid 对齐会全部错位。标识符改名不动这串常量。
     const hash = crypto.createHash('sha1').update('nexus-tag-ns:' + normalized, 'utf8').digest('hex');
     const p1 = hash.substring(0, 8);
     const p2 = hash.substring(8, 12);
@@ -115,13 +117,13 @@ const definedMigrations: Migration[] = [
     // --- Quick Command Tags Migrations ---
     {
         id: 2,
-        name: 'Create quick_command_tags table',
+        name: 'Create quick_command_folders table',
         check: async (db: Database): Promise<boolean> => {
-            const tableAlreadyExists = await tableExists(db, 'quick_command_tags');
+            const tableAlreadyExists = await tableExists(db, 'quick_command_folders');
             return !tableAlreadyExists; // Only run if the table does NOT exist
         },
         sql: `
-            CREATE TABLE IF NOT EXISTS quick_command_tags (
+            CREATE TABLE IF NOT EXISTS quick_command_folders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
                 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -131,18 +133,18 @@ const definedMigrations: Migration[] = [
     },
     {
         id: 3,
-        name: 'Create quick_command_tag_associations table',
+        name: 'Create quick_command_folder_associations table',
         check: async (db: Database): Promise<boolean> => {
-            const tableAlreadyExists = await tableExists(db, 'quick_command_tag_associations');
+            const tableAlreadyExists = await tableExists(db, 'quick_command_folder_associations');
             return !tableAlreadyExists; // Only run if the table does NOT exist
         },
         sql: `
-            CREATE TABLE IF NOT EXISTS quick_command_tag_associations (
+            CREATE TABLE IF NOT EXISTS quick_command_folder_associations (
                 quick_command_id INTEGER NOT NULL,
-                tag_id INTEGER NOT NULL,
-                PRIMARY KEY (quick_command_id, tag_id),
+                folder_id INTEGER NOT NULL,
+                PRIMARY KEY (quick_command_id, folder_id),
                 FOREIGN KEY (quick_command_id) REFERENCES quick_commands(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id) REFERENCES quick_command_tags(id) ON DELETE CASCADE
+                FOREIGN KEY (folder_id) REFERENCES quick_command_folders(id) ON DELETE CASCADE
             );
         `
     }
@@ -192,7 +194,7 @@ const definedMigrations: Migration[] = [
 
             -- 步骤 1: 重命名旧表
             ALTER TABLE connections RENAME TO connections_old_for_vnc_constraint_update;
-            ALTER TABLE connection_tags RENAME TO connection_tags_old_for_vnc_constraint_update;
+            ALTER TABLE connection_folders RENAME TO connection_folders_old_for_vnc_constraint_update;
 
             -- 步骤 2: 创建新表 (与 schema.ts 中的定义一致)
             CREATE TABLE connections (
@@ -216,12 +218,12 @@ const definedMigrations: Migration[] = [
                 FOREIGN KEY (ssh_key_id) REFERENCES ssh_keys(id) ON DELETE SET NULL
             );
 
-            CREATE TABLE connection_tags (
+            CREATE TABLE connection_folders (
                 connection_id INTEGER NOT NULL,
-                tag_id INTEGER NOT NULL,
-                PRIMARY KEY (connection_id, tag_id),
+                folder_id INTEGER NOT NULL,
+                PRIMARY KEY (connection_id, folder_id),
                 FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+                FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
             );
 
             -- 步骤 3: 从旧表复制数据到新表
@@ -243,12 +245,12 @@ const definedMigrations: Migration[] = [
                 proxy_id, ssh_key_id, notes, created_at, updated_at, last_connected_at
             FROM connections_old_for_vnc_constraint_update;
 
-            INSERT INTO connection_tags (connection_id, tag_id)
-            SELECT connection_id, tag_id FROM connection_tags_old_for_vnc_constraint_update;
+            INSERT INTO connection_folders (connection_id, folder_id)
+            SELECT connection_id, folder_id FROM connection_folders_old_for_vnc_constraint_update;
 
             -- 步骤 4: 删除旧表
             DROP TABLE connections_old_for_vnc_constraint_update;
-            DROP TABLE connection_tags_old_for_vnc_constraint_update;
+            DROP TABLE connection_folders_old_for_vnc_constraint_update;
 
             PRAGMA foreign_keys=on;
 
@@ -386,27 +388,27 @@ const definedMigrations: Migration[] = [
             ALTER TABLE connections ADD COLUMN uuid TEXT NULL;
             ALTER TABLE proxies ADD COLUMN uuid TEXT NULL;
             ALTER TABLE ssh_keys ADD COLUMN uuid TEXT NULL;
-            ALTER TABLE tags ADD COLUMN uuid TEXT NULL;
+            ALTER TABLE folders ADD COLUMN uuid TEXT NULL;
             ALTER TABLE quick_commands ADD COLUMN uuid TEXT NULL;
 
             -- 3. 创建 UUID 索引
             CREATE INDEX IF NOT EXISTS idx_connections_uuid ON connections(uuid);
             CREATE INDEX IF NOT EXISTS idx_proxies_uuid ON proxies(uuid);
             CREATE INDEX IF NOT EXISTS idx_ssh_keys_uuid ON ssh_keys(uuid);
-            CREATE INDEX IF NOT EXISTS idx_tags_uuid ON tags(uuid);
+            CREATE INDEX IF NOT EXISTS idx_folders_uuid ON folders(uuid);
             CREATE INDEX IF NOT EXISTS idx_quick_commands_uuid ON quick_commands(uuid);
 
             -- 4. 为已存在的数据补齐标准 UUID v4
             UPDATE connections SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
             UPDATE proxies SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
             UPDATE ssh_keys SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
-            UPDATE tags SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
+            UPDATE folders SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
             UPDATE quick_commands SET uuid = lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(lower(hex(randomblob(2))), 2) || '-' || lower(hex(randomblob(6))) WHERE uuid IS NULL OR uuid = '';
         `
     },
     {
         id: 14,
-        name: 'Implement Sync v2 schema with sync_state, sync_changes, pending_references, updated_hlc and deterministic tags',
+        name: 'Implement Sync v2 schema with sync_state, sync_changes, pending_references, updated_hlc and deterministic folders',
         check: async (db: Database): Promise<boolean> => {
             const syncStateExists = await tableExists(db, 'sync_state');
             const connHlcExists = await columnExists(db, 'connections', 'updated_hlc');
@@ -467,13 +469,15 @@ const definedMigrations: Migration[] = [
             ALTER TABLE connections ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
             ALTER TABLE proxies ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
             ALTER TABLE ssh_keys ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
-            ALTER TABLE tags ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE folders ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
             ALTER TABLE quick_commands ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
-            ALTER TABLE quick_command_tags ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
+            ALTER TABLE quick_command_folders ADD COLUMN updated_hlc TEXT NOT NULL DEFAULT '';
 
-            -- 6. 为 quick_command_tags 补齐 uuid 列与索引
-            ALTER TABLE quick_command_tags ADD COLUMN uuid TEXT NULL;
-            CREATE INDEX IF NOT EXISTS idx_quick_command_tags_uuid ON quick_command_tags(uuid);
+            -- 6. 为 quick_command_folders 补齐 uuid 列与索引
+            ALTER TABLE quick_command_folders ADD COLUMN uuid TEXT NULL;
+            CREATE INDEX IF NOT EXISTS idx_quick_command_folders_uuid ON quick_command_folders(uuid);
+            --    关联表的 folder_id 索引：这张表由迁移 #3 建出，必须在这里建（初始化阶段建会 no such table）
+            CREATE INDEX IF NOT EXISTS idx_qc_folder_associations_folder_id ON quick_command_folder_associations(folder_id);
         `,
         execute: async (db: Database): Promise<void> => {
             // 7.1 初始化单行 sync_state
@@ -498,7 +502,7 @@ const definedMigrations: Migration[] = [
             });
 
             // 7.2 回填存量数据的 updated_hlc
-            const tables = ['connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags'];
+            const tables = ['connections', 'proxies', 'ssh_keys', 'folders', 'quick_commands', 'quick_command_folders'];
             for (const tbl of tables) {
                 await new Promise<void>((resolve, reject) => {
                     db.all(`SELECT id, updated_at FROM ${tbl} WHERE updated_hlc = ''`, async (err, rows: any[]) => {
@@ -516,30 +520,30 @@ const definedMigrations: Migration[] = [
                 });
             }
 
-            // 7.3 存量 tags 确定性 UUID 刷新
+            // 7.3 存量 folders 确定性 UUID 刷新
             await new Promise<void>((resolve, reject) => {
-                db.all(`SELECT id, name FROM tags`, async (err, rows: any[]) => {
+                db.all(`SELECT id, name FROM folders`, async (err, rows: any[]) => {
                     if (err) return reject(err);
                     if (!rows || rows.length === 0) return resolve();
                     for (const r of rows) {
-                        const detUuid = generateDeterministicTagUuid(r.name);
+                        const detUuid = generateDeterministicFolderUuid(r.name);
                         await new Promise<void>((resTag, rejTag) => {
-                            db.run(`UPDATE tags SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejTag(upErr) : resTag());
+                            db.run(`UPDATE folders SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejTag(upErr) : resTag());
                         });
                     }
                     resolve();
                 });
             });
 
-            // 7.4 存量 quick_command_tags 确定性 UUID 刷新
+            // 7.4 存量 quick_command_folders 确定性 UUID 刷新
             await new Promise<void>((resolve, reject) => {
-                db.all(`SELECT id, name FROM quick_command_tags`, async (err, rows: any[]) => {
+                db.all(`SELECT id, name FROM quick_command_folders`, async (err, rows: any[]) => {
                     if (err) return reject(err);
                     if (!rows || rows.length === 0) return resolve();
                     for (const r of rows) {
-                        const detUuid = generateDeterministicTagUuid(r.name);
+                        const detUuid = generateDeterministicFolderUuid(r.name);
                         await new Promise<void>((resQTag, rejQTag) => {
-                            db.run(`UPDATE quick_command_tags SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejQTag(upErr) : resQTag());
+                            db.run(`UPDATE quick_command_folders SET uuid = ? WHERE id = ?`, [detUuid, r.id], (upErr) => upErr ? rejQTag(upErr) : resQTag());
                         });
                     }
                     resolve();
@@ -584,10 +588,10 @@ const definedMigrations: Migration[] = [
     },
     {
         id: 16,
-        name: 'Add background_color column to tags, quick_command_tags, and quick_commands tables',
+        name: 'Add background_color column to folders, quick_command_folders, and quick_commands tables',
         check: async (db: Database): Promise<boolean> => {
-            const hasTagBg = await columnExists(db, 'tags', 'background_color');
-            const hasQTagBg = await columnExists(db, 'quick_command_tags', 'background_color');
+            const hasTagBg = await columnExists(db, 'folders', 'background_color');
+            const hasQTagBg = await columnExists(db, 'quick_command_folders', 'background_color');
             const hasQCmdBg = await columnExists(db, 'quick_commands', 'background_color');
             return !hasTagBg || !hasQTagBg || !hasQCmdBg;
         },
@@ -595,16 +599,16 @@ const definedMigrations: Migration[] = [
             -- 安全添加 background_color 字段
         `,
         execute: async (db: Database): Promise<void> => {
-            const hasTagBg = await columnExists(db, 'tags', 'background_color');
+            const hasTagBg = await columnExists(db, 'folders', 'background_color');
             if (!hasTagBg) {
                 await new Promise<void>((resolve, reject) => {
-                    db.run('ALTER TABLE tags ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
+                    db.run('ALTER TABLE folders ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
                 });
             }
-            const hasQTagBg = await columnExists(db, 'quick_command_tags', 'background_color');
+            const hasQTagBg = await columnExists(db, 'quick_command_folders', 'background_color');
             if (!hasQTagBg) {
                 await new Promise<void>((resolve, reject) => {
-                    db.run('ALTER TABLE quick_command_tags ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
+                    db.run('ALTER TABLE quick_command_folders ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
                 });
             }
             const hasQCmdBg = await columnExists(db, 'quick_commands', 'background_color');
@@ -613,7 +617,7 @@ const definedMigrations: Migration[] = [
                     db.run('ALTER TABLE quick_commands ADD COLUMN background_color TEXT NULL', (err) => err ? reject(err) : resolve());
                 });
             }
-            console.log('[Migrations] Migration 16: tags, quick_command_tags, quick_commands background_color 字段迁移完成。');
+            console.log('[Migrations] Migration 16: folders, quick_command_folders, quick_commands background_color 字段迁移完成。');
         }
     },
     {
@@ -919,15 +923,192 @@ const definedMigrations: Migration[] = [
                 `[Migrations] Migration 26: 外观设置 ${a} 条 / 终端主题 ${t} 条 / 常用路径 ${f} 条 已补上 uuid，可参与 v2 增量同步。`
             );
         }
+    },
+    // ────────────────────────────────────────────────────────────────────────
+    // #27 「标签」→「文件夹」改名收尾（表名/列名由 normalizeLegacyFolderSchema 在建表前处理）
+    // 这里只做不依赖表结构的收尾：同步日志与墓碑里的表名、审计动作名、通知事件名、设置键。
+    // 全部是幂等 UPDATE，重复跑不会二次破坏数据。
+    // ────────────────────────────────────────────────────────────────────────
+    {
+        id: 27,
+        name: 'Rename legacy tag identifiers to folder in sync log / audit / settings',
+        check: async (): Promise<boolean> => true,
+        sql: `SELECT 1;`,
+        execute: async (db: Database): Promise<void> => {
+            const exec = (sql: string, params: any[] = []): Promise<void> =>
+                new Promise((resolve, reject) => {
+                    db.run(sql, params, (err) => (err ? reject(err) : resolve()));
+                });
+
+            const tableRenames: Array<[string, string]> = [
+                ['tags', 'folders'],
+                ['connection_tags', 'connection_folders'],
+                ['quick_command_tags', 'quick_command_folders'],
+                ['quick_command_tag_associations', 'quick_command_folder_associations'],
+            ];
+
+            // 1. v2 增量日志 / 墓碑 / 待解析引用里记的是表名，不改的话升级后这些变更再也认不出来
+            if (await tableExists(db, 'sync_changes')) {
+                for (const [from, to] of tableRenames) {
+                    await exec('UPDATE sync_changes SET tbl = ? WHERE tbl = ?', [to, from]);
+                }
+            }
+            if (await tableExists(db, 'sync_tombstones')) {
+                for (const [from, to] of tableRenames) {
+                    await exec('UPDATE sync_tombstones SET tbl = ? WHERE tbl = ?', [to, from]);
+                }
+            }
+            if (await tableExists(db, 'sync_pending_references')) {
+                for (const [from, to] of tableRenames) {
+                    await exec('UPDATE sync_pending_references SET child_tbl = ? WHERE child_tbl = ?', [to, from]);
+                    await exec('UPDATE sync_pending_references SET target_tbl = ? WHERE target_tbl = ?', [to, from]);
+                }
+            }
+
+            // 2. 历史审计记录的动作名（老行不换名的话，界面上会退化成显示原始英文常量）
+            if (await tableExists(db, 'audit_logs')) {
+                await exec(
+                    "UPDATE audit_logs SET action_type = REPLACE(action_type, 'TAG_', 'FOLDER_') WHERE action_type LIKE 'TAG\_%' ESCAPE '\\'"
+                );
+            }
+
+            // 3. 通知渠道勾选的事件名是 JSON 数组，同样要把旧常量换掉
+            if (await tableExists(db, 'notification_settings')) {
+                for (const key of ['TAG_CREATED', 'TAG_UPDATED', 'TAG_DELETED']) {
+                    await exec(
+                        'UPDATE notification_settings SET enabled_events = REPLACE(enabled_events, ?, ?) WHERE enabled_events LIKE ?',
+                        [`"${key}"`, `"${key.replace('TAG_', 'FOLDER_')}"`, `%"${key}"%`]
+                    );
+                }
+            }
+
+            // 4. 设置项 key：新 key 已存在时直接丢掉旧行，避免主键冲突也避免两份并存
+            if (await tableExists(db, 'settings')) {
+                const keyRenames: Array<[string, string]> = [
+                    ['showConnectionTags', 'showConnectionFolders'],
+                    ['showQuickCommandTags', 'showQuickCommandFolders'],
+                ];
+                for (const [from, to] of keyRenames) {
+                    await exec(
+                        'UPDATE settings SET key = ? WHERE key = ? AND NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)',
+                        [to, from, to]
+                    );
+                    await exec(
+                        'DELETE FROM settings WHERE key = ? AND EXISTS (SELECT 1 FROM settings WHERE key = ?)',
+                        [from, to]
+                    );
+                }
+            }
+
+            // 5. 索引名跟着表名走（SQLite 改表名不会改索引名）
+            //    旧名字一律 DROP 掉再按新名字重建，避免「同列两份索引」这种残留
+            const staleIndexes = ['idx_qc_tag_associations_tag_id', 'idx_qc_tag_associations_folder_id'];
+            for (const stale of staleIndexes) {
+                await exec(`DROP INDEX IF EXISTS ${stale}`);
+            }
+            const indexRenames: Array<[string, string, string]> = [
+                ['idx_tags_uuid', 'idx_folders_uuid', 'folders(uuid)'],
+                ['idx_quick_command_tags_uuid', 'idx_quick_command_folders_uuid', 'quick_command_folders(uuid)'],
+                [
+                    'idx_qc_tag_associations_tag_id',
+                    'idx_qc_folder_associations_folder_id',
+                    'quick_command_folder_associations(folder_id)',
+                ],
+            ];
+            for (const [from, to, target] of indexRenames) {
+                await exec(`DROP INDEX IF EXISTS ${from}`);
+                if (await tableExists(db, target.slice(0, target.indexOf('(')))) {
+                    await exec(`CREATE INDEX IF NOT EXISTS ${to} ON ${target}`);
+                }
+            }
+
+            console.log('[Migrations] Migration 27: 旧「标签」标识已全部改写为「文件夹」。');
+        }
     }
+
 ];
 
-
 /**
- * 运行数据库迁移。
- * 检查当前数据库版本，并按顺序应用所有新的迁移。
- * @param db 数据库实例
+ * 旧版的「标签」表名/列名 → 新的「文件夹」。
+ *
+ * 必须在 `runDatabaseInitializations` **之前**调用：
+ *   - 新库：此时一张表都还没有，什么都不做，随后建表语句按新名字建出来；
+ *   - 旧库：先把 tags / connection_tags / ... 原地改名，后面所有
+ *     `CREATE TABLE IF NOT EXISTS` 都空转，历史迁移里的 `ALTER TABLE` 也继续作用在同一张表上
+ *     （只是名字变了），不必把 1~26 号迁移的 SQL 整段重写。
+ *
+ * 幂等：只有「旧表在、新表不在」才改名；两边都在时把旧表并进新表再删掉旧表。
  */
+export const normalizeLegacyFolderSchema = async (db: Database): Promise<void> => {
+    const exec = (sql: string): Promise<void> =>
+        new Promise((resolve, reject) => {
+            db.exec(sql, (err) => (err ? reject(err) : resolve()));
+        });
+
+    const renamed: Array<{ from: string; to: string; columns: Array<[string, string]> }> = [
+        { from: 'tags', to: 'folders', columns: [] },
+        { from: 'connection_tags', to: 'connection_folders', columns: [['tag_id', 'folder_id']] },
+        { from: 'quick_command_tags', to: 'quick_command_folders', columns: [] },
+        {
+            from: 'quick_command_tag_associations',
+            to: 'quick_command_folder_associations',
+            columns: [['tag_id', 'folder_id']],
+        },
+    ];
+
+    for (const item of renamed) {
+        if (!(await tableExists(db, item.from))) continue;
+
+        if (!(await tableExists(db, item.to))) {
+            await exec(`ALTER TABLE ${item.from} RENAME TO ${item.to};`);
+            console.log(`[Migrations] 旧表 ${item.from} 已改名为 ${item.to}`);
+        } else {
+            // 两张表同时存在（正常不会出现）：把旧表里的行补进新表，再删旧表
+            const cols = await new Promise<string[]>((resolve) => {
+                db.all(`PRAGMA table_info(${item.from})`, (err, list: any[]) => {
+                    resolve(err ? [] : (list || []).map((c) => String(c.name)));
+                });
+            });
+            if (cols.length > 0) {
+                const target = item.columns.reduce<string[]>(
+                    (acc, [from, to]) => acc.map((c) => (c === from ? to : c)),
+                    cols
+                );
+                await exec(
+                    `INSERT OR IGNORE INTO ${item.to} (${target.map((c) => `"${c}"`).join(', ')}) ` +
+                        `SELECT ${cols.map((c) => `"${c}"`).join(', ')} FROM ${item.from};`
+                );
+            }
+            await exec(`DROP TABLE IF EXISTS ${item.from};`);
+            console.log(`[Migrations] 旧表 ${item.from} 已并入 ${item.to} 并删除`);
+        }
+
+        for (const [fromCol, toCol] of item.columns) {
+            const hasOldCol = await columnExists(db, item.to, fromCol);
+            const hasNewCol = await columnExists(db, item.to, toCol);
+            if (hasOldCol && !hasNewCol) {
+                await exec(`ALTER TABLE ${item.to} RENAME COLUMN ${fromCol} TO ${toCol};`);
+                console.log(`[Migrations] ${item.to}.${fromCol} 已改名为 ${toCol}`);
+            }
+        }
+    }
+
+    // 旧触发器名字里带旧表名，body 里还留着 'tags' 这种字符串字面量，改名后必须丢掉重装。
+    // 触发器数量掉到期望值以下，installSyncTriggers 会自动按新名字重建整套。
+    await exec(`
+        DROP TRIGGER IF EXISTS tags_sync_ai;
+        DROP TRIGGER IF EXISTS tags_sync_au;
+        DROP TRIGGER IF EXISTS tags_sync_ad;
+        DROP TRIGGER IF EXISTS quick_command_tags_sync_ai;
+        DROP TRIGGER IF EXISTS quick_command_tags_sync_au;
+        DROP TRIGGER IF EXISTS quick_command_tags_sync_ad;
+        DROP TRIGGER IF EXISTS connection_tags_sync_ai;
+        DROP TRIGGER IF EXISTS connection_tags_sync_ad;
+        DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ai;
+        DROP TRIGGER IF EXISTS qc_tag_assoc_sync_ad;
+    `);
+};
+
 export const runMigrations = (db: Database): Promise<void> => {
     return new Promise((resolve, reject) => {
         console.log('[Migrations] 开始检查和应用数据库迁移...');

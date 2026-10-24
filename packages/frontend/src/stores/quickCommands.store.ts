@@ -2,12 +2,12 @@ import { defineStore } from 'pinia';
 import apiClient from '../utils/apiClient'; 
 import { ref, computed, watch } from 'vue'; 
 import { useUiNotificationsStore } from './uiNotifications.store';
-import { useQuickCommandTagsStore, type QuickCommandTag } from './quickCommandTags.store'; 
+import { useQuickCommandFoldersStore, type QuickCommandFolder } from './quickCommandFolders.store'; 
 import { useI18n } from 'vue-i18n'; 
 
 
 
-// 定义前端使用的快捷指令接口 (包含 tagIds)
+// 定义前端使用的快捷指令接口 (包含 folderIds)
 export interface QuickCommandFE { // Renamed from QuickCommand if necessary
     id: number;
     name: string | null;
@@ -15,7 +15,7 @@ export interface QuickCommandFE { // Renamed from QuickCommand if necessary
     usage_count: number;
     created_at: number;
     updated_at: number;
-    tagIds: number[]; // +++ Add tagIds +++
+    folderIds: number[]; // +++ Add folderIds +++
     variables?: Record<string, string>; // New: Add variables
     background_color?: string | null; // 快捷指令自定义背景色
 }
@@ -26,7 +26,7 @@ export type QuickCommandSortByType = 'name' | 'usage_count' | 'last_used';
 // 定义分组后的数据结构
 export interface GroupedQuickCommands {
     groupName: string;
-    tagId: number | null; // null for "Untagged" group
+    folderId: number | null; // null for "Untagged" group
     commands: QuickCommandFE[];
 }
 
@@ -34,13 +34,13 @@ export interface GroupedQuickCommands {
 const EXPANDED_GROUPS_STORAGE_KEY = 'quickCommandsExpandedGroups';
 
 export const useQuickCommandsStore = defineStore('quickCommands', () => {
-    const quickCommandsList = ref<QuickCommandFE[]>([]); // Should now contain QuickCommandFE with tagIds
+    const quickCommandsList = ref<QuickCommandFE[]>([]); // Should now contain QuickCommandFE with folderIds
     const searchTerm = ref('');
     const sortBy = ref<QuickCommandSortByType>('name'); // 默认按名称排序
     const isLoading = ref(false);
     const error = ref<string | null>(null);
     const uiNotificationsStore = useUiNotificationsStore();
-    const quickCommandTagsStore = useQuickCommandTagsStore(); // +++ Inject new tag store +++
+    const quickCommandFoldersStore = useQuickCommandFoldersStore(); // +++ Inject new folder store +++
     const { t } = useI18n(); // +++ For "Untagged" translation +++
     const selectedIndex = ref<number>(-1); // Index in the flatVisibleCommands list
 
@@ -52,11 +52,11 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     // +++ 重写 Getter: 过滤、分组、排序指令 +++
     const filteredAndGroupedCommands = computed((): GroupedQuickCommands[] => {
         const term = searchTerm.value.toLowerCase().trim();
-        const allTags = quickCommandTagsStore.tags; // 获取快捷指令专属标签
-        const tagMap = new Map(allTags.map(tag => [tag.id, tag.name]));
-        const untaggedGroupName = t('quickCommands.untagged', '未标记'); // 获取 "未标记" 的翻译
+        const allFolders = quickCommandFoldersStore.folders; // 获取快捷指令专属标签
+        const folderMap = new Map(allFolders.map(folder => [folder.id, folder.name]));
+        const untaggedGroupName = t('quickCommands.untagged', '未分类'); // 获取 "未标记" 的翻译
 
-        // 1. 过滤 (New logic: filter by command name, command content, OR tag name)
+        // 1. 过滤 (New logic: filter by command name, command content, OR folder name)
         let filtered = quickCommandsList.value;
         if (term) {
             filtered = filtered.filter(cmd => {
@@ -68,12 +68,12 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                 if (cmd.command.toLowerCase().includes(term)) {
                     return true;
                 }
-                // Check associated tag names
-                if (cmd.tagIds && cmd.tagIds.length > 0) {
-                    for (const tagId of cmd.tagIds) {
-                        const tagName = tagMap.get(tagId);
-                        if (tagName && tagName.toLowerCase().includes(term)) {
-                            return true; // Match found in tag name
+                // Check associated folder names
+                if (cmd.folderIds && cmd.folderIds.length > 0) {
+                    for (const folderId of cmd.folderIds) {
+                        const folderName = folderMap.get(folderId);
+                        if (folderName && folderName.toLowerCase().includes(term)) {
+                            return true; // Match found in folder name
                         }
                     }
                 }
@@ -83,31 +83,31 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         }
 
         // 2. 分组
-        const groups: Record<string, { commands: QuickCommandFE[], tagId: number | null }> = {};
+        const groups: Record<string, { commands: QuickCommandFE[], folderId: number | null }> = {};
         const untaggedCommands: QuickCommandFE[] = [];
 
         filtered.forEach(cmd => {
-            let isTagged = false;
-            if (cmd.tagIds && cmd.tagIds.length > 0) {
-                cmd.tagIds.forEach(tagId => {
-                    const tagName = tagMap.get(tagId);
-                    if (tagName) {
-                        if (!groups[tagName]) {
-                            groups[tagName] = { commands: [], tagId: tagId };
+            let isFolderged = false;
+            if (cmd.folderIds && cmd.folderIds.length > 0) {
+                cmd.folderIds.forEach(folderId => {
+                    const folderName = folderMap.get(folderId);
+                    if (folderName) {
+                        if (!groups[folderName]) {
+                            groups[folderName] = { commands: [], folderId: folderId };
                             // 初始化展开状态 (如果未定义，默认为 true)
-                            if (expandedGroups.value[tagName] === undefined) {
-                                expandedGroups.value[tagName] = true;
+                            if (expandedGroups.value[folderName] === undefined) {
+                                expandedGroups.value[folderName] = true;
                             }
                         }
                         // 避免重复添加（如果一个指令有多个相同标签ID? 不太可能但做个防御）
-                        if (!groups[tagName].commands.some(c => c.id === cmd.id)) {
-                             groups[tagName].commands.push(cmd);
+                        if (!groups[folderName].commands.some(c => c.id === cmd.id)) {
+                             groups[folderName].commands.push(cmd);
                         }
-                        isTagged = true;
+                        isFolderged = true;
                     }
                 });
             }
-            if (!isTagged) {
+            if (!isFolderged) {
                 untaggedCommands.push(cmd);
             }
         });
@@ -129,7 +129,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
             });
             return {
                 groupName: groupName,
-                tagId: groupData.tagId,
+                folderId: groupData.folderId,
                 commands: groupData.commands
             };
         });
@@ -153,7 +153,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
              });
              result.push({
                  groupName: untaggedGroupName,
-                 tagId: null,
+                 folderId: null,
                  commands: untaggedCommands
              });
         }
@@ -242,7 +242,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         selectedIndex.value = (selectedIndex.value - 1 + commands.length) % commands.length;
     };
 
-    // 从后端获取快捷指令 (包含 tagIds，不再发送 sortBy)
+    // 从后端获取快捷指令 (包含 folderIds，不再发送 sortBy)
     const fetchQuickCommands = async (force: boolean = false) => {
         // 简化缓存：只缓存原始列表，不再区分排序
         const cacheKey = 'quickCommandsListCache';
@@ -282,7 +282,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
             const response = await apiClient.get<QuickCommandFE[]>('/quick-commands');
             const freshData = response.data.map(cmd => ({
                 ...cmd,
-                tagIds: Array.isArray(cmd.tagIds) ? cmd.tagIds : [],
+                folderIds: Array.isArray(cmd.folderIds) ? cmd.folderIds : [],
                 variables: typeof cmd.variables === 'object' ? cmd.variables : undefined,
                 background_color: cmd.background_color || null
             }));
@@ -326,7 +326,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     const addQuickCommand = async (
         name: string | null,
         command: string,
-        tagIds?: number[],
+        folderIds?: number[],
         variables?: Record<string, string>,
         backgroundColor?: string | null
     ): Promise<boolean> => {
@@ -334,14 +334,14 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
             const response = await apiClient.post<{ message: string, command: QuickCommandFE }>('/quick-commands', {
                 name,
                 command,
-                tagIds,
+                folderIds,
                 variables,
                 background_color: backgroundColor || null
             });
             if (response.data?.command) {
                 const newCmd: QuickCommandFE = {
                     ...response.data.command,
-                    tagIds: Array.isArray(response.data.command.tagIds) ? response.data.command.tagIds : (tagIds || []),
+                    folderIds: Array.isArray(response.data.command.folderIds) ? response.data.command.folderIds : (folderIds || []),
                     variables: response.data.command.variables || variables,
                     background_color: response.data.command.background_color || backgroundColor || null
                 };
@@ -365,12 +365,12 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         id: number,
         name: string | null,
         command: string,
-        tagIds?: number[],
+        folderIds?: number[],
         variables?: Record<string, string>,
         backgroundColor?: string | null
     ): Promise<boolean> => {
          try {
-            const payload: Record<string, any> = { name, command, tagIds, variables };
+            const payload: Record<string, any> = { name, command, folderIds, variables };
             if (typeof backgroundColor !== 'undefined') {
                 payload.background_color = backgroundColor;
             }
@@ -381,7 +381,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                 quickCommandsList.value[index] = {
                     ...quickCommandsList.value[index],
                     ...response.data.command,
-                    tagIds: Array.isArray(response.data.command.tagIds) ? response.data.command.tagIds : (tagIds || []),
+                    folderIds: Array.isArray(response.data.command.folderIds) ? response.data.command.folderIds : (folderIds || []),
                     variables: response.data.command.variables || variables,
                     background_color: typeof response.data.command.background_color !== 'undefined'
                         ? response.data.command.background_color
@@ -463,8 +463,8 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
     const moveCommandToFolder = async (id: number, folderId: number | null): Promise<boolean> => {
         const cmd = quickCommandsList.value.find(c => c.id === id);
         if (!cmd) return false;
-        const targetTagIds = folderId !== null ? [folderId] : [];
-        return updateQuickCommand(cmd.id, cmd.name, cmd.command, targetTagIds, cmd.variables, cmd.background_color);
+        const targetFolderIds = folderId !== null ? [folderId] : [];
+        return updateQuickCommand(cmd.id, cmd.name, cmd.command, targetFolderIds, cmd.variables, cmd.background_color);
     };
 
     return {
@@ -491,18 +491,18 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
         toggleGroup, // +++ Expose toggleGroup action +++
         loadExpandedGroups, // +++ Expose load action +++
 
-        // +++ Action to assign a tag to multiple commands +++
-        async assignCommandsToTagAction(commandIds: number[], tagId: number): Promise<boolean> {
+        // +++ Action to assign a folder to multiple commands +++
+        async assignCommandsToFolderAction(commandIds: number[], folderId: number): Promise<boolean> {
             if (!commandIds || commandIds.length === 0) {
-                console.warn('[Store] assignCommandsToTagAction: No command IDs provided.');
+                console.warn('[Store] assignCommandsToFolderAction: No command IDs provided.');
                 return false;
             }
             isLoading.value = true; // Use the store's isLoading state
             error.value = null; // Use the store's error state
             try {
-                const response = await apiClient.post('/quick-commands/bulk-assign-tag', { commandIds, tagId });
+                const response = await apiClient.post('/quick-commands/bulk-assign-folder', { commandIds, folderId });
                 if (response.data.success) {
-                    console.log(`[Store] Successfully assigned tag ${tagId} to ${commandIds.length} commands via API.`);
+                    console.log(`[Store] Successfully assigned folder ${folderId} to ${commandIds.length} commands via API.`);
 
                     // --- Manual state update for immediate UI feedback ---
                     let updatedCount = 0;
@@ -510,19 +510,19 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                         const commandIndex = quickCommandsList.value.findIndex(cmd => cmd.id === cmdId);
                         if (commandIndex !== -1) {
                             const command = quickCommandsList.value[commandIndex];
-                            // Ensure tagIds exists and add the new tagId if not already present
-                            if (!Array.isArray(command.tagIds)) {
-                                command.tagIds = [];
+                            // Ensure folderIds exists and add the new folderId if not already present
+                            if (!Array.isArray(command.folderIds)) {
+                                command.folderIds = [];
                             }
-                            if (!command.tagIds.includes(tagId)) {
-                                command.tagIds.push(tagId);
+                            if (!command.folderIds.includes(folderId)) {
+                                command.folderIds.push(folderId);
                                 updatedCount++;
                             }
                         } else {
-                             console.warn(`[Store] assignCommandsToTagAction: Command ID ${cmdId} not found in local list for manual update.`);
+                             console.warn(`[Store] assignCommandsToFolderAction: Command ID ${cmdId} not found in local list for manual update.`);
                         }
                     });
-                    console.log(`[Store] Manually updated tagIds for ${updatedCount} commands in local state.`);
+                    console.log(`[Store] Manually updated folderIds for ${updatedCount} commands in local state.`);
 
                     // Optionally, still fetch for full consistency, but UI should update based on manual change first.
                     // clearQuickCommandsCache();
@@ -535,7 +535,7 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                     return false;
                 }
             } catch (err: any) {
-                console.error('[Store] Error assigning tag to commands:', err);
+                console.error('[Store] Error assigning folder to commands:', err);
                 error.value = err.response?.data?.message || err.message || '批量分配标签时发生网络或服务器错误';
                 if (error.value) uiNotificationsStore.showError(error.value); // Check if error.value is not null
                 return false;

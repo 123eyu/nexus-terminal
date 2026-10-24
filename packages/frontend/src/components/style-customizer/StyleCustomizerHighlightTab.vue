@@ -553,7 +553,7 @@ const handleResetToDefault = () => {
                 >
                   <i v-if="m.type === 'builtin'" class="fas fa-shield-halved text-[9px]"></i>
                   <i v-else-if="m.type === 'regex'" class="fas fa-code text-[9px]"></i>
-                  <i v-else class="fas fa-tag text-[9px]"></i>
+                  <i v-else class="fas fa-folder text-[9px]"></i>
                   <span>{{ m.type === 'builtin' ? m.builtinType : (m.type === 'regex' ? `/${m.pattern}/` : m.keyword) }}</span>
                 </span>
               </template>
@@ -705,7 +705,7 @@ const handleResetToDefault = () => {
                   @click="handleAddKeywordMatcher"
                   class="px-2.5 py-1 text-xs border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary rounded-md font-medium transition-colors flex items-center gap-1"
                 >
-                  <i class="fas fa-tag text-[10px]"></i>
+                  <i class="fas fa-folder text-[10px]"></i>
                   + 关键词
                 </button>
                 <button

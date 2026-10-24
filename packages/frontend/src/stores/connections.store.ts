@@ -13,8 +13,8 @@ export interface ConnectionInfo {
     auth_method: 'password' | 'key';
     proxy_id?: number | null; // 关联的代理 ID (可选)
     proxy_type?: 'proxy' | 'jump' | null; 
-    tag_ids?: number[]; // 关联的标签 ID 数组 (可选)
-    tags?: string[]; // 关联的标签名称数组 (可选，兼容)
+    folder_ids?: number[]; // 关联的标签 ID 数组 (可选)
+    folders?: string[]; // 关联的标签名称数组 (可选，兼容)
     ssh_key_id?: number | null; // +++ 关联的 SSH 密钥 ID (可选) +++
     created_at: number;
     updated_at: number;
@@ -107,7 +107,7 @@ export const useConnectionsStore = defineStore('connections', {
             vncPassword?: string; // VNC specific password
             proxy_id?: number | null;
             proxy_type?: 'proxy' | 'jump' | null; 
-            tag_ids?: number[]; // 允许传入 tag_ids
+            folder_ids?: number[]; // 允许传入 folder_ids
             jump_chain?: number[] | null;
         }) {
             this.isLoading = true;
@@ -133,9 +133,9 @@ export const useConnectionsStore = defineStore('connections', {
         },
 
         // 更新连接 Action
-        // 更新参数类型以包含 proxy_id 和 tag_ids
+        // 更新参数类型以包含 proxy_id 和 folder_ids
         // Update parameter type to include 'type' and VNC fields
-        async updateConnection(connectionId: number, updatedData: Partial<Omit<ConnectionInfo, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { type?: 'SSH' | 'RDP' | 'VNC'; password?: string; private_key?: string; passphrase?: string; vncPassword?: string; proxy_id?: number | null; proxy_type?: 'proxy' | 'jump' | null; tag_ids?: number[]; jump_chain?: number[] | null; }>) {
+        async updateConnection(connectionId: number, updatedData: Partial<Omit<ConnectionInfo, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { type?: 'SSH' | 'RDP' | 'VNC'; password?: string; private_key?: string; passphrase?: string; vncPassword?: string; proxy_id?: number | null; proxy_type?: 'proxy' | 'jump' | null; folder_ids?: number[]; jump_chain?: number[] | null; }>) {
             this.isLoading = true;
             this.error = null;
             try {
@@ -294,16 +294,16 @@ export const useConnectionsStore = defineStore('connections', {
         },
 
         // +++ 为多个连接添加一个标签 (调用新的后端 API) +++
-        async addTagToConnectionsAction(connectionIds: number[], tagId: number): Promise<boolean> {
+        async addFolderToConnectionsAction(connectionIds: number[], folderId: number): Promise<boolean> {
              if (connectionIds.length === 0) return true; // 没有连接需要更新，直接返回成功
 
              this.isLoading = true; // 可以考虑为批量操作设置单独状态
              this.error = null;
              try {
-                 // 调用新的后端 API POST /connections/add-tag
-                 await apiClient.post('/connections/add-tag', {
+                 // 调用新的后端 API POST /connections/add-folder
+                 await apiClient.post('/connections/add-folder', {
                      connection_ids: connectionIds,
-                     tag_id: tagId
+                     folder_id: folderId
                  });
 
                  // 更新成功后，清除缓存并重新获取以保证数据一致性
@@ -311,7 +311,7 @@ export const useConnectionsStore = defineStore('connections', {
                  await this.fetchConnections();
                  return true; // 表示成功
              } catch (err: any) {
-                 console.error(`为连接 ${connectionIds.join(', ')} 添加标签 ${tagId} 失败:`, err);
+                 console.error(`为连接 ${connectionIds.join(', ')} 添加标签 ${folderId} 失败:`, err);
                  this.error = err.response?.data?.message || err.message || `为连接添加标签时发生未知错误。`;
                   if (err.response?.status === 401) {
                      console.warn('未授权，需要登录才能为连接添加标签。');
@@ -325,7 +325,7 @@ export const useConnectionsStore = defineStore('connections', {
         // 移动单个连接到指定文件夹 (folderId 为 null 表示未分类)
         async moveConnectionToFolder(connectionId: number, folderId: number | null): Promise<boolean> {
             return this.updateConnection(connectionId, {
-                tag_ids: folderId !== null ? [folderId] : []
+                folder_ids: folderId !== null ? [folderId] : []
             });
         },
 
@@ -334,9 +334,9 @@ export const useConnectionsStore = defineStore('connections', {
             this.isLoading = true;
             this.error = null;
             try {
-                const targetTagIds = folderId !== null ? [folderId] : [];
+                const targetFolderIds = folderId !== null ? [folderId] : [];
                 for (const id of connectionIds) {
-                    await apiClient.put(`/connections/${id}`, { tag_ids: targetTagIds });
+                    await apiClient.put(`/connections/${id}`, { folder_ids: targetFolderIds });
                 }
                 localStorage.removeItem('connectionsCache');
                 await this.fetchConnections();
@@ -351,12 +351,12 @@ export const useConnectionsStore = defineStore('connections', {
         },
 
         // (保留) 更新单个连接的标签 (如果仍有需要)
-        async updateConnectionTags(connectionId: number, tagIds: number[]): Promise<boolean> {
+        async updateConnectionFolders(connectionId: number, folderIds: number[]): Promise<boolean> {
             this.isLoading = true;
             this.error = null;
             try {
                 // 注意：此 API 端点可能已在后端移除或更改
-                await apiClient.put(`/connections/${connectionId}/tags`, { tag_ids: tagIds });
+                await apiClient.put(`/connections/${connectionId}/folders`, { folder_ids: folderIds });
                 localStorage.removeItem('connectionsCache');
                 await this.fetchConnections();
                 return true;

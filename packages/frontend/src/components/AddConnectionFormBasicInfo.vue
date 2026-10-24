@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { PRESET_COLORS, generateRandomColor, hexToRgba } from '../utils/colorUtils';
 import { isRemoteDesktopSupported } from '../utils/platform';
 import FolderSelect from './FolderSelect.vue';
-import type { TagInfo } from '../stores/tags.store';
+import type { FolderInfo } from '../stores/folders.store';
 
 // Define Props. formData is expected to be a reactive object from the parent composable.
 const props = defineProps<{
@@ -15,9 +15,9 @@ const props = defineProps<{
     port: number;
     custom_background_color?: boolean;
     background_color?: string;
-    tag_ids: number[];
+    folder_ids: number[];
   };
-  folders: TagInfo[];
+  folders: FolderInfo[];
   isFolderLoading?: boolean;
   folderStoreError?: string | null;
 }>();
@@ -28,11 +28,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
-/** 所属文件夹单选：表单里是 tag_ids 数组，这里只取第一个 */
+/** 所属文件夹单选：表单里是 folder_ids 数组，这里只取第一个 */
 const selectedFolderId = computed({
-  get: () => (props.formData.tag_ids && props.formData.tag_ids.length > 0 ? props.formData.tag_ids[0] : null),
+  get: () => (props.formData.folder_ids && props.formData.folder_ids.length > 0 ? props.formData.folder_ids[0] : null),
   set: (val: number | null) => {
-    props.formData.tag_ids = val !== null ? [val] : [];
+    props.formData.folder_ids = val !== null ? [val] : [];
   },
 });
 

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Client, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { InitiateTransferPayload, TransferTask, TransferSubTask } from './transfers.types';
 import { getConnectionWithDecryptedCredentials } from '../connections/connection.service';
-import type { ConnectionWithTags, DecryptedConnectionCredentials } from '../types/connection.types';
+import type { ConnectionWithFolders, DecryptedConnectionCredentials } from '../types/connection.types';
 // 命令拼装抽成纯函数（rsync 源路径的尾斜杠会改变语义，见 transfer-command.ts 注释）
 import { buildTransferCommandString, escapeShellArg } from './transfer-command';
 import { serializeTransferTask } from './transfers.serialize';
@@ -100,7 +100,7 @@ export class TransfersService {
   }
 
   private buildSshConnectConfig(
-    connectionInfo: ConnectionWithTags,
+    connectionInfo: ConnectionWithFolders,
     credentials: DecryptedConnectionCredentials
   ): ConnectConfig {
     const config: ConnectConfig = {
@@ -459,12 +459,12 @@ export class TransfersService {
     return attempt;
   }
 
-  private static hostKey(prefix: string, connection: ConnectionWithTags): string {
+  private static hostKey(prefix: string, connection: ConnectionWithFolders): string {
     return `${prefix}:${connection.username}@${connection.host}:${connection.port || 22}`;
   }
 
   /** 源机复用当前已连的 client（不需要重连） */
-  private async ensureRsyncOnSource(client: Client, sourceConnection: ConnectionWithTags): Promise<string | null> {
+  private async ensureRsyncOnSource(client: Client, sourceConnection: ConnectionWithFolders): Promise<string | null> {
     const installed = await this.ensureRsyncOnce(
       TransfersService.hostKey('source', sourceConnection),
       () => this.installRsyncViaClient(client, `source ${sourceConnection.host}`)
@@ -474,7 +474,7 @@ export class TransfersService {
   }
 
   private async ensureRsyncOnTargetServer(
-    targetConnection: ConnectionWithTags,
+    targetConnection: ConnectionWithFolders,
     targetCredentials: DecryptedConnectionCredentials
   ): Promise<string | null> {
     const installed = await this.ensureRsyncOnce(
@@ -501,7 +501,7 @@ export class TransfersService {
     return this.checkCommandOnTargetServer(targetConnection, targetCredentials, 'rsync');
   }
 
-  private async checkCommandOnTargetServer(targetConnection: ConnectionWithTags, targetCredentials: DecryptedConnectionCredentials, command: string): Promise<string | null> {
+  private async checkCommandOnTargetServer(targetConnection: ConnectionWithFolders, targetCredentials: DecryptedConnectionCredentials, command: string): Promise<string | null> {
     const targetClient = new Client();
     const connectConfig = this.buildSshConnectConfig(targetConnection, targetCredentials);
     let foundCommandPath: string | null = null;
@@ -623,9 +623,9 @@ private async executeRemoteTransferOnSource(
   taskId: string,
   subTaskId: string,
   sourceSshClient: Client,
-  sourceConnectionForInfo: ConnectionWithTags,
+  sourceConnectionForInfo: ConnectionWithFolders,
   sourceItem: { name: string; path: string; type: 'file' | 'directory' },
-  targetConnection: ConnectionWithTags,
+  targetConnection: ConnectionWithFolders,
   targetCredentials: DecryptedConnectionCredentials,
   remoteTargetPathOnTarget: string,
   transferMethodPreference: 'auto' | 'rsync' | 'scp',

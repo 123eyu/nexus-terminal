@@ -5,7 +5,7 @@ import type { ConnectionInfo } from '../stores/connections.store';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useProxiesStore } from '../stores/proxies.store';
-import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useFoldersStore, type FolderInfo } from '../stores/folders.store';
 import { useSshKeysStore, type SshKeyBasicInfo } from '../stores/sshKeys.store';
 import SshKeySelector from './SshKeySelector.vue';
 import AppSelect from './common/AppSelect.vue';
@@ -16,7 +16,7 @@ interface BatchUpdateData {
   password?: string | null;
   ssh_key_id?: number | null;
   proxy_id?: number | null;
-  tag_ids?: number[];
+  folder_ids?: number[];
   notes?: string | null;
 }
 
@@ -37,7 +37,7 @@ const { t } = useI18n();
 const connectionsStore = useConnectionsStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const proxiesStore = useProxiesStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const sshKeysStore = useSshKeysStore();
 
 const internalVisible = ref(props.visible);
@@ -49,7 +49,7 @@ const enableAuthEdit = ref(false);
 const enableAdvancedEdit = ref(false);
 // Removed enableNotesEdit, notes editability is tied to enableAdvancedEdit
 
-const availableTags = computed(() => tagsStore.tags as TagInfo[]);
+const availableFolders = computed(() => foldersStore.folders as FolderInfo[]);
 const availableProxies = computed(() => proxiesStore.proxies);
 const availableSshKeys = computed(() => sshKeysStore.sshKeys as SshKeyBasicInfo[]);
 
@@ -62,7 +62,7 @@ watch(() => props.visible, (newVal) => {
       password: undefined,
       ssh_key_id: undefined,
       proxy_id: undefined,
-      tag_ids: undefined,
+      folder_ids: undefined,
       notes: undefined, // Keep notes initialization
     };
     enablePortEdit.value = false;
@@ -73,8 +73,8 @@ watch(() => props.visible, (newVal) => {
     if (availableProxies.value.length === 0 && !proxiesStore.isLoading) {
       proxiesStore.fetchProxies();
     }
-    if (availableTags.value.length === 0 && !tagsStore.isLoading) {
-      tagsStore.fetchTags();
+    if (availableFolders.value.length === 0 && !foldersStore.isLoading) {
+      foldersStore.fetchFolders();
     }
     if (availableSshKeys.value.length === 0 && !sshKeysStore.isLoading) {
       sshKeysStore.fetchSshKeys();
@@ -125,8 +125,8 @@ const handleSave = async () => {
     if (formData.value.proxy_id !== undefined) {
       updatesToApply.proxy_id = formData.value.proxy_id;
     }
-    if (formData.value.tag_ids !== undefined) {
-      updatesToApply.tag_ids = formData.value.tag_ids;
+    if (formData.value.folder_ids !== undefined) {
+      updatesToApply.folder_ids = formData.value.folder_ids;
     }
     // Notes are part of "Advanced Options". If advanced is enabled, and notes have a value (even empty string), apply it.
     if (formData.value.notes !== undefined) {
@@ -170,12 +170,12 @@ const handleCancel = () => {
 // undefined = 不更改，null = 移出文件夹（未分类），number = 归入该文件夹。
 const batchFolderId = computed<number | null | undefined>({
   get: () => {
-    const ids = formData.value.tag_ids;
+    const ids = formData.value.folder_ids;
     if (ids === undefined) return undefined;
     return ids.length > 0 ? ids[0] : null;
   },
   set: (val) => {
-    formData.value.tag_ids = val === undefined ? undefined : (val === null ? [] : [val]);
+    formData.value.folder_ids = val === undefined ? undefined : (val === null ? [] : [val]);
   },
 });
 
@@ -184,8 +184,8 @@ onMounted(() => {
     if (availableProxies.value.length === 0 && !proxiesStore.isLoading) {
       proxiesStore.fetchProxies();
     }
-    if (availableTags.value.length === 0 && !tagsStore.isLoading) {
-      tagsStore.fetchTags();
+    if (availableFolders.value.length === 0 && !foldersStore.isLoading) {
+      foldersStore.fetchFolders();
     }
     if (availableSshKeys.value.length === 0 && !sshKeysStore.isLoading) {
       sshKeysStore.fetchSshKeys();
@@ -270,11 +270,11 @@ onMounted(() => {
                 </AppSelect>
               </div>
               <div>
-                <label class="block text-sm font-medium text-text-secondary">{{ t('connections.table.tags', '文件夹') }}</label>
+                <label class="block text-sm font-medium text-text-secondary">{{ t('connections.table.folders', '文件夹') }}</label>
                 <AppSelect v-model="batchFolderId" class="mt-1 block w-full h-9 px-3 text-sm border border-border rounded-lg shadow-2xs bg-input text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all cursor-pointer">
                   <option :value="undefined">{{ t('connections.batchEdit.noChange', '-- 不更改 --') }}</option>
                   <option :value="null">{{ t('folders.uncategorized', '未分类') }}</option>
-                  <option v-for="folder in availableTags" :key="folder.id" :value="folder.id">
+                  <option v-for="folder in availableFolders" :key="folder.id" :value="folder.id">
                     {{ folder.name }}
                   </option>
                 </AppSelect>

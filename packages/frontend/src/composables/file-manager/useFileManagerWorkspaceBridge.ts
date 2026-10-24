@@ -53,7 +53,7 @@ export interface FileManagerBridgeDeps {
 }
 
 export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
-  const logTag = `[FileManager ${deps.sessionId}-${deps.instanceId}]`;
+  const logFolder = `[FileManager ${deps.sessionId}-${deps.instanceId}]`;
   const subscribeToWorkspaceEvent = useWorkspaceEventSubscriber();
   const unsubscribeFromWorkspaceEvent = useWorkspaceEventOff();
 
@@ -170,7 +170,7 @@ export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
         deps.pathSync.internal = false;
       }, 600);
 
-      console.log(`${logTag} 响应终端目录变更，自动切换文件管理器路径: ${normNew}`);
+      console.log(`${logFolder} 响应终端目录变更，自动切换文件管理器路径: ${normNew}`);
       deps.currentSftpManager.value?.loadDirectory(normNew);
     };
     subscribeToWorkspaceEvent('terminal:cwdChanged', handleTerminalCwdChangedNotification);
@@ -250,7 +250,7 @@ export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
       if (payload.sessionId === deps.sessionId) {
         const current = deps.currentSftpManager.value?.currentPath.value;
         if (current && (current === payload.sourceDir || current === payload.targetDir)) {
-          console.log(`${logTag} 收到移动文件广播，自动静默刷新当前目录: ${current}`);
+          console.log(`${logFolder} 收到移动文件广播，自动静默刷新当前目录: ${current}`);
           deps.currentSftpManager.value?.loadDirectory(current, true);
         }
       }
@@ -273,7 +273,7 @@ export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
         return;
       }
       if (payload.path && deps.currentSftpManager.value) {
-        console.log(`${logTag} 收到路径跳转通知: ${payload.path}`);
+        console.log(`${logFolder} 收到路径跳转通知: ${payload.path}`);
         deps.currentSftpManager.value.loadDirectory(payload.path);
         deps.currentSftpManager.value.setInitialLoadDone(true);
       }
@@ -325,7 +325,7 @@ export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
       try {
         off?.();
       } catch (err) {
-        console.warn(`${logTag} 注销工作区事件失败:`, err);
+        console.warn(`${logFolder} 注销工作区事件失败:`, err);
       }
     }
   });

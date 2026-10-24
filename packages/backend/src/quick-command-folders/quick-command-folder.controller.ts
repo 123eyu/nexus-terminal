@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import * as QuickCommandTagService from './quick-command-tag.service';
+import * as QuickCommandFolderService from './quick-command-folder.service';
 
 /**
  * 处理获取所有快捷指令文件夹的请求
  */
-export const getAllQuickCommandTags = async (req: Request, res: Response): Promise<void> => {
+export const getAllQuickCommandFolders = async (req: Request, res: Response): Promise<void> => {
     try {
-        const tags = await QuickCommandTagService.getAllQuickCommandTags();
-        res.status(200).json(tags);
+        const folders = await QuickCommandFolderService.getAllQuickCommandFolders();
+        res.status(200).json(folders);
     } catch (error: any) {
         console.error('[Controller] 获取快捷指令文件夹列表失败:', error.message);
         res.status(500).json({ message: error.message || '无法获取快捷指令文件夹列表' });
@@ -17,7 +17,7 @@ export const getAllQuickCommandTags = async (req: Request, res: Response): Promi
 /**
  * 处理添加新快捷指令文件夹的请求
  */
-export const addQuickCommandTag = async (req: Request, res: Response): Promise<void> => {
+export const addQuickCommandFolder = async (req: Request, res: Response): Promise<void> => {
     const { name, background_color } = req.body;
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -26,11 +26,11 @@ export const addQuickCommandTag = async (req: Request, res: Response): Promise<v
     }
 
     try {
-        const newId = await QuickCommandTagService.addQuickCommandTag(name, background_color);
+        const newId = await QuickCommandFolderService.addQuickCommandFolder(name, background_color);
         // 成功添加后，获取新创建的文件夹信息返回给前端
-        const newTag = await QuickCommandTagService.getQuickCommandTagById(newId);
-        if (newTag) {
-             res.status(201).json({ message: '快捷指令文件夹已添加', tag: newTag });
+        const newFolder = await QuickCommandFolderService.getQuickCommandFolderById(newId);
+        if (newFolder) {
+             res.status(201).json({ message: '快捷指令文件夹已添加', folder: newFolder });
         } else {
              // 理论上不应该发生，但作为健壮性检查
              console.error(`[Controller] 添加快捷指令文件夹后未能找到 ID: ${newId}`);
@@ -50,7 +50,7 @@ export const addQuickCommandTag = async (req: Request, res: Response): Promise<v
 /**
  * 处理更新快捷指令文件夹的请求
  */
-export const updateQuickCommandTag = async (req: Request, res: Response): Promise<void> => {
+export const updateQuickCommandFolder = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
     const { name, background_color } = req.body;
 
@@ -64,19 +64,19 @@ export const updateQuickCommandTag = async (req: Request, res: Response): Promis
     }
 
     try {
-        const success = await QuickCommandTagService.updateQuickCommandTag(id, name, background_color);
+        const success = await QuickCommandFolderService.updateQuickCommandFolder(id, name, background_color);
         if (success) {
             // 成功更新后，获取更新后的文件夹信息返回给前端
-            const updatedTag = await QuickCommandTagService.getQuickCommandTagById(id);
-            if (updatedTag) {
-                 res.status(200).json({ message: '快捷指令文件夹已更新', tag: updatedTag });
+            const updatedFolder = await QuickCommandFolderService.getQuickCommandFolderById(id);
+            if (updatedFolder) {
+                 res.status(200).json({ message: '快捷指令文件夹已更新', folder: updatedFolder });
             } else {
                  console.error(`[Controller] 更新快捷指令文件夹后未能找到 ID: ${id}`);
                  res.status(200).json({ message: '快捷指令文件夹已更新，但无法检索更新后的记录' });
             }
         } else {
             // 检查文件夹是否真的不存在
-            const tagExists = await QuickCommandTagService.getQuickCommandTagById(id);
+            const tagExists = await QuickCommandFolderService.getQuickCommandFolderById(id);
             if (!tagExists) {
                 res.status(404).json({ message: '未找到要更新的快捷指令文件夹' });
             } else {
@@ -99,7 +99,7 @@ export const updateQuickCommandTag = async (req: Request, res: Response): Promis
 /**
  * 处理删除快捷指令文件夹的请求
  */
-export const deleteQuickCommandTag = async (req: Request, res: Response): Promise<void> => {
+export const deleteQuickCommandFolder = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
 
     if (isNaN(id)) {
@@ -111,13 +111,13 @@ export const deleteQuickCommandTag = async (req: Request, res: Response): Promis
 
     try {
         // 先检查文件夹是否存在，以便返回 404
-        const tagExists = await QuickCommandTagService.getQuickCommandTagById(id);
+        const tagExists = await QuickCommandFolderService.getQuickCommandFolderById(id);
         if (!tagExists) {
              res.status(404).json({ message: '未找到要删除的快捷指令文件夹' });
              return;
         }
 
-        const success = await QuickCommandTagService.deleteQuickCommandTag(id, deleteCommands);
+        const success = await QuickCommandFolderService.deleteQuickCommandFolder(id, deleteCommands);
         if (success) {
             res.status(200).json({ message: deleteCommands ? '快捷指令分组及其中指令已删除' : '快捷指令文件夹已删除' });
         } else {

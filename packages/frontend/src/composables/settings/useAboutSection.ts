@@ -13,7 +13,7 @@ export function useAboutSection() {
   const versionCheckError = ref<string | null>(null);
 
   const isUpdateAvailable = computed(() => {
-    // 简单的字符串比较，假设 tag 格式为 vX.Y.Z 或 X.Y.Z
+    // 简单的字符串比较，假设 folder 格式为 vX.Y.Z 或 X.Y.Z
     // 后端返回的 tag_name 可能包含 'v' 前缀，也可能不包含
     // appVersion.value 通常不包含 'v'
     if (!latestVersion.value) return false;

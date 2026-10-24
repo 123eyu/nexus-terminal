@@ -434,25 +434,25 @@
 
         <!-- 显示连接标签 (纯开关) -->
         <SettingToggle
-          setting-key="showConnectionTags"
-          title-key="settings.workspace.showConnectionTagsTitle"
+          setting-key="showConnectionFolders"
+          title-key="settings.workspace.showConnectionFoldersTitle"
           title-fallback="显示连接标签"
-          desc-key="settings.workspace.showConnectionTagsDescription"
+          desc-key="settings.workspace.showConnectionFoldersDescription"
           desc-fallback="关闭后将隐藏连接列表中的标签，并从搜索中排除标签。"
-          success-key="settings.workspace.success.showConnectionTagsSaved"
-          error-key="settings.workspace.error.showConnectionTagsSaveFailed"
+          success-key="settings.workspace.success.showConnectionFoldersSaved"
+          error-key="settings.workspace.error.showConnectionFoldersSaveFailed"
           native-boolean
         />
 
         <!-- 显示快捷指令标签 (纯开关) -->
         <SettingToggle
-          setting-key="showQuickCommandTags"
-          title-key="settings.workspace.showQuickCommandTagsTitle"
+          setting-key="showQuickCommandFolders"
+          title-key="settings.workspace.showQuickCommandFoldersTitle"
           title-fallback="显示快捷指令标签"
-          desc-key="settings.workspace.showQuickCommandTagsDescription"
+          desc-key="settings.workspace.showQuickCommandFoldersDescription"
           desc-fallback="关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。"
-          success-key="settings.workspace.success.showQuickCommandTagsSaved"
-          error-key="settings.workspace.error.showQuickCommandTagsSaveFailed"
+          success-key="settings.workspace.success.showQuickCommandFoldersSaved"
+          error-key="settings.workspace.error.showQuickCommandFoldersSaveFailed"
           native-boolean
         />
       </div>

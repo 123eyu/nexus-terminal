@@ -245,20 +245,20 @@ export const cloneConnection = async (req: Request, res: Response): Promise<void
     }
 };
 /**
- * 为多个连接添加一个标签 (POST /api/v1/connections/add-tag)
+ * 为多个连接添加一个文件夹 (POST /api/v1/connections/add-folder)
  * 注意：我们改变了路由和方法 (POST)，并使用请求体传递所有信息，以避免嵌套事务。
  */
-export const addTagToConnections = async (req: Request, res: Response): Promise<void> => {
+export const addFolderToConnections = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { connection_ids, tag_id } = req.body;
+        const { connection_ids, folder_id } = req.body;
 
         // 验证输入
         if (!Array.isArray(connection_ids) || !connection_ids.every(id => typeof id === 'number')) {
             res.status(400).json({ message: 'connection_ids 必须是一个数字数组。' });
             return;
         }
-        if (typeof tag_id !== 'number' || tag_id <= 0) {
-            res.status(400).json({ message: 'tag_id 必须是一个有效的正整数。' });
+        if (typeof folder_id !== 'number' || folder_id <= 0) {
+            res.status(400).json({ message: 'folder_id 必须是一个有效的正整数。' });
             return;
         }
         if (connection_ids.length === 0) {
@@ -266,42 +266,42 @@ export const addTagToConnections = async (req: Request, res: Response): Promise<
              return;
         }
 
-        // 调用服务层批量添加标签
-        await ConnectionService.addTagToConnections(connection_ids, tag_id);
+        // 调用服务层批量添加文件夹
+        await ConnectionService.addFolderToConnections(connection_ids, folder_id);
 
         res.status(200).json({ message: '文件夹归类已成功更新。' });
 
     } catch (error: any) {
-        console.error(`Controller: 为多个连接添加标签 ${req.body?.tag_id} 时发生错误:`, error);
+        console.error(`Controller: 为多个连接添加文件夹 ${req.body?.folder_id} 时发生错误:`, error);
         // 可以根据服务层抛出的错误类型返回更具体的错误码
-        if (error.message.includes('标签 ID') && error.message.includes('不存在')) {
-             res.status(400).json({ message: error.message }); // Bad request if tag doesn't exist
+        if (error.message.includes('文件夹 ID') && error.message.includes('不存在')) {
+             res.status(400).json({ message: error.message }); // Bad request if folder doesn't exist
         } else {
-             res.status(500).json({ message: error.message || '为连接添加标签时发生内部服务器错误。' });
+             res.status(500).json({ message: error.message || '为连接添加文件夹时发生内部服务器错误。' });
         }
     }
 };
 
 
 /**
- * 更新单个连接的标签 (PUT /api/v1/connections/:id/tags)
- * (保留此接口，但主要逻辑由 addTagToConnections 处理)
+ * 更新单个连接的文件夹 (PUT /api/v1/connections/:id/folders)
+ * (保留此接口，但主要逻辑由 addFolderToConnections 处理)
  */
-export const updateConnectionTags = async (req: Request, res: Response): Promise<void> => {
+export const updateConnectionFolders = async (req: Request, res: Response): Promise<void> => {
     try {
         const connectionId = parseInt(req.params.id, 10);
-        const { tag_ids } = req.body;
+        const { folder_ids } = req.body;
 
         if (isNaN(connectionId)) {
             res.status(400).json({ message: '无效的连接 ID。' });
             return;
         }
-        if (!Array.isArray(tag_ids) || !tag_ids.every(id => typeof id === 'number')) {
-             res.status(400).json({ message: 'tag_ids 必须是一个数字数组。' });
+        if (!Array.isArray(folder_ids) || !folder_ids.every(id => typeof id === 'number')) {
+             res.status(400).json({ message: 'folder_ids 必须是一个数字数组。' });
              return;
         }
 
-        const success = await ConnectionService.updateConnectionTags(connectionId, tag_ids);
+        const success = await ConnectionService.updateConnectionFolders(connectionId, folder_ids);
 
         if (!success) {
             res.status(404).json({ message: '连接未找到或更新文件夹失败。' });
@@ -309,11 +309,11 @@ export const updateConnectionTags = async (req: Request, res: Response): Promise
             res.status(200).json({ message: '连接文件夹更新成功。' });
         }
     } catch (error: any) {
-        console.error(`Controller: 更新连接 ${req.params.id} 的标签时发生错误:`, error);
+        console.error(`Controller: 更新连接 ${req.params.id} 的文件夹时发生错误:`, error);
         if (error.message.includes('未找到')) {
              res.status(404).json({ message: error.message });
         } else {
-             res.status(500).json({ message: error.message || '更新连接标签时发生内部服务器错误。' });
+             res.status(500).json({ message: error.message || '更新连接文件夹时发生内部服务器错误。' });
         }
     }
 };

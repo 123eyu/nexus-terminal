@@ -94,8 +94,8 @@ export interface SnapshotResponseResult {
   total_count: number;
   has_more: boolean;
   entities: {
-    tags: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
-    quick_command_tags: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
+    folders: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
+    quick_command_folders: Array<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>;
     ssh_keys: Array<{ uuid: string; name: string; encrypted_private_key: string | null; encrypted_passphrase: string | null; updated_hlc: string }>;
     proxies: Array<{
       uuid: string;
@@ -116,7 +116,7 @@ export interface SnapshotResponseResult {
       command: string;
       variables?: string | null;
       background_color?: string | null;
-      tag_uuids: string[];
+      folder_uuids: string[];
       updated_hlc: string;
     }>;
     connections: Array<{
@@ -137,7 +137,7 @@ export interface SnapshotResponseResult {
       jump_chain?: any;
       background_color?: string | null;
       file_protocol?: 'sftp' | 'scp' | 'auto';
-      tag_uuids: string[];
+      folder_uuids: string[];
       updated_hlc: string;
     }>;
     settings: Array<{
@@ -397,7 +397,7 @@ export const syncV2Service = {
                   );
                 }
               }
-            } else if (item.tbl === 'tags' || item.tbl === 'quick_command_tags') {
+            } else if (item.tbl === 'folders' || item.tbl === 'quick_command_folders') {
               if (existingLive) {
                 await runDb(db, `UPDATE ${item.tbl} SET name = ?, background_color = ?, updated_hlc = ? WHERE uuid = ?`, [
                   data.name,
@@ -474,13 +474,13 @@ export const syncV2Service = {
                 targetPhysId = ins.lastID;
               }
 
-              // 对齐 quick_command_tag_associations 关联
-              if (targetPhysId && Array.isArray(data.tag_uuids)) {
-                await runDb(db, `DELETE FROM quick_command_tag_associations WHERE quick_command_id = ?`, [targetPhysId]);
-                for (const tUuid of data.tag_uuids) {
-                  const tRow = await getDb<{ id: number }>(db, `SELECT id FROM quick_command_tags WHERE uuid = ?`, [tUuid]);
+              // 对齐 quick_command_folder_associations 关联
+              if (targetPhysId && Array.isArray(data.folder_uuids)) {
+                await runDb(db, `DELETE FROM quick_command_folder_associations WHERE quick_command_id = ?`, [targetPhysId]);
+                for (const tUuid of data.folder_uuids) {
+                  const tRow = await getDb<{ id: number }>(db, `SELECT id FROM quick_command_folders WHERE uuid = ?`, [tUuid]);
                   if (tRow) {
-                    await runDb(db, `INSERT OR IGNORE INTO quick_command_tag_associations (quick_command_id, tag_id) VALUES (?, ?)`, [targetPhysId, tRow.id]);
+                    await runDb(db, `INSERT OR IGNORE INTO quick_command_folder_associations (quick_command_id, folder_id) VALUES (?, ?)`, [targetPhysId, tRow.id]);
                   }
                 }
               }
@@ -582,13 +582,13 @@ export const syncV2Service = {
                 targetPhysId = ins.lastID;
               }
 
-              // 对齐 connection_tags 折叠关联
-              if (targetPhysId && Array.isArray(data.tag_uuids)) {
-                await runDb(db, `DELETE FROM connection_tags WHERE connection_id = ?`, [targetPhysId]);
-                for (const tUuid of data.tag_uuids) {
-                  const tRow = await getDb<{ id: number }>(db, `SELECT id FROM tags WHERE uuid = ?`, [tUuid]);
+              // 对齐 connection_folders 折叠关联
+              if (targetPhysId && Array.isArray(data.folder_uuids)) {
+                await runDb(db, `DELETE FROM connection_folders WHERE connection_id = ?`, [targetPhysId]);
+                for (const tUuid of data.folder_uuids) {
+                  const tRow = await getDb<{ id: number }>(db, `SELECT id FROM folders WHERE uuid = ?`, [tUuid]);
                   if (tRow) {
-                    await runDb(db, `INSERT OR IGNORE INTO connection_tags (connection_id, tag_id) VALUES (?, ?)`, [targetPhysId, tRow.id]);
+                    await runDb(db, `INSERT OR IGNORE INTO connection_folders (connection_id, folder_id) VALUES (?, ?)`, [targetPhysId, tRow.id]);
                   }
                 }
               }
@@ -991,7 +991,7 @@ export const syncV2Service = {
           if (c) {
             const tagRows = await allDb<{ uuid: string }>(
               db,
-              `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
+              `SELECT t.uuid FROM connection_folders ct JOIN folders t ON ct.folder_id = t.id WHERE ct.connection_id = ?`,
               [c.id]
             );
             const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
@@ -1024,7 +1024,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
-                tag_uuids: tagUuids,
+                folder_uuids: tagUuids,
                 file_highlights: highlightRows
               }
             });
@@ -1067,7 +1067,7 @@ export const syncV2Service = {
               }
             });
           }
-        } else if (row.tbl === 'tags' || row.tbl === 'quick_command_tags') {
+        } else if (row.tbl === 'folders' || row.tbl === 'quick_command_folders') {
           const t = await getDb<any>(db, `SELECT * FROM ${row.tbl} WHERE uuid = ?`, [row.row_id]);
           if (t) {
             resultChanges.push({
@@ -1087,7 +1087,7 @@ export const syncV2Service = {
           if (q) {
             const tagRows = await allDb<{ uuid: string }>(
               db,
-              `SELECT qt.uuid FROM quick_command_tag_associations qa JOIN quick_command_tags qt ON qa.tag_id = qt.id WHERE qa.quick_command_id = ?`,
+              `SELECT qt.uuid FROM quick_command_folder_associations qa JOIN quick_command_folders qt ON qa.folder_id = qt.id WHERE qa.quick_command_id = ?`,
               [q.id]
             );
             const tagUuids = tagRows.map(t => t.uuid).filter(Boolean);
@@ -1103,7 +1103,7 @@ export const syncV2Service = {
                 command: q.command,
                 variables: q.variables,
                 background_color: q.background_color || null,
-                tag_uuids: tagUuids
+                folder_uuids: tagUuids
               }
             });
           }
@@ -1288,7 +1288,7 @@ export const syncV2Service = {
           if (c) {
             const tagRows = await allDb<{ uuid: string }>(
               db,
-              `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
+              `SELECT t.uuid FROM connection_folders ct JOIN folders t ON ct.folder_id = t.id WHERE ct.connection_id = ?`,
               [c.id]
             );
             const highlightRows = await allDb<{ path: string; color: string }>(
@@ -1319,7 +1319,7 @@ export const syncV2Service = {
                 jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
                 background_color: c.background_color || null,
                 file_protocol: c.file_protocol || 'auto',
-                tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
+                folder_uuids: tagRows.map(t => t.uuid).filter(Boolean),
                 file_highlights: highlightRows
               }
             });
@@ -1362,7 +1362,7 @@ export const syncV2Service = {
               }
             });
           }
-        } else if (r.tbl === 'tags' || r.tbl === 'quick_command_tags') {
+        } else if (r.tbl === 'folders' || r.tbl === 'quick_command_folders') {
           const t = await getDb<any>(db, `SELECT * FROM ${r.tbl} WHERE uuid = ?`, [r.row_id]);
           if (t) {
             list.push({
@@ -1382,7 +1382,7 @@ export const syncV2Service = {
           if (q) {
             const tagRows = await allDb<{ uuid: string }>(
               db,
-              `SELECT qt.uuid FROM quick_command_tag_associations qa JOIN quick_command_tags qt ON qa.tag_id = qt.id WHERE qa.quick_command_id = ?`,
+              `SELECT qt.uuid FROM quick_command_folder_associations qa JOIN quick_command_folders qt ON qa.folder_id = qt.id WHERE qa.quick_command_id = ?`,
               [q.id]
             );
             list.push({
@@ -1396,7 +1396,7 @@ export const syncV2Service = {
                 command: q.command,
                 variables: q.variables,
                 background_color: q.background_color || null,
-                tag_uuids: tagRows.map(t => t.uuid).filter(Boolean)
+                folder_uuids: tagRows.map(t => t.uuid).filter(Boolean)
               }
             });
           }
@@ -1810,16 +1810,16 @@ export const syncV2Service = {
       );
     }
 
-    // 3. 提取 tags 标签 (确定性 UUID)
-    const tags = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
+    // 3. 提取 folders 文件夹 (确定性 UUID)
+    const folders = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
       db,
-      `SELECT uuid, name, background_color, updated_hlc FROM tags ORDER BY id ASC`
+      `SELECT uuid, name, background_color, updated_hlc FROM folders ORDER BY id ASC`
     );
 
-    // 4. 提取 quick_command_tags
-    const quickCommandTags = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
+    // 4. 提取 quick_command_folders
+    const quickCommandFolders = await allDb<{ uuid: string; name: string; background_color?: string | null; updated_hlc: string }>(
       db,
-      `SELECT uuid, name, background_color, updated_hlc FROM quick_command_tags ORDER BY id ASC`
+      `SELECT uuid, name, background_color, updated_hlc FROM quick_command_folders ORDER BY id ASC`
     );
 
     // 5. 提取 ssh_keys (信封加密)
@@ -1848,13 +1848,13 @@ export const syncV2Service = {
       updated_hlc: p.updated_hlc
     }));
 
-    // 7. 提取 quick_commands (折叠标签)
+    // 7. 提取 quick_commands (折叠文件夹)
     const rawQuickCommands = await allDb<any>(db, `SELECT * FROM quick_commands ORDER BY id ASC`);
     const quickCommands = [];
     for (const q of rawQuickCommands) {
       const tagRows = await allDb<{ uuid: string }>(
         db,
-        `SELECT qt.uuid FROM quick_command_tag_associations qa JOIN quick_command_tags qt ON qa.tag_id = qt.id WHERE qa.quick_command_id = ?`,
+        `SELECT qt.uuid FROM quick_command_folder_associations qa JOIN quick_command_folders qt ON qa.folder_id = qt.id WHERE qa.quick_command_id = ?`,
         [q.id]
       );
       quickCommands.push({
@@ -1863,12 +1863,12 @@ export const syncV2Service = {
         command: q.command,
         variables: q.variables || null,
         background_color: q.background_color || null,
-        tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
+        folder_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         updated_hlc: q.updated_hlc
       });
     }
 
-    // 8. 提取 connections (折叠标签、解析外键 UUID、信封加密)
+    // 8. 提取 connections (折叠文件夹、解析外键 UUID、信封加密)
     const rawConnections = await allDb<any>(
       db,
       `SELECT c.*, p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
@@ -1881,7 +1881,7 @@ export const syncV2Service = {
     for (const c of rawConnections) {
       const tagRows = await allDb<{ uuid: string }>(
         db,
-        `SELECT t.uuid FROM connection_tags ct JOIN tags t ON ct.tag_id = t.id WHERE ct.connection_id = ?`,
+        `SELECT t.uuid FROM connection_folders ct JOIN folders t ON ct.folder_id = t.id WHERE ct.connection_id = ?`,
         [c.id]
       );
       const highlightRows = await allDb<{ path: string; color: string }>(
@@ -1907,7 +1907,7 @@ export const syncV2Service = {
         jump_chain: c.jump_chain ? JSON.parse(c.jump_chain) : null,
         background_color: c.background_color || null,
         file_protocol: c.file_protocol || 'auto',
-        tag_uuids: tagRows.map(t => t.uuid).filter(Boolean),
+        folder_uuids: tagRows.map(t => t.uuid).filter(Boolean),
         file_highlights: highlightRows,
         updated_hlc: c.updated_hlc
       });
@@ -2006,8 +2006,8 @@ export const syncV2Service = {
     //     混合表 settings / appearance_settings 再按 key 分一次组，
     //     其余表整表开或整表关。关闭的子项返回空数组，不参与 total_count。
     const scoped = {
-      tags: want('tags') ? tags : [],
-      quick_command_tags: want('quick_command_tags') ? quickCommandTags : [],
+      folders: want('folders') ? folders : [],
+      quick_command_folders: want('quick_command_folders') ? quickCommandFolders : [],
       ssh_keys: want('ssh_keys') ? sshKeys : [],
       proxies: want('proxies') ? proxies : [],
       quick_commands: want('quick_commands') ? quickCommands : [],
@@ -2029,8 +2029,8 @@ export const syncV2Service = {
       total_count: totalCount,
       has_more: false,
       entities: {
-        tags: scoped.tags,
-        quick_command_tags: scoped.quick_command_tags,
+        folders: scoped.folders,
+        quick_command_folders: scoped.quick_command_folders,
         ssh_keys: scoped.ssh_keys,
         proxies: scoped.proxies,
         quick_commands: scoped.quick_commands,

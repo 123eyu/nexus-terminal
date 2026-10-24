@@ -25,17 +25,17 @@ interface ConnectionBase {
 //    jump_chain: number[] | null; // <-- REMOVE from ConnectionBase
 }
 
-// ConnectionWithTagsRow implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
-interface ConnectionWithTagsRow extends ConnectionBase { // This will no longer cause error if ConnectionBase has no jump_chain
+// ConnectionWithFoldersRow implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
+interface ConnectionWithFoldersRow extends ConnectionBase { // This will no longer cause error if ConnectionBase has no jump_chain
     uuid?: string;
-    tag_ids_str: string | null;
+    folder_ids_str: string | null;
     jump_chain: string | null; // Stored as JSON string in DB
 }
 
-// ConnectionWithTags implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
-export interface ConnectionWithTags extends ConnectionBase {
+// ConnectionWithFolders implicitly includes 'type' and 'ssh_key_id' via ConnectionBase
+export interface ConnectionWithFolders extends ConnectionBase {
     uuid?: string;
-    tag_ids: number[];
+    folder_ids: number[];
     jump_chain: number[] | null; // Explicitly add for service layer type
 }
 
@@ -46,7 +46,7 @@ export interface FullConnectionData extends ConnectionBase {
     encrypted_private_key?: string | null;
     encrypted_passphrase?: string | null;
     notes?: string | null;
-    tag_ids?: number[];
+    folder_ids?: number[];
     jump_chain: number[] | null; // Explicitly add for service layer input type
     proxy_type?: 'proxy' | 'jump' | null; // 新增连接本身的 proxy_type
     background_color?: string | null;
@@ -55,7 +55,7 @@ export interface FullConnectionData extends ConnectionBase {
 
 
 
-interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 'tag_ids'> { // Omit service layer type, and tag_ids (not directly on connections table)
+interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 'folder_ids'> { // Omit service layer type, and folder_ids (not directly on connections table)
     ssh_key_id?: number | null; 
     jump_chain: string | null; // Stored as JSON string in DB
     proxy_type?: 'proxy' | 'jump' | null; // 连接本身的 proxy_type, from c.proxy_type
@@ -72,28 +72,28 @@ interface FullConnectionDbRow extends Omit<FullConnectionData, 'jump_chain' | 't
 
 
 /**
- * 获取所有连接及其标签
+ * 获取所有连接及其文件夹
  */
-export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]> => {
+export const findAllConnectionsWithFolders = async (): Promise<ConnectionWithFolders[]> => {
     const sql = `
         SELECT
             c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
             c.created_at, c.updated_at, c.last_connected_at,
-            GROUP_CONCAT(ct.tag_id) as tag_ids_str
+            GROUP_CONCAT(ct.folder_id) as folder_ids_str
          FROM connections c
-         LEFT JOIN connection_tags ct ON c.id = ct.connection_id
+         LEFT JOIN connection_folders ct ON c.id = ct.connection_id
          GROUP BY c.id
          ORDER BY c.name ASC`;
     try {
         const db = await getDbInstance();
-        const rows = await allDb<ConnectionWithTagsRow>(db, sql);
+        const rows = await allDb<ConnectionWithFoldersRow>(db, sql);
         return rows.map(row => {
             const { jump_chain: jumpChainStr, ...restOfRow } = row;
             return {
                 ...restOfRow,
-                tag_ids: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
+                folder_ids: row.folder_ids_str ? row.folder_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
                 jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null
-            } as ConnectionWithTags;
+            } as ConnectionWithFolders;
         });
     } catch (err: any) {
         console.error('Repository: 查询连接列表时出错:', err.message);
@@ -102,28 +102,28 @@ export const findAllConnectionsWithTags = async (): Promise<ConnectionWithTags[]
 };
 
 /**
- * 根据 ID 获取单个连接及其标签
+ * 根据 ID 获取单个连接及其文件夹
  */
-export const findConnectionByIdWithTags = async (id: number): Promise<ConnectionWithTags | null> => {
+export const findConnectionByIdWithFolders = async (id: number): Promise<ConnectionWithFolders | null> => {
     const sql = `
         SELECT
             c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
             c.created_at, c.updated_at, c.last_connected_at,
-            GROUP_CONCAT(ct.tag_id) as tag_ids_str
+            GROUP_CONCAT(ct.folder_id) as folder_ids_str
          FROM connections c
-         LEFT JOIN connection_tags ct ON c.id = ct.connection_id
+         LEFT JOIN connection_folders ct ON c.id = ct.connection_id
          WHERE c.id = ?
          GROUP BY c.id`;
     try {
         const db = await getDbInstance();
-        const row = await getDbRow<ConnectionWithTagsRow>(db, sql, [id]);
+        const row = await getDbRow<ConnectionWithFoldersRow>(db, sql, [id]);
         if (row && typeof row.id !== 'undefined') {
             const { jump_chain: jumpChainStr, ...restOfRow } = row;
             return {
                 ...restOfRow,
-                tag_ids: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
+                folder_ids: row.folder_ids_str ? row.folder_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : [],
                 jump_chain: jumpChainStr ? JSON.parse(jumpChainStr) as number[] : null
-            } as ConnectionWithTags;
+            } as ConnectionWithFolders;
         } else {
             return null;
         }
@@ -165,9 +165,9 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
      const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
      try {
          const db = await getDbInstance();
-         const row = await getDbRow<ConnectionWithTagsRow>(db, sql, [name]);
+         const row = await getDbRow<ConnectionWithFoldersRow>(db, sql, [name]);
          if (row) {
-             const { jump_chain: jumpChainStr, tag_ids_str, ...restOfRow } = row;
+             const { jump_chain: jumpChainStr, folder_ids_str, ...restOfRow } = row;
              return {
                  ...restOfRow,
              } as ConnectionBase;
@@ -181,9 +181,9 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
  
  
  /**
-  * 创建新连接 (不处理标签)
+  * 创建新连接 (不处理文件夹)
   */
-export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'tag_ids'>): Promise<number> => {
+export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at' | 'folder_ids'>): Promise<number> => {
     console.log('[Repository:createConnection] Received data:', JSON.stringify(data, null, 2));
     const now = Math.floor(Date.now() / 1000);
     const uuid = (data as any).uuid || crypto.randomUUID();
@@ -225,17 +225,17 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
 };
 
 /**
- * 更新连接信息 (不处理标签)
+ * 更新连接信息 (不处理文件夹)
  */
 // Update input type to reflect FullConnectionData now has 'type' and 'jump_chain'
-export const updateConnection = async (id: number, data: Partial<Omit<FullConnectionData, 'id' | 'created_at' | 'last_connected_at' | 'tag_ids'>>): Promise<boolean> => {
+export const updateConnection = async (id: number, data: Partial<Omit<FullConnectionData, 'id' | 'created_at' | 'last_connected_at' | 'folder_ids'>>): Promise<boolean> => {
     const fieldsToUpdate: { [key: string]: any } = { ...data };
     const params: any[] = [];
 
     delete fieldsToUpdate.id;
     delete fieldsToUpdate.created_at;
     delete fieldsToUpdate.last_connected_at;
-    delete fieldsToUpdate.tag_ids;
+    delete fieldsToUpdate.folder_ids;
 
     fieldsToUpdate.updated_at = Math.floor(Date.now() / 1000);
 
@@ -316,18 +316,18 @@ export const updateLastConnected = async (id: number, timestamp: number): Promis
 };
 
 /**
- * 更新连接的标签关联 (使用事务)
+ * 更新连接的文件夹关联 (使用事务)
  * @param connectionId 连接 ID
- * @param tagIds 新的标签 ID 数组 (空数组表示清除所有标签)
+ * @param folderIds 新的文件夹 ID 数组 (空数组表示清除所有文件夹)
  */
-export const updateConnectionTags = async (connectionId: number, tagIds: number[]): Promise<boolean> => { // 修改返回类型为 boolean
+export const updateConnectionFolders = async (connectionId: number, folderIds: number[]): Promise<boolean> => { // 修改返回类型为 boolean
     const db = await getDbInstance();
 
     // 1. 检查连接是否存在
     try {
         const connectionExists = await getDbRow<{ id: number }>(db, `SELECT id FROM connections WHERE id = ?`, [connectionId]);
         if (!connectionExists) {
-            console.warn(`Repository: updateConnectionTags - Connection with ID ${connectionId} not found.`);
+            console.warn(`Repository: updateConnectionFolders - Connection with ID ${connectionId} not found.`);
             return false; // 连接不存在，返回 false
         }
     } catch (checkErr: any) {
@@ -336,22 +336,22 @@ export const updateConnectionTags = async (connectionId: number, tagIds: number[
     }
 
 
-    // 2. 执行标签更新事务
+    // 2. 执行文件夹更新事务
     try {
         await runDb(db, 'BEGIN TRANSACTION');
 
         // 删除旧关联
-        await runDb(db, `DELETE FROM connection_tags WHERE connection_id = ?`, [connectionId]);
+        await runDb(db, `DELETE FROM connection_folders WHERE connection_id = ?`, [connectionId]);
 
-        // 插入新关联 (如果 tagIds 不为空)
-        if (tagIds.length > 0) {
-            const insertSql = `INSERT INTO connection_tags (connection_id, tag_id) VALUES (?, ?)`;
+        // 插入新关联 (如果 folderIds 不为空)
+        if (folderIds.length > 0) {
+            const insertSql = `INSERT INTO connection_folders (connection_id, folder_id) VALUES (?, ?)`;
             // 过滤无效 ID
-            const validTagIds = tagIds.filter(tagId => typeof tagId === 'number' && tagId > 0);
+            const validFolderIds = folderIds.filter(folderId => typeof folderId === 'number' && folderId > 0);
 
             // 使用 Promise.all 确保所有插入完成或失败
-            const insertPromises = validTagIds.map(tagId =>
-                 runDb(db, insertSql, [connectionId, tagId])
+            const insertPromises = validFolderIds.map(folderId =>
+                 runDb(db, insertSql, [connectionId, folderId])
             );
              // 如果任何插入失败，Promise.all 会 reject，错误会被下面的 catch 捕获
             await Promise.all(insertPromises);
@@ -360,12 +360,12 @@ export const updateConnectionTags = async (connectionId: number, tagIds: number[
         await runDb(db, 'COMMIT');
         return true; // 事务成功提交，返回 true
     } catch (err: any) {
-        console.error(`Repository: 更新连接 ${connectionId} 的标签关联事务出错:`, err.message);
+        console.error(`Repository: 更新连接 ${connectionId} 的文件夹关联事务出错:`, err.message);
         try {
             await runDb(db, 'ROLLBACK');
-            console.log(`Repository: Transaction rolled back for connection ${connectionId} tag update.`);
+            console.log(`Repository: Transaction rolled back for connection ${connectionId} folder update.`);
         } catch (rollbackErr: any) {
-            console.error(`Repository: 回滚连接 ${connectionId} 的标签更新事务失败:`, rollbackErr.message);
+            console.error(`Repository: 回滚连接 ${connectionId} 的文件夹更新事务失败:`, rollbackErr.message);
             // 即使回滚失败，原始错误也更重要
         }
         // 直接重新抛出原始事务错误，让上层处理
@@ -375,23 +375,23 @@ export const updateConnectionTags = async (connectionId: number, tagIds: number[
 };
 
 /**
- * 查找指定连接的所有标签
+ * 查找指定连接的所有文件夹
  * @param connectionId 连接 ID
- * @returns 标签对象数组 { id: number, name: string }[]
+ * @returns 文件夹对象数组 { id: number, name: string }[]
  */
-export const findConnectionTags = async (connectionId: number): Promise<{ id: number, name: string }[]> => {
+export const findConnectionFolders = async (connectionId: number): Promise<{ id: number, name: string }[]> => {
     const sql = `
         SELECT t.id, t.name
-        FROM tags t
-        JOIN connection_tags ct ON t.id = ct.tag_id
+        FROM folders t
+        JOIN connection_folders ct ON t.id = ct.folder_id
         WHERE ct.connection_id = ?`;
     try {
         const db = await getDbInstance();
         const rows = await allDb<{ id: number, name: string }>(db, sql, [connectionId]);
         return rows;
     } catch (err: any) {
-        console.error(`Repository: 查询连接 ${connectionId} 的标签时出错:`, err.message);
-        throw new Error('获取连接标签失败');
+        console.error(`Repository: 查询连接 ${connectionId} 的文件夹时出错:`, err.message);
+        throw new Error('获取连接文件夹失败');
     }
 };
 
@@ -402,7 +402,7 @@ export const findConnectionTags = async (connectionId: number): Promise<{ id: nu
 export const bulkInsertConnections = async (
     db: Database,
     // Update input type to reflect FullConnectionData now has 'type'
-    connections: Array<Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { tag_ids?: number[] }>
+    connections: Array<Omit<FullConnectionData, 'id' | 'created_at' | 'updated_at' | 'last_connected_at'> & { folder_ids?: number[] }>
 ): Promise<{ connectionId: number, originalData: any }[]> => {
 
     const insertConnSql = `INSERT INTO connections (name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`; // Add type, proxy_type and notes columns and placeholders
@@ -435,13 +435,13 @@ connData.notes || null, // Add notes parameter
 };
 
 /**
- * 为多个连接添加同一个标签 (使用事务)
+ * 为多个连接添加同一个文件夹 (使用事务)
  * @param connectionIds 连接 ID 数组
- * @param tagId 要添加的标签 ID
+ * @param folderId 要添加的文件夹 ID
  */
-export const addTagToMultipleConnections = async (connectionIds: number[], tagId: number): Promise<void> => {
-    if (connectionIds.length === 0 || typeof tagId !== 'number' || tagId <= 0) {
-        console.warn('[Repository] addTagToMultipleConnections called with empty connectionIds or invalid tagId.');
+export const addFolderToMultipleConnections = async (connectionIds: number[], folderId: number): Promise<void> => {
+    if (connectionIds.length === 0 || typeof folderId !== 'number' || folderId <= 0) {
+        console.warn('[Repository] addFolderToMultipleConnections called with empty connectionIds or invalid folderId.');
         return; // 无需操作
     }
 
@@ -449,21 +449,21 @@ export const addTagToMultipleConnections = async (connectionIds: number[], tagId
     try {
         await runDb(db, 'BEGIN TRANSACTION');
 
-        const insertSql = `INSERT OR IGNORE INTO connection_tags (connection_id, tag_id) VALUES (?, ?)`;
+        const insertSql = `INSERT OR IGNORE INTO connection_folders (connection_id, folder_id) VALUES (?, ?)`;
         // 使用 Promise.all 确保所有插入完成或失败
         const insertPromises = connectionIds.map(connId =>
-            runDb(db, insertSql, [connId, tagId])
+            runDb(db, insertSql, [connId, folderId])
         );
         await Promise.all(insertPromises);
 
         await runDb(db, 'COMMIT');
     } catch (err: any) {
-        console.error(`Repository: 为多个连接添加标签 ${tagId} 时事务出错:`, err.message);
+        console.error(`Repository: 为多个连接添加文件夹 ${folderId} 时事务出错:`, err.message);
         try {
             await runDb(db, 'ROLLBACK');
         } catch (rollbackErr: any) {
-            console.error(`Repository: 回滚为多个连接添加标签 ${tagId} 的事务失败:`, rollbackErr.message);
+            console.error(`Repository: 回滚为多个连接添加文件夹 ${folderId} 的事务失败:`, rollbackErr.message);
         }
-        throw new Error(`为多个连接添加标签失败: ${err.message}`);
+        throw new Error(`为多个连接添加文件夹失败: ${err.message}`);
     }
 };

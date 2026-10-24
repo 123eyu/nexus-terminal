@@ -7,8 +7,8 @@ import { hexToRgba } from '../utils/colorUtils';
 import { useConnectionsStore } from '../stores/connections.store';
 import { useAuditLogStore } from '../stores/audit.store';
 import { useSessionStore } from '../stores/session.store';
-import { useTagsStore } from '../stores/tags.store'; 
-import type { TagInfo } from '../stores/tags.store'; 
+import { useFoldersStore } from '../stores/folders.store'; 
+import type { FolderInfo } from '../stores/folders.store'; 
 
 import type { SortField, SortOrder } from '../stores/settings.store'; 
 import { useI18n } from 'vue-i18n';
@@ -34,12 +34,12 @@ const isMobileMode = computed(() => isMobile.value || windowWidth.value < 768);
 const connectionsStore = useConnectionsStore();
 const auditLogStore = useAuditLogStore();
 const sessionStore = useSessionStore();
-const tagsStore = useTagsStore(); 
+const foldersStore = useFoldersStore(); 
 
 
 const { connections, isLoading: isLoadingConnections } = storeToRefs(connectionsStore);
 const { logs: auditLogs, isLoading: isLoadingLogs, totalLogs } = storeToRefs(auditLogStore);
-const { tags, isLoading: isLoadingTags } = storeToRefs(tagsStore); 
+const { folders, isLoading: isLoadingFolders } = storeToRefs(foldersStore); 
 
 
 
@@ -56,18 +56,18 @@ const getConnectionCardStyle = (backgroundColor?: string | null) => {
 
 const LS_SORT_BY_KEY = 'dashboard_connections_sort_by';
 const LS_SORT_ORDER_KEY = 'dashboard_connections_sort_order';
-const LS_FILTER_TAG_KEY = 'dashboard_connections_filter_tag'; 
+const LS_FILTER_TAG_KEY = 'dashboard_connections_filter_folder'; 
 
 // Initialize with localStorage values or defaults
 const localSortBy = ref<SortField>(localStorage.getItem(LS_SORT_BY_KEY) as SortField || 'last_connected_at');
 const localSortOrder = ref<SortOrder>(localStorage.getItem(LS_SORT_ORDER_KEY) as SortOrder || 'desc');
 // +++ 初始化标签筛选状态，从 localStorage 读取，注意类型转换 (修正 ref 初始化) +++
-const getInitialSelectedTagId = (): number | null => {
+const getInitialSelectedFolderId = (): number | null => {
   const storedValue = localStorage.getItem(LS_FILTER_TAG_KEY);
   // 如果存储的值是 'null' 字符串或空，则返回 null，否则解析为数字
   return storedValue && storedValue !== 'null' ? parseInt(storedValue, 10) : null;
 };
-const selectedTagId = ref<number | null>(getInitialSelectedTagId());
+const selectedFolderId = ref<number | null>(getInitialSelectedFolderId());
 const searchQuery = ref('');
 
 // +++ 控制添加/编辑表单的显示状态 +++
@@ -89,18 +89,18 @@ const filteredAndSortedConnections = computed(() => {
   const sortBy = localSortBy.value;
   const sortOrderVal = localSortOrder.value;
   const factor = sortOrderVal === 'desc' ? -1 : 1;
-  const filterTagId = selectedTagId.value;
+  const filterFolderId = selectedFolderId.value;
   const query = searchQuery.value.toLowerCase().trim(); // +++ 获取搜索查询 +++
  
-  // 1. Filter by selected tag
-  let filteredByTag = filterTagId === null
-    ? [...connections.value] // No tag selected, show all
-    : connections.value.filter(conn => conn.tag_ids?.includes(filterTagId));
+  // 1. Filter by selected folder
+  let filteredByFolder = filterFolderId === null
+    ? [...connections.value] // No folder selected, show all
+    : connections.value.filter(conn => conn.folder_ids?.includes(filterFolderId));
  
   // 2. Filter by search query
-  let searchedConnections = filteredByTag;
+  let searchedConnections = filteredByFolder;
   if (query) {
-    searchedConnections = filteredByTag.filter(conn => {
+    searchedConnections = filteredByFolder.filter(conn => {
       const nameMatch = conn.name?.toLowerCase().includes(query);
       const usernameMatch = conn.username?.toLowerCase().includes(query);
       const hostMatch = conn.host?.toLowerCase().includes(query);
@@ -171,9 +171,9 @@ onMounted(async () => {
     console.error("加载审计日志失败:", error);
   }
 
-  // +++ Fetch tags for filtering +++
+  // +++ Fetch folders for filtering +++
   try {
-    await tagsStore.fetchTags();
+    await foldersStore.fetchFolders();
   } catch (error) {
     console.error("加载标签列表失败:", error);
   }
@@ -204,8 +204,8 @@ watch(localSortOrder, (newValue) => {
   localStorage.setItem(LS_SORT_ORDER_KEY, newValue);
 });
 
-// +++ Watch for changes in selected tag and save to localStorage +++
-watch(selectedTagId, (newValue) => {
+// +++ Watch for changes in selected folder and save to localStorage +++
+watch(selectedFolderId, (newValue) => {
   // Store 'null' as a string or the number
   localStorage.setItem(LS_FILTER_TAG_KEY, newValue === null ? 'null' : String(newValue));
 });
@@ -272,14 +272,14 @@ const isFailedAction = (actionType: string): boolean => {
   return lowerCaseAction.includes('fail') || lowerCaseAction.includes('error') || lowerCaseAction.includes('denied');
 };
 
-// +++ 恢复：根据 tag_ids 获取标签名称数组 +++
-const getTagNames = (tagIds: number[] | undefined): string[] => {
-  if (!tagIds || tagIds.length === 0) {
+// +++ 恢复：根据 folder_ids 获取标签名称数组 +++
+const getFolderNames = (folderIds: number[] | undefined): string[] => {
+  if (!folderIds || folderIds.length === 0) {
     return [];
   }
-  const allTags = tags.value as TagInfo[];
-  return tagIds
-    .map(id => allTags.find(tag => tag.id === id)?.name)
+  const allFolders = folders.value as FolderInfo[];
+  return folderIds
+    .map(id => allFolders.find(folder => folder.id === id)?.name)
     .filter((name): name is string => !!name); // 过滤掉未找到的标签并确保类型为 string
 };
 
@@ -308,7 +308,7 @@ const handleConnectionModified = async () => {
   await connectionsStore.fetchConnections(); // 重新加载连接列表
 };
  
-// --- 移除 selectTagFilter 函数 ---
+// --- 移除 selectFolderFilter 函数 ---
  
 </script>
 
@@ -359,16 +359,16 @@ const handleConnectionModified = async () => {
             <div class="flex items-center gap-2">
               <!-- 标签筛选下拉 -->
               <AppSelect
-                v-model="selectedTagId"
+                v-model="selectedFolderId"
                 class="h-8 px-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none bg-no-repeat bg-right pr-7 shadow-2xs cursor-pointer transition-all"
                 style="background-color: var(--app-bg-color)"
-                aria-label="Filter connections by tag"
-                :disabled="isLoadingTags"
+                aria-label="Filter connections by folder"
+                :disabled="isLoadingFolders"
               >
-                <option :value="null">{{ t('dashboard.filterTags.all', '所有标签') }}</option>
-                <option v-if="isLoadingTags" disabled>{{ t('common.loading') }}</option>
-                <option v-for="tag in (tags as TagInfo[])" :key="tag.id" :value="tag.id">
-                  {{ tag.name }}
+                <option :value="null">{{ t('dashboard.filterFolders.all', '所有标签') }}</option>
+                <option v-if="isLoadingFolders" disabled>{{ t('common.loading') }}</option>
+                <option v-for="folder in (folders as FolderInfo[])" :key="folder.id" :value="folder.id">
+                  {{ folder.name }}
                 </option>
               </AppSelect>
 
@@ -443,14 +443,14 @@ const handleConnectionModified = async () => {
                 <span class="text-[11px] text-text-secondary/80 block mt-1">
                   {{ t('dashboard.lastConnected', '上次连接:') }} {{ formatRelativeTime(conn.last_connected_at) }}
                 </span>
-                <div v-if="getTagNames(conn.tag_ids).length > 0" class="flex flex-wrap gap-1 mt-1.5">
+                <div v-if="getFolderNames(conn.folder_ids).length > 0" class="flex flex-wrap gap-1 mt-1.5">
                   <span
-                    v-for="tagName in getTagNames(conn.tag_ids)"
-                    :key="tagName"
+                    v-for="folderName in getFolderNames(conn.folder_ids)"
+                    :key="folderName"
                     class="px-2 py-0.5 text-[10px] rounded-lg border border-border/60 text-text-secondary font-medium"
                     style="background-color: var(--app-bg-color);"
                   >
-                    {{ tagName }}
+                    {{ folderName }}
                   </span>
                 </div>
               </div>
@@ -477,8 +477,8 @@ const handleConnectionModified = async () => {
           <div v-else-if="!isLoadingConnections && searchQuery && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
             {{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}
           </div>
-          <div v-else-if="!isLoadingConnections && selectedTagId !== null && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
-            {{ t('dashboard.noConnectionsWithTag', '该标签下没有连接记录') }}
+          <div v-else-if="!isLoadingConnections && selectedFolderId !== null && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
+            {{ t('dashboard.noConnectionsWithFolder', '该标签下没有连接记录') }}
           </div>
           <div v-else class="text-center text-text-secondary py-8 text-xs">
             {{ t('dashboard.noConnections', '没有连接记录') }}

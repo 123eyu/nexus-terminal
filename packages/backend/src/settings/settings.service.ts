@@ -39,8 +39,8 @@ const DEFAULT_CONNECTION_TEST_TIMEOUT_SECONDS = 15;
 const MIN_CONNECTION_TEST_TIMEOUT_SECONDS = 5;
 const MAX_CONNECTION_TEST_TIMEOUT_SECONDS = 120;
 const IP_BLACKLIST_ENABLED_KEY = 'ipBlacklistEnabled'; // IP 黑名单启用设置键
-const SHOW_CONNECTION_TAGS_KEY = 'showConnectionTags'; // 连接标签显示设置键
-const SHOW_QUICK_COMMAND_TAGS_KEY = 'showQuickCommandTags'; // 快捷指令标签显示设置键
+const SHOW_CONNECTION_TAGS_KEY = 'showConnectionFolders'; // 连接文件夹显示设置键
+const SHOW_QUICK_COMMAND_TAGS_KEY = 'showQuickCommandFolders'; // 快捷指令文件夹显示设置键
 const SHOW_STATUS_MONITOR_IP_ADDRESS_KEY = 'showStatusMonitorIpAddress'; // 状态监视器IP显示设置键
 const COMPONENT_INSTANCE_STATES_KEY = 'componentInstanceStates'; // 组件实例级状态设置键 (各组件独立/分端持久化)
  
@@ -570,8 +570,8 @@ export const settingsService = {
      console.log('[SettingsService] CAPTCHA config successfully set.');
  }, // <-- Add comma here
 
- // --- Show Connection Tags ---
- async getShowConnectionTags(): Promise<boolean> {
+ // --- Show Connection Folders ---
+ async getShowConnectionFolders(): Promise<boolean> {
    console.log(`[Service] Attempting to get setting for key: ${SHOW_CONNECTION_TAGS_KEY}`);
    try {
      const valueStr = await settingsRepository.getSetting(SHOW_CONNECTION_TAGS_KEY);
@@ -579,13 +579,13 @@ export const settingsService = {
      // 默认显示，所以只有当值为 'false' 时才返回 false
      return valueStr !== 'false';
    } catch (error) {
-     console.error(`[Service] Error getting show connection tags setting (key: ${SHOW_CONNECTION_TAGS_KEY}):`, error);
+     console.error(`[Service] Error getting show connection folders setting (key: ${SHOW_CONNECTION_TAGS_KEY}):`, error);
      return true; 
    }
  }, 
 
- async setShowConnectionTags(enabled: boolean): Promise<void> {
-   console.log(`[Service] setShowConnectionTags called with: ${enabled}`);
+ async setShowConnectionFolders(enabled: boolean): Promise<void> {
+   console.log(`[Service] setShowConnectionFolders called with: ${enabled}`);
    try {
      const valueStr = String(enabled);
      console.log(`[Service] Attempting to save setting. Key: ${SHOW_CONNECTION_TAGS_KEY}, Value: ${valueStr}`);
@@ -593,12 +593,12 @@ export const settingsService = {
      console.log(`[Service] Successfully saved setting for key: ${SHOW_CONNECTION_TAGS_KEY}`);
    } catch (error) {
      console.error(`[Service] Error calling settingsRepository.setSetting for key ${SHOW_CONNECTION_TAGS_KEY}:`, error);
-     throw new Error('Failed to save show connection tags setting.');
+     throw new Error('Failed to save show connection folders setting.');
    }
  }, 
 
- // --- Show Quick Command Tags ---
- async getShowQuickCommandTags(): Promise<boolean> {
+ // --- Show Quick Command Folders ---
+ async getShowQuickCommandFolders(): Promise<boolean> {
    console.log(`[Service] Attempting to get setting for key: ${SHOW_QUICK_COMMAND_TAGS_KEY}`);
    try {
      const valueStr = await settingsRepository.getSetting(SHOW_QUICK_COMMAND_TAGS_KEY);
@@ -606,13 +606,13 @@ export const settingsService = {
      // 默认显示，所以只有当值为 'false' 时才返回 false
      return valueStr !== 'false';
    } catch (error) {
-     console.error(`[Service] Error getting show quick command tags setting (key: ${SHOW_QUICK_COMMAND_TAGS_KEY}):`, error);
+     console.error(`[Service] Error getting show quick command folders setting (key: ${SHOW_QUICK_COMMAND_TAGS_KEY}):`, error);
      return true; 
    }
  }, 
 
- async setShowQuickCommandTags(enabled: boolean): Promise<void> {
-   console.log(`[Service] setShowQuickCommandTags called with: ${enabled}`);
+ async setShowQuickCommandFolders(enabled: boolean): Promise<void> {
+   console.log(`[Service] setShowQuickCommandFolders called with: ${enabled}`);
    try {
      const valueStr = String(enabled);
      console.log(`[Service] Attempting to save setting. Key: ${SHOW_QUICK_COMMAND_TAGS_KEY}, Value: ${valueStr}`);
@@ -620,7 +620,7 @@ export const settingsService = {
      console.log(`[Service] Successfully saved setting for key: ${SHOW_QUICK_COMMAND_TAGS_KEY}`);
    } catch (error) {
      console.error(`[Service] Error calling settingsRepository.setSetting for key ${SHOW_QUICK_COMMAND_TAGS_KEY}:`, error);
-     throw new Error('Failed to save show quick command tags setting.');
+     throw new Error('Failed to save show quick command folders setting.');
    }
  }, 
 

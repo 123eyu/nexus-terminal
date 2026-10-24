@@ -13,6 +13,6 @@ router.get('/', QuickCommandsController.getAllQuickCommands); // GET /api/v1/qui
 router.put('/:id', QuickCommandsController.updateQuickCommand); // PUT /api/v1/quick-commands/:id
 router.delete('/:id', QuickCommandsController.deleteQuickCommand); // DELETE /api/v1/quick-commands/:id
 router.post('/:id/increment-usage', QuickCommandsController.incrementUsage); // POST /api/v1/quick-commands/:id/increment-usage
-router.post('/bulk-assign-tag', QuickCommandsController.assignTagToCommands); // POST /api/v1/quick-commands/bulk-assign-tag
+router.post('/bulk-assign-folder', QuickCommandsController.assignFolderToCommands); // POST /api/v1/quick-commands/bulk-assign-folder
 
 export default router;

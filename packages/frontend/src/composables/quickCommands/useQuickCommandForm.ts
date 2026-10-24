@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useQuickCommandsStore, type QuickCommandFE } from '../../stores/quickCommands.store';
-import { useQuickCommandTagsStore } from '../../stores/quickCommandTags.store';
+import { useQuickCommandFoldersStore } from '../../stores/quickCommandFolders.store';
 import { useSessionStore } from '../../stores/session.store';
 import { useUiNotificationsStore } from '../../stores/uiNotifications.store';
 import { useWorkspaceEventEmitter } from '../workspaceEvents';
@@ -41,7 +41,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
   const { showConfirmDialog } = useConfirmDialog();
   const { showAlertDialog } = useAlertDialog();
   const quickCommandsStore = useQuickCommandsStore();
-  const quickCommandTagsStore = useQuickCommandTagsStore();
+  const quickCommandFoldersStore = useQuickCommandFoldersStore();
   const sessionStore = useSessionStore();
   const uiNotificationsStore = useUiNotificationsStore();
   const emitWorkspaceEvent = useWorkspaceEventEmitter();
@@ -52,7 +52,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
   const formData = reactive({
     name: '',
     command: '',
-    tagIds: [] as number[],
+    folderIds: [] as number[],
     custom_background_color: false,
     background_color: '#3b82f6',
   });
@@ -73,10 +73,10 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
 
   const selectedFolderId = computed({
     get: () => {
-      return formData.tagIds && formData.tagIds.length > 0 ? formData.tagIds[0] : null;
+      return formData.folderIds && formData.folderIds.length > 0 ? formData.folderIds[0] : null;
     },
     set: (val: number | null) => {
-      formData.tagIds = val !== null ? [val] : [];
+      formData.folderIds = val !== null ? [val] : [];
     },
   });
 
@@ -94,7 +94,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     if (isEditing.value && props.commandToEdit) {
       formData.name = props.commandToEdit.name ?? '';
       formData.command = props.commandToEdit.command;
-      formData.tagIds = props.commandToEdit.tagIds ? [...props.commandToEdit.tagIds] : [];
+      formData.folderIds = props.commandToEdit.folderIds ? [...props.commandToEdit.folderIds] : [];
       if (props.commandToEdit.background_color) {
         formData.custom_background_color = true;
         formData.background_color = props.commandToEdit.background_color;
@@ -114,37 +114,37 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
         formData.command = props.initialCommand;
       }
       if (props.initialFolderId) {
-        formData.tagIds = [props.initialFolderId];
+        formData.folderIds = [props.initialFolderId];
       }
     }
   }
 
   const handleCreateFolder = async (folderName: string) => {
     if (!folderName || folderName.trim().length === 0) return;
-    const newFolder = await quickCommandTagsStore.createFolder(folderName.trim());
+    const newFolder = await quickCommandFoldersStore.createFolder(folderName.trim());
     if (newFolder) {
-      formData.tagIds = [newFolder.id];
+      formData.folderIds = [newFolder.id];
     }
   };
 
-  const handleDeleteTag = async (tagId: number) => {
-    const tagToDelete = quickCommandTagsStore.tags.find((tag) => tag.id === tagId);
-    if (!tagToDelete) return;
+  const handleDeleteFolder = async (folderId: number) => {
+    const folderToDelete = quickCommandFoldersStore.folders.find((folder) => folder.id === folderId);
+    if (!folderToDelete) return;
 
     const confirmed = await showConfirmDialog({
-      message: t('tags.prompts.confirmDelete', { name: tagToDelete.name }),
+      message: t('folders.prompts.confirmDelete', { name: folderToDelete.name }),
     });
     if (confirmed) {
-      const success = await quickCommandTagsStore.deleteTag(tagId);
+      const success = await quickCommandFoldersStore.deleteFolder(folderId);
       if (success) {
-        const index = formData.tagIds.indexOf(tagId);
+        const index = formData.folderIds.indexOf(folderId);
         if (index > -1) {
-          formData.tagIds.splice(index, 1);
+          formData.folderIds.splice(index, 1);
         }
       } else {
         showAlertDialog({
           title: t('common.error', '错误'),
-          message: t('tags.errorDelete', { error: quickCommandTagsStore.error || '未知错误' }),
+          message: t('folders.errorDelete', { error: quickCommandFoldersStore.error || '未知错误' }),
         });
       }
     }
@@ -181,7 +181,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
           props.commandToEdit.id,
           finalName,
           formData.command.trim(),
-          formData.tagIds,
+          formData.folderIds,
           variablesToSave,
           backgroundColorToSave
         );
@@ -189,7 +189,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
         success = await quickCommandsStore.addQuickCommand(
           finalName,
           formData.command.trim(),
-          formData.tagIds,
+          formData.folderIds,
           variablesToSave,
           backgroundColorToSave
         );
@@ -257,7 +257,7 @@ export function useQuickCommandForm(props: QuickCommandFormProps, emit: (e: 'clo
     handleRandomColor,
     initForm,
     handleCreateFolder,
-    handleDeleteTag,
+    handleDeleteFolder,
     handleSubmit,
     closeForm,
     addVariable,

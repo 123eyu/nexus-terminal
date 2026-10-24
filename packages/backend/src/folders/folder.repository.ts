@@ -2,8 +2,8 @@ import { Database, Statement } from 'sqlite3';
 import { getDbInstance, runDb, getDb as getDbRow, allDb } from '../database/connection';
 
 
-// 定义 Tag 类型 (可以共享到 types 文件)
-export interface TagData {
+// 定义 Folder 类型 (可以共享到 types 文件)
+export interface FolderData {
     id: number;
     name: string;
     background_color?: string | null;
@@ -14,10 +14,10 @@ export interface TagData {
 /**
  * 获取所有文件夹
  */
-export const findAllTags = async (): Promise<TagData[]> => {
+export const findAllFolders = async (): Promise<FolderData[]> => {
     try {
         const db = await getDbInstance();
-        const rows = await allDb<TagData>(db, `SELECT * FROM tags ORDER BY name ASC`);
+        const rows = await allDb<FolderData>(db, `SELECT * FROM folders ORDER BY name ASC`);
         return rows;
     } catch (err: any) {
         console.error('[仓库] 查询文件夹列表时出错:', err.message);
@@ -28,10 +28,10 @@ export const findAllTags = async (): Promise<TagData[]> => {
 /**
  * 根据 ID 获取单个文件夹
  */
-export const findTagById = async (id: number): Promise<TagData | null> => {
+export const findFolderById = async (id: number): Promise<FolderData | null> => {
      try {
         const db = await getDbInstance();
-        const row = await getDbRow<TagData>(db, `SELECT * FROM tags WHERE id = ?`, [id]);
+        const row = await getDbRow<FolderData>(db, `SELECT * FROM folders WHERE id = ?`, [id]);
         return row || null;
      } catch (err: any) {
         console.error(`[仓库] 查询文件夹 ${id} 时出错:`, err.message);
@@ -43,9 +43,9 @@ export const findTagById = async (id: number): Promise<TagData | null> => {
 /**
  * 创建新文件夹
  */
-export const createTag = async (name: string, backgroundColor?: string | null): Promise<number> => {
+export const createFolder = async (name: string, backgroundColor?: string | null): Promise<number> => {
     const now = Math.floor(Date.now() / 1000);
-    const sql = `INSERT INTO tags (name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?)`;
+    const sql = `INSERT INTO folders (name, background_color, created_at, updated_at) VALUES (?, ?, ?, ?)`;
     try {
         const db = await getDbInstance();
         const result = await runDb(db, sql, [name, backgroundColor || null, now, now]);
@@ -65,7 +65,7 @@ export const createTag = async (name: string, backgroundColor?: string | null): 
 /**
  * 更新文件夹名称与背景颜色
  */
-export const updateTag = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
+export const updateFolder = async (id: number, name?: string, backgroundColor?: string | null): Promise<boolean> => {
     const now = Math.floor(Date.now() / 1000);
     const updates: string[] = ['updated_at = ?'];
     const params: any[] = [now];
@@ -80,7 +80,7 @@ export const updateTag = async (id: number, name?: string, backgroundColor?: str
     }
     params.push(id);
 
-    const sql = `UPDATE tags SET ${updates.join(', ')} WHERE id = ?`;
+    const sql = `UPDATE folders SET ${updates.join(', ')} WHERE id = ?`;
     try {
         const db = await getDbInstance();
         const result = await runDb(db, sql, params);
@@ -97,8 +97,8 @@ export const updateTag = async (id: number, name?: string, backgroundColor?: str
 /**
  * 删除文件夹
  */
-export const deleteTag = async (id: number): Promise<boolean> => {
-    const sql = `DELETE FROM tags WHERE id = ?`;
+export const deleteFolder = async (id: number): Promise<boolean> => {
+    const sql = `DELETE FROM folders WHERE id = ?`;
     try {
         const db = await getDbInstance();
         const result = await runDb(db, sql, [id]);
@@ -112,24 +112,24 @@ export const deleteTag = async (id: number): Promise<boolean> => {
 /**
  * 更新文件夹与连接的关联关系
  */
-export const updateTagConnections = async (tagId: number, connectionIds: number[]): Promise<void> => {
+export const updateFolderConnections = async (folderId: number, connectionIds: number[]): Promise<void> => {
     const db = await getDbInstance();
     try {
         // 开始事务
         await runDb(db, 'BEGIN TRANSACTION');
 
         // 1. 删除该文件夹旧的连接关联
-        const deleteSql = `DELETE FROM connection_tags WHERE tag_id = ?`;
-        await runDb(db, deleteSql, [tagId]);
+        const deleteSql = `DELETE FROM connection_folders WHERE folder_id = ?`;
+        await runDb(db, deleteSql, [folderId]);
 
         // 2. 如果有新的连接 ID，则插入新的关联
         if (connectionIds && connectionIds.length > 0) {
-            const insertSql = `INSERT INTO connection_tags (tag_id, connection_id) VALUES (?, ?)`;
+            const insertSql = `INSERT INTO connection_folders (folder_id, connection_id) VALUES (?, ?)`;
             // 使用 Promise.all 来并行执行插入操作，或者逐个执行
             // 为简单起见，这里逐个执行，但对于大量数据，并行或批量插入更优
             for (const connectionId of connectionIds) {
                 // 检查 connectionId 是否有效（例如，是否存在于 connections 表中）可以增加健壮性，但此处省略
-                await runDb(db, insertSql, [tagId, connectionId]);
+                await runDb(db, insertSql, [folderId, connectionId]);
             }
         }
 
@@ -138,7 +138,7 @@ export const updateTagConnections = async (tagId: number, connectionIds: number[
     } catch (err: any) {
         // 如果发生错误，回滚事务
         await runDb(db, 'ROLLBACK');
-        console.error(`[仓库] 更新文件夹 ${tagId} 的连接关联时出错:`, err.message);
+        console.error(`[仓库] 更新文件夹 ${folderId} 的连接关联时出错:`, err.message);
         throw new Error(`更新文件夹连接关联失败: ${err.message}`);
     }
 };

@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import apiClient from '../utils/apiClient';
 import { useConnectionsStore, ConnectionInfo } from '../stores/connections.store';
 import { useProxiesStore } from '../stores/proxies.store';
-import { useTagsStore } from '../stores/tags.store';
+import { useFoldersStore } from '../stores/folders.store';
 import { useSshKeysStore } from '../stores/sshKeys.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useConfirmDialog } from './useConfirmDialog';
@@ -32,13 +32,13 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   const { showAlertDialog } = useAlertDialog();
   const connectionsStore = useConnectionsStore();
   const proxiesStore = useProxiesStore();
-  const tagsStore = useTagsStore();
+  const foldersStore = useFoldersStore();
   const sshKeysStore = useSshKeysStore();
   const uiNotificationsStore = useUiNotificationsStore();
 
   const { isLoading: isConnLoading, error: connStoreError, connections } = storeToRefs(connectionsStore);
   const { proxies, isLoading: isProxyLoading, error: proxyStoreError } = storeToRefs(proxiesStore);
-  const { tags, isLoading: isTagLoading, error: tagStoreError } = storeToRefs(tagsStore);
+  const { folders, isLoading: isFolderLoading, error: folderStoreError } = storeToRefs(foldersStore);
   const { sshKeys, isLoading: isSshKeyLoading, error: sshKeyStoreError } = storeToRefs(sshKeysStore);
 
   // 表单数据模型
@@ -58,7 +58,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     proxy_id: null as number | null,
     jump_chain: null as Array<any> | null, 
     proxy_type: null as 'proxy' | 'jump' | null, 
-    tag_ids: [] as number[],
+    folder_ids: [] as number[],
     notes: '',
     vncPassword: '',
     custom_background_color: false,
@@ -84,8 +84,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   // ⚠️ 这个只表示「表单依赖的数据（连接/代理/标签/密钥）是否在拉取」，**不是**提交态。
   // 切屏回来、或别的设备改动了数据时，全局同步会后台刷新这些 store（isLoading 闪一下 true），
   // 如果拿它当提交态，底部按钮就会瞬间变成「正在添加…」并把自己置灰。
-  const isLoading = computed(() => isConnLoading.value || isProxyLoading.value || isTagLoading.value || isSshKeyLoading.value); // +++ Include SSH Key loading +++
-  const storeError = computed(() => connStoreError.value || proxyStoreError.value || tagStoreError.value || sshKeyStoreError.value); // +++ Include SSH Key error +++
+  const isLoading = computed(() => isConnLoading.value || isProxyLoading.value || isFolderLoading.value || isSshKeyLoading.value); // +++ Include SSH Key loading +++
+  const storeError = computed(() => connStoreError.value || proxyStoreError.value || folderStoreError.value || sshKeyStoreError.value); // +++ Include SSH Key error +++
 
   /**
    * 表单自己的提交态：只有用户点「确认添加 / 保存」真正在等后端时才为 true。
@@ -142,7 +142,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           console.log('[Debug] watch connectionToEdit - newVal.jump_chain:', newVal.jump_chain);
           console.log('[Debug] watch connectionToEdit - formData.jump_chain initialized:', formData.jump_chain);
           formData.notes = newVal.notes ?? '';
-          formData.tag_ids = newVal.tag_ids ? [...newVal.tag_ids] : [];
+          formData.folder_ids = newVal.folder_ids ? [...newVal.folder_ids] : [];
 
           if (newVal.type === 'SSH' && newVal.auth_method === 'key') {
               formData.selected_ssh_key_id = newVal.ssh_key_id ?? null;
@@ -180,7 +180,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           formData.file_protocol = newVal.file_protocol ?? 'auto';
      } else {
          Object.assign(formData, initialFormData);
-         formData.tag_ids = [];
+         formData.folder_ids = [];
          formData.selected_ssh_key_id = null;
          formData.notes = '';
          formData.vncPassword = '';
@@ -197,7 +197,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
   // 组件挂载时获取代理、标签和 SSH 密钥列表
   onMounted(() => {
       proxiesStore.fetchProxies();
-      tagsStore.fetchTags();
+      foldersStore.fetchFolders();
       sshKeysStore.fetchSshKeys();
   });
 
@@ -342,20 +342,20 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     let firstErrorEncountered: string | null = null;
 
     // 文件夹按名字懒建，且一次批量内只建一次
-    const tagIdCache = new Map<string, number>();
+    const folderIdCache = new Map<string, number>();
     const resolveFolderId = async (name: string): Promise<number | null> => {
-      const cached = tagIdCache.get(name);
+      const cached = folderIdCache.get(name);
       if (cached !== undefined) return cached;
-      let found = tags.value.find((x) => x.name === name) || null;
+      let found = folders.value.find((x) => x.name === name) || null;
       if (!found) {
-        const created = await tagsStore.addTag(name);
+        const created = await foldersStore.addFolder(name);
         if (created) {
           found = created;
-          await tagsStore.fetchTags();
+          await foldersStore.fetchFolders();
         }
       }
       if (!found) return null;
-      tagIdCache.set(name, found.id);
+      folderIdCache.set(name, found.id);
       return found.id;
     };
 
@@ -378,16 +378,16 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           connectionData.background_color = parsed.backgroundColor;
         }
 
-        // 文件夹（脚本里 -tags 给了多个时都建上）
-        if (parsed.tags && parsed.tags.length > 0) {
-          const tagIds: number[] = [];
-          for (const tagName of parsed.tags) {
-            const id = await resolveFolderId(tagName);
-            if (id) tagIds.push(id);
+        // 文件夹（脚本里 -folders 给了多个时都建上）
+        if (parsed.folders && parsed.folders.length > 0) {
+          const folderIds: number[] = [];
+          for (const folderName of parsed.folders) {
+            const id = await resolveFolderId(folderName);
+            if (id) folderIds.push(id);
           }
-          connectionData.tag_ids = tagIds;
+          connectionData.folder_ids = folderIds;
         } else {
-          connectionData.tag_ids = [];
+          connectionData.folder_ids = [];
         }
 
         // 网络代理（按名称）
@@ -580,8 +580,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     connectionsStore.error = null;
     proxiesStore.error = null;
 
-    const availableTagIds = tags.value.map(t_ => t_.id);
-    const currentSelectedValidTagIds = formData.tag_ids.filter(id => availableTagIds.includes(id));
+    const availableFolderIds = folders.value.map(t_ => t_.id);
+    const currentSelectedValidFolderIds = formData.folder_ids.filter(id => availableFolderIds.includes(id));
 
     if (!formData.host || !formData.host.trim()) {
       uiNotificationsStore.showError(t('connections.form.errorRequiredFields'));
@@ -667,7 +667,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     username: effectiveUsername,
                     notes: formData.notes,
                     proxy_id: formData.proxy_id || null,
-                    tag_ids: currentSelectedValidTagIds,
+                    folder_ids: currentSelectedValidFolderIds,
                     proxy_type: formData.proxy_type,
                     background_color: formData.custom_background_color ? (formData.background_color || null) : null,
                     file_protocol: formData.file_protocol || 'auto',
@@ -748,7 +748,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         username: effectiveUsername,
         proxy_id: formData.proxy_id || null,
         proxy_type: formData.proxy_type,
-        tag_ids: currentSelectedValidTagIds,
+        folder_ids: currentSelectedValidFolderIds,
         jump_chain: formData.jump_chain ? JSON.parse(JSON.stringify(formData.jump_chain)) : null,
         background_color: formData.custom_background_color ? (formData.background_color || null) : null,
         file_protocol: formData.file_protocol || 'auto',
@@ -828,26 +828,26 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     }
   };
 
-  // --- Tag Creation/Deletion Handling ---
-  const handleCreateTag = async (tagName: string) => {
-      if (!tagName || tagName.trim().length === 0) return;
-      const newTag = await tagsStore.addTag(tagName.trim());
-      if (newTag) {
-          formData.tag_ids = [newTag.id];
+  // --- Folder Creation/Deletion Handling ---
+  const handleCreateFolder = async (folderName: string) => {
+      if (!folderName || folderName.trim().length === 0) return;
+      const newFolder = await foldersStore.addFolder(folderName.trim());
+      if (newFolder) {
+          formData.folder_ids = [newFolder.id];
       }
   };
 
-  const handleDeleteTag = async (tagId: number) => {
-      const tagToDelete = tags.value.find(t_ => t_.id === tagId);
-      if (!tagToDelete) return;
+  const handleDeleteFolder = async (folderId: number) => {
+      const folderToDelete = folders.value.find(t_ => t_.id === folderId);
+      if (!folderToDelete) return;
 
-      const confirmedDeleteTag = await showConfirmDialog({
-        message: t('tags.prompts.confirmDelete', { name: tagToDelete.name })
+      const confirmedDeleteFolder = await showConfirmDialog({
+        message: t('folders.prompts.confirmDelete', { name: folderToDelete.name })
       });
-      if (confirmedDeleteTag) {
-          const success = await tagsStore.deleteTag(tagId);
+      if (confirmedDeleteFolder) {
+          const success = await foldersStore.deleteFolder(folderId);
           if (!success) {
-              showAlertDialog({ title: t('common.error', '错误'), message: t('tags.errorDelete', { error: tagsStore.error || '未知错误' }) });
+              showAlertDialog({ title: t('common.error', '错误'), message: t('folders.errorDelete', { error: foldersStore.error || '未知错误' }) });
           }
       }
   };
@@ -965,16 +965,16 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     formTitle,
     submitButtonText,
     proxies, // for <select>
-    tags,    // for <TagInput :available-tags="tags">
+    folders,    // for <FolderInput :available-folders="folders">
     isProxyLoading,
     proxyStoreError,
-    isTagLoading,
-    tagStoreError,
+    isFolderLoading,
+    folderStoreError,
     handleSubmit,
     handleDeleteConnection,
     handleTestConnection,
-    handleCreateTag,
-    handleDeleteTag,
+    handleCreateFolder,
+    handleDeleteFolder,
     latencyColor,
     testButtonText,
     advancedConnectionMode, 

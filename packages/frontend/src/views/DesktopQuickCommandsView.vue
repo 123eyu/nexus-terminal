@@ -69,9 +69,9 @@
 
             <!-- 分类文件夹列表 -->
             <div
-              v-for="folder in quickCommandTagsStore.folders"
+              v-for="folder in quickCommandFoldersStore.folders"
               :key="folder.id"
-              @click="editingTagId !== folder.id ? (sidebarActiveFolderId = folder.id) : null"
+              @click="editingFolderId !== folder.id ? (sidebarActiveFolderId = folder.id) : null"
               @contextmenu.prevent="showFolderContextMenu($event, folder)"
               class="group flex items-center justify-between px-2.5 py-1.5 rounded-lg cursor-pointer text-xs transition-colors duration-150 relative min-h-[30px]"
               :class="sidebarActiveFolderId === folder.id ? 'bg-primary/15 text-primary font-semibold' : 'text-foreground/80 hover:text-foreground hover:bg-header/60'"
@@ -79,15 +79,15 @@
             >
               <!-- 编辑状态 -->
               <input
-                v-if="editingTagId === folder.id"
+                v-if="editingFolderId === folder.id"
                 :key="`sidebar-folder-${folder.id}`"
-                :ref="(el) => setTagInputRef(el, folder.id)"
+                :ref="(el) => setFolderInputRef(el, folder.id)"
                 type="text"
-                v-model="editedTagName"
+                v-model="editedFolderName"
                 class="bg-input border border-primary rounded px-1.5 py-0.5 w-full text-xs text-foreground focus:outline-none"
-                @blur="finishEditingTag"
-                @keydown.enter.prevent="finishEditingTag"
-                @keydown.esc.prevent="cancelEditingTag"
+                @blur="finishEditingFolder"
+                @keydown.enter.prevent="finishEditingFolder"
+                @keydown.esc.prevent="cancelEditingFolder"
                 @click.stop
               />
               <!-- 正常展示状态 -->
@@ -135,7 +135,7 @@
                     </div>
                     <!-- 重命名 -->
                     <button
-                      @click.stop="startEditingTag(folder.id, folder.name)"
+                      @click.stop="startEditingFolder(folder.id, folder.name)"
                       class="w-5 h-5 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
                       :title="t('folders.renameFolder', '重命名文件夹')"
                     >
@@ -239,7 +239,7 @@
                 </div>
                 <!-- 重命名 -->
                 <button
-                  @click="startEditingTag(sidebarActiveFolderId, activeSidebarFolderName)"
+                  @click="startEditingFolder(sidebarActiveFolderId, activeSidebarFolderName)"
                   class="w-5 h-5 rounded text-text-secondary hover:text-foreground hover:bg-muted text-[10px] flex items-center justify-center cursor-pointer"
                   :title="t('folders.renameFolder', '重命名文件夹')"
                 >
@@ -421,7 +421,7 @@
            </button>
        </div>
         <!-- No Results State (Commands exist, but filter yields no results) -->
-        <div v-else-if="!isLoading && ((showQuickCommandTagsBoolean && filteredAndGroupedCommands.length === 0) || (!showQuickCommandTagsBoolean && flatFilteredCommands.length === 0)) && searchTerm" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
+        <div v-else-if="!isLoading && ((showQuickCommandFoldersBoolean && filteredAndGroupedCommands.length === 0) || (!showQuickCommandFoldersBoolean && flatFilteredCommands.length === 0)) && searchTerm" class="p-6 text-center text-text-secondary text-sm flex flex-col items-center justify-center h-full">
             <i class="fas fa-search text-xl mb-2"></i>
             <p>{{ t('quickCommands.noResults', '没有找到匹配的指令') }} "{{ searchTerm }}"</p>
         </div>
@@ -437,13 +437,13 @@
         @keydown="handleSearchInputKeydown"
        >
             <!-- Grouped View -->
-            <div v-if="showQuickCommandTagsBoolean">
+            <div v-if="showQuickCommandFoldersBoolean">
                 <div v-for="groupData in filteredAndGroupedCommands" :key="groupData.groupName" class="mb-1 last:mb-0">
                     <div
                         class="group font-semibold flex items-center justify-between text-foreground rounded-lg hover:bg-header/80 transition-colors duration-150 h-9 min-h-[36px] max-h-[36px] box-border"
                         :style="{ padding: isCompactMode ? `0 calc(0.6rem * var(--qc-row-size-multiplier))` : `0 calc(0.7rem * var(--qc-row-size-multiplier))` }"
-                        :class="{ 'cursor-pointer': editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) }"
-                        @click="editingTagId !== (groupData.tagId === null ? 'untagged' : groupData.tagId) ? toggleGroup(groupData.groupName) : null"
+                        :class="{ 'cursor-pointer': editingFolderId !== (groupData.folderId === null ? 'untagged' : groupData.folderId) }"
+                        @click="editingFolderId !== (groupData.folderId === null ? 'untagged' : groupData.folderId) ? toggleGroup(groupData.groupName) : null"
                     >
                         <div class="flex items-center min-w-0 flex-1 mr-2">
                             <i
@@ -457,28 +457,28 @@
                             <i
                                 :class="[
                                     'fas mr-2 w-4 text-center flex-shrink-0 transition-colors',
-                                    groupData.tagId === null
+                                    groupData.folderId === null
                                         ? 'fa-inbox text-text-secondary'
                                         : (expandedGroups[groupData.groupName] ? 'fa-folder-open' : 'fa-folder'),
-                                    (!getFolderColorById(groupData.tagId) && groupData.tagId !== null) ? 'text-amber-400' : ''
+                                    (!getFolderColorById(groupData.folderId) && groupData.folderId !== null) ? 'text-amber-400' : ''
                                 ]"
                                 :style="{
-                                    color: getFolderColorById(groupData.tagId) || undefined,
+                                    color: getFolderColorById(groupData.folderId) || undefined,
                                     fontSize: `calc(0.9em * max(0.85, var(--qc-row-size-multiplier) * 0.6 + 0.4))`
                                 }"
                             ></i>
 
                             <!-- Editing State -->
                             <input
-                                v-if="editingTagId === (groupData.tagId === null ? 'untagged' : groupData.tagId)"
-                                :key="groupData.tagId === null ? 'untagged-input' : `tag-input-${groupData.tagId}`"
-                                :ref="(el) => setTagInputRef(el, groupData.tagId === null ? 'untagged' : groupData.tagId)"
+                                v-if="editingFolderId === (groupData.folderId === null ? 'untagged' : groupData.folderId)"
+                                :key="groupData.folderId === null ? 'untagged-input' : `folder-input-${groupData.folderId}`"
+                                :ref="(el) => setFolderInputRef(el, groupData.folderId === null ? 'untagged' : groupData.folderId)"
                                 type="text"
-                                v-model="editedTagName"
+                                v-model="editedFolderName"
                                 class="bg-input border border-primary rounded px-1.5 py-0.5 w-full text-xs text-foreground focus:outline-none"
-                                @blur="finishEditingTag"
-                                @keydown.enter.prevent="finishEditingTag"
-                                @keydown.esc.prevent="cancelEditingTag"
+                                @blur="finishEditingFolder"
+                                @keydown.enter.prevent="finishEditingFolder"
+                                @keydown.esc.prevent="cancelEditingFolder"
                                 @click.stop
                             />
                             <!-- Display State -->
@@ -495,38 +495,38 @@
 
                         <!-- Actions for Folder (常驻占位防抖动，仅透明度过渡) -->
                         <div
-                            v-if="groupData.tagId !== null && editingTagId !== groupData.tagId"
+                            v-if="groupData.folderId !== null && editingFolderId !== groupData.folderId"
                             class="flex items-center gap-0.5 flex-shrink-0 h-6 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none group-hover:pointer-events-auto"
                             @click.stop
                         >
                             <!-- Folder Color Picker -->
-                            <div v-if="groupData.tagId !== null" class="relative inline-flex items-center" @click.stop>
+                            <div v-if="groupData.folderId !== null" class="relative inline-flex items-center" @click.stop>
                                 <button
-                                    @click.stop="toggleFolderColorPicker(groupData.tagId, $event)"
+                                    @click.stop="toggleFolderColorPicker(groupData.folderId, $event)"
                                     class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
                                     :title="t('folders.folderColor', '文件夹背景颜色')"
                                 >
                                     <i class="fas fa-palette text-[10px]"></i>
                                 </button>
                                 <ColorPickerPopover
-                                    :visible="activeFolderColorPickerId === groupData.tagId"
+                                    :visible="activeFolderColorPickerId === groupData.folderId"
                                     :trigger-el="activeFolderColorPickerTriggerEl"
-                                    :model-value="getFolderColorById(groupData.tagId)"
-                                    @update:model-value="handleUpdateFolderColor(groupData.tagId, $event)"
+                                    :model-value="getFolderColorById(groupData.folderId)"
+                                    @update:model-value="handleUpdateFolderColor(groupData.folderId, $event)"
                                     @close="activeFolderColorPickerId = null; activeFolderColorPickerTriggerEl = null"
                                 />
                             </div>
                             <button
-                                v-if="groupData.tagId !== null"
-                                @click="startEditingTag(groupData.tagId, groupData.groupName)"
+                                v-if="groupData.folderId !== null"
+                                @click="startEditingFolder(groupData.folderId, groupData.groupName)"
                                 class="w-6 h-6 p-0 rounded text-text-secondary hover:text-foreground hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
                                 :title="t('folders.renameFolder', '重命名文件夹')"
                             >
                                 <i class="fas fa-pencil-alt text-[10px]"></i>
                             </button>
                             <button
-                                v-if="groupData.tagId !== null"
-                                @click="handleDeleteFolder(groupData.tagId, groupData.groupName, $event)"
+                                v-if="groupData.folderId !== null"
+                                @click="handleDeleteFolder(groupData.folderId, groupData.groupName, $event)"
                                 class="w-6 h-6 p-0 rounded text-text-secondary hover:text-error hover:bg-muted text-xs transition-colors flex items-center justify-center cursor-pointer"
                                 :title="t('folders.deleteFolder', '删除文件夹')"
                             >
@@ -547,7 +547,7 @@
                                 :class="{ 'bg-primary/20 border-primary font-medium': isCommandSelected(cmd.id) }"
                                 :style="[
                                     { padding: `calc(0.4rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))` },
-                                    getCommandCardStyle(cmd, groupData.tagId)
+                                    getCommandCardStyle(cmd, groupData.folderId)
                                 ]"
                                 @click="handleCommandItemClick(cmd)"
                                 @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
@@ -595,7 +595,7 @@
                                         padding: `calc(0.2rem * var(--qc-row-size-multiplier)) calc(0.55rem * var(--qc-row-size-multiplier))`,
                                         fontSize: `calc(0.78em * max(0.8, var(--qc-row-size-multiplier) * 0.5 + 0.5))`
                                     },
-                                    getCommandCardStyle(cmd, groupData.tagId)
+                                    getCommandCardStyle(cmd, groupData.folderId)
                                 ]"
                                 @click="handleCommandItemClick(cmd)"
                                 @contextmenu.prevent="showQuickCommandContextMenu($event, cmd)"
@@ -615,7 +615,7 @@
                                 class="group flex justify-between items-center mb-1 cursor-pointer rounded-md hover:bg-primary/10 transition-colors duration-150"
                                 :style="[
                                     { padding: `calc(0.625rem * var(--qc-row-size-multiplier)) calc(0.75rem * var(--qc-row-size-multiplier))` },
-                                    getCommandCardStyle(cmd, groupData.tagId)
+                                    getCommandCardStyle(cmd, groupData.folderId)
                                 ]"
                                 :class="{ 'bg-primary/20 font-medium': isCommandSelected(cmd.id) }"
                                 @click="handleCommandItemClick(cmd)"
@@ -862,9 +862,9 @@
               <i class="fas fa-inbox text-xs"></i>
               <span>{{ t('folders.uncategorized', '未分类') }}</span>
             </div>
-            <div v-if="quickCommandTagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
+            <div v-if="quickCommandFoldersStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
             <div
-              v-for="folder in quickCommandTagsStore.folders"
+              v-for="folder in quickCommandFoldersStore.folders"
               :key="folder.id"
               @click="handleMoveCommandToFolder(quickCommandContextTargetCommand!, folder.id)"
               class="px-2.5 py-1.5 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate"
@@ -992,7 +992,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, nextTick, defineExpose, watch, watchEffect } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useQuickCommandsStore, type QuickCommandFE, type QuickCommandSortByType, type GroupedQuickCommands } from '../stores/quickCommands.store';
-import { useQuickCommandTagsStore } from '../stores/quickCommandTags.store'; 
+import { useQuickCommandFoldersStore } from '../stores/quickCommandFolders.store'; 
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useI18n } from 'vue-i18n';
 import { copyToClipboard } from '../utils/clipboard';
@@ -1018,7 +1018,7 @@ import ColorPickerPopover from '../components/common/ColorPickerPopover.vue';
 import { resolveEffectiveColor, getItemColoredCardStyle } from '../utils/colorUtils';
 
 const quickCommandsStore = useQuickCommandsStore();
-const quickCommandTagsStore = useQuickCommandTagsStore(); 
+const quickCommandFoldersStore = useQuickCommandFoldersStore(); 
 const uiNotificationsStore = useUiNotificationsStore();
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
@@ -1032,31 +1032,31 @@ const connectionsStore = useConnectionsStore();
 const activeFolderColorPickerId = ref<number | null>(null);
 const activeFolderColorPickerTriggerEl = ref<HTMLElement | null>(null);
 
-const toggleFolderColorPicker = (tagId: number, e: Event) => {
+const toggleFolderColorPicker = (folderId: number, e: Event) => {
   e.stopPropagation();
-  if (activeFolderColorPickerId.value === tagId) {
+  if (activeFolderColorPickerId.value === folderId) {
     activeFolderColorPickerId.value = null;
     activeFolderColorPickerTriggerEl.value = null;
   } else {
-    activeFolderColorPickerId.value = tagId;
+    activeFolderColorPickerId.value = folderId;
     activeFolderColorPickerTriggerEl.value = (e.currentTarget as HTMLElement) || (e.target as HTMLElement);
   }
 };
 
-const handleUpdateFolderColor = async (tagId: number, color: string | null) => {
-  await quickCommandTagsStore.updateFolderColor(tagId, color);
+const handleUpdateFolderColor = async (folderId: number, color: string | null) => {
+  await quickCommandFoldersStore.updateFolderColor(folderId, color);
   activeFolderColorPickerId.value = null;
   activeFolderColorPickerTriggerEl.value = null;
 };
 
-const getFolderColorById = (tagId?: number | null): string | null =>
-  resolveFolderColor(quickCommandTagsStore.folders, tagId);
+const getFolderColorById = (folderId?: number | null): string | null =>
+  resolveFolderColor(quickCommandFoldersStore.folders, folderId);
 
-const getCommandFolderColor = (cmd: QuickCommandFE, groupTagId?: number | null): string | null =>
-  resolveCommandFolderColor(quickCommandTagsStore.folders, cmd, groupTagId);
+const getCommandFolderColor = (cmd: QuickCommandFE, groupFolderId?: number | null): string | null =>
+  resolveCommandFolderColor(quickCommandFoldersStore.folders, cmd, groupFolderId);
 
-const getCommandCardStyle = (cmd: QuickCommandFE, groupTagId?: number | null) => {
-  const folderColor = getCommandFolderColor(cmd, groupTagId);
+const getCommandCardStyle = (cmd: QuickCommandFE, groupFolderId?: number | null) => {
+  const folderColor = getCommandFolderColor(cmd, groupFolderId);
   const effectiveColor = resolveEffectiveColor(cmd.background_color, folderColor);
   if (!effectiveColor) return {};
   return getItemColoredCardStyle(effectiveColor, { alpha: 0.14, borderAlpha: 0.35 });
@@ -1092,8 +1092,8 @@ const commandListContainerRef = ref<HTMLDivElement | null>(null); // Changed ref
 const searchInputRef = ref<HTMLInputElement | null>(null); // +++ Ref for the search input +++
 let unregisterFocus: (() => void) | null = null; // +++ 保存注销函数 +++
 
-// +++ State for inline tag editing +++
-const tagInputRefs = ref(new Map<string | number, HTMLInputElement | null>());
+// +++ State for inline folder editing +++
+const folderInputRefs = ref(new Map<string | number, HTMLInputElement | null>());
 
 // +++ 右键菜单状态 +++
 const quickCommandContextMenuVisible = ref(false);
@@ -1201,11 +1201,11 @@ const {
 
 // --- 文件夹改名 / 新建（实现见 composables/quickCommands/useQuickCommandFolderEditing.ts）---
 const {
-  editingTagId,
-  editedTagName,
-  startEditingTag,
-  cancelEditingTag,
-  finishEditingTag,
+  editingFolderId,
+  editedFolderName,
+  startEditingFolder,
+  cancelEditingFolder,
+  finishEditingFolder,
   isCreatingFolderModal,
   newQuickCommandFolderName,
   showDeleteFolderModal,
@@ -1234,7 +1234,7 @@ const {
 const confirmCreateQuickCommandFolder = confirmCreateFolder;
 const handleConfirmDeleteFolder = confirmDeleteFolder;
 const {
-  showQuickCommandTagsBoolean,
+  showQuickCommandFoldersBoolean,
   quickCommandRowSizeMultiplierNumber: qcRowSizeMultiplierFromStore,
   quickCommandsCompactModeBoolean, // +++ 引入紧凑模式状态 +++
 } = storeToRefs(settingsStore);
@@ -1321,7 +1321,7 @@ const viewModeIcon = computed(() => {
   switch (currentViewMode.value) {
     case 'grid': return 'fa-table-cells-large';
     case 'list': return 'fa-list';
-    case 'pills': return 'fa-tags';
+    case 'pills': return 'fa-folders';
     default: return 'fa-table-cells-large';
   }
 });
@@ -1404,7 +1404,7 @@ const activeSidebarFolderName = computed(() => {
   if (sidebarActiveFolderId.value === 'untagged') {
     return t('quickCommands.untagged', '未分类');
   }
-  const folder = quickCommandTagsStore.folders.find(f => f.id === sidebarActiveFolderId.value);
+  const folder = quickCommandFoldersStore.folders.find(f => f.id === sidebarActiveFolderId.value);
   return folder?.name || '';
 });
 
@@ -1421,10 +1421,10 @@ const sidebarDisplayCommands = computed(() => {
   if (sidebarActiveFolderId.value === 'all') {
     baseList = allList;
   } else if (sidebarActiveFolderId.value === 'untagged') {
-    baseList = allList.filter(cmd => !cmd.tagIds || cmd.tagIds.length === 0);
+    baseList = allList.filter(cmd => !cmd.folderIds || cmd.folderIds.length === 0);
   } else {
     const fid = sidebarActiveFolderId.value as number;
-    baseList = allList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(fid));
+    baseList = allList.filter(cmd => cmd.folderIds && cmd.folderIds.includes(fid));
   }
 
   const term = searchTerm.value.trim().toLowerCase();
@@ -1560,7 +1560,7 @@ const closeFolderContextMenu = () => {
 const handleFolderMenuAction = (action: 'rename' | 'delete', folder: any) => {
   closeFolderContextMenu();
   if (action === 'rename') {
-    startEditingTag(folder.id, folder.name);
+    startEditingFolder(folder.id, folder.name);
   } else if (action === 'delete') {
     handleDeleteFolder(folder.id, folder.name);
   }
@@ -1581,8 +1581,8 @@ onMounted(async () => { // Make onMounted async
     quickCommandsStore.loadExpandedGroups();
     // Then fetch commands (which might initialize expandedGroups for new groups)
     await quickCommandsStore.fetchQuickCommands();
-    // Also fetch the quick command tags using the correct store instance
-    await quickCommandTagsStore.fetchTags();
+    // Also fetch the quick command folders using the correct store instance
+    await quickCommandFoldersStore.fetchFolders();
     // +++ 注册自定义聚焦动作 +++
     unregisterFocus = focusSwitcherStore.registerFocusAction('quickCommandsSearch', focusSearchInput);
 });
@@ -1620,10 +1620,10 @@ onBeforeUnmount(() => {
 
 
 // +++ Watcher to focus input when editing starts +++
-watch(editingTagId, async (newId) => {
+watch(editingFolderId, async (newId) => {
     if (newId !== null) {
         await nextTick();
-        const inputRef = tagInputRefs.value.get(newId);
+        const inputRef = folderInputRefs.value.get(newId);
         if (inputRef) {
             inputRef.focus();
             inputRef.select();
@@ -1634,7 +1634,7 @@ watch(editingTagId, async (newId) => {
 });
 
 // 监听显示模式变化，重置选择
-watch(showQuickCommandTagsBoolean, () => {
+watch(showQuickCommandFoldersBoolean, () => {
     quickCommandsStore.resetSelection();
 });
 
@@ -1749,12 +1749,12 @@ const focusSearchInput = (): boolean => {
 };
 defineExpose({ focusSearchInput });
 
-// +++ Methods for inline tag editing +++
-const setTagInputRef = (el: any, id: string | number) => {
+// +++ Methods for inline folder editing +++
+const setFolderInputRef = (el: any, id: string | number) => {
   if (el) {
-    tagInputRefs.value.set(id, el as HTMLInputElement);
+    folderInputRefs.value.set(id, el as HTMLInputElement);
   } else {
-    tagInputRefs.value.delete(id);
+    folderInputRefs.value.delete(id);
   }
 };
 

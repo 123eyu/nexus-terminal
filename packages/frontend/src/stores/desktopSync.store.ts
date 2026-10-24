@@ -8,12 +8,12 @@ export type SyncCategoryKey = 'appearance' | 'layout' | 'commandHistory' | 'quic
 
 export type SyncItemKey =
   | 'connections.hosts'
-  | 'connections.tags'
+  | 'connections.folders'
   | 'connections.keys'
   | 'connections.proxies'
   | 'connections.favoritePaths'
   | 'quickCommands.items'
-  | 'quickCommands.tags'
+  | 'quickCommands.folders'
   | 'appearance.terminalTheme'
   | 'appearance.font'
   | 'appearance.background'
@@ -54,7 +54,7 @@ export const SYNC_CATEGORIES: SyncCategoryOption[] = [
     description: 'SSH 连接、分组、密钥、代理与常用路径',
     items: [
       { key: 'connections.hosts', label: '连接', description: '主机信息、跳板/代理绑定、端口转发、文件夹配色' },
-      { key: 'connections.tags', label: '连接文件夹', description: '文件夹及其背景颜色' },
+      { key: 'connections.folders', label: '连接文件夹', description: '文件夹及其背景颜色' },
       { key: 'connections.keys', label: 'SSH 密钥', description: '密钥与口令（信封加密传输）' },
       { key: 'connections.proxies', label: '代理服务器', description: 'SOCKS / HTTP 代理配置' },
       { key: 'connections.favoritePaths', label: '常用路径', description: '文件管理器中收藏的路径' },
@@ -66,7 +66,7 @@ export const SYNC_CATEGORIES: SyncCategoryOption[] = [
     description: '快捷指令条目与文件夹',
     items: [
       { key: 'quickCommands.items', label: '快捷指令', description: '指令内容、变量与颜色' },
-      { key: 'quickCommands.tags', label: '指令文件夹', description: '快捷指令的文件夹' },
+      { key: 'quickCommands.folders', label: '指令文件夹', description: '快捷指令的文件夹' },
     ],
   },
   {
@@ -402,11 +402,11 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         await highlightsStore.reloadLoadedHighlights();
       })());
     }
-    if (has('connections.tags')) {
+    if (has('connections.folders')) {
       refreshTasks.push((async () => {
-        const { useTagsStore } = await import('./tags.store');
-        const tagsStore = useTagsStore();
-        await tagsStore.fetchTags();
+        const { useFoldersStore } = await import('./folders.store');
+        const foldersStore = useFoldersStore();
+        await foldersStore.fetchFolders();
       })());
     }
     if (has('connections.keys')) {
@@ -438,11 +438,11 @@ export const useDesktopSyncStore = defineStore('desktopSync', () => {
         await qcStore.fetchQuickCommands(true);
       })());
     }
-    if (has('quickCommands.tags')) {
+    if (has('quickCommands.folders')) {
       refreshTasks.push((async () => {
-        const { useQuickCommandTagsStore } = await import('./quickCommandTags.store');
-        const qcTagsStore = useQuickCommandTagsStore();
-        await qcTagsStore.fetchTags();
+        const { useQuickCommandFoldersStore } = await import('./quickCommandFolders.store');
+        const qcFoldersStore = useQuickCommandFoldersStore();
+        await qcFoldersStore.fetchFolders();
       })());
     }
 

@@ -120,8 +120,8 @@ CREATE TABLE IF NOT EXISTS ssh_keys (
 );
 `;
 
-export const createTagsTableSQL = `
-CREATE TABLE IF NOT EXISTS tags (
+export const createFoldersTableSQL = `
+CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     background_color TEXT NULL,
@@ -130,13 +130,13 @@ CREATE TABLE IF NOT EXISTS tags (
 );
 `;
 
-export const createConnectionTagsTableSQL = `
-CREATE TABLE IF NOT EXISTS connection_tags (
+export const createConnectionFoldersTableSQL = `
+CREATE TABLE IF NOT EXISTS connection_folders (
     connection_id INTEGER NOT NULL,
-    tag_id INTEGER NOT NULL,
-    PRIMARY KEY (connection_id, tag_id),
+    folder_id INTEGER NOT NULL,
+    PRIMARY KEY (connection_id, folder_id),
     FOREIGN KEY (connection_id) REFERENCES connections(id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
 );
 `;
 
@@ -180,10 +180,10 @@ CREATE TABLE IF NOT EXISTS quick_commands (
 );
 `;
 
-// --- Quick Command Tags ---
+// --- Quick Command Folders ---
 
-export const createQuickCommandTagsTableSQL = `
-CREATE TABLE IF NOT EXISTS quick_command_tags (
+export const createQuickCommandFoldersTableSQL = `
+CREATE TABLE IF NOT EXISTS quick_command_folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     background_color TEXT NULL,
@@ -192,13 +192,13 @@ CREATE TABLE IF NOT EXISTS quick_command_tags (
 );
 `;
 
-export const createQuickCommandTagAssociationsTableSQL = `
-CREATE TABLE IF NOT EXISTS quick_command_tag_associations (
+export const createQuickCommandFolderAssociationsTableSQL = `
+CREATE TABLE IF NOT EXISTS quick_command_folder_associations (
     quick_command_id INTEGER NOT NULL,
-    tag_id INTEGER NOT NULL,
-    PRIMARY KEY (quick_command_id, tag_id),
+    folder_id INTEGER NOT NULL,
+    PRIMARY KEY (quick_command_id, folder_id),
     FOREIGN KEY (quick_command_id) REFERENCES quick_commands(id) ON DELETE CASCADE,
-    FOREIGN KEY (tag_id) REFERENCES quick_command_tags(id) ON DELETE CASCADE
+    FOREIGN KEY (folder_id) REFERENCES quick_command_folders(id) ON DELETE CASCADE
 );
 `;
 

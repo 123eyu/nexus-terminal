@@ -57,7 +57,7 @@
 
         <!-- Connections Section -->
         <div class="border border-border rounded-md p-4 space-y-4 max-h-72 overflow-y-auto bg-header/30">
-          <div v-if="isLoadingConnections || isLoadingTags" class="flex items-center justify-center h-24 text-text-secondary">
+          <div v-if="isLoadingConnections || isLoadingFolders" class="flex items-center justify-center h-24 text-text-secondary">
             <i class="fas fa-spinner fa-spin mr-2"></i> {{ t('sendFilesModal.loadingConnections') }}
           </div>
           <div v-else-if="filteredGroupedConnections.length === 0 && !searchTerm" class="flex flex-col items-center justify-center h-24 text-text-secondary">
@@ -69,33 +69,33 @@
             <p>{{ t('sendFilesModal.noConnectionsFound') }}</p>
           </div>
           <div v-else class="space-y-3">
-            <div v-for="group in filteredGroupedConnections" :key="getGroupId(group)" class="tag-group">
+            <div v-for="group in filteredGroupedConnections" :key="getGroupId(group)" class="folder-group">
               <div
                 class="flex items-center py-1.5 cursor-pointer group"
-                @click="toggleTagGroupExpansion(group)"
+                @click="toggleFolderGroupExpansion(group)"
               >
                 <input
                   type="checkbox"
-                  :id="'tag-cb-' + getGroupId(group)"
-                  :checked="isTagGroupSelected(group)"
-                  :indeterminate="isTagGroupIndeterminate(group)"
-                  @change="toggleTagGroupSelection(group)"
+                  :id="'folder-cb-' + getGroupId(group)"
+                  :checked="isFolderGroupSelected(group)"
+                  :indeterminate="isFolderGroupIndeterminate(group)"
+                  @change="toggleFolderGroupSelection(group)"
                   @click.stop
                   class="mr-1.5 h-4 w-4 rounded border-border text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer"
                 />
                 <i
-                  :class="['fas', expandedTagGroups[getGroupId(group)] ?? true ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-3 text-center text-text-secondary/80 group-hover:text-text-secondary transition-transform duration-150 ease-in-out']"
+                  :class="['fas', expandedFolderGroups[getGroupId(group)] ?? true ? 'fa-chevron-down' : 'fa-chevron-right', 'mr-2 w-3 text-center text-text-secondary/80 group-hover:text-text-secondary transition-transform duration-150 ease-in-out']"
                   style="font-size: 0.75rem;"
                 ></i>
                 <label
-                  :for="'tag-cb-' + getGroupId(group)"
+                  :for="'folder-cb-' + getGroupId(group)"
                   class="font-semibold text-foreground select-none cursor-pointer text-sm"
                   @click.stop
                 >
-                  {{ group.tag ? group.tag.name : t('sendFilesModal.untaggedConnections') }} ({{ group.connections.length }})
+                  {{ group.folder ? group.folder.name : t('sendFilesModal.untaggedConnections') }} ({{ group.connections.length }})
                 </label>
               </div>
-              <ul v-show="expandedTagGroups[getGroupId(group)] ?? true" class="pl-7 space-y-0.5">
+              <ul v-show="expandedFolderGroups[getGroupId(group)] ?? true" class="pl-7 space-y-0.5">
                 <li
                   v-for="connection in group.connections"
                   :key="connection.id"
@@ -155,7 +155,7 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useConnectionsStore, type ConnectionInfo } from '../stores/connections.store';
-import { useTagsStore, type TagInfo } from '../stores/tags.store';
+import { useFoldersStore, type FolderInfo } from '../stores/folders.store';
 import apiClient from '../utils/apiClient';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import AppSelect from './common/AppSelect.vue';
@@ -174,7 +174,7 @@ interface SourceItem { // As per backend InitiateTransferPayload
 }
 
 interface GroupedConnection {
-  tag: TagInfo | null;
+  folder: FolderInfo | null;
   connections: ConnectionInfo[];
 }
 
@@ -191,7 +191,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const connectionsStore = useConnectionsStore();
-const tagsStore = useTagsStore();
+const foldersStore = useFoldersStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射器实例 +++
 
@@ -201,17 +201,17 @@ const transferMethod = ref<'auto' | 'rsync' | 'scp'>('auto');
 const selectedConnectionIds = ref<number[]>([]);
 
 const isLoadingConnections = ref(false);
-const isLoadingTags = ref(false);
+const isLoadingFolders = ref(false);
 
-const expandedTagGroups = ref<Record<string, boolean>>({});
+const expandedFolderGroups = ref<Record<string, boolean>>({});
 
 const getGroupId = (group: GroupedConnection): string => {
-  return group.tag ? String(group.tag.id) : 'untagged';
+  return group.folder ? String(group.folder.id) : 'untagged';
 };
 
-const toggleTagGroupExpansion = (group: GroupedConnection) => {
+const toggleFolderGroupExpansion = (group: GroupedConnection) => {
   const groupId = getGroupId(group);
-    expandedTagGroups.value[groupId] = !(expandedTagGroups.value[groupId] ?? true);
+    expandedFolderGroups.value[groupId] = !(expandedFolderGroups.value[groupId] ?? true);
   };
   
   // Simulate data for itemsToSend for development if not provided
@@ -229,25 +229,25 @@ const itemsToSendInternal = computed<ItemToSend[]>(() => {
 
 onMounted(async () => {
   isLoadingConnections.value = true;
-  isLoadingTags.value = true;
+  isLoadingFolders.value = true;
   try {
     if (connectionsStore.connections.length === 0) {
       await connectionsStore.fetchConnections();
     }
-    if (tagsStore.tags.length === 0) {
-      await tagsStore.fetchTags();
+    if (foldersStore.folders.length === 0) {
+      await foldersStore.fetchFolders();
     }
   } catch (error) {
     console.error(t('sendFilesModal.errorFetchingData'), error);
     // Optionally, show a user-facing error message
   } finally {
     isLoadingConnections.value = false;
-    isLoadingTags.value = false;
+    isLoadingFolders.value = false;
   }
 });
 
 const allConnections = computed(() => connectionsStore.connections);
-const allTags = computed(() => tagsStore.tags);
+const allFolders = computed(() => foldersStore.folders);
 
 const groupedConnections = computed<GroupedConnection[]>(() => {
   const groups: Record<string, GroupedConnection> = {};
@@ -257,19 +257,19 @@ const groupedConnections = computed<GroupedConnection[]>(() => {
     if (conn.type?.toLowerCase() !== 'ssh') { // 首先过滤掉非 SSH 连接
       return;
     }
-    const connTagIds = conn.tag_ids || [];
-    if (connTagIds.length === 0) {
+    const connFolderIds = conn.folder_ids || [];
+    if (connFolderIds.length === 0) {
       untaggedConnections.push(conn);
     } else {
-      connTagIds.forEach((tagId: number) => {
-        const tag = allTags.value.find(t => t.id === tagId);
-        if (tag) {
-          if (!groups[tag.id]) {
-            groups[tag.id] = { tag, connections: [] };
+      connFolderIds.forEach((folderId: number) => {
+        const folder = allFolders.value.find(t => t.id === folderId);
+        if (folder) {
+          if (!groups[folder.id]) {
+            groups[folder.id] = { folder, connections: [] };
           }
           // Avoid adding duplicate connections to the same group
-          if (!groups[tag.id].connections.some(c => c.id === conn.id)) {
-            groups[tag.id].connections.push(conn);
+          if (!groups[folder.id].connections.some(c => c.id === conn.id)) {
+            groups[folder.id].connections.push(conn);
           }
         } else {
           if (!untaggedConnections.some(c => c.id === conn.id)) {
@@ -281,11 +281,11 @@ const groupedConnections = computed<GroupedConnection[]>(() => {
   });
 
   const sortedGroups = Object.values(groups).sort((a, b) =>
-    a.tag!.name.localeCompare(b.tag!.name)
+    a.folder!.name.localeCompare(b.folder!.name)
   );
 
   if (untaggedConnections.length > 0) {
-    return [...sortedGroups, { tag: null, connections: untaggedConnections }];
+    return [...sortedGroups, { folder: null, connections: untaggedConnections }];
   }
   return sortedGroups;
 });
@@ -302,43 +302,43 @@ const filteredGroupedConnections = computed<GroupedConnection[]>(() => {
   
   const result = baseGroups
     .map(group => {
-      const groupDisplayName = group.tag ? group.tag.name : t('sendFilesModal.untaggedConnections');
-      const isTagMatch = groupDisplayName.toLowerCase().includes(lowerSearchTerm);
+      const groupDisplayName = group.folder ? group.folder.name : t('sendFilesModal.untaggedConnections');
+      const isFolderMatch = groupDisplayName.toLowerCase().includes(lowerSearchTerm);
 
       const connsMatchingSearchByName = group.connections.filter(conn =>
         conn.name.toLowerCase().includes(lowerSearchTerm)
         // conn.type filtering is already handled in groupedConnections
       );
 
-      if (isTagMatch) {
-        // Tag name matches. Show all connections of this group.
+      if (isFolderMatch) {
+        // Folder name matches. Show all connections of this group.
         return { ...group, connections: group.connections };
       } else if (connsMatchingSearchByName.length > 0) {
-        // Tag name doesn't match, but some connection names do. Show only those connections.
+        // Folder name doesn't match, but some connection names do. Show only those connections.
         return { ...group, connections: connsMatchingSearchByName };
       }
       
-      return null; // Group doesn't match by tag name and has no connections matching by name
+      return null; // Group doesn't match by folder name and has no connections matching by name
     })
     .filter(group => group !== null && group.connections.length > 0) as GroupedConnection[];
     
   return result;
 });
 
-const isTagGroupSelected = (group: GroupedConnection): boolean => {
+const isFolderGroupSelected = (group: GroupedConnection): boolean => {
   if (group.connections.length === 0) return false;
   return group.connections.every(conn => selectedConnectionIds.value.includes(conn.id));
 };
 
-const isTagGroupIndeterminate = (group: GroupedConnection): boolean => {
+const isFolderGroupIndeterminate = (group: GroupedConnection): boolean => {
   if (group.connections.length === 0) return false;
   const selectedCount = group.connections.filter(conn => selectedConnectionIds.value.includes(conn.id)).length;
   return selectedCount > 0 && selectedCount < group.connections.length;
 };
 
-const toggleTagGroupSelection = (group: GroupedConnection) => {
+const toggleFolderGroupSelection = (group: GroupedConnection) => {
   const groupConnectionIds = group.connections.map(conn => conn.id);
-  if (isTagGroupSelected(group)) {
+  if (isFolderGroupSelected(group)) {
     // Deselect all
     selectedConnectionIds.value = selectedConnectionIds.value.filter(id => !groupConnectionIds.includes(id));
   } else {
@@ -356,8 +356,8 @@ watch(() => props.visible, (newValue) => {
     if (connectionsStore.connections.length === 0) {
       connectionsStore.fetchConnections().catch(error => console.error(t('sendFilesModal.errorFetchingConnections'), error));
     }
-    if (tagsStore.tags.length === 0) {
-      tagsStore.fetchTags().catch(error => console.error(t('sendFilesModal.errorFetchingTags'), error));
+    if (foldersStore.folders.length === 0) {
+      foldersStore.fetchFolders().catch(error => console.error(t('sendFilesModal.errorFetchingFolders'), error));
     }
   }
 });

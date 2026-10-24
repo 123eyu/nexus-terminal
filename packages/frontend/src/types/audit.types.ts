@@ -17,10 +17,10 @@ export type AuditLogActionType =
   | 'PROXY_CREATED'
   | 'PROXY_UPDATED'
   | 'PROXY_DELETED'
-  // Tags
-  | 'TAG_CREATED'
-  | 'TAG_UPDATED'
-  | 'TAG_DELETED'
+  // Folders
+  | 'FOLDER_CREATED'
+  | 'FOLDER_UPDATED'
+  | 'FOLDER_DELETED'
   // Settings
   | 'SETTINGS_UPDATED'
   | 'IP_WHITELIST_UPDATED'

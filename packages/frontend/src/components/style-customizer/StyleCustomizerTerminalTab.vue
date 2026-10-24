@@ -548,7 +548,7 @@ watch(() => props.isEditingTheme, (isEditing) => {
         </div>
         <div class="text-xs leading-relaxed overflow-x-auto text-foreground select-all py-1">
           <div>0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz</div>
-          <div class="text-muted-foreground text-[11px] mt-0.5">const ok = (a != b) &amp;&amp; (x &lt;= y) &amp;&amp; (tag === "nexus"); // 0xDEADBEEF -&gt; =&gt;</div>
+          <div class="text-muted-foreground text-[11px] mt-0.5">const ok = (a != b) &amp;&amp; (x &lt;= y) &amp;&amp; (folder === "nexus"); // 0xDEADBEEF -&gt; =&gt;</div>
         </div>
       </div>
     </div>

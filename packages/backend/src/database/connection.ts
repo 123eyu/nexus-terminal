@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { AsyncLocalStorage } from 'async_hooks';
 import { tableDefinitions } from './schema.registry';
-import { runMigrations } from './migrations'; // +++ Import runMigrations +++
+import { runMigrations, normalizeLegacyFolderSchema } from './migrations'; // +++ Import runMigrations +++
 import { installSyncTriggers } from '../sync/triggers.manager';
 import { getDbPath, getDataDir } from '../services/storage-path.service';
 
@@ -175,6 +175,8 @@ export const getDbInstance = (): Promise<sqlite3.Database> => {
         
                 try {
 
+                    // 「标签 → 文件夹」改名：必须在建表之前，旧库原地改名，新库空转（见函数注释）
+                    await normalizeLegacyFolderSchema(db);
                     // 运行初始表创建
                     await runDatabaseInitializations(db);
                     // +++ 运行数据库迁移 +++

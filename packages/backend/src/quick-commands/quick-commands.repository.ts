@@ -12,15 +12,15 @@ export interface QuickCommand {
     updated_at: number; // Unix 时间戳 (秒)
 }
 
-// 定义包含标签 ID 和解析后变量的接口
-export type QuickCommandWithTags = Omit<QuickCommand, 'variables'> & {
-    tagIds: number[];
+// 定义包含文件夹 ID 和解析后变量的接口
+export type QuickCommandWithFolders = Omit<QuickCommand, 'variables'> & {
+    folderIds: number[];
     variables: Record<string, string> | null; // API 层面使用对象
 };
 
-// 用于从数据库获取带 tag_ids_str 的行
-interface DbQuickCommandWithTagsRow extends QuickCommand {
-    tag_ids_str: string | null;
+// 用于从数据库获取带 folder_ids_str 的行
+interface DbQuickCommandWithFoldersRow extends QuickCommand {
+    folder_ids_str: string | null;
     // variables 字段已包含在 QuickCommand 中，这里不需要重复定义，因为 QuickCommand 将包含 variables?: string
 }
 
@@ -97,29 +97,29 @@ export const deleteQuickCommand = async (id: number): Promise<boolean> => {
 };
 
 /**
- * 获取所有快捷指令及其关联的标签 ID
+ * 获取所有快捷指令及其关联的文件夹 ID
  * @param sortBy - 排序字段 ('name' 或 'usage_count')
- * @returns 返回包含所有快捷指令条目及标签 ID 的数组
+ * @returns 返回包含所有快捷指令条目及文件夹 ID 的数组
  */
-export const getAllQuickCommands = async (sortBy: 'name' | 'usage_count' = 'name'): Promise<QuickCommandWithTags[]> => {
+export const getAllQuickCommands = async (sortBy: 'name' | 'usage_count' = 'name'): Promise<QuickCommandWithFolders[]> => {
     let orderByClause = 'ORDER BY qc.name ASC'; // 默认按名称升序
     if (sortBy === 'usage_count') {
         orderByClause = 'ORDER BY qc.usage_count DESC, qc.name ASC'; // 按使用频率降序，同频率按名称升序
     }
-    // 使用 LEFT JOIN 连接关联表与标签表，确保只提取真实存在的有效标签 ID
+    // 使用 LEFT JOIN 连接关联表与文件夹表，确保只提取真实存在的有效文件夹 ID
     const sql = `
         SELECT
             qc.id, qc.name, qc.command, qc.usage_count, qc.variables, qc.background_color, qc.created_at, qc.updated_at,
-            GROUP_CONCAT(qt.id) as tag_ids_str
+            GROUP_CONCAT(qt.id) as folder_ids_str
          FROM quick_commands qc
-         LEFT JOIN quick_command_tag_associations qta ON qc.id = qta.quick_command_id
-         LEFT JOIN quick_command_tags qt ON qta.tag_id = qt.id
+         LEFT JOIN quick_command_folder_associations qta ON qc.id = qta.quick_command_id
+         LEFT JOIN quick_command_folders qt ON qta.folder_id = qt.id
          GROUP BY qc.id
          ${orderByClause}`;
     try {
         const db = await getDbInstance();
-        const rows = await allDb<DbQuickCommandWithTagsRow>(db, sql);
-        // 将 tag_ids_str 解析为数字数组，并解析 variables
+        const rows = await allDb<DbQuickCommandWithFoldersRow>(db, sql);
+        // 将 folder_ids_str 解析为数字数组，并解析 variables
         return rows.map(row => {
             let parsedVariables: Record<string, string> | null = null;
             if (row.variables) {
@@ -134,11 +134,11 @@ export const getAllQuickCommands = async (sortBy: 'name' | 'usage_count' = 'name
             return {
                 ...restOfRow,
                 variables: parsedVariables,
-                tagIds: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : []
+                folderIds: row.folder_ids_str ? row.folder_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : []
             };
         });
     } catch (err: any) {
-        console.error('获取快捷指令（带标签）时出错:', err.message);
+        console.error('获取快捷指令（带文件夹）时出错:', err.message);
         throw new Error('无法获取快捷指令');
     }
 };
@@ -161,26 +161,26 @@ export const incrementUsageCount = async (id: number): Promise<boolean> => {
 };
 
 /**
- * 根据 ID 查找快捷指令及其关联的标签 ID
+ * 根据 ID 查找快捷指令及其关联的文件夹 ID
  * @param id - 要查找的记录 ID
- * @returns 返回找到的快捷指令条目及标签 ID，如果未找到则返回 undefined
+ * @returns 返回找到的快捷指令条目及文件夹 ID，如果未找到则返回 undefined
  */
-export const findQuickCommandById = async (id: number): Promise<QuickCommandWithTags | undefined> => {
-    // 使用 LEFT JOIN 连接关联表与标签表，确保只提取真实存在的有效标签 ID
+export const findQuickCommandById = async (id: number): Promise<QuickCommandWithFolders | undefined> => {
+    // 使用 LEFT JOIN 连接关联表与文件夹表，确保只提取真实存在的有效文件夹 ID
     const sql = `
         SELECT
             qc.id, qc.name, qc.command, qc.usage_count, qc.variables, qc.background_color, qc.created_at, qc.updated_at,
-            GROUP_CONCAT(qt.id) as tag_ids_str
+            GROUP_CONCAT(qt.id) as folder_ids_str
          FROM quick_commands qc
-         LEFT JOIN quick_command_tag_associations qta ON qc.id = qta.quick_command_id
-         LEFT JOIN quick_command_tags qt ON qta.tag_id = qt.id
+         LEFT JOIN quick_command_folder_associations qta ON qc.id = qta.quick_command_id
+         LEFT JOIN quick_command_folders qt ON qta.folder_id = qt.id
          WHERE qc.id = ?
          GROUP BY qc.id`;
     try {
         const db = await getDbInstance();
-        const row = await getDbRow<DbQuickCommandWithTagsRow>(db, sql, [id]);
+        const row = await getDbRow<DbQuickCommandWithFoldersRow>(db, sql, [id]);
         if (row && typeof row.id !== 'undefined') {
-            // 将 tag_ids_str 解析为数字数组，并解析 variables
+            // 将 folder_ids_str 解析为数字数组，并解析 variables
             let parsedVariables: Record<string, string> | null = null;
             if (row.variables) {
                 try {
@@ -194,13 +194,13 @@ export const findQuickCommandById = async (id: number): Promise<QuickCommandWith
             return {
                 ...restOfRow,
                 variables: parsedVariables,
-                tagIds: row.tag_ids_str ? row.tag_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : []
+                folderIds: row.folder_ids_str ? row.folder_ids_str.split(',').map(Number).filter(id => !isNaN(id)) : []
             };
         } else {
             return undefined;
         }
     } catch (err: any) {
-        console.error('查找快捷指令（带标签）时出错:', err.message);
+        console.error('查找快捷指令（带文件夹）时出错:', err.message);
         throw new Error('无法查找快捷指令');
     }
 };

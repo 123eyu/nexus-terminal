@@ -134,7 +134,7 @@
 
           <!-- 3. 自定义文件夹 -->
           <div
-            v-for="folder in quickCommandTagsStore.folders"
+            v-for="folder in quickCommandFoldersStore.folders"
             :key="folder.id"
             @click="editingFolderId !== folder.id ? activeFolder = folder.id : null"
             @dragover.prevent="dragOverFolderId = folder.id"
@@ -397,9 +397,9 @@
                       <i class="fas fa-inbox text-xs"></i>
                       <span>{{ t('folders.uncategorized', '未分类') }}</span>
                     </div>
-                    <div v-if="quickCommandTagsStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
+                    <div v-if="quickCommandFoldersStore.folders.length > 0" class="h-px bg-border/40 my-0.5"></div>
                     <div
-                      v-for="f in quickCommandTagsStore.folders"
+                      v-for="f in quickCommandFoldersStore.folders"
                       :key="f.id"
                       @click="handleMoveCommandToFolder(cmd, f.id)"
                       class="px-2.5 py-1.5 text-xs text-foreground hover:bg-muted cursor-pointer flex items-center gap-2 truncate"
@@ -594,7 +594,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useQuickCommandsStore, type QuickCommandFE } from '../stores/quickCommands.store';
-import { useQuickCommandTagsStore, type QuickCommandTag } from '../stores/quickCommandTags.store';
+import { useQuickCommandFoldersStore, type QuickCommandFolder } from '../stores/quickCommandFolders.store';
 import { useUiNotificationsStore } from '../stores/uiNotifications.store';
 import { useSessionStore } from '../stores/session.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
@@ -609,7 +609,7 @@ import { promptQuickCommandVariables } from '../composables/quickCommands/useQui
 const { t } = useI18n();
 const { showConfirmDialog } = useConfirmDialog();
 const quickCommandsStore = useQuickCommandsStore();
-const quickCommandTagsStore = useQuickCommandTagsStore();
+const quickCommandFoldersStore = useQuickCommandFoldersStore();
 const uiNotificationsStore = useUiNotificationsStore();
 const sessionStore = useSessionStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
@@ -648,22 +648,22 @@ const dragOverFolderId = ref<ActiveFolderType | null>(null);
 onMounted(async () => {
   await Promise.all([
     quickCommandsStore.fetchQuickCommands(),
-    quickCommandTagsStore.fetchTags(),
+    quickCommandFoldersStore.fetchFolders(),
   ]);
 });
 
 // 文件夹删除模态框状态
 const showDeleteFolderModal = ref(false);
-const folderToDelete = ref<QuickCommandTag | null>(null);
+const folderToDelete = ref<QuickCommandFolder | null>(null);
 const isDeletingFolder = ref(false);
 
 // 计算属性：有效文件夹 ID 集合
-const validFolderIds = computed(() => new Set(quickCommandTagsStore.folders.map(f => f.id)));
+const validFolderIds = computed(() => new Set(quickCommandFoldersStore.folders.map(f => f.id)));
 
 // 判断一条快捷指令是否属于未分类：无标签，或关联的全部标签均已不存在
 const isCommandUncategorized = (cmd: QuickCommandFE): boolean => {
-  if (!cmd.tagIds || cmd.tagIds.length === 0) return true;
-  return !cmd.tagIds.some(tid => validFolderIds.value.has(tid));
+  if (!cmd.folderIds || cmd.folderIds.length === 0) return true;
+  return !cmd.folderIds.some(tid => validFolderIds.value.has(tid));
 };
 
 // 计算属性：全部指令与未分类指令计数
@@ -672,13 +672,13 @@ const uncategorizedCommandsCount = computed(() => {
   return quickCommandsStore.quickCommandsList.filter(cmd => isCommandUncategorized(cmd)).length;
 });
 
-const getFolderCommandsCount = (tagId: number): number => {
-  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.tagIds && cmd.tagIds.includes(tagId)).length;
+const getFolderCommandsCount = (folderId: number): number => {
+  return quickCommandsStore.quickCommandsList.filter(cmd => cmd.folderIds && cmd.folderIds.includes(folderId)).length;
 };
 
 const getCommandFolderName = (cmd: QuickCommandFE): string | null => {
-  if (!cmd.tagIds || cmd.tagIds.length === 0) return null;
-  const folder = quickCommandTagsStore.folders.find(f => f.id === cmd.tagIds![0]);
+  if (!cmd.folderIds || cmd.folderIds.length === 0) return null;
+  const folder = quickCommandFoldersStore.folders.find(f => f.id === cmd.folderIds![0]);
   return folder ? folder.name : null;
 };
 
@@ -686,14 +686,14 @@ const getCommandFolderName = (cmd: QuickCommandFE): string | null => {
 const activeFolderTitle = computed(() => {
   if (activeFolder.value === 'all') return t('folders.allCommands', '全部指令');
   if (activeFolder.value === 'uncategorized') return t('folders.uncategorized', '未分类');
-  const folder = quickCommandTagsStore.folders.find(f => f.id === activeFolder.value);
+  const folder = quickCommandFoldersStore.folders.find(f => f.id === activeFolder.value);
   return folder ? folder.name : t('folders.title', '文件夹');
 });
 
 // 当前文件夹颜色
 const activeFolderColor = computed(() => {
   if (typeof activeFolder.value !== 'number') return null;
-  const folder = quickCommandTagsStore.folders.find(f => f.id === activeFolder.value);
+  const folder = quickCommandFoldersStore.folders.find(f => f.id === activeFolder.value);
   return folder?.background_color || null;
 });
 
@@ -706,7 +706,7 @@ const displayedCommands = computed(() => {
     list = list.filter(cmd => isCommandUncategorized(cmd));
   } else if (typeof activeFolder.value === 'number') {
     const fid = activeFolder.value;
-    list = list.filter(cmd => cmd.tagIds && cmd.tagIds.includes(fid));
+    list = list.filter(cmd => cmd.folderIds && cmd.folderIds.includes(fid));
   }
 
   // 2. 搜索关键词筛选
@@ -741,8 +741,8 @@ const displayedCommands = computed(() => {
 // 计算卡片继承背景色样式
 const getEffectiveCommandCardStyle = (cmd: QuickCommandFE) => {
   let folderColor: string | null = null;
-  if (cmd.tagIds && cmd.tagIds.length > 0) {
-    const folder = quickCommandTagsStore.folders.find(f => f.id === cmd.tagIds![0]);
+  if (cmd.folderIds && cmd.folderIds.length > 0) {
+    const folder = quickCommandFoldersStore.folders.find(f => f.id === cmd.folderIds![0]);
     folderColor = folder?.background_color || null;
   }
   const effectiveColor = resolveEffectiveColor(cmd.background_color, folderColor);
@@ -790,7 +790,7 @@ const handleCreateFolderConfirm = async () => {
     isCreatingFolder.value = false;
     return;
   }
-  const created = await quickCommandTagsStore.createFolder(name);
+  const created = await quickCommandFoldersStore.createFolder(name);
   if (created) {
     uiNotificationsStore.showSuccess(t('folders.createdSuccess', '文件夹已创建'));
     activeFolder.value = created.id;
@@ -800,7 +800,7 @@ const handleCreateFolderConfirm = async () => {
 };
 
 // 文件夹重命名
-const handleStartRenameFolder = (folder: QuickCommandTag) => {
+const handleStartRenameFolder = (folder: QuickCommandFolder) => {
   editingFolderId.value = folder.id;
   editingFolderName.value = folder.name;
   nextTick(() => {
@@ -815,14 +815,14 @@ const handleFinishRenameFolder = async () => {
   editingFolderId.value = null;
   if (!newName) return;
 
-  const success = await quickCommandTagsStore.renameFolder(fid, newName);
+  const success = await quickCommandFoldersStore.renameFolder(fid, newName);
   if (success) {
     uiNotificationsStore.showSuccess(t('folders.renamedSuccess', '文件夹已重命名'));
   }
 };
 
 // 文件夹删除触发
-const handleDeleteFolder = (folder: QuickCommandTag) => {
+const handleDeleteFolder = (folder: QuickCommandFolder) => {
   folderToDelete.value = folder;
   showDeleteFolderModal.value = true;
 };
@@ -833,7 +833,7 @@ const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
   const fid = folderToDelete.value.id;
   isDeletingFolder.value = true;
   try {
-    const success = await quickCommandTagsStore.deleteFolder(fid, deleteCommands);
+    const success = await quickCommandFoldersStore.deleteFolder(fid, deleteCommands);
     if (success) {
       showDeleteFolderModal.value = false;
       folderToDelete.value = null;
@@ -842,7 +842,7 @@ const handleConfirmDeleteFolder = async (deleteCommands: boolean) => {
       }
       // 关键：同时重新加载快捷指令与分组列表，彻底同步未分类与其余数据
       await Promise.all([
-        quickCommandTagsStore.fetchTags(),
+        quickCommandFoldersStore.fetchFolders(),
         quickCommandsStore.fetchQuickCommands()
       ]);
     }
@@ -868,7 +868,7 @@ const toggleFolderColorPicker = (folderId: number, e: Event) => {
 };
 
 const handleSaveFolderColor = async (folderId: number, color: string | null) => {
-  await quickCommandTagsStore.updateFolderColor(folderId, color);
+  await quickCommandFoldersStore.updateFolderColor(folderId, color);
   uiNotificationsStore.showSuccess(t('folders.colorUpdated', '文件夹背景颜色已更新'));
   activeColorPickerFolderId.value = null;
   activeColorPickerTriggerEl.value = null;

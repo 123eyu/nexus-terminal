@@ -3,8 +3,8 @@ import { ref, reactive, watch, computed, onMounted } from 'vue'; // 添加 onMou
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { useProxiesStore, ProxyInfo } from '../stores/proxies.store';
-import { useTagsStore } from '../stores/tags.store'; 
-import TagInput from './TagInput.vue'; 
+import { useFoldersStore } from '../stores/folders.store'; 
+import FolderInput from './FolderInput.vue'; 
 import AppSelect from './common/AppSelect.vue';
 
 // 定义组件发出的事件
@@ -17,9 +17,9 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const proxiesStore = useProxiesStore();
-const tagsStore = useTagsStore(); // 获取标签 store 实例
+const foldersStore = useFoldersStore(); // 获取标签 store 实例
 const { isLoading, error: proxyStoreError } = storeToRefs(proxiesStore); // 重命名 error 避免冲突
-const { isLoading: isTagLoading, error: tagStoreError } = storeToRefs(tagsStore); // 获取标签状态
+const { isLoading: isFolderLoading, error: folderStoreError } = storeToRefs(foldersStore); // 获取标签状态
 
 // 表单数据模型
 const initialFormData = {
@@ -29,14 +29,14 @@ const initialFormData = {
   port: 1080, // 默认 SOCKS5 端口
   username: '',
   password: '',
-  tag_ids: [] as number[], 
+  folder_ids: [] as number[], 
 };
 const formData = reactive({ ...initialFormData });
 
 const formError = ref<string | null>(null); // 表单级别的错误信息
 // 合并加载和错误状态
-const isCombinedLoading = computed(() => isLoading.value || isTagLoading.value);
-const combinedStoreError = computed(() => proxyStoreError.value || tagStoreError.value);
+const isCombinedLoading = computed(() => isLoading.value || isFolderLoading.value);
+const combinedStoreError = computed(() => proxyStoreError.value || folderStoreError.value);
 
 // 计算属性判断是否为编辑模式
 const isEditMode = computed(() => !!props.proxyToEdit);

@@ -212,7 +212,7 @@ export class SyncThrottleScheduler {
     console.log('[SyncScheduler] 正在执行 Reconciliation Catch-up 存量数据对齐补录...');
 
     const tables = [
-      'connections', 'proxies', 'ssh_keys', 'tags', 'quick_commands', 'quick_command_tags',
+      'connections', 'proxies', 'ssh_keys', 'folders', 'quick_commands', 'quick_command_folders',
       'command_history', 'port_forwards',
       // 这三张以前只走 v1（手动全量），首次激活时必须补录一次，否则老数据永远上不了云
       'appearance_settings', 'terminal_themes', 'favorite_paths'
@@ -239,9 +239,9 @@ export class SyncThrottleScheduler {
       }
     }
 
-    // 针对 tags, quick_command_tags, quick_commands 中带有自定义颜色的存量记录，
+    // 针对 folders, quick_command_folders, quick_commands 中带有自定义颜色的存量记录，
     // 若当前没有排队的待推送变更，主动补录一条更新日志，确保旧版本遗漏的文件夹颜色自动上云
-    const colorTables = ['tags', 'quick_command_tags', 'quick_commands'];
+    const colorTables = ['folders', 'quick_command_folders', 'quick_commands'];
     for (const tbl of colorTables) {
       const coloredRows = await allDb<{ uuid: string }>(
         db,

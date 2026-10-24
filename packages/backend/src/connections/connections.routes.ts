@@ -11,7 +11,7 @@ import {
     testUnsavedConnection,
     cloneConnection, 
     
-    addTagToConnections 
+    addFolderToConnections 
 } from './connections.controller';
 
 const router = Router();
@@ -47,10 +47,10 @@ router.post('/:id/remote-session', createRemoteSession);
 // +++ POST /api/v1/connections/:id/clone - 克隆连接 +++
 router.post('/:id/clone', cloneConnection);
 
-// +++ POST /api/v1/connections/add-tag - 为多个连接添加一个标签 +++
-router.post('/add-tag', addTagToConnections);
+// +++ POST /api/v1/connections/add-folder - 为多个连接添加一个文件夹 +++
+router.post('/add-folder', addFolderToConnections);
 
-// Note: PUT /:id/tags route is removed as the primary flow uses the bulk add endpoint now.
-// It could be kept if there's a separate use case for updating a single connection's tags.
+// Note: PUT /:id/folders route is removed as the primary flow uses the bulk add endpoint now.
+// It could be kept if there's a separate use case for updating a single connection's folders.
 
 export default router;

@@ -63,17 +63,17 @@ router.get('/sidebar', settingsController.getSidebarConfig);
 // PUT /api/v1/settings/sidebar - 更新侧栏配置
 router.put('/sidebar', settingsController.setSidebarConfig);
 
-// +++ 显示连接标签路由 +++
-// GET /api/v1/settings/show-connection-tags - 获取设置
-router.get('/show-connection-tags', settingsController.getShowConnectionTags);
-// PUT /api/v1/settings/show-connection-tags - 更新设置
-router.put('/show-connection-tags', settingsController.setShowConnectionTags);
+// +++ 显示连接文件夹路由 +++
+// GET /api/v1/settings/show-connection-folders - 获取设置
+router.get('/show-connection-folders', settingsController.getShowConnectionFolders);
+// PUT /api/v1/settings/show-connection-folders - 更新设置
+router.put('/show-connection-folders', settingsController.setShowConnectionFolders);
 
-// +++ 显示快捷指令标签路由 +++
-// GET /api/v1/settings/show-quick-command-tags - 获取设置
-router.get('/show-quick-command-tags', settingsController.getShowQuickCommandTags);
-// PUT /api/v1/settings/show-quick-command-tags - 更新设置
-router.put('/show-quick-command-tags', settingsController.setShowQuickCommandTags);
+// +++ 显示快捷指令文件夹路由 +++
+// GET /api/v1/settings/show-quick-command-folders - 获取设置
+router.get('/show-quick-command-folders', settingsController.getShowQuickCommandFolders);
+// PUT /api/v1/settings/show-quick-command-folders - 更新设置
+router.put('/show-quick-command-folders', settingsController.setShowQuickCommandFolders);
 
  
 // +++ 显示状态监视器IP地址路由 +++
