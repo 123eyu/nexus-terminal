@@ -2244,6 +2244,7 @@ defineExpose({ focusSearchInput, startPathEdit });
             <!-- File List Container -->
             <div
               ref="fileListContainerRef"
+              data-fm-drop-target="1"
               class="flex-grow min-h-0 overflow-y-auto relative outline-none transition-colors duration-150"
               :class="{ 'ring-2 ring-primary/60 ring-inset bg-primary/[0.03]': isContainerDropTarget }"
               @dragenter.prevent="handleDragEnter"

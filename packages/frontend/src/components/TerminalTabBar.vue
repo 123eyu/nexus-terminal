@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, PropType, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, PropType, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import draggable from 'vuedraggable';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
@@ -14,6 +14,7 @@ import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { isDesktopApp } from '../utils/platform';
 import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEventOff } from '../composables/workspaceEvents';
 import type { SessionTabInfoWithStatus } from '../stores/session/types';
+import { activeSftpDragPayload } from '../composables/file-manager/useFileManagerDragAndDrop';
 
 const { t } = useI18n();
 const isDesktop = ref(isDesktopApp());
@@ -57,6 +58,96 @@ const activateSession = (sessionId: string) => {
 const closeSession = (event: MouseEvent, sessionId: string) => {
   event.stopPropagation();
   emitWorkspaceEvent('session:close', { sessionId });
+};
+
+// --- 拖拽文件到标签 = 切换到那个会话 ---
+/**
+ * 从文件管理器拖文件时，把鼠标移到某个会话标签上停一下，工作区就切到那个会话，
+ * 接着往下移到它的文件管理器里松手即可 —— 不用先点标签再重新拖一次。
+ *
+ * 只认 SFTP 拖拽载荷：标签本身用 vuedraggable 排序，不能把它的拖拽吃进来。
+ */
+const DRAG_SWITCH_DELAY_MS = 350;
+const dragOverTabId = ref<string | null>(null);
+let dragSwitchTimer: ReturnType<typeof setTimeout> | null = null;
+
+const isSftpDragEvent = (event: DragEvent): boolean => {
+  if (activeSftpDragPayload.value) return true;
+  return event.dataTransfer?.types?.includes('application/x-nexus-sftp-items') ?? false;
+};
+
+const clearDragTabState = () => {
+  if (dragSwitchTimer) {
+    clearTimeout(dragSwitchTimer);
+    dragSwitchTimer = null;
+  }
+  dragOverTabId.value = null;
+};
+
+const onTabDragOver = (sessionId: string, event: DragEvent) => {
+  if (!isSftpDragEvent(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  if (dragOverTabId.value === sessionId) return;
+
+  clearDragTabState();
+  dragOverTabId.value = sessionId;
+  // 停留一下再切：鼠标扫过整条标签栏时不应该一路开着新会话
+  dragSwitchTimer = setTimeout(() => {
+    dragSwitchTimer = null;
+    if (dragOverTabId.value !== sessionId) return;
+    if (sessionId !== sessionStore.activeSessionId) {
+      console.log(`[TabBar] 拖拽悬停，切换到会话 ${sessionId}`);
+      activateSession(sessionId);
+    }
+  }, DRAG_SWITCH_DELAY_MS);
+};
+
+const onTabDragLeave = (sessionId: string, event: DragEvent) => {
+  const related = event.relatedTarget as Node | null;
+  const current = event.currentTarget as HTMLElement | null;
+  if (related && current && current.contains(related)) return;
+  if (dragOverTabId.value === sessionId) clearDragTabState();
+};
+
+const onTabDrop = async (sessionId: string, event: DragEvent) => {
+  if (!isSftpDragEvent(event)) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  // 先抓一份载荷：等到下面把落下转交给文件管理器时，源标签的 dragend 可能已经把
+  // 全局载荷清空了（DataTransfer 在 dragend 之后也进保护模式，读不出内容）
+  const payloadSnapshot = activeSftpDragPayload.value
+    ? JSON.parse(JSON.stringify(activeSftpDragPayload.value))
+    : null;
+  clearDragTabState();
+
+  if (sessionId !== sessionStore.activeSessionId) {
+    activateSession(sessionId);
+    await nextTick();
+    await nextTick();
+  }
+
+  // 直接松手在标签上也算数：把这次落下转交给刚刚变得可见的文件管理器，
+  // 用的是它自己当前的路径，不猜。
+  const targets = Array.from(document.querySelectorAll<HTMLElement>('[data-fm-drop-target]'));
+  const visible = targets.find(el => el.offsetParent !== null);
+  if (!visible) {
+    console.warn('[TabBar] 拖拽落在标签上，但没找到可见的文件管理器');
+    return;
+  }
+  if (payloadSnapshot) activeSftpDragPayload.value = payloadSnapshot;
+  visible.dispatchEvent(new DragEvent('drop', {
+    dataTransfer: event.dataTransfer ?? undefined,
+    bubbles: true,
+    cancelable: true,
+  }));
+  // 转交那一刻的 DataTransfer 已经进保护模式（dragend 之后 getData 读不出内容），
+  // 所以刚才把载荷塞回了全局；用完立刻撤掉，否则下一次拖动任何东西都会被当成
+  // SFTP 拖拽（isSftpDragEvent 优先看全局载荷）。
+  if (payloadSnapshot && activeSftpDragPayload.value === payloadSnapshot) {
+    activeSftpDragPayload.value = null;
+  }
 };
 
 // --- 桌面端本地状态 ---
@@ -365,10 +456,14 @@ onBeforeUnmount(() => {
           <li
             :key="session.sessionId"
             :class="['flex items-center px-3 h-full cursor-pointer border-r border-border transition-colors duration-150 relative group',
-                     session.sessionId === activeSessionId ? 'bg-background text-foreground' : 'bg-header text-text-secondary hover:bg-border']"
+                     session.sessionId === activeSessionId ? 'bg-background text-foreground' : 'bg-header text-text-secondary hover:bg-border',
+                     dragOverTabId === session.sessionId ? 'ring-2 ring-primary/70 ring-inset bg-primary/10' : '']"
             @click="activateSession(session.sessionId)"
             @contextmenu.prevent="showContextMenu($event, session.sessionId)"
             @dragstart="handleDragStart"
+            @dragover="onTabDragOver(session.sessionId, $event)"
+            @dragleave="onTabDragLeave(session.sessionId, $event)"
+            @drop="onTabDrop(session.sessionId, $event)"
             :title="session.connectionName"
           >
             <!-- 状态指示灯 -->
