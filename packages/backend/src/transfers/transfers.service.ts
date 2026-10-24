@@ -9,12 +9,31 @@ import type { ConnectionWithFolders, DecryptedConnectionCredentials } from '../t
 import { buildTransferCommandString, escapeShellArg } from './transfer-command';
 import { serializeTransferTask } from './transfers.serialize';
 import { RSYNC_PROBE_SCRIPT, parseRsyncProbe, buildRsyncInstallCommands } from './rsync-installer';
+// 兜底通道：两台机器都不需要装任何东西，后端自己读源、写目标
+import { relayTransfer, createSftp } from './transfers.relay';
+
+/** 进度文案里用的体积格式化（只用于人读，不参与任何判断） */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const decimals = value >= 100 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(decimals)} ${units[unitIndex]}`;
+}
 
 
 export class TransfersService {
   private transferTasks: Map<string, TransferTask> = new Map();
   private taskAbortControllers: Map<string, AbortController> = new Map(); // +++ 用于存储任务的 AbortController +++
   private readonly TEMP_KEY_PREFIX = 'nexus_target_key_';
+  // 目标机密码 / 私钥口令也要落到源机 /tmp（交给 sshpass -f 读），
+  // 这样密码不会出现在 `ps aux` 的完整命令行里
+  private readonly TEMP_SECRET_PREFIX = 'nexus_target_secret_';
   private readonly MAX_CONCURRENT_SUB_TASKS = 5; 
 
   constructor() {
@@ -553,8 +572,9 @@ export class TransfersService {
     return foundCommandPath;
   }
  
-  private async uploadKeyToSourceViaSftp(client: Client, privateKeyContent: string, remotePath: string): Promise<void> {
-    const SFTP_UPLOAD_TIMEOUT_MS = 30000; // 30 seconds timeout for SFTP key upload
+  /** 把一段敏感内容（私钥 / 密码 / 口令）以 0600 权限写到源机指定路径 */
+  private async uploadSecretToSourceViaSftp(client: Client, secretContent: string, remotePath: string): Promise<void> {
+    const SFTP_UPLOAD_TIMEOUT_MS = 30000; // 30 seconds timeout for SFTP credential upload
 
     return new Promise((resolve, reject) => {
       let timeoutHandle: NodeJS.Timeout | null = null;
@@ -573,7 +593,7 @@ export class TransfersService {
       client.sftp((err, sftp) => {
         sftpSession = sftp; // Store session for potential cleanup
         if (err) {
-          return cleanupAndReject(`SFTP session error for key upload: ${err.message}`, err);
+          return cleanupAndReject(`SFTP session error for credential upload: ${err.message}`, err);
         }
         if (!sftp) {
           return cleanupAndReject(`SFTP session error: SFTP object is null.`);
@@ -581,22 +601,22 @@ export class TransfersService {
         const stream = sftp.createWriteStream(remotePath, { mode: 0o600 });
         
         stream.on('error', (writeErr: Error) => {
-          cleanupAndReject(`Failed to write key to ${remotePath} on source: ${writeErr.message}`, writeErr);
+          cleanupAndReject(`Failed to write credential to ${remotePath} on source: ${writeErr.message}`, writeErr);
         });
 
         // Listen to 'close' instead of 'finish' for more reliability
         stream.on('close', () => {
           if (timeoutHandle) clearTimeout(timeoutHandle);
-          console.info(`[TransfersService] Private key for target successfully uploaded to source at ${remotePath}`);
+          console.info(`[TransfersService] Temporary credential uploaded to source at ${remotePath}`);
           sftp.end();
           resolve();
         });
  
-        let keyContentToWrite = privateKeyContent;
-        if (!keyContentToWrite.endsWith('\n')) {
-          keyContentToWrite += '\n';
+        let contentToWrite = secretContent;
+        if (!contentToWrite.endsWith('\n')) {
+          contentToWrite += '\n';
         }
-        stream.end(keyContentToWrite);
+        stream.end(contentToWrite);
       });
     });
   }
@@ -604,15 +624,15 @@ export class TransfersService {
   private async deleteFileOnSourceViaSftp(client: Client, remotePath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       client.sftp((err, sftp) => {
-        if (err) return reject(new Error(`SFTP session error for key deletion: ${err.message}`));
+        if (err) return reject(new Error(`SFTP session error for credential deletion: ${err.message}`));
         sftp.unlink(remotePath, (unlinkErr) => {
           sftp.end(); // Ensure sftp session is closed
           if (unlinkErr) {
             // Log but don't necessarily reject if file just wasn't there (though it should be)
-            console.warn(`[TransfersService] Failed to delete temporary key ${remotePath} from source:`, unlinkErr);
+            console.warn(`[TransfersService] Failed to delete temporary credential ${remotePath} from source:`, unlinkErr);
             return reject(new Error(`Failed to delete ${remotePath} from source: ${unlinkErr.message}`));
           }
-          console.info(`[TransfersService] Temporary key ${remotePath} deleted from source.`);
+          console.info(`[TransfersService] Temporary credential ${remotePath} deleted from source.`);
           resolve();
         });
       });
@@ -628,15 +648,25 @@ private async executeRemoteTransferOnSource(
   targetConnection: ConnectionWithFolders,
   targetCredentials: DecryptedConnectionCredentials,
   remoteTargetPathOnTarget: string,
-  transferMethodPreference: 'auto' | 'rsync' | 'scp',
+  transferMethodPreference: 'auto' | 'rsync' | 'scp' | 'relay',
   signal: AbortSignal // +++ Add AbortSignal parameter +++
 ): Promise<void> {
   if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
   this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 0, `Initializing remote transfer for ${sourceItem.name}`);
   let tempTargetKeyPathOnSource: string | undefined;
+  let tempTargetSecretPathOnSource: string | undefined;
 
     try {
       if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
+
+      // 用户显式选了「经由本机中转」：不用探测任何命令，直接走 SFTP 双向拷贝
+      if (transferMethodPreference === 'relay') {
+        await this.executeRelayTransfer(
+          taskId, subTaskId, sourceSshClient, sourceItem,
+          targetConnection, targetCredentials, remoteTargetPathOnTarget, signal
+        );
+        return;
+      }
       // Pass signal to these check commands if they are made to support it. For now, they are quick.
       const sshpassPath = await this.checkCommandOnSource(sourceSshClient, 'sshpass' /*, signal */);
       if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
@@ -675,8 +705,16 @@ private async executeRemoteTransferOnSource(
           // rsync 装不上（没有包管理器/没有免密提权/安装失败）就退回 scp，别让传输直接失败
           executableCommandPath = scpPathOnSource;
           commandTypeForLogic = 'scp';
-        } else if (!rsyncPathOnSource || !rsyncPathOnTarget) {
-          throw new Error(`Neither Rsync nor SCP are available on source for ${sourceItem.name} (auto mode).`);
+        } else {
+          // 源机上既没有 rsync（也装不上）又没有 scp —— 常见于极简容器/嵌入式系统。
+          // 交给后端中转，整条链路就只剩「能不能 SSH 上去」这一个前提了。
+          this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 4, `Neither rsync nor scp is available on source (${sourceConnectionForInfo.host}), falling back to relay transfer...`);
+          console.info(`[TransfersService] Sub-task ${subTaskId}: 源机 ${sourceConnectionForInfo.host} 没有 rsync/scp，改用经由本机中转`);
+          await this.executeRelayTransfer(
+            taskId, subTaskId, sourceSshClient, sourceItem,
+            targetConnection, targetCredentials, remoteTargetPathOnTarget, signal
+          );
+          return;
         }
       } else if (transferMethodPreference === 'rsync') {
         if (!rsyncPathOnSource) throw new Error(`Rsync preferred but not available on source for ${sourceItem.name}, and automatic installation did not succeed.`);
@@ -785,22 +823,61 @@ private async executeRemoteTransferOnSource(
       // +++ 结束自动创建目标目录 +++
 
       if (targetConnection.auth_method === 'key' && targetCredentials.decryptedPrivateKey) {
+        if (targetCredentials.decryptedPassphrase && !sshpassPath && transferMethodPreference === 'auto') {
+          // 带 passphrase 的私钥在源机上无法免交互使用（需要一个 pty 去应答提示），
+          // 而 sshpass 又没装 → 与其报错，不如用后端中转，密码/口令都在后端内存里用完即弃
+          this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 8, `Target key has a passphrase but sshpass is missing on source, falling back to relay transfer...`);
+          console.info(`[TransfersService] Sub-task ${subTaskId}: 目标私钥带 passphrase 且源机无 sshpass，改用经由本机中转`);
+          await this.executeRelayTransfer(
+            taskId, subTaskId, sourceSshClient, sourceItem,
+            targetConnection, targetCredentials, remoteTargetPathOnTarget, signal
+          );
+          return;
+        }
+
         const randomSuffix = crypto.randomBytes(6).toString('hex');
         tempTargetKeyPathOnSource = path.posix.join('/tmp', `${this.TEMP_KEY_PREFIX}${randomSuffix}`);
-        await this.uploadKeyToSourceViaSftp(sourceSshClient, targetCredentials.decryptedPrivateKey, tempTargetKeyPathOnSource);
+        await this.uploadSecretToSourceViaSftp(sourceSshClient, targetCredentials.decryptedPrivateKey, tempTargetKeyPathOnSource);
         if (signal.aborted) throw new DOMException('Transfer cancelled by user.', 'AbortError');
         cmdOptions.sshIdentityFileOption = `-i ${escapeShellArg(tempTargetKeyPathOnSource)}`;
         if (targetCredentials.decryptedPassphrase && !sshpassPath) {
-          throw new Error(`Target key has passphrase, but sshpass is not available on source for ${sourceItem.name}.`);
+          throw new Error(
+            `Target key has a passphrase, but sshpass is not available on source for ${sourceItem.name}. ` +
+            `Switch the transfer method to "Auto" / "Relay via this server", or install sshpass on ${sourceConnectionForInfo.host}.`
+          );
         }
         if (targetCredentials.decryptedPassphrase && sshpassPath) {
-           cmdOptions.sshPassCommand = `${escapeShellArg(sshpassPath)} -p ${escapeShellArg(targetCredentials.decryptedPassphrase)}`;
+          const passSuffix = crypto.randomBytes(6).toString('hex');
+          tempTargetSecretPathOnSource = path.posix.join('/tmp', `${this.TEMP_SECRET_PREFIX}${passSuffix}`);
+          await this.uploadSecretToSourceViaSftp(sourceSshClient, targetCredentials.decryptedPassphrase, tempTargetSecretPathOnSource);
+          // ⚠️ sshpass 默认只匹配包含 "assword" 的提示，而私钥口令的提示是
+          // "Enter passphrase for key '/tmp/xxx':" —— 不加 -P 永远等不到，命令会一直挂到超时。
+          // 口令走 -f 临时文件而不是 -p：否则 `ps aux` 能看到完整命令行。
+          cmdOptions.sshPassCommand = `${escapeShellArg(sshpassPath)} -P passphrase -f ${escapeShellArg(tempTargetSecretPathOnSource)}`;
         }
       } else if (targetConnection.auth_method === 'password' && targetCredentials.decryptedPassword) {
         if (!sshpassPath) {
-          throw new Error(`Target uses password auth, but sshpass is not available on source for ${sourceItem.name}.`);
+          if (transferMethodPreference === 'auto') {
+            // 「源机密钥登录、目标机密码登录」最常见的翻车点就在这里：
+            // 最小化安装的 VPS 基本都没有 sshpass，而这一路必须在源机上免交互喂密码。
+            this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 8, `sshpass is missing on source (${sourceConnectionForInfo.host}), falling back to relay transfer...`);
+            console.info(`[TransfersService] Sub-task ${subTaskId}: 目标用密码认证但源机没有 sshpass，改用经由本机中转`);
+            await this.executeRelayTransfer(
+              taskId, subTaskId, sourceSshClient, sourceItem,
+              targetConnection, targetCredentials, remoteTargetPathOnTarget, signal
+            );
+            return;
+          }
+          throw new Error(
+            `Target uses password auth, but sshpass is not available on source for ${sourceItem.name}. ` +
+            `Switch the transfer method to "Auto" / "Relay via this server", or install sshpass on ${sourceConnectionForInfo.host}.`
+          );
         }
-        cmdOptions.sshPassCommand = `${escapeShellArg(sshpassPath)} -p ${escapeShellArg(targetCredentials.decryptedPassword)}`;
+        const passSuffix = crypto.randomBytes(6).toString('hex');
+        tempTargetSecretPathOnSource = path.posix.join('/tmp', `${this.TEMP_SECRET_PREFIX}${passSuffix}`);
+        await this.uploadSecretToSourceViaSftp(sourceSshClient, targetCredentials.decryptedPassword, tempTargetSecretPathOnSource);
+        // 密码落成 0600 临时文件交给 sshpass -f，命令行里只留路径
+        cmdOptions.sshPassCommand = `${escapeShellArg(sshpassPath)} -f ${escapeShellArg(tempTargetSecretPathOnSource)}`;
       } else if (targetConnection.auth_method === 'key' && !targetCredentials.decryptedPrivateKey) {
          throw new Error(`Target connection ${targetConnection.name} is key-based but no private key found.`);
       }
@@ -902,14 +979,100 @@ private async executeRemoteTransferOnSource(
       }
       throw error; // Re-throw to be caught by processSingleSubTaskWrapper
     } finally {
-      if (tempTargetKeyPathOnSource) {
+      // 临时私钥 / 密码文件都留在源机 /tmp 上，删不干净就是凭据泄漏
+      for (const tempPath of [tempTargetKeyPathOnSource, tempTargetSecretPathOnSource]) {
+        if (!tempPath) continue;
         try {
           // TODO: Make deleteFileOnSourceViaSftp accept signal
-          await this.deleteFileOnSourceViaSftp(sourceSshClient, tempTargetKeyPathOnSource);
+          await this.deleteFileOnSourceViaSftp(sourceSshClient, tempPath);
         } catch (cleanupError) {
-          console.warn(`[TransfersService] Failed to cleanup temp key ${tempTargetKeyPathOnSource} on source for sub-task ${subTaskId}:`, cleanupError);
+          console.warn(`[TransfersService] Failed to cleanup temp credential ${tempPath} on source for sub-task ${subTaskId}:`, cleanupError);
         }
       }
+    }
+  }
+
+  /**
+   * 经由本机（后端）中转：SFTP 读源 → 直接 pipe 写目标。
+   *
+   * 这条路线**不需要源机上有 rsync / scp / sshpass**，也不用把目标私钥落到源机 /tmp，
+   * 是「源机密钥登录 + 目标机密码登录」这类组合最稳的走法。
+   * 代价是流量要过一次后端，所以只在 rsync/scp 前置条件不满足时才自动降级到这里。
+   */
+  private async executeRelayTransfer(
+    taskId: string,
+    subTaskId: string,
+    sourceSshClient: Client,
+    sourceItem: { name: string; path: string; type: 'file' | 'directory' },
+    targetConnection: ConnectionWithFolders,
+    targetCredentials: DecryptedConnectionCredentials,
+    remoteTargetPathOnTarget: string,
+    signal: AbortSignal
+  ): Promise<void> {
+    const subTaskToUpdate = this.transferTasks.get(taskId)?.subTasks.find(st => st.subTaskId === subTaskId);
+    if (subTaskToUpdate) subTaskToUpdate.transferMethodUsed = 'relay';
+
+    this.updateSubTaskStatus(
+      taskId, subTaskId, 'transferring', 5,
+      `Relaying ${sourceItem.name} through this server to ${targetConnection.host}...`
+    );
+
+    const targetClient = new Client();
+    let sourceSftp: SFTPWrapper | undefined;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          try { targetClient.end(); } catch { /* 已断开 */ }
+          reject(new DOMException('Transfer cancelled by user.', 'AbortError'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        targetClient
+          .on('ready', () => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+          })
+          .on('error', (err) => {
+            signal.removeEventListener('abort', onAbort);
+            reject(err);
+          })
+          .connect(this.buildSshConnectConfig(targetConnection, targetCredentials));
+      });
+
+      sourceSftp = await createSftp(sourceSshClient);
+      const targetSftp = await createSftp(targetClient);
+
+      const result = await relayTransfer({
+        sourceSftp,
+        targetSftp,
+        sourcePath: sourceItem.path,
+        isDirectory: sourceItem.type === 'directory',
+        targetParentDir: remoteTargetPathOnTarget,
+        signal,
+        onPreparing: (message) => {
+          this.updateSubTaskStatus(taskId, subTaskId, 'transferring', 8, message);
+        },
+        onProgress: (transferred, total, currentPath) => {
+          const progress = total > 0
+            ? 8 + Math.min(90, Math.floor((transferred / total) * 90))
+            : 50;
+          const suffix = currentPath ? ` (${currentPath})` : '';
+          this.updateSubTaskStatus(
+            taskId, subTaskId, 'transferring', progress,
+            `Relaying${suffix}: ${formatBytes(transferred)} / ${formatBytes(total)}`
+          );
+        },
+      });
+
+      this.updateSubTaskStatus(
+        taskId, subTaskId, 'completed', 100,
+        `Relay transfer completed (${result.files} file(s), ${formatBytes(result.bytes)}).`
+      );
+    } finally {
+      if (sourceSftp) {
+        try { sourceSftp.end(); } catch { /* 已断开 */ }
+      }
+      try { targetClient.end(); } catch { /* 已断开 */ }
     }
   }
 
