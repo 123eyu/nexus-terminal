@@ -25,7 +25,7 @@ export interface TransferTaskLike {
     status: string;
     progress?: number;
     message?: string;
-    transferMethodUsed?: 'rsync' | 'scp';
+    transferMethodUsed?: 'rsync' | 'scp' | 'relay';
   }>;
   overallProgress?: number;
   sourceConnectionId?: number;
@@ -120,7 +120,7 @@ export function buildTransferTaskView(
 
   // --- 传输方式 ---
   const methods = unique(
-    subTasks.map(st => st.transferMethodUsed).filter((m): m is 'rsync' | 'scp' => !!m)
+    subTasks.map(st => st.transferMethodUsed).filter((m): m is 'rsync' | 'scp' | 'relay' => !!m)
   );
 
   const routeTitle = `${sourceName} → ${allTargetNames.join(', ') || '?'}: ${targetPathLabel}`;

@@ -63,7 +63,7 @@ interface TransferSubTask {
   status: 'queued' | 'connecting' | 'transferring' | 'completed' | 'failed' | 'cancelling' | 'cancelled'; // +++ 新增状态 +++
   progress?: number; // 0-100
   message?: string;
-  transferMethodUsed?: 'rsync' | 'scp';
+  transferMethodUsed?: 'rsync' | 'scp' | 'relay';
 }
 
 interface TransferTask {

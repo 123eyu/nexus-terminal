@@ -2172,6 +2172,7 @@
     "targetPathPlaceholder": "targetPath",
     "transferMethodLabel": "Transfer Method",
     "transferMethodAuto": "Auto",
+    "transferMethodRelay": "Relay via this server",
     "loadingConnections": "Loading connections...",
     "noConnections": "No connections available. Please add connections first.",
     "noConnectionsFound": "No connections found matching your search.",

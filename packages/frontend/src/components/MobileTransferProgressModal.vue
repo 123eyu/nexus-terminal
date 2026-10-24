@@ -13,7 +13,7 @@ interface TransferSubTask {
   status: 'queued' | 'connecting' | 'transferring' | 'completed' | 'failed' | 'cancelling' | 'cancelled';
   progress?: number;
   message?: string;
-  transferMethodUsed?: 'rsync' | 'scp';
+  transferMethodUsed?: 'rsync' | 'scp' | 'relay';
 }
 
 interface TransferTask {

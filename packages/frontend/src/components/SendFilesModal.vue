@@ -50,6 +50,7 @@
                 <option value="auto">{{ t('sendFilesModal.transferMethodAuto') }}</option>
                 <option value="rsync">rsync</option>
                 <option value="scp">scp</option>
+                <option value="relay">{{ t('sendFilesModal.transferMethodRelay') }}</option>
               </AppSelect>
             </div>
           </div>
@@ -197,7 +198,7 @@ const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射
 
 const searchTerm = ref('');
 const targetPath = ref('');
-const transferMethod = ref<'auto' | 'rsync' | 'scp'>('auto');
+const transferMethod = ref<'auto' | 'rsync' | 'scp' | 'relay'>('auto');
 const selectedConnectionIds = ref<number[]>([]);
 
 const isLoadingConnections = ref(false);

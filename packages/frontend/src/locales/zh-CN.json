@@ -2139,6 +2139,7 @@
     "targetPathPlaceholder": "目标路径",
     "transferMethodLabel": "传输方式",
     "transferMethodAuto": "自动",
+    "transferMethodRelay": "经由本机中转",
     "loadingConnections": "正在加载连接...",
     "noConnections": "没有可用的连接。请先添加连接。",
     "noConnectionsFound": "未找到匹配搜索的连接。",
