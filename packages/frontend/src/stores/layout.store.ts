@@ -537,6 +537,18 @@ export const useLayoutStore = defineStore('layout', () => {
       if (preset?.layoutTree) {
         const updatedPresetTree = applySizesAtPath(preset.layoutTree, path, childrenSizes);
         if (updatedPresetTree) updatePreset(preset.id, { layoutTree: updatedPresetTree });
+
+        // 同一预设的**其他会话**也已经在内存里各持一棵克隆树，不会自己去 reconcile。
+        // 不推过去的话，切到同一布局的另一台机器仍是旧尺寸，只有刷新网页才生效。
+        const syncedCount = syncSizesToSessionsSharingPreset({
+          exceptSessionId: sessionId,
+          presetId: preset.id,
+          nodeId,
+          sizes: childrenSizes,
+        });
+        if (syncedCount > 0) {
+          console.log(`[Layout Store] 已把尺寸同步给另外 ${syncedCount} 个共用预设 ${preset.id} 的会话树`);
+        }
       }
 
       // 首帧渲染用的是主布局树（来自 localStorage）。不同步的话，
@@ -727,6 +739,7 @@ export const useLayoutStore = defineStore('layout', () => {
     getLayoutTreeForSession,
     clearSessionLayoutTree,
     refreshSessionLayoutTree,
+    syncSizesToSessionsSharingPreset,
   } = useSessionLayoutTrees({ getPresetForConnection });
 
   // 把会话树刷新器交给预设层（reloadPresetsFromServer 用它决定哪些已打开会话要重建）

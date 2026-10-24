@@ -62,6 +62,31 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  /**
+   * 这个文件管理器所属的**布局会话**（不是它当前显示的那台主机）。
+   *
+   * 主机切换需要按"哪份布局"分别记账：A 会话里把文件管理器切到 C，
+   * 不该让 B 会话的文件管理器也跟着跑过去。布局里的 pane id 是结构序号，
+   * 各会话从同一预设克隆出来完全一样，只能靠这个字段区分。
+   */
+  ownerSessionId: {
+    type: String,
+    required: false,
+    default: null,
+  },
+  /**
+   * 这份实例当前是否真的显示在屏幕上（布局里每个会话都常驻渲染一份，靠 v-show 切换）。
+   *
+   * 不传 = 非布局场景（移动端抽屉 / 弹窗），此时按"是不是活动会话"退回旧判断。
+   * 传了就必须用传的：文件管理器被绑到另一台主机后，显示的这份的 sessionId
+   * 已经不等于活动会话，再拿 sessionId 判断会把目录轮询永久关掉 ——
+   * 表现就是「跨主机传完文件不自动刷新，得手动点刷新」。
+   */
+  isForeground: {
+    type: Boolean,
+    required: false,
+    default: undefined,
+  },
   // 注入数据库连接 ID
   dbConnectionId: {
     type: String,
@@ -1223,6 +1248,69 @@ const handleMoveItems = (sourcePaths: string[], destinationDir: string) => {
 };
 
 // --- 拖放逻辑 (使用 Composable) ---
+// --- 跨主机传输：落地后刷新目标目录 ---
+/** 待办轮询句柄，组件卸载时统一清掉（否则会在已销毁的实例上继续打接口） */
+const transferLandingTimers = new Set<ReturnType<typeof setTimeout>>();
+/** 传输轮询间隔：小窗是 1.5s，这里稍慢一点，别跟它一起打接口 */
+const TRANSFER_LANDING_POLL_MS = 1200;
+
+const isUnderDirectory = (path: string, dir: string): boolean => {
+  if (path === dir) return true;
+  const base = dir.endsWith('/') ? dir : `${dir}/`;
+  return path.startsWith(base);
+};
+
+/**
+ * 传输真正写完后，把目标目录静默重载一次。
+ *
+ * 为什么不能"发完请求就刷新"：`/transfers/send` 只是把任务交给后端（202），
+ * 真正的 rsync/scp/relay 还在跑，此刻目录里什么都还没有。
+ * 所以按 taskId 轮询，等到**本次任务里指向这台机器的子任务**全部终态，
+ * 且用户此刻正停在这个目录（或它的子目录）时，才做一次静默重载。
+ *
+ * 通用的 2.8s 目录探查也会发现这些新文件，但一是慢，二是它只在"本实例是前景"
+ * 时才跑；落地即刷能让跨主机拖拽的手感与同机拖拽一致。
+ */
+const refreshTargetDirectoryWhenTransferLands = (
+  taskId: string,
+  targetConnectionId: number,
+  targetDirectory: string
+) => {
+  const deadline = Date.now() + 10 * 60 * 1000; // 兜底：10 分钟后自生自灭
+  const tick = async () => {
+    if (Date.now() > deadline) return;
+    let finished = false;
+    try {
+      const res = await apiClient.get(`/transfers/status/${encodeURIComponent(taskId)}`);
+      const task: any = (res.data as any)?.data ?? res.data;
+      const subs = (task?.subTasks || []).filter(
+        (sub: any) => Number(sub.connectionId) === targetConnectionId
+      );
+      finished = subs.length > 0 && subs.every((sub: any) =>
+        sub.status === 'completed' || sub.status === 'failed' || sub.status === 'cancelled'
+      );
+      if (finished && subs.every((sub: any) => sub.status === 'completed')) {
+        const manager = currentSftpManager.value;
+        const current = manager?.currentPath.value;
+        if (manager && current && isUnderDirectory(current, targetDirectory)) {
+          console.log(`[FileManager] 跨主机传输已落地，静默刷新目标目录: ${current}`);
+          manager.loadDirectory(current, true, true);
+        }
+      }
+    } catch (error) {
+      // 单次失败（网络抖动 / 任务已被清理）就下个周期再试，不打扰用户
+      console.warn('[FileManager] 查询跨主机传输状态失败，稍后重试:', error);
+    }
+    if (finished) return;
+    const timer = setTimeout(() => {
+      transferLandingTimers.delete(timer);
+      void tick();
+    }, TRANSFER_LANDING_POLL_MS);
+    transferLandingTimers.add(timer);
+  };
+  void tick();
+};
+
 /**
  * 别的 pane 把文件拖到我这台机器上。
  *
@@ -1256,7 +1344,7 @@ const handleCrossHostItemsDropped = async (payload: NexusSftpDragPayload, target
   }));
 
   try {
-    await apiClient.post('/transfers/send', {
+    const res = await apiClient.post('/transfers/send', {
       sourceConnectionId,
       connectionIds: [targetConnectionId],
       sourceItems,
@@ -1265,6 +1353,13 @@ const handleCrossHostItemsDropped = async (payload: NexusSftpDragPayload, target
     });
     // 只用右下角小窗，别为一次顺手拖拽盖上半个屏幕的进度弹窗
     transferMiniPanelStore.open();
+
+    // 传输是异步的：盯着这条任务，落地后自动刷新目标目录（否则用户得手点刷新）
+    const task: any = (res.data as any)?.data ?? res.data;
+    const taskId: string | undefined = task?.taskId;
+    if (taskId) {
+      refreshTargetDirectoryWhenTransferLands(taskId, targetConnectionId, targetDirectory);
+    }
   } catch (error: any) {
     console.error('[FileManager] 跨主机传输发起失败:', error);
     const errorMessage = error?.response?.data?.message || error?.message || t('fileManager.crossHostTransfer.failed');
@@ -1751,6 +1846,8 @@ useFileManagerWorkspaceBridge({
   isSftpReady: props.wsDeps.isSftpReady,
   currentSftpManager,
   activeSessionId: () => sessionStore.activeSessionId ?? null,
+  isForeground: () =>
+    props.isForeground ?? (props.sessionId === (sessionStore.activeSessionId ?? null)),
   activeTerminalPaneId: () => layoutStore.activeTerminalPaneId ?? null,
   terminalSyncMode,
   pathSync,
@@ -1772,6 +1869,10 @@ useFileManagerWorkspaceBridge({
 });
 
 onBeforeUnmount(() => {
+  // 跨主机传输的落地轮询随组件一起停（否则会在已销毁的实例上继续打接口）
+  for (const timer of transferLandingTimers) clearTimeout(timer);
+  transferLandingTimers.clear();
+
   /**
    * 注意：这里**不要**销毁 SFTP manager。
    *
@@ -2007,6 +2108,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       >
         <FileManagerHostSelector
           :pane-id="props.instanceId"
+          :owner-session-id="props.ownerSessionId ?? props.sessionId"
           :current-connection-id="props.dbConnectionId"
           :is-connected="Boolean(props.wsDeps.isConnected.value)"
           :is-mobile="props.isMobile"

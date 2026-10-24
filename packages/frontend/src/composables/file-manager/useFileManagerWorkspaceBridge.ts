@@ -29,6 +29,13 @@ export interface FileManagerBridgeDeps {
   currentSftpManager: Ref<SftpManagerInstance | null>;
   /** 当前激活会话（后台会话不轮询） */
   activeSessionId: () => string | null;
+  /**
+   * 这份实例是否真的显示在屏幕上。
+   *
+   * 不能用 `sessionId === activeSessionId` 代替：文件管理器被绑到另一台主机后，
+   * 屏幕上这份的 sessionId 就不等于活动会话了，那样判断会让轮询永久停摆。
+   */
+  isForeground: () => boolean;
   /** 当前聚焦终端 pane（分屏时只跟从聚焦的那个） */
   activeTerminalPaneId: () => string | null;
   terminalSyncMode: Ref<TerminalSyncMode>;
@@ -68,9 +75,10 @@ export function useFileManagerWorkspaceBridge(deps: FileManagerBridgeDeps) {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
       return;
     }
-    // 2. 仅对当前激活的会话执行前台轮询，后台会话不空转
-    const activeSessionId = deps.activeSessionId();
-    if (activeSessionId && activeSessionId !== deps.sessionId) {
+    // 2. 只让"屏幕上真正显示的那份"轮询，后台常驻的实例不空转。
+    //    这里必须问"我是不是前景实例"，不能比对 sessionId —— 文件管理器被绑到别的
+    //    主机时，显示中的这份 sessionId 本来就不等于活动会话（见 deps.isForeground 注释）。
+    if (!deps.isForeground()) {
       return;
     }
     // 3. SFTP 实例必须存在且连接就绪

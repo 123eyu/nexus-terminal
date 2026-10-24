@@ -14,6 +14,11 @@ import { useSessionStore } from '../stores/session.store';
 const props = defineProps<{
   /** 文件管理器 pane 的实例 ID，与 LayoutRenderer 传下来的一致 */
   paneId: string;
+  /**
+   * 这个 pane 所属的**布局会话**。绑定按它隔离：
+   * 在 A 布局里把文件管理器切到 C，B 布局的文件管理器仍跟着 B 自己。
+   */
+  ownerSessionId: string;
   /** 当前这份实例正在显示的连接 ID */
   currentConnectionId: string;
   isConnected: boolean;
@@ -30,7 +35,7 @@ const query = ref('');
 const rootRef = ref<HTMLElement | null>(null);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 
-const isPinned = computed(() => hostsStore.isBound(props.paneId));
+const isPinned = computed(() => hostsStore.isBound(props.paneId, props.ownerSessionId));
 
 const activeConnectionId = computed(() => {
   const activeSession = sessionStore.activeSession;
@@ -77,7 +82,7 @@ const toggle = async () => {
 };
 
 const selectConnection = (connectionId: number) => {
-  if (!hostsStore.bind(props.paneId, connectionId)) {
+  if (!hostsStore.bind(props.paneId, connectionId, props.ownerSessionId)) {
     // 连接列表还没到位 / 建会话失败时也会记下绑定，这里只提示一下不必阻断
     console.warn(`[HostSelector] 连接 ${connectionId} 的会话尚未就绪，稍后会自动重试`);
   }
@@ -86,7 +91,7 @@ const selectConnection = (connectionId: number) => {
 
 const followActiveSession = async () => {
   close();
-  await hostsStore.release(props.paneId);
+  await hostsStore.release(props.paneId, props.ownerSessionId);
 };
 
 const onDocumentPointerDown = (event: PointerEvent) => {
