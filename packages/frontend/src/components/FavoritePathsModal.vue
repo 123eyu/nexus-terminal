@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n';
 import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
 import FavoritePathTransferModal from './FavoritePathTransferModal.vue';
-import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileFavoritePathsModal from './MobileFavoritePathsModal.vue';
 import {
   writeFavoriteScopePreference,
@@ -41,7 +40,6 @@ const emit = defineEmits(['close', 'navigateToPath', 'openFavoriteFile']);
 
 const { t } = useI18n();
 const favoritePathsStore = useFavoritePathsStore();
-const { showConfirmDialog } = useConfirmDialog();
 
 const searchTerm = ref('');
 const showAddEditModal = ref(false);
@@ -82,6 +80,8 @@ const toggleScope = () => {
   writeFavoriteScopePreference(activeScope.value);
   // 列表整体换了一套，选中项跟着回到第一条
   selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
+  // 待确认的删除也一起撤掉（那个条目已经不在当前列表里了）
+  pendingDeleteId.value = null;
 };
 
 // 当过滤结果变动时，纠偏当前选中的索引
@@ -104,6 +104,14 @@ const scrollToSelectedItem = () => {
 };
 
 const handleSearchKeyDown = (event: KeyboardEvent) => {
+  // 有等待确认的删除时，Esc 只取消删除，别顺手把收藏夹一起关了
+  if (pendingDeleteId.value !== null) {
+    if (event.key === 'Escape' || event.code === 'Escape') {
+      event.preventDefault();
+      cancelPendingDelete();
+    }
+    return;
+  }
   const list = filteredPaths.value;
   if (list.length === 0) {
     if (event.key === 'Escape' || event.code === 'Escape') {
@@ -151,6 +159,7 @@ const toggleSort = () => {
 const closeModal = () => {
   // 收起收藏夹时把子面板一起关掉，否则浮层没了、迁移面板还孤零零挂在屏幕上
   showTransferModal.value = false;
+  pendingDeleteId.value = null;
   emit('close');
 };
 
@@ -163,6 +172,11 @@ const forwardOpenFavoriteFile = (payload: { path: string; name?: string }) => {
 const isFileFavorite = (item: FavoritePathItem): boolean => Number(item.is_file) === 1;
 
 const handleItemClick = async (pathItem: FavoritePathItem) => {
+  // 有等待确认的删除时，点列表别处一律理解为「取消」，不要顺手跳目录
+  if (pendingDeleteId.value !== null) {
+    cancelPendingDelete();
+    return;
+  }
   try {
     await favoritePathsStore.markPathAsUsed(pathItem.id, t);
   } catch (error) {
@@ -178,34 +192,54 @@ const handleItemClick = async (pathItem: FavoritePathItem) => {
 };
 
 const openAddModal = () => {
+  cancelPendingDelete();
   editingPathItem.value = null;
   showAddEditModal.value = true;
 };
 
 const openEditModal = (pathItem: FavoritePathItem) => {
+  cancelPendingDelete();
   editingPathItem.value = { ...pathItem };
   showAddEditModal.value = true;
 };
 
 /** 打开「迁移收藏」面板：源就是当前看的那一组 */
 const openTransferModal = () => {
+  cancelPendingDelete();
   showTransferModal.value = true;
 };
 
-const handleDelete = async (pathItem: FavoritePathItem) => {
-  const confirmed = await showConfirmDialog({
-    message: t('favoritePaths.confirmDelete', { name: pathItem.name || pathItem.path })
-  });
-  if (confirmed) {
-    try {
-      await favoritePathsStore.deleteFavoritePath(pathItem.id, t);
-    } catch (error) {
-      console.error('Failed to delete favorite path from modal:', error);
-    }
+/**
+ * 行内删除确认。
+ *
+ * 桌面端不再弹全局确认弹窗（要点两下、还挡住列表），点垃圾桶后该条目直接
+ * 变成「确认 / 取消」两个按钮；点列表别处、切分组、开别的面板都会取消。
+ * 移动端仍在自己的抽屉里走原流程。
+ */
+const pendingDeleteId = ref<string | null>(null);
+
+const isPendingDelete = (item: FavoritePathItem) => pendingDeleteId.value === String(item.id);
+
+const requestDelete = (item: FavoritePathItem) => {
+  pendingDeleteId.value = String(item.id);
+};
+
+const cancelPendingDelete = () => {
+  pendingDeleteId.value = null;
+};
+
+const confirmPendingDelete = async (item: FavoritePathItem) => {
+  try {
+    await favoritePathsStore.deleteFavoritePath(item.id, t);
+  } catch (error) {
+    console.error('Failed to delete favorite path from modal:', error);
+  } finally {
+    if (isPendingDelete(item)) pendingDeleteId.value = null;
   }
 };
 
 const isPositioned = ref(false);
+
 
 const updatePosition = () => {
   if (props.isMobile) return;
@@ -397,20 +431,45 @@ onBeforeUnmount(() => {
           :data-index="idx"
           class="group flex items-center justify-between p-1.5 rounded cursor-pointer transition-colors duration-150 text-foreground"
           :class="[
-            idx === selectedIndex
-              ? 'bg-primary/15'
-              : 'hover:bg-primary/10'
+            isPendingDelete(favPath)
+              ? 'bg-red-500/10 ring-1 ring-red-500/40'
+              : (idx === selectedIndex ? 'bg-primary/15' : 'hover:bg-primary/10')
           ]"
           @click="handleItemClick(favPath)"
           @mouseenter="selectedIndex = idx"
         >
-          <div class="truncate flex-grow mr-2">
+          <div class="min-w-0 truncate flex-grow mr-2">
             <span v-if="favPath.name" class="font-medium block truncate text-foreground">
               <i v-if="isFileFavorite(favPath)" class="fas fa-file text-[10px] mr-1 text-text-secondary"></i>{{ favPath.name }}
             </span>
             <span class="text-xs text-text-secondary block truncate font-normal">{{ favPath.path }}</span>
           </div>
-          <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+
+          <!-- 行内删除确认：替代原来的全局确认弹窗 -->
+          <div
+            v-if="isPendingDelete(favPath)"
+            class="flex-shrink-0 flex items-center gap-1"
+            @click.stop
+          >
+            <button
+              type="button"
+              data-fav-delete-confirm
+              class="h-6 px-2 rounded text-[11px] font-medium bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer"
+              @click="confirmPendingDelete(favPath)"
+            >
+              {{ t('common.confirm', '确认') }}
+            </button>
+            <button
+              type="button"
+              data-fav-delete-cancel
+              class="h-6 px-2 rounded text-[11px] font-medium border border-border text-text-secondary hover:bg-border/60 hover:text-foreground transition-colors cursor-pointer"
+              @click="cancelPendingDelete"
+            >
+              {{ t('common.cancel', '取消') }}
+            </button>
+          </div>
+
+          <div v-else class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               @click.stop="openEditModal(favPath)"
               class="p-1 text-text-secondary hover:text-primary rounded"
@@ -419,7 +478,7 @@ onBeforeUnmount(() => {
               <i class="fas fa-edit text-xs"></i>
             </button>
             <button
-              @click.stop="handleDelete(favPath)"
+              @click.stop="requestDelete(favPath)"
               class="p-1 text-text-secondary hover:text-red-500 rounded"
               :title="t('common.delete')"
             >

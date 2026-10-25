@@ -108,15 +108,9 @@ onBeforeUnmount(() => {
               />
             </div>
             <div class="flex-1 text-left">
-              <div class="text-sm font-medium text-foreground flex items-center gap-2">
+              <div class="text-sm font-medium text-foreground">
                 <span>{{ t('folders.keepCommands', '仅删除分组，保留指令') }}</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded bg-primary/20 text-primary font-normal">
-                  {{ t('common.recommended', '推荐') }}
-                </span>
               </div>
-              <p class="text-xs text-text-secondary mt-1 leading-relaxed">
-                {{ t('folders.keepCommandsDesc', '仅移除该分组，分组内的快捷指令将完整保留并自动移至【未分类】') }}
-              </p>
             </div>
           </div>
 
@@ -140,12 +134,9 @@ onBeforeUnmount(() => {
               />
             </div>
             <div class="flex-1 text-left">
-              <div class="text-sm font-medium text-error flex items-center gap-2">
+              <div class="text-sm font-medium text-error">
                 <span>{{ t('folders.deleteWithCommands', '连同里面的指令一起删除') }}</span>
               </div>
-              <p class="text-xs text-text-secondary mt-1 leading-relaxed">
-                {{ t('folders.deleteWithCommandsDesc', `同时永久删除该分组及其包含的全部 ${props.commandCount} 条指令（不可恢复）`) }}
-              </p>
             </div>
           </div>
         </div>
@@ -171,7 +162,6 @@ onBeforeUnmount(() => {
                 : 'bg-primary hover:bg-primary-hover active:scale-98'
             ]"
           >
-            <i v-if="props.isLoading" class="fas fa-spinner fa-spin text-xs"></i>
             <span>{{ deleteCommands ? t('folders.confirmDeleteAll', '确认彻底删除') : t('folders.confirmDeleteFolder', '确认删除分组') }}</span>
           </button>
         </div>
