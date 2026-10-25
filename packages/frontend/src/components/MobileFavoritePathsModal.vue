@@ -141,7 +141,7 @@ watch(() => props.isVisible, (val) => {
         <button
           type="button"
           @click="toggleScope"
-          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-medium border transition-colors active:scale-95 cursor-pointer"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-medium border transition-colors cursor-pointer"
           :class="activeScope === 'host'
             ? 'bg-primary/10 text-primary border-primary/30'
             : 'bg-header/60 text-text-secondary border-border'"
