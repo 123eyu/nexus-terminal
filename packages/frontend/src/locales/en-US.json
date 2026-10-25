@@ -861,7 +861,6 @@
       "followActive": "Follow active session"
     },
     "crossHostTransfer": {
-      "started": "Copying {count} item(s) to {target}",
       "failed": "Failed to start cross-host transfer",
       "missingConnection": "Source or target connection is missing"
     }

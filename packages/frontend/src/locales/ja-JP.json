@@ -707,7 +707,6 @@
       "followActive": "現在のセッションに追従"
     },
     "crossHostTransfer": {
-      "started": "{count} 件を {target} にコピーしています",
       "failed": "ホスト間転送を開始できませんでした",
       "missingConnection": "送信元または送信先の接続情報がありません"
     }
