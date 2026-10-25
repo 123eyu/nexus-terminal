@@ -418,7 +418,7 @@ const getChildFlexStyle = (child: LayoutNode) => {
             :title="t('layoutNodeEditor.splitVertical', '垂直拆分：在此终端下方添加新终端')"
             class="w-4 h-4 flex items-center justify-center rounded text-text-secondary/60 hover:text-indigo-400 hover:bg-indigo-500/15 transition-colors cursor-pointer pointer-events-auto"
           >
-            <i class="fas fa-table-rows text-[9px]"></i>
+            <i class="fas fa-table-list text-[9px]"></i>
           </button>
 
           <!-- 尺寸占比 -->

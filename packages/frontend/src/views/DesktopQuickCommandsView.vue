@@ -1,5 +1,5 @@
  <template>
-  <div class="flex flex-col h-full overflow-hidden bg-background">
+  <div class="relative flex flex-col h-full overflow-hidden bg-background">
     <!-- Container for controls and list -->
     <div class="flex flex-col flex-grow overflow-hidden bg-background">
       <!-- Controls Area -->
@@ -767,14 +767,24 @@
       @close="closeForm"
     />
 
-    <!-- 删除分组确认模态框 -->
-    <DeleteQuickCommandFolderModal
+    <!-- 删除指令确认（面板内遮罩，不弹全屏对话框） -->
+    <QuickCommandDeleteOverlay
+      :visible="!!commandToDelete"
+      kind="command"
+      :name="commandToDelete?.name || commandToDelete?.command || ''"
+      @confirm="executeDeleteCommand"
+      @close="commandToDelete = null"
+    />
+
+    <!-- 删除分组确认（同上，选「指令怎么办」） -->
+    <QuickCommandDeleteOverlay
       :visible="showDeleteFolderModal"
-      :folder-name="folderToDelete?.name || ''"
+      kind="folder"
+      :name="folderToDelete?.name || ''"
       :command-count="folderToDelete ? getFolderCommandCount(folderToDelete.id) : 0"
-      :is-loading="isDeletingFolder"
+      :busy="isDeletingFolder"
       @confirm="handleConfirmDeleteFolder"
-      @close="showDeleteFolderModal = false; folderToDelete = null"
+      @close="closeDeleteFolderOverlay"
     />
 
     <!-- Context Menu for Quick Commands -->
@@ -1002,9 +1012,8 @@ import { promptQuickCommandVariables } from '../composables/quickCommands/useQui
 import { useQuickCommandFolderEditing } from '../composables/quickCommands/useQuickCommandFolderEditing';
 import { useQuickCommandMenuActions, type QuickCommandMenuAction } from '../composables/quickCommands/useQuickCommandMenuActions';
 import { useQuickCommandSearchNavigation } from '../composables/quickCommands/useQuickCommandSearchNavigation';
-import { useConfirmDialog } from '../composables/useConfirmDialog';
 import AddEditQuickCommandForm from '../components/AddEditQuickCommandForm.vue';
-import DeleteQuickCommandFolderModal from '../components/DeleteQuickCommandFolderModal.vue';
+import QuickCommandDeleteOverlay from '../components/QuickCommandDeleteOverlay.vue';
 import { useFocusSwitcherStore } from '../stores/focusSwitcher.store'; 
 import { useSettingsStore } from '../stores/settings.store';
 import { useWorkspaceEventEmitter } from '../composables/workspaceEvents';
@@ -1021,7 +1030,6 @@ const quickCommandsStore = useQuickCommandsStore();
 const quickCommandFoldersStore = useQuickCommandFoldersStore(); 
 const uiNotificationsStore = useUiNotificationsStore();
 const { t } = useI18n();
-const { showConfirmDialog } = useConfirmDialog();
 const focusSwitcherStore = useFocusSwitcherStore();
 const settingsStore = useSettingsStore();
 const emitWorkspaceEvent = useWorkspaceEventEmitter();
@@ -1233,6 +1241,12 @@ const {
 // 模板沿用旧名字，避免大面积改模板
 const confirmCreateQuickCommandFolder = confirmCreateFolder;
 const handleConfirmDeleteFolder = confirmDeleteFolder;
+// 面板内遮罩的取消：删除进行中不允许关掉（避免「已删了但遮罩还留着」）
+const closeDeleteFolderOverlay = () => {
+  if (isDeletingFolder.value) return;
+  showDeleteFolderModal.value = false;
+  folderToDelete.value = null;
+};
 const {
   showQuickCommandFoldersBoolean,
   quickCommandRowSizeMultiplierNumber: qcRowSizeMultiplierFromStore,
@@ -1321,7 +1335,8 @@ const viewModeIcon = computed(() => {
   switch (currentViewMode.value) {
     case 'grid': return 'fa-table-cells-large';
     case 'list': return 'fa-list';
-    case 'pills': return 'fa-folders';
+    // 原先是 FontAwesome **Pro** 的 folders 图标，免费包里没有 → 按钮是空的。改用 capsules（真·药丸）
+    case 'pills': return 'fa-capsules';
     default: return 'fa-table-cells-large';
   }
 });
@@ -1709,12 +1724,19 @@ const closeForm = () => {
   initialFolderIdForNew.value = null;
 };
 
-const confirmDelete = async (command: QuickCommandFE) => {
-  const confirmed = await showConfirmDialog({
-    message: t('quickCommands.confirmDelete', { name: command.name || command.command })
-  });
-  if (confirmed) {
-    quickCommandsStore.deleteQuickCommand(command.id);
+// 删除指令：先亮面板内遮罩，确认后才真正调接口（不再弹全屏确认对话框）
+const commandToDelete = ref<QuickCommandFE | null>(null);
+const confirmDelete = (command: QuickCommandFE) => {
+  commandToDelete.value = command;
+};
+
+const executeDeleteCommand = async () => {
+  const command = commandToDelete.value;
+  if (!command) return;
+  try {
+    await quickCommandsStore.deleteQuickCommand(command.id);
+  } finally {
+    commandToDelete.value = null;
   }
 };
 

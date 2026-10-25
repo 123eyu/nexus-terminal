@@ -959,7 +959,8 @@ const viewModeIcon = computed(() => {
   switch (currentViewMode.value) {
     case 'grid': return 'fa-table-cells-large';
     case 'list': return 'fa-list';
-    case 'pills': return 'fa-folders';
+    // 原先是 FontAwesome **Pro** 的 folders 图标，免费包里没有 → 按钮是空的。改用 capsules（真·药丸）
+    case 'pills': return 'fa-capsules';
     default: return 'fa-table-cells-large';
   }
 });

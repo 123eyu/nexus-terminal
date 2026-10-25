@@ -292,7 +292,7 @@ const localAvailableInputs = computed(() => {
           <section class="flex flex-col min-h-0 bg-background-alt/50 rounded-xl border border-border/80 p-3 overflow-hidden shadow-xs">
             <div class="flex items-center justify-between pb-2 mb-2 border-b border-border/60 flex-shrink-0">
               <div class="flex items-center gap-1.5">
-                <i class="fas fa-arrow-progress text-xs text-primary"></i>
+                <i class="fas fa-list-ol text-xs text-primary"></i>
                 <h3 class="text-xs font-semibold text-foreground m-0">
                   {{ t('focusSwitcher.configuredSequence', '切换顺序') }}
                 </h3>
@@ -344,7 +344,7 @@ const localAvailableInputs = computed(() => {
               </template>
               <template #footer>
                 <li v-if="localSequence.length === 0" class="h-full min-h-[100px] border border-dashed border-border/60 rounded-lg flex flex-col items-center justify-center p-3 text-center text-text-secondary/50 text-xs gap-1 bg-header/20">
-                  <i class="fas fa-arrow-down-to-bracket text-xs opacity-60"></i>
+                  <i class="fas fa-arrow-right-to-bracket text-xs opacity-60"></i>
                   <span>拖拽或点击左侧 + 加入切换队列</span>
                 </li>
               </template>

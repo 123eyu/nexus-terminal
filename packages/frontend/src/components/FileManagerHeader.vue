@@ -248,9 +248,6 @@ defineExpose({
           <i :class="viewMode === 'tile' ? 'fas fa-table-cells-large text-xs' : 'fas fa-list text-xs'"></i>
         </button>
 
-        <!-- 分隔微线 -->
-        <div class="h-4 w-px bg-border/60 mx-1 flex-shrink-0"></div>
-
         <!-- 显示/隐藏点文件（.env、.gitignore 等） -->
         <button
           type="button"

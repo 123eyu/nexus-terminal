@@ -965,7 +965,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
             <section class="flex flex-col min-h-0 bg-background-alt/50 rounded-xl border border-border/80 p-2.5 overflow-hidden shadow-xs">
               <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-border/50 flex-shrink-0">
                 <div class="flex items-center gap-1.5">
-                  <i class="fas fa-arrow-left-to-line text-xs text-primary"></i>
+                  <i class="fas fa-arrow-left-long text-xs text-primary"></i>
                   <h4 class="text-xs font-semibold text-foreground m-0">左侧栏</h4>
                 </div>
                 <span class="text-[10px] text-text-secondary font-mono">{{ localSidebarPanes.left.length }}</span>
@@ -1013,7 +1013,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
             <section class="flex flex-col min-h-0 bg-background-alt/50 rounded-xl border border-border/80 p-2.5 overflow-hidden shadow-xs">
               <div class="flex items-center justify-between pb-1.5 mb-1.5 border-b border-border/50 flex-shrink-0">
                 <div class="flex items-center gap-1.5">
-                  <i class="fas fa-arrow-right-to-line text-xs text-primary"></i>
+                  <i class="fas fa-arrow-right-long text-xs text-primary"></i>
                   <h4 class="text-xs font-semibold text-foreground m-0">右侧栏</h4>
                 </div>
                 <span class="text-[10px] text-text-secondary font-mono">{{ localSidebarPanes.right.length }}</span>
