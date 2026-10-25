@@ -41,6 +41,7 @@ import { formatFileSize, formatFileMode, formatFileDate } from '../utils/fileFor
 import { useComponentStateStore } from '../stores/componentState.store';
 import { useLayoutStore } from '../stores/layout.store';
 import { useTransferMiniPanelStore } from '../stores/transferMiniPanel.store';
+import { useFileManagerHostsStore } from '../stores/fileManagerHosts.store';
 import { useDeviceDetection } from '../composables/useDeviceDetection';
 import {
   useFileManagerColumnReorder,
@@ -266,18 +267,6 @@ const directoryTreeWidth = ref<number>(getInitialDirectoryTreeWidth(instanceStor
 
 const isResizingTree = ref(false);
 
-/**
- * 显示/隐藏以 `.` 开头的文件。
- *
- * 存成设置项（`fileManagerShowHidden`）而不是组件内状态：布局里可能同时挂多份
- * FileManager，用户点一次眼睛图标，别的面板不该还藏着 `.env`；
- * 顺带跟着设置表跨端同步。
- */
-const toggleHiddenFiles = () => {
-  // updateSetting 只收字符串（and 只有白名单里的布尔项走专用端点），所以这里显式转 String
-  void settingsStore.updateSetting('fileManagerShowHidden', String(!fileManagerShowHiddenBoolean.value));
-};
-
 const toggleDirectoryTree = () => {
   const nextVal = !showDirectoryTree.value;
   showDirectoryTree.value = nextVal;
@@ -299,6 +288,7 @@ const platform = computed<'mobile' | 'desktop'>(() => isMobileComputed.value ? '
 const componentStateStore = useComponentStateStore();
 const layoutStore = useLayoutStore();
 const transferMiniPanelStore = useTransferMiniPanelStore();
+const fileManagerHostsStore = useFileManagerHostsStore();
 
 const viewModeStorageKey = computed(() => `fm_view_mode:${platform.value}:${instanceStorageId.value}`);
 
@@ -325,6 +315,56 @@ const toggleViewMode = () => {
   });
 };
 
+// --- 隐藏点文件开关（按文件管理器实例隔离） ---
+/**
+ * 以前这里是**全局设置项** `fileManagerShowHidden`：点一次眼睛，所有文件管理器一起变。
+ *
+ * 现在按「所属布局会话 + 实例」记账，和主机绑定用同一套 ownerKey：
+ * - 同一布局里主面板与侧栏各记各的；
+ * - A 会话开了 `.env`，切到 B 会话不会跟着显示（每个沙箱是独立的一份）。
+ *
+ * 不带上 owner 会踩和主机绑定一样的坑：布局 pane id 是结构序号
+ * （`pane#0` / `sidebar-left`），每个会话的树都从同一预设克隆，id 完全相同。
+ *
+ * 首次升级没有实例值时，回落旧的全局设置 —— 用户当前的偏好得以保留。
+ */
+const showHiddenStorageKey = computed(() => {
+  const ownerKey = fileManagerHostsStore.ownerKeyFor(props.ownerSessionId);
+  return ownerKey
+    ? `fm_show_hidden:${ownerKey}|${instanceStorageId.value}`
+    : `fm_show_hidden:${instanceStorageId.value}`;
+});
+
+const showHiddenFiles = ref<boolean>(
+  componentStateStore.getState<boolean>(showHiddenStorageKey.value, fileManagerShowHiddenBoolean.value)
+);
+
+/**
+ * ownerKey 在会话刚建好、连接列表还没到位时会退化成 `s:<sessionId>`，
+ * 随后变成 `c:<uuid>` —— 换键的那一次要把刚存下的值带过去，否则表现为「点一次眼睛，
+ * 过几秒又自己弹回去」。
+ */
+watch(showHiddenStorageKey, (newKey, oldKey) => {
+  if (oldKey && newKey !== oldKey) {
+    const carried = componentStateStore.getState<boolean | undefined>(oldKey, undefined);
+    if (carried !== undefined && componentStateStore.getState<boolean | undefined>(newKey, undefined) === undefined) {
+      componentStateStore.setState(newKey, carried);
+      void componentStateStore.removeState(oldKey);
+    }
+  }
+  showHiddenFiles.value = componentStateStore.getState<boolean>(newKey, showHiddenFiles.value);
+});
+
+watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
+  showHiddenFiles.value = componentStateStore.getState<boolean>(showHiddenStorageKey.value, showHiddenFiles.value);
+});
+
+const toggleHiddenFiles = () => {
+  const next = !showHiddenFiles.value;
+  showHiddenFiles.value = next;
+  componentStateStore.setState(showHiddenStorageKey.value, next);
+};
+
 // --- 文件管理器与终端路径同步状态 (跟随当前组件实例隔离 + 持久化记忆) ---
 // 用 instanceStorageId 而不是 effectiveInstanceId：见上面的说明，弹窗/移动端那份会话 ID 每次刷新都变
 const syncModeStorageKey = computed(() => `fm_terminal_sync_mode:${instanceStorageId.value}`);
@@ -341,6 +381,39 @@ watch(syncModeStorageKey, (newKey) => {
 watch(() => [componentStateStore.isLoaded, componentStateStore.revision], () => {
   terminalSyncMode.value = componentStateStore.getState<TerminalSyncMode>(syncModeStorageKey.value, terminalSyncMode.value);
 });
+
+/**
+ * 这份文件管理器当前显示的主机，是否已经偏离了它所属布局的那台主机。
+ *
+ * 路径同步的本质是「把当前目录 cd 给**本布局那台机器的终端**」。文件管理器一旦被切到
+ * 别的 VPS，同步就变成把 C 的路径塞进 A 的终端 —— 纯属添乱，所以此时强制视为关闭。
+ *
+ * `ownerSessionId` 为空（移动端抽屉 / 弹窗，没有布局上下文）时不判定。
+ */
+const ownerConnectionId = computed<number | null>(() => {
+  const ownerSessionId = props.ownerSessionId;
+  if (!ownerSessionId) return null;
+  const session = sessionStore.sessions.get(ownerSessionId);
+  if (!session) return null;
+  const id = Number(session.connectionId);
+  return Number.isFinite(id) ? id : null;
+});
+
+const isForeignHost = computed(() => {
+  const owner = ownerConnectionId.value;
+  const here = numericConnectionId.value;
+  if (owner == null || here == null) return false;
+  return owner !== here;
+});
+
+/**
+ * 实际生效的同步模式：跨主机时恒为 `off`。
+ *
+ * 只影响行为，不改 `terminalSyncMode` 本身 —— 切回本机后用户原先选的模式会自动恢复。
+ */
+const effectiveTerminalSyncMode = computed<TerminalSyncMode>(() =>
+  isForeignHost.value ? 'off' : terminalSyncMode.value
+);
 
 // 路径格式标准化辅助方法（去除尾部非根斜杠，方便严格对比）
 const normalizePath = (p?: string | null): string => {
@@ -468,6 +541,8 @@ const checkTerminalSafety = (targetSession: any): TerminalSafetyCheckResult => {
 
 // 发送 CD 命令到绑定终端（支持单向及双向防回环 + 终端状态安全门禁）
 const syncPathToTerminal = (targetPath?: string, isManual = false) => {
+  // 跨主机时一律不发：目标终端不在这台机器上，cd 过去只会把用户搞糊涂
+  if (isForeignHost.value) return;
   const path = targetPath || currentSftpManager.value?.currentPath.value;
   if (!path || !path.trim().startsWith('/')) return;
   if (!props.wsDeps.isConnected.value) return;
@@ -511,6 +586,8 @@ const syncPathToTerminal = (targetPath?: string, isManual = false) => {
 };
 
 const cycleTerminalSyncMode = () => {
+  // 按钮在跨主机时是置灰的，这里再兜一层（快捷键/事件仍可能打进来）
+  if (isForeignHost.value) return;
   const modes: TerminalSyncMode[] = ['off', 'bidirectional', 'to_terminal', 'from_terminal'];
   const currentIndex = modes.indexOf(terminalSyncMode.value);
   const nextMode = modes[(currentIndex + 1) % modes.length];
@@ -686,7 +763,7 @@ watch(() => currentSftpManager.value?.currentPath.value, (newPath, oldPath) => {
     }
 
     // 仅当用户在文件管理器中主动切换了不同目录（且非内部回环）时，且处于同步模式时，才安全触发终端跟随
-    if (normNew !== normOld && !pathSync.internal && (terminalSyncMode.value === 'bidirectional' || terminalSyncMode.value === 'to_terminal')) {
+    if (normNew !== normOld && !pathSync.internal && (effectiveTerminalSyncMode.value === 'bidirectional' || effectiveTerminalSyncMode.value === 'to_terminal')) {
       syncPathToTerminal(newPath, false);
     }
   }
@@ -712,7 +789,7 @@ const sortedFileList = computed(() => {
     const raw = currentSftpManager.value.fileList.value; // 从 manager 获取列表
     // 隐藏文件（以 . 开头）默认不显示；`..` 是返回上级目录的虚拟项，任何情况下都保留。
     // 只在展示层过滤，不动 fileList —— 重命名/删除/复制都按 filename 回查原始列表。
-    const list = fileManagerShowHiddenBoolean.value
+    const list = showHiddenFiles.value
         ? [...raw]
         : raw.filter(item => item.filename === '..' || !item.filename.startsWith('.'));
     const key = sortKey.value;
@@ -1847,7 +1924,8 @@ useFileManagerWorkspaceBridge({
   isForeground: () =>
     props.isForeground ?? (props.sessionId === (sessionStore.activeSessionId ?? null)),
   activeTerminalPaneId: () => layoutStore.activeTerminalPaneId ?? null,
-  terminalSyncMode,
+  // 传生效模式：跨主机时终端 cwd 也不该把这份文件管理器拽走
+  terminalSyncMode: effectiveTerminalSyncMode,
   pathSync,
   normalizePath,
   isBusy: () =>
@@ -2078,8 +2156,9 @@ defineExpose({ focusSearchInput, startPathEdit });
       :show-directory-tree="showDirectoryTree"
       :view-mode="viewMode"
       :show-popup-file-editor="showPopupFileEditorBoolean"
-      :terminal-sync-mode="terminalSyncMode"
-      :show-hidden-files="fileManagerShowHiddenBoolean"
+      :terminal-sync-mode="effectiveTerminalSyncMode"
+      :terminal-path-sync-disabled="isForeignHost"
+      :show-hidden-files="showHiddenFiles"
       v-model:search-query="searchQuery"
       v-model:is-search-active="isSearchActive"
       @toggle-directory-tree="toggleDirectoryTree"

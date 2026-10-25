@@ -643,7 +643,8 @@
       "modeOff": "路径同步：已关闭 (点击开启双向同步)",
       "modeBidirectional": "路径同步：双向互通 (点击切换到同步到终端)",
       "modeToTerminal": "路径同步：同步到终端 (点击切换到终端同步到这)",
-      "modeFromTerminal": "路径同步：终端同步到这 (点击关闭)"
+      "modeFromTerminal": "路径同步：终端同步到这 (点击关闭)",
+      "disabledForeignHost": "当前文件管理器显示的是其他主机，路径同步不可用（切回本会话的主机后恢复）"
     },
     "directoryTree": "目录树",
     "fileTree": "文件树",

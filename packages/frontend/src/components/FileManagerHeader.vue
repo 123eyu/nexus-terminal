@@ -18,6 +18,11 @@ const props = defineProps<{
   viewMode?: 'list' | 'tile';
   showHiddenFiles?: boolean;
   terminalSyncMode?: TerminalSyncMode;
+  /**
+   * 这份文件管理器显示的主机不是它所属布局的那台 → 向终端发路径（cd）毫无意义：
+   * 目标终端根本不在当前浏览的机器上。此时两个按钮都置灰。
+   */
+  terminalPathSyncDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -64,6 +69,12 @@ const terminalSyncButtonClass = computed(() => {
 });
 
 const terminalSyncButtonTitle = computed(() => {
+  if (props.terminalPathSyncDisabled) {
+    return t(
+      'fileManager.sync.disabledForeignHost',
+      '当前文件管理器显示的是其他主机，路径同步不可用（切回本会话的主机后恢复）'
+    );
+  }
   switch (effectiveSyncMode.value) {
     case 'bidirectional':
       return t('fileManager.sync.modeBidirectional', '路径同步：双向互通 (点击切换到同步到终端)');
@@ -167,6 +178,7 @@ defineExpose({
     :search-query="searchQuery"
     :is-search-active="isSearchActive"
     :terminal-sync-mode="props.terminalSyncMode"
+    :terminal-path-sync-disabled="props.terminalPathSyncDisabled"
     :show-hidden-files="props.showHiddenFiles"
     @update:search-query="emit('update:searchQuery', $event)"
     @update:is-search-active="emit('update:isSearchActive', $event)"
@@ -194,8 +206,10 @@ defineExpose({
           type="button"
           class="flex items-center justify-center w-7 h-7 text-text-secondary rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-black/10 dark:hover:enabled:bg-white/10 hover:enabled:text-foreground flex-shrink-0 cursor-pointer"
           @click.stop="emit('cd-to-terminal')"
-          :disabled="!isConnected"
-          :title="t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
+          :disabled="!isConnected || props.terminalPathSyncDisabled"
+          :title="props.terminalPathSyncDisabled
+            ? terminalSyncButtonTitle
+            : t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
         >
           <i class="fas fa-terminal text-xs"></i>
         </button>
@@ -206,7 +220,7 @@ defineExpose({
           class="flex items-center justify-center w-7 h-7 rounded transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 cursor-pointer"
           :class="terminalSyncButtonClass"
           @click.stop="emit('cycle-terminal-sync-mode')"
-          :disabled="!isConnected"
+          :disabled="!isConnected || props.terminalPathSyncDisabled"
           :title="terminalSyncButtonTitle"
         >
           <i :class="terminalSyncButtonIcon"></i>

@@ -11,6 +11,8 @@ const props = defineProps<{
   isSearchActive: boolean;
   showHiddenFiles?: boolean;
   terminalSyncMode?: TerminalSyncMode;
+  /** 显示的主机不是本布局那台时，向终端发路径没有意义 → 两个按钮置灰 */
+  terminalPathSyncDisabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -54,6 +56,12 @@ const terminalSyncButtonClass = computed(() => {
 });
 
 const terminalSyncButtonTitle = computed(() => {
+  if (props.terminalPathSyncDisabled) {
+    return t(
+      'fileManager.sync.disabledForeignHost',
+      '当前文件管理器显示的是其他主机，路径同步不可用（切回本会话的主机后恢复）'
+    );
+  }
   switch (effectiveSyncMode.value) {
     case 'bidirectional':
       return t('fileManager.sync.modeBidirectional', '路径同步：双向互通 (点击切换到同步到终端)');
@@ -149,8 +157,10 @@ defineExpose({
           type="button"
           class="w-8 h-8 rounded-xl bg-header/60 border border-border/50 flex items-center justify-center text-text-secondary hover:text-foreground active:scale-95 active:bg-primary/20 transition-all disabled:opacity-40 cursor-pointer"
           @click.stop="emit('cd-to-terminal')"
-          :disabled="!props.isConnected"
-          :title="t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
+          :disabled="!props.isConnected || props.terminalPathSyncDisabled"
+          :title="props.terminalPathSyncDisabled
+            ? terminalSyncButtonTitle
+            : t('fileManager.actions.cdToTerminal', '将终端目录切换到当前路径')"
         >
           <i class="fas fa-terminal text-xs"></i>
         </button>
@@ -161,7 +171,7 @@ defineExpose({
           class="w-8 h-8 rounded-xl border flex items-center justify-center text-xs active:scale-95 transition-all disabled:opacity-40 cursor-pointer"
           :class="terminalSyncButtonClass"
           @click.stop="emit('cycle-terminal-sync-mode')"
-          :disabled="!props.isConnected"
+          :disabled="!props.isConnected || props.terminalPathSyncDisabled"
           :title="terminalSyncButtonTitle"
         >
           <i :class="terminalSyncButtonIcon"></i>
