@@ -123,7 +123,6 @@
     "remove": "削除",
     "retry": "再試行",
     "save": "保存",
-    "saving": "保存中...",
     "saved": "保存済み",
     "search": "検索",
     "settings": "設定",
@@ -221,7 +220,6 @@
       "cloneFailed": "接続のクローン作成に失敗しました: {error}"
     },
     "form": {
-      "adding": "追加中...",
       "authMethod": "認証方法:",
       "authMethodKey": "SSHキー",
       "authMethodPassword": "パスワード",
@@ -248,7 +246,6 @@
       "privateKey": "秘密鍵:",
       "noSshKey": "SSHキーなし",
       "proxy": "プロキシ:",
-      "saving": "保存中...",
       "sectionAdvanced": "詳細設定",
       "sectionAuth": "認証情報",
       "sectionBasic": "基本情報",
@@ -945,7 +942,6 @@
       "deleteFailed": "プロキシの削除に失敗しました: {error}"
     },
     "form": {
-      "adding": "追加中...",
       "cancel": "キャンセル",
       "confirm": "追加",
       "confirmEdit": "編集を確定",
@@ -959,7 +955,6 @@
       "password": "パスワード:",
       "passwordUpdateNote": "パスワードを空のままにして、既存のパスワードを保持します。",
       "port": "ポート:",
-      "saving": "保存中...",
       "title": "新しいプロキシを追加",
       "titleEdit": "プロキシの編集",
       "type": "タイプ:",
