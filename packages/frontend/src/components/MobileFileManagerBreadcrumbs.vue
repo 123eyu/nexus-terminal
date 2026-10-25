@@ -13,6 +13,8 @@ const props = defineProps<{
   isConnected: boolean;
   isLoading: boolean;
   sftpManager: SftpManagerInstance | null;
+  /** 当前文件管理器显示的主机（连接 uuid）：路径历史与「本机专属」收藏都按它隔离 */
+  hostUuid?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -95,7 +97,8 @@ const navigateTo = (targetPath: string) => {
   closeDirDropdown();
   if (trimmed !== props.currentPath) {
     emit('navigate-to-path', trimmed);
-    pathHistoryStore.addPath(trimmed);
+    // 历史按主机记：不传归属，后端会直接拒掉（宁可少记一条也不写脏数据）
+    pathHistoryStore.addPath(trimmed, props.hostUuid ?? null);
   }
 };
 
@@ -126,8 +129,11 @@ const openHistoryDrawer = () => {
   if (props.isLoading || !props.isConnected) return;
   closeDirDropdown();
   showMobilePathHistoryDrawer.value = true;
-  if (pathHistoryStore.historyList.length === 0) {
-    pathHistoryStore.fetchHistory();
+  // 先按当前主机把历史切过来，否则抽屉里会出现另一台机器的路径
+  if (pathHistoryStore.currentConnectionUuid !== (props.hostUuid ?? null)) {
+    pathHistoryStore.fetchHistory(props.hostUuid ?? null);
+  } else if (pathHistoryStore.historyList.length === 0) {
+    pathHistoryStore.fetchHistory(props.hostUuid ?? null);
   }
 };
 
@@ -322,6 +328,7 @@ defineExpose({
           :is-visible="showFavoritePathsModal"
           :trigger-element="favoritePathsButtonRef"
           :is-mobile="true"
+          :host-uuid="props.hostUuid ?? null"
           :current-path="props.currentPath"
           @close="showFavoritePathsModal = false"
           @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"

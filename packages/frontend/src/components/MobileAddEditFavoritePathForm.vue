@@ -24,6 +24,11 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  /** 当前文件管理器所在主机（连接 uuid），决定「本机专属」落到哪台机器 */
+  hostUuid: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['close', 'saveSuccess']);
@@ -34,6 +39,7 @@ const { t } = useI18n();
 // 表单逻辑两端共用（见 composables/useFavoritePathForm.ts）
 const {
   form,
+  canUseHostScope,
   effectivePathData,
   isEditMode,
   isLoading,
@@ -107,6 +113,34 @@ const {
             class="w-full h-11 px-3.5 bg-input border border-border rounded-xl text-base font-mono text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary shadow-xs transition-colors"
             :placeholder="t('favoritePaths.addEditForm.pathPlaceholder', '/var/www/html 或 /root/data')"
           />
+        </div>
+
+        <div>
+          <span class="block text-xs font-medium text-text-secondary mb-1.5">
+            {{ t('favoritePaths.addEditForm.scopeLabel', '收藏范围') }}
+          </span>
+          <div class="flex p-0.5 rounded-xl bg-header/60 border border-border/60 gap-0.5">
+            <button
+              type="button"
+              :disabled="!canUseHostScope || isLoading"
+              @click="form.scope = 'host'"
+              class="flex-1 h-9 rounded-[10px] inline-flex items-center justify-center gap-1.5 text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              :class="form.scope === 'host' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary'"
+            >
+              <i class="fas fa-server text-[10px]"></i>
+              <span>{{ t('favoritePaths.scope.host', '本机专属') }}</span>
+            </button>
+            <button
+              type="button"
+              :disabled="isLoading"
+              @click="form.scope = 'global'"
+              class="flex-1 h-9 rounded-[10px] inline-flex items-center justify-center gap-1.5 text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              :class="form.scope === 'global' ? 'bg-primary text-white shadow-xs' : 'text-text-secondary'"
+            >
+              <i class="fas fa-globe text-[10px]"></i>
+              <span>{{ t('favoritePaths.scope.global', '全局') }}</span>
+            </button>
+          </div>
         </div>
 
         <div v-if="errorMessage" class="text-rose-500 text-xs p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl">

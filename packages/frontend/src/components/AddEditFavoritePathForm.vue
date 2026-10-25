@@ -22,6 +22,11 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  /** 当前文件管理器所在主机（连接 uuid），决定「本机专属」落到哪台机器 */
+  hostUuid: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
   isMobile: {
     type: Boolean,
     default: false,
@@ -36,6 +41,7 @@ const { t } = useI18n();
 // 表单逻辑两端共用（见 composables/useFavoritePathForm.ts）
 const {
   form,
+  canUseHostScope,
   effectivePathData,
   isEditMode,
   isLoading,
@@ -55,6 +61,7 @@ const {
     :is-visible="isVisible"
     :path-data="effectivePathData"
     :current-path="activeFileManagerPath"
+    :host-uuid="props.hostUuid"
     @close="closeModal"
     @save-success="emit('saveSuccess')"
   />
@@ -112,6 +119,34 @@ const {
               class="w-full bg-input border border-border rounded-md px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
               :placeholder="t('favoritePaths.addEditForm.pathPlaceholder', '/example/folder/path')"
             />
+          </div>
+
+          <div>
+            <span class="block text-sm font-medium text-text-secondary mb-1">
+              {{ t('favoritePaths.addEditForm.scopeLabel', '收藏范围') }}
+            </span>
+            <div class="inline-flex p-0.5 rounded-lg bg-input border border-border">
+              <button
+                type="button"
+                :disabled="!canUseHostScope || isLoading"
+                @click="form.scope = 'host'"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                :class="form.scope === 'host' ? 'bg-primary text-white shadow-sm' : 'text-text-secondary hover:text-foreground'"
+              >
+                <i class="fas fa-server text-[10px]"></i>
+                <span>{{ t('favoritePaths.scope.host', '本机专属') }}</span>
+              </button>
+              <button
+                type="button"
+                :disabled="isLoading"
+                @click="form.scope = 'global'"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                :class="form.scope === 'global' ? 'bg-primary text-white shadow-sm' : 'text-text-secondary hover:text-foreground'"
+              >
+                <i class="fas fa-globe text-[10px]"></i>
+                <span>{{ t('favoritePaths.scope.global', '全局') }}</span>
+              </button>
+            </div>
           </div>
 
           <div v-if="errorMessage" class="text-rose-500 text-sm p-2 bg-rose-500/10 rounded-md">

@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import { useSessionStore } from '../stores/session.store';
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { extractFolderNameFromPath } from '../utils/pathUtils';
@@ -16,6 +16,8 @@ export interface FavoritePathFormProps {
   pathData: FavoritePathItem | null;
   pathItem: FavoritePathItem | null;
   currentPath: string;
+  /** 当前文件管理器所在主机（连接 uuid）。决定「主机专属」能落到哪台机器上 */
+  hostUuid?: string | null;
 }
 
 export function useFavoritePathForm(
@@ -34,7 +36,11 @@ export function useFavoritePathForm(
     id: '',
     path: '',
     name: '',
+    scope: 'host' as FavoritePathScope,
   });
+
+  /** 没有主机上下文就没法存「主机专属」，此时只能选全局 */
+  const canUseHostScope = computed(() => Boolean(props.hostUuid));
 
   const effectivePathData = computed(() => props.pathData || props.pathItem || null);
   // 带 id 的才是编辑（历史实现把这里的取反写反了，导致编辑时标题显示"添加"、保存又新增一条）
@@ -89,9 +95,16 @@ export function useFavoritePathForm(
             id: target.id,
             path: target.path,
             name: target.name || '',
+            scope: target.scope === 'host' ? 'host' : 'global',
           };
         } else {
-          form.value = { id: '', path: '', name: '' };
+          // 新增默认「主机专属」：从文件管理器里收藏路径，绝大多数情况只对当前这台机器成立
+          form.value = {
+            id: '',
+            path: '',
+            name: '',
+            scope: canUseHostScope.value ? 'host' : 'global',
+          };
         }
       }
     },
@@ -119,6 +132,11 @@ export function useFavoritePathForm(
     try {
       const finalName =
         form.value.name.trim() || extractFolderNameFromPath(form.value.path.trim());
+      // 作用域随保存一起提交；选了主机专属但当前没有归属主机时退回全局，
+      // 否则后端会以「缺少归属连接」拒掉整次保存
+      const finalScope: FavoritePathScope =
+        form.value.scope === 'host' && canUseHostScope.value ? 'host' : 'global';
+      const finalConnectionUuid = finalScope === 'host' ? (props.hostUuid || null) : null;
       // 不带 is_file：编辑时后端保留原值（改名字不会把文件收藏变成目录），
       // 新增时后端默认 0（目录）——手动填的路径没法在浏览器侧判断是不是文件
       if (isEditMode.value && form.value.id) {
@@ -127,6 +145,8 @@ export function useFavoritePathForm(
           {
             path: form.value.path.trim(),
             name: finalName,
+            scope: finalScope,
+            connection_uuid: finalConnectionUuid,
           },
           t
         );
@@ -135,6 +155,8 @@ export function useFavoritePathForm(
           {
             path: form.value.path.trim(),
             name: finalName,
+            scope: finalScope,
+            connection_uuid: finalConnectionUuid,
           },
           t
         );
@@ -159,6 +181,7 @@ export function useFavoritePathForm(
 
   return {
     form,
+    canUseHostScope,
     effectivePathData,
     isEditMode,
     isLoading,

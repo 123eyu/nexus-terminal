@@ -2226,9 +2226,14 @@
       "fillCurrentPathTooltip": "Click to fill active file manager path: {path}",
       "nameLabel": "Name (Optional)",
       "namePlaceholder": "My Documents",
+      "scopeLabel": "Scope",
       "errors": {
         "genericSaveError": "Failed to save favorite path."
       }
+    },
+    "scope": {
+      "host": "This host",
+      "global": "Global"
     },
     "confirmDelete": "Are you sure you want to delete \"{name}\"?",
     "searchPlaceholder": "Search by name or path...",

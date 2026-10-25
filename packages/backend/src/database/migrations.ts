@@ -1024,6 +1024,54 @@ const definedMigrations: Migration[] = [
 
             console.log('[Migrations] Migration 27: 旧「标签」标识已全部改写为「文件夹」。');
         }
+    },
+
+    // ── 收藏 / 历史路径的归属维度（28~30）────────────────────────────────────
+    // 拆成三条独立迁移：`ALTER TABLE ... ADD COLUMN` 遇到 duplicate column 会中断整段 sql，
+    // 每条只做一件事，各自的 check 才管得住，不会互相牵连。
+    {
+        id: 28,
+        name: 'Add scope column to favorite_paths',
+        check: async (db: Database): Promise<boolean> => {
+            if (!(await tableExists(db, 'favorite_paths'))) return false;
+            return !(await columnExists(db, 'favorite_paths', 'scope'));
+        },
+        sql: `
+            ALTER TABLE favorite_paths ADD COLUMN scope TEXT NOT NULL DEFAULT 'global';
+        `,
+        execute: async (): Promise<void> => {
+            console.log('[Migrations] Migration 28: favorite_paths.scope 已就绪（老数据一律为 global）。');
+        }
+    },
+    {
+        id: 29,
+        name: 'Add connection_uuid column to favorite_paths',
+        check: async (db: Database): Promise<boolean> => {
+            if (!(await tableExists(db, 'favorite_paths'))) return false;
+            return !(await columnExists(db, 'favorite_paths', 'connection_uuid'));
+        },
+        sql: `
+            ALTER TABLE favorite_paths ADD COLUMN connection_uuid TEXT NULL;
+            CREATE INDEX IF NOT EXISTS idx_favorite_paths_scope ON favorite_paths(scope, connection_uuid);
+        `,
+        execute: async (): Promise<void> => {
+            console.log('[Migrations] Migration 29: favorite_paths.connection_uuid 已就绪。');
+        }
+    },
+    {
+        id: 30,
+        name: 'Add connection_uuid column to path_history',
+        check: async (db: Database): Promise<boolean> => {
+            if (!(await tableExists(db, 'path_history'))) return false;
+            return !(await columnExists(db, 'path_history', 'connection_uuid'));
+        },
+        sql: `
+            ALTER TABLE path_history ADD COLUMN connection_uuid TEXT NULL;
+            CREATE INDEX IF NOT EXISTS idx_path_history_conn ON path_history(connection_uuid, timestamp);
+        `,
+        execute: async (): Promise<void> => {
+            console.log('[Migrations] Migration 30: path_history.connection_uuid 已就绪（老记录保持 NULL，不再出现）。');
+        }
     }
 
 ];

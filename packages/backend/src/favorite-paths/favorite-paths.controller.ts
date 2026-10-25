@@ -5,8 +5,13 @@ import { FavoritePathSortBy } from '../favorite-paths/favorite-paths.service';
 /**
  * 处理添加新收藏路径的请求
  */
+/** 作用域解析：只认 'host'，其余一律回落 'global'；host 必须有归属连接 */
+const parseScope = (value: unknown): 'global' | 'host' => (value === 'host' ? 'host' : 'global');
+const parseConnectionUuid = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
 export const createFavoritePath = async (req: Request, res: Response): Promise<void> => {
-    const { name, path, is_file } = req.body;
+    const { name, path, is_file, scope, connection_uuid } = req.body;
 
     if (!path || typeof path !== 'string' || path.trim().length === 0) {
         res.status(400).json({ message: '路径内容不能为空' });
@@ -32,7 +37,19 @@ export const createFavoritePath = async (req: Request, res: Response): Promise<v
     const isFile = is_file === true || is_file === 1 || is_file === '1';
 
     try {
-        const newId = await FavoritePathsService.addFavoritePath(finalName, path, isFile);
+        const finalScope = parseScope(scope);
+        const finalConnectionUuid = parseConnectionUuid(connection_uuid);
+        if (finalScope === 'host' && !finalConnectionUuid) {
+            res.status(400).json({ message: '主机专属收藏缺少归属连接' });
+            return;
+        }
+        const newId = await FavoritePathsService.addFavoritePath(
+            finalName,
+            path,
+            isFile,
+            finalScope,
+            finalConnectionUuid
+        );
         const newFavoritePath = await FavoritePathsService.getFavoritePathById(newId);
         if (newFavoritePath) {
             res.status(201).json({ message: '收藏路径已添加', favoritePath: newFavoritePath });
@@ -93,7 +110,7 @@ export const getFavoritePathById = async (req: Request, res: Response): Promise<
  */
 export const updateFavoritePath = async (req: Request, res: Response): Promise<void> => {
     const id = parseInt(req.params.id, 10);
-    const { name, path, is_file } = req.body;
+    const { name, path, is_file, scope, connection_uuid } = req.body;
 
     if (isNaN(id)) {
         res.status(400).json({ message: '无效的 ID' });
@@ -123,15 +140,34 @@ export const updateFavoritePath = async (req: Request, res: Response): Promise<v
     // 未显式传 is_file 时保留原值（老版本前端 / 云同步来的请求不带这个字段，
     // 一律当成目录会把文件收藏悄悄改坏）
     try {
+        const existing = await FavoritePathsService.getFavoritePathById(id);
         let isFile: boolean;
         if (is_file === undefined) {
-            const existing = await FavoritePathsService.getFavoritePathById(id);
             isFile = Number(existing?.is_file) === 1;
         } else {
             isFile = is_file === true || is_file === 1 || is_file === '1';
         }
 
-        const success = await FavoritePathsService.updateFavoritePath(id, finalName, path, isFile);
+        // scope / connection_uuid 未显式传时保留原值（老前端、云同步都不带这两个字段）
+        const finalScope = scope === undefined
+            ? (((existing?.scope as string) === 'host') ? 'host' : 'global')
+            : parseScope(scope);
+        const finalConnectionUuid = scope === undefined
+            ? (existing?.connection_uuid ?? null)
+            : parseConnectionUuid(connection_uuid);
+        if (finalScope === 'host' && !finalConnectionUuid) {
+            res.status(400).json({ message: '主机专属收藏缺少归属连接' });
+            return;
+        }
+
+        const success = await FavoritePathsService.updateFavoritePath(
+            id,
+            finalName,
+            path,
+            isFile,
+            finalScope,
+            finalConnectionUuid
+        );
         if (success) {
             const updatedFavoritePath = await FavoritePathsService.getFavoritePathById(id);
             if (updatedFavoritePath) {

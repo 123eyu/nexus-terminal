@@ -2106,9 +2106,14 @@
       "fillCurrentPathTooltip": "アクティブなファイルマネージャーのパスを入力: {path}",
       "nameLabel": "Name (Optional)",
       "namePlaceholder": "My Documents",
+      "scopeLabel": "スコープ",
       "errors": {
         "genericSaveError": "Failed to save favorite path."
       }
+    },
+    "scope": {
+      "host": "このホストのみ",
+      "global": "グローバル"
     },
     "confirmDelete": "Are you sure you want to delete \"{name}\"?",
     "searchPlaceholder": "Search by name or path...",

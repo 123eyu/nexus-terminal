@@ -4,16 +4,26 @@ import * as PathHistoryService from '../services/path-history.service';
 /**
  * 处理添加新路径历史记录的请求
  */
+/** 归属主机：没有它就写不进按主机隔离的历史，直接拒掉比悄悄记成全局更好 */
+const readConnectionUuid = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
 export const addPath = async (req: Request, res: Response): Promise<void> => {
-    const { path } = req.body;
+    const { path, connectionUuid, connection_uuid } = req.body;
 
     if (!path || typeof path !== 'string' || path.trim().length === 0) {
         res.status(400).json({ message: '路径不能为空' });
         return;
     }
 
+    const resolvedConnectionUuid = readConnectionUuid(connectionUuid ?? connection_uuid);
+    if (!resolvedConnectionUuid) {
+        res.status(400).json({ message: '缺少归属主机' });
+        return;
+    }
+
     try {
-        const newId = await PathHistoryService.addPathHistory(path);
+        const newId = await PathHistoryService.addPathHistory(path, resolvedConnectionUuid);
         res.status(201).json({ id: newId, message: '路径已添加到历史记录' });
     } catch (error: any) {
         console.error('添加路径历史记录控制器出错:', error);
@@ -26,7 +36,8 @@ export const addPath = async (req: Request, res: Response): Promise<void> => {
  */
 export const getAllPaths = async (req: Request, res: Response): Promise<void> => {
     try {
-        const history = await PathHistoryService.getAllPathHistory();
+        const connectionUuid = readConnectionUuid(req.query.connectionUuid);
+        const history = await PathHistoryService.getAllPathHistory(connectionUuid);
         // Repository 返回的是升序（旧->新）
         res.status(200).json(history);
     } catch (error: any) {
@@ -64,7 +75,13 @@ export const deletePath = async (req: Request, res: Response): Promise<void> => 
  */
 export const clearAllPaths = async (req: Request, res: Response): Promise<void> => {
     try {
-        const count = await PathHistoryService.clearAllPathHistory();
+        const connectionUuid = readConnectionUuid(req.query.connectionUuid);
+        // 历史已按主机隔离，不带归属就等于「清空所有主机」——这种破坏性操作必须写清楚是谁
+        if (!connectionUuid) {
+            res.status(400).json({ message: '缺少归属主机' });
+            return;
+        }
+        const count = await PathHistoryService.clearAllPathHistory(connectionUuid);
         res.status(200).json({ count, message: `已清空 ${count} 条路径历史记录` });
     } catch (error: any) {
         console.error('清空路径历史记录控制器出错:', error);

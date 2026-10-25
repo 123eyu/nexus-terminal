@@ -381,7 +381,7 @@ export const syncService = {
       }));
     }
 
-    // 13. 导出 favorite_paths (常用路径，以 path 为业务唯一标识)
+    // 13. 导出 favorite_paths (常用路径，业务唯一标识 = path + 作用域 + 归属主机)
     let favorite_paths: SyncEntityItem[] = [];
     if (en('connections.favoritePaths')) {
       const favRows = await allDb<any>(
@@ -389,11 +389,17 @@ export const syncService = {
         `SELECT * FROM favorite_paths WHERE updated_at > ?`,
         [sinceTimestamp]
       );
-      favorite_paths = favRows.map(r => ({
-        uuid: `fav_${Buffer.from(r.path || '').toString('base64').replace(/=/g, '')}`,
-        updated_at: r.updated_at || Math.floor(Date.now() / 1000),
-        data: r
-      }));
+      favorite_paths = favRows.map(r => {
+        const scope = r.scope === 'host' ? 'host' : 'global';
+        const connUuid = r.connection_uuid || '';
+        // 同一路径可以同时存在「全局书签」和「某主机专属书签」，uuid 必须带上作用域才不撞
+        const identity = scope === 'host' ? `${r.path || ''}|host|${connUuid}` : `${r.path || ''}|global`;
+        return {
+          uuid: `fav_${Buffer.from(identity).toString('base64').replace(/=/g, '')}`,
+          updated_at: r.updated_at || Math.floor(Date.now() / 1000),
+          data: { ...r, scope }
+        };
+      });
     }
 
     // 14. 导出 command_history (命令历史)
@@ -1125,31 +1131,36 @@ export const syncService = {
       }
     }
 
-    // --- 步骤 11: 合并 favorite_paths (常用路径，以 path 业务唯一标识排重合并，保留本地物理自增ID) ---
+    // --- 步骤 11: 合并 favorite_paths (业务唯一标识 = path + 作用域 + 归属主机，保留本地物理自增ID) ---
     if (en('connections.favoritePaths') && entities.favorite_paths && entities.favorite_paths.length > 0) {
       for (const item of entities.favorite_paths) {
         const d = item.data;
         if (!d || !d.path) continue;
 
+        const scope = d.scope === 'host' ? 'host' : 'global';
+        const connUuid = scope === 'host' ? (d.connection_uuid || null) : null;
+
         const local = await getDb<{ id: number; last_used_at: number; updated_at: number }>(
           db,
-          `SELECT id, last_used_at, updated_at FROM favorite_paths WHERE path = ?`,
-          [d.path]
+          `SELECT id, last_used_at, updated_at FROM favorite_paths
+           WHERE path = ? AND scope = ? AND IFNULL(connection_uuid, '') = ?`,
+          [d.path, scope, connUuid || '']
         );
 
         if (!local) {
           await runDb(
             db,
-            `INSERT INTO favorite_paths (name, path, is_file, last_used_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-            [d.name || null, d.path, d.is_file ? 1 : 0, d.last_used_at || null, d.created_at || item.updated_at, item.updated_at]
+            `INSERT INTO favorite_paths (name, path, is_file, scope, connection_uuid, last_used_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [d.name || null, d.path, d.is_file ? 1 : 0, scope, connUuid, d.last_used_at || null, d.created_at || item.updated_at, item.updated_at]
           );
           pushed++;
         } else if (item.updated_at > (local.updated_at || 0)) {
           const maxLastUsed = Math.max(local.last_used_at || 0, d.last_used_at || 0) || null;
           await runDb(
             db,
-            `UPDATE favorite_paths SET name = ?, is_file = ?, last_used_at = ?, updated_at = ? WHERE id = ?`,
-            [d.name || null, d.is_file ? 1 : 0, maxLastUsed, item.updated_at, local.id]
+            `UPDATE favorite_paths SET name = ?, is_file = ?, scope = ?, connection_uuid = ?, last_used_at = ?, updated_at = ? WHERE id = ?`,
+            [d.name || null, d.is_file ? 1 : 0, scope, connUuid, maxLastUsed, item.updated_at, local.id]
           );
           pushed++;
           conflictsResolved++;

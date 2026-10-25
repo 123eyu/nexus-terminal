@@ -163,6 +163,8 @@ export const createPathHistoryTableSQL = `
 CREATE TABLE IF NOT EXISTS path_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     path TEXT NOT NULL,
+    -- 路径历史按主机隔离：同一路径在不同机器上是两条独立记录
+    connection_uuid TEXT NULL,
     timestamp INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 );
 `;
@@ -254,6 +256,9 @@ CREATE TABLE IF NOT EXISTS favorite_paths (
     name TEXT NULL, 
     path TEXT NOT NULL, 
     is_file INTEGER NOT NULL DEFAULT 0,
+    -- 'global' = 所有主机可见；'host' = 只对 connection_uuid 那台主机可见
+    scope TEXT NOT NULL DEFAULT 'global',
+    connection_uuid TEXT NULL,
     last_used_at INTEGER NULL, 
     created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
@@ -313,4 +318,4 @@ CREATE TABLE IF NOT EXISTS file_color_highlights (
     UNIQUE(connection_id, path)
 );
 `;
-
+

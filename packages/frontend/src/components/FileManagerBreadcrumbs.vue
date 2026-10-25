@@ -16,6 +16,8 @@ const props = defineProps<{
   isLoading: boolean;
   isMobile: boolean;
   sftpManager: SftpManagerInstance | null;
+  /** 当前文件管理器显示的主机（连接 uuid）：路径历史与「本机专属」收藏都按它隔离 */
+  hostUuid?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -111,7 +113,8 @@ const navigateTo = (targetPath: string) => {
   closeDirDropdown();
   if (trimmed !== props.currentPath) {
     emit('navigate-to-path', trimmed);
-    pathHistoryStore.addPath(trimmed);
+    // 历史按主机记：不传归属，后端会直接拒掉（宁可少记一条也不写脏数据）
+    pathHistoryStore.addPath(trimmed, props.hostUuid);
   }
 };
 
@@ -152,8 +155,11 @@ const startEdit = () => {
   isEditing.value = true;
   editablePath.value = props.currentPath;
   showPathHistoryDropdown.value = true;
-  if (pathHistoryStore.historyList.length === 0) {
-    pathHistoryStore.fetchHistory();
+  // 必须先按当前主机把历史切过来：historyList 里可能还留着另一台机器的路径
+  if (pathHistoryStore.currentConnectionUuid !== (props.hostUuid || null)) {
+    pathHistoryStore.fetchHistory(props.hostUuid ?? null);
+  } else if (pathHistoryStore.historyList.length === 0) {
+    pathHistoryStore.fetchHistory(props.hostUuid ?? null);
   }
   pathHistoryStore.setSearchTerm(editablePath.value);
 
@@ -340,6 +346,7 @@ defineExpose({
     :is-connected="props.isConnected"
     :is-loading="props.isLoading"
     :sftp-manager="props.sftpManager"
+    :host-uuid="props.hostUuid ?? null"
     @navigate-to-path="(p: string) => emit('navigate-to-path', p)"
     @open-file="(item, path) => emit('open-file', item, path)"
     @open-favorite-file="(fav) => emit('open-favorite-file', fav)"
@@ -485,6 +492,7 @@ defineExpose({
           :is-visible="showFavoritePathsModal"
           :trigger-element="favoritePathsButtonRef"
           :is-mobile="false"
+          :host-uuid="props.hostUuid ?? null"
           :current-path="props.currentPath"
           @close="showFavoritePathsModal = false"
           @navigate-to-path="(p: string) => { emit('navigate-to-path', p); showFavoritePathsModal = false; }"

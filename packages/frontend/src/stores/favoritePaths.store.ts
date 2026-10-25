@@ -5,6 +5,13 @@ import { useUiNotificationsStore } from './uiNotifications.store';
 // TODO: Define these types more precisely based on API response
 export type FavoritePathSortType = 'name' | 'last_used_at';
 
+/**
+ * 收藏作用域：
+ * - `global` 所有主机可见（跨机器通用，比如 /tmp、~/downloads 这类习惯路径）
+ * - `host`   只对 `connection_uuid` 那台主机可见（路径只在那台机器上存在）
+ */
+export type FavoritePathScope = 'global' | 'host';
+
 export interface FavoritePathItem {
   id: string;
   path: string;
@@ -14,6 +21,10 @@ export interface FavoritePathItem {
    * 文件收藏点击后直接打开，目录收藏点击后跳转。
    */
   is_file?: number | boolean;
+  /** 作用域，老数据缺省按 global 处理 */
+  scope?: FavoritePathScope;
+  /** host 作用域时的归属主机 */
+  connection_uuid?: string | null;
   last_used_at?: number | null; // Added last_used_at
   // Add other relevant fields from the API if any
   createdAt?: string;
@@ -56,6 +67,18 @@ export const useFavoritePathsStore = defineStore('favoritePaths', {
     },
     getFavoritePathById(state): (id: string) => FavoritePathItem | undefined {
       return (id) => state.favoritePaths.find(fav => fav.id === id);
+    },
+    /**
+     * 某个作用域下可见的收藏：`host` 只认当前这台主机，`global` 全都要。
+     * 没有主机上下文（hostUuid 为空）时 host 组为空 —— 归属不明的书签宁可不显示。
+     */
+    favoritePathsFor(): (scope: FavoritePathScope, hostUuid: string | null) => FavoritePathItem[] {
+      return (scope, hostUuid) => this.favoritePaths.filter(fav => {
+        const s: FavoritePathScope = fav.scope === 'host' ? 'host' : 'global';
+        if (s !== scope) return false;
+        if (s === 'host') return !!hostUuid && String(fav.connection_uuid || '') === String(hostUuid);
+        return true;
+      });
     }
   },
   actions: {

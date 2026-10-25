@@ -105,7 +105,7 @@ export const syncTableConfigs: TableTriggerConfig[] = [
     // 它仍然会随其它字段一起被推上去，只是不单独触发。
     tableName: 'favorite_paths',
     updateOfColumns: [
-      'name', 'path', 'is_file'
+      'name', 'path', 'is_file', 'scope', 'connection_uuid'
     ]
   }
 ];

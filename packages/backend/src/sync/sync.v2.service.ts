@@ -181,6 +181,8 @@ export interface SnapshotResponseResult {
       name: string | null;
       path: string;
       is_file: number;
+      scope: 'global' | 'host';
+      connection_uuid: string | null;
       last_used_at: number | null;
       updated_hlc: string;
     }>;
@@ -775,28 +777,36 @@ export const syncV2Service = {
               const favName = data.name ?? null;
               const favIsFile = data.is_file ? 1 : 0;
               const favLastUsed = data.last_used_at ?? null;
+              // 作用域随行同步：global 对所有主机可见，host 只归属某台主机
+              const favScope = data.scope === 'host' ? 'host' : 'global';
+              const favConnUuid = favScope === 'host' ? (data.connection_uuid ?? null) : null;
 
               let favId: number | null = existingLive ? (existingLive.id ?? null) : null;
               if (!favId) {
-                // 同一条路径在两端各自生成过不同 uuid，按 path 对齐
-                const byPath = await getDb<{ id: number }>(db, `SELECT id FROM favorite_paths WHERE path = ? LIMIT 1`, [favPath]);
+                // 同一条记录在两端各自生成过不同 uuid：按「路径 + 作用域 + 归属主机」对齐，
+                // 只按 path 会把 A 机专属书签和全局书签合并成一条
+                const byPath = await getDb<{ id: number }>(
+                  db,
+                  `SELECT id FROM favorite_paths WHERE path = ? AND scope = ? AND IFNULL(connection_uuid, '') = ? LIMIT 1`,
+                  [favPath, favScope, favConnUuid ?? '']
+                );
                 if (byPath) favId = byPath.id;
               }
 
               if (favId) {
                 await runDb(
                   db,
-                  `UPDATE favorite_paths SET name = ?, path = ?, is_file = ?, last_used_at = ?, uuid = ?, updated_hlc = ?, updated_at = ?
+                  `UPDATE favorite_paths SET name = ?, path = ?, is_file = ?, scope = ?, connection_uuid = ?, last_used_at = ?, uuid = ?, updated_hlc = ?, updated_at = ?
                    WHERE id = ?`,
-                  [favName, favPath, favIsFile, favLastUsed, item.row_id, effectiveHlc, Math.floor(nowMs / 1000), favId]
+                  [favName, favPath, favIsFile, favScope, favConnUuid, favLastUsed, item.row_id, effectiveHlc, Math.floor(nowMs / 1000), favId]
                 );
               } else {
                 await runDb(
                   db,
-                  `INSERT INTO favorite_paths (name, path, is_file, last_used_at, uuid, updated_hlc, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                  `INSERT INTO favorite_paths (name, path, is_file, scope, connection_uuid, last_used_at, uuid, updated_hlc, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
-                    favName, favPath, favIsFile, favLastUsed, item.row_id, effectiveHlc,
+                    favName, favPath, favIsFile, favScope, favConnUuid, favLastUsed, item.row_id, effectiveHlc,
                     Math.floor(nowMs / 1000), Math.floor(nowMs / 1000)
                   ]
                 );
@@ -1203,6 +1213,8 @@ export const syncV2Service = {
                 name: f.name ?? null,
                 path: f.path,
                 is_file: f.is_file ? 1 : 0,
+                scope: f.scope === 'host' ? 'host' : 'global',
+                connection_uuid: f.connection_uuid ?? null,
                 last_used_at: f.last_used_at ?? null
               }
             });
@@ -1496,6 +1508,8 @@ export const syncV2Service = {
                 name: f.name ?? null,
                 path: f.path,
                 is_file: f.is_file ? 1 : 0,
+                scope: f.scope === 'host' ? 'host' : 'global',
+                connection_uuid: f.connection_uuid ?? null,
                 last_used_at: f.last_used_at ?? null
               }
             });
@@ -1989,7 +2003,7 @@ export const syncV2Service = {
         };
       });
 
-    // 10.8 提取 favorite_paths（常用路径，身份是 path）
+    // 10.8 提取 favorite_paths（常用路径，身份是 path + scope + 归属主机）
     const rawFavoritePaths = await allDb<any>(db, `SELECT * FROM favorite_paths ORDER BY id ASC`);
     const favoritePaths = rawFavoritePaths
       .filter(f => !!f.uuid)
@@ -1998,6 +2012,8 @@ export const syncV2Service = {
         name: f.name ?? null,
         path: f.path,
         is_file: f.is_file ? 1 : 0,
+        scope: (f.scope === 'host' ? 'host' : 'global') as 'global' | 'host',
+        connection_uuid: f.connection_uuid ?? null,
         last_used_at: f.last_used_at ?? null,
         updated_hlc: f.updated_hlc || `${Date.now()}-00000-server`
       }));

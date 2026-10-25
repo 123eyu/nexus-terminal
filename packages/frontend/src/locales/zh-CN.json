@@ -2225,9 +2225,14 @@
       "fillCurrentPathTooltip": "点击填入当前激活的文件管理器路径: {path}",
       "nameLabel": "名称 (可选)",
       "namePlaceholder": "我的文档",
+      "scopeLabel": "收藏范围",
       "errors": {
         "genericSaveError": "保存收藏路径失败。"
       }
+    },
+    "scope": {
+      "host": "本机专属",
+      "global": "全局"
     },
     "confirmDelete": "您确定要删除 \"{name}\" 吗？",
     "searchPlaceholder": "按名称或路径搜索...",

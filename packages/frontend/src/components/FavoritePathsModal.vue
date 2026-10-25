@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileFavoritePathsModal from './MobileFavoritePathsModal.vue';
@@ -25,6 +25,11 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  /** 当前文件管理器所在主机（连接 uuid）：决定「本机专属」这一组显示哪些 */
+  hostUuid: {
+    type: String as PropType<string | null>,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['close', 'navigateToPath', 'openFavoriteFile']);
@@ -42,17 +47,33 @@ const searchInputRef = ref<HTMLInputElement | null>(null);
 const listContainerRef = ref<HTMLElement | null>(null);
 const selectedIndex = ref<number>(0);
 
+/**
+ * 列表当前看的是「本机专属」还是「全局」。默认本机 —— 从某个文件管理器里打开收藏夹，
+ * 想找的几乎都是当前这台机器上的路径。
+ */
+const activeScope = ref<FavoritePathScope>('host');
+
+const scopedPaths = computed(() =>
+  favoritePathsStore.favoritePathsFor(activeScope.value, props.hostUuid || null)
+);
+
 const filteredPaths = computed(() => {
   if (!searchTerm.value) {
-    return favoritePathsStore.favoritePaths;
+    return scopedPaths.value;
   }
   const lowerSearchTerm = searchTerm.value.toLowerCase();
-  return favoritePathsStore.favoritePaths.filter(
+  return scopedPaths.value.filter(
     (p) =>
       p.path.toLowerCase().includes(lowerSearchTerm) ||
       (p.name && p.name.toLowerCase().includes(lowerSearchTerm))
   );
 });
+
+const toggleScope = () => {
+  activeScope.value = activeScope.value === 'host' ? 'global' : 'host';
+  // 列表整体换了一套，选中项跟着回到第一条
+  selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
+};
 
 // 当过滤结果变动时，纠偏当前选中的索引
 watch(filteredPaths, (newList) => {
@@ -233,6 +254,7 @@ const handleClickOutside = (event: MouseEvent) => {
 watch(() => props.isVisible, (newValue: boolean) => {
   if (newValue) {
     searchTerm.value = '';
+    activeScope.value = props.hostUuid ? 'host' : 'global';
     selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
     isPositioned.value = false;
     if (!props.isMobile) {
@@ -253,6 +275,7 @@ watch(() => props.isVisible, (newValue: boolean) => {
 onMounted(() => {
   if (props.isVisible && !props.isMobile) {
     searchTerm.value = ''; 
+    activeScope.value = props.hostUuid ? 'host' : 'global';
     selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
     isPositioned.value = false;
     document.addEventListener('mousedown', handleClickOutside);
@@ -276,6 +299,7 @@ onBeforeUnmount(() => {
     v-if="props.isMobile"
     :is-visible="props.isVisible"
     :current-path="props.currentPath"
+    :host-uuid="props.hostUuid"
     @close="closeModal"
     @navigate-to-path="(p: string) => emit('navigateToPath', p)"
     @open-favorite-file="forwardOpenFavoriteFile"
@@ -290,6 +314,22 @@ onBeforeUnmount(() => {
       class="fixed z-[1001] w-72 md:w-80 rounded-md bg-background shadow-lg border border-border/50 max-h-80 flex flex-col overflow-hidden transition-opacity duration-150"
       :class="isPositioned ? 'opacity-100' : 'opacity-0 pointer-events-none'"
     >
+      <!-- 作用域切换：一键在「本机专属 / 全局」之间换下面这份列表 -->
+      <div class="px-2 pt-2 flex-shrink-0">
+        <button
+          type="button"
+          @click="toggleScope"
+          class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium border transition-colors cursor-pointer"
+          :class="activeScope === 'host'
+            ? 'bg-primary/10 text-primary border-primary/30 hover:bg-primary/20'
+            : 'bg-background text-text-secondary border-border hover:bg-primary/10 hover:text-primary'"
+        >
+          <i :class="activeScope === 'host' ? 'fas fa-server' : 'fas fa-globe'" class="text-[11px]"></i>
+          <span>{{ activeScope === 'host' ? t('favoritePaths.scope.host', '本机专属') : t('favoritePaths.scope.global', '全局') }}</span>
+          <i class="fas fa-exchange-alt text-[9px] opacity-50"></i>
+        </button>
+      </div>
+
       <!-- Toolbar: Search and Add Button -->
       <div class="p-2 flex-shrink-0 flex items-center gap-2">
         <div class="relative flex-grow">
@@ -370,6 +410,7 @@ onBeforeUnmount(() => {
       :is-visible="showAddEditModal"
       :path-data="editingPathItem"
       :current-path="props.currentPath"
+      :host-uuid="props.hostUuid"
       :is-mobile="false"
       @close="showAddEditModal = false"
     />

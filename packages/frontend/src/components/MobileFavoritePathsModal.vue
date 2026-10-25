@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useFavoritePathsStore, type FavoritePathItem } from '../stores/favoritePaths.store';
+import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import { useSessionStore } from '../stores/session.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
@@ -10,6 +10,8 @@ import MobileBottomSheet from './common/MobileBottomSheet.vue';
 const props = defineProps<{
   isVisible: boolean;
   currentPath?: string;
+  /** 当前文件管理器所在主机（连接 uuid）：决定「本机专属」这一组显示哪些 */
+  hostUuid?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -27,17 +29,25 @@ const searchTerm = ref('');
 const showAddEditModal = ref(false);
 const editingPathItem = ref<FavoritePathItem | null>(null);
 
+/** 列表当前看的是「本机专属」还是「全局」，默认本机 */
+const activeScope = ref<FavoritePathScope>('host');
+
 const filteredPaths = computed(() => {
+  const scoped = favoritePathsStore.favoritePathsFor(activeScope.value, props.hostUuid || null);
   if (!searchTerm.value) {
-    return favoritePathsStore.favoritePaths;
+    return scoped;
   }
   const lowerSearchTerm = searchTerm.value.toLowerCase();
-  return favoritePathsStore.favoritePaths.filter(
+  return scoped.filter(
     (p) =>
       p.path.toLowerCase().includes(lowerSearchTerm) ||
       (p.name && p.name.toLowerCase().includes(lowerSearchTerm))
   );
 });
+
+const toggleScope = () => {
+  activeScope.value = activeScope.value === 'host' ? 'global' : 'host';
+};
 
 const currentSortBy = computed(() => favoritePathsStore.currentSortBy);
 
@@ -111,6 +121,7 @@ const handleSendToTerminal = (pathItem: FavoritePathItem) => {
 watch(() => props.isVisible, (val) => {
   if (val) {
     searchTerm.value = '';
+    activeScope.value = props.hostUuid ? 'host' : 'global';
   }
 });
 </script>
@@ -125,6 +136,21 @@ watch(() => props.isVisible, (val) => {
     @close="closeModal"
   >
     <template #sub-header>
+      <!-- 作用域切换：一键在「本机专属 / 全局」之间换下面这份列表 -->
+      <div class="px-4 pt-2.5">
+        <button
+          type="button"
+          @click="toggleScope"
+          class="inline-flex items-center gap-1.5 h-8 px-3 rounded-xl text-xs font-medium border transition-colors active:scale-95 cursor-pointer"
+          :class="activeScope === 'host'
+            ? 'bg-primary/10 text-primary border-primary/30'
+            : 'bg-header/60 text-text-secondary border-border'"
+        >
+          <i :class="activeScope === 'host' ? 'fas fa-server' : 'fas fa-globe'" class="text-[11px]"></i>
+          <span>{{ activeScope === 'host' ? t('favoritePaths.scope.host', '本机专属') : t('favoritePaths.scope.global', '全局') }}</span>
+          <i class="fas fa-exchange-alt text-[9px] opacity-50"></i>
+        </button>
+      </div>
       <!-- 工具栏：搜索与排序/添加按钮 -->
       <div class="px-4 py-2.5 flex items-center gap-2 border-b border-border/40 bg-background">
         <div class="relative flex-grow">
@@ -212,6 +238,7 @@ watch(() => props.isVisible, (val) => {
     :is-visible="showAddEditModal"
     :path-data="editingPathItem"
     :current-path="props.currentPath"
+    :host-uuid="props.hostUuid"
     :is-mobile="true"
     @close="showAddEditModal = false"
   />

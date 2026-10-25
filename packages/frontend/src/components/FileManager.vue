@@ -23,6 +23,7 @@ import { useWorkspaceEventEmitter, useWorkspaceEventSubscriber, useWorkspaceEven
 import { useWorkspaceSyncStore } from '../stores/workspaceSync.store';
 import { useFavoritePathsStore } from '../stores/favoritePaths.store';
 import { useFileColorHighlightsStore } from '../stores/fileColorHighlights.store';
+import { useConnectionsStore } from '../stores/connections.store';
 import FileUploadPopup from './FileUploadPopup.vue';
 import FileManagerContextMenu from './FileManagerContextMenu.vue';
 import FileManagerActionModal from './FileManagerActionModal.vue';
@@ -170,6 +171,21 @@ const fileColorHighlightsStore = useFileColorHighlightsStore(); // 实例化文�
 const numericConnectionId = computed(() => {
   const parsed = parseInt(props.dbConnectionId, 10);
   return isNaN(parsed) ? null : parsed;
+});
+
+const connectionsStore = useConnectionsStore();
+
+/**
+ * 本面板当前显示的主机（连接 uuid）。
+ *
+ * 路径历史与「本机专属」书签都要按它隔离：connection id 是各端自增的，
+ * 换成 uuid 才能跨端对得上。解析不出来时给 null —— 调用方会跳过这两类写入/过滤。
+ */
+const hostConnectionUuid = computed<string | null>(() => {
+  const id = numericConnectionId.value;
+  if (id == null) return null;
+  const conn = connectionsStore.connections.find(c => Number(c.id) === id);
+  return conn?.uuid ? String(conn.uuid) : null;
 });
 
 watch(
@@ -1259,6 +1275,9 @@ const handleAddToFavorites = async (item?: FileListItem) => {
       name: defaultName || undefined,
       // 没有 item = 收藏当前目录；有 item 时看它是不是目录
       is_file: isFile,
+      // 右键收藏默认落到当前这台主机（收藏夹默认展示的也是「本机专属」那一组）
+      scope: hostConnectionUuid.value ? 'host' : 'global',
+      connection_uuid: hostConnectionUuid.value,
     }, t);
   } catch (error) {
     console.error(`[FileManager ${props.sessionId}-${props.instanceId}] 添加常用路径失败:`, error);
@@ -2199,6 +2218,7 @@ defineExpose({ focusSearchInput, startPathEdit });
         :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
         :is-mobile="props.isMobile"
         :sftp-manager="currentSftpManager"
+        :host-uuid="hostConnectionUuid"
         @navigate-to-path="(path) => currentSftpManager?.loadDirectory(path)"
         @open-file="handleBreadcrumbOpenFile"
         @open-favorite-file="handleFavoriteOpenFile"
