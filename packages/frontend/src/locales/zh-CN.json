@@ -860,7 +860,6 @@
       "followActive": "跟随当前会话"
     },
     "crossHostTransfer": {
-      "started": "正在把 {count} 个项目复制到 {target}",
       "failed": "跨主机传输发起失败",
       "missingConnection": "源或目标连接信息缺失，无法传输"
     }

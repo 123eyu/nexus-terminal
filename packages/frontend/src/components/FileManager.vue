@@ -1337,11 +1337,9 @@ const handleCrossHostItemsDropped = async (payload: NexusSftpDragPayload, target
     type: (item.isDirectory ? 'directory' : 'file') as 'directory' | 'file',
   }));
 
+  // 传输一开始就弹顶部通知太吵：右下角小窗本来就会显示进度，
+  // 只有真正失败时才值得打断视线。
   console.log(`[FileManager] 跨主机传输 ${sourceConnectionId} -> ${targetConnectionId}: ${sourceItems.length} 项 -> ${targetDirectory}`);
-  uiNotificationsStore.showInfo(t('fileManager.crossHostTransfer.started', {
-    count: sourceItems.length,
-    target: targetDirectory,
-  }));
 
   try {
     const res = await apiClient.post('/transfers/send', {
