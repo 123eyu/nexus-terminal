@@ -65,8 +65,6 @@ https://github.com/Heavrnl/nexus-terminal/releases/latest
 
 ### 1️⃣ Configure Environment
 
-> It is recommended to deploy in a Debian (AMD64 architecture) environment. Since I do not have an ARM device, compatibility with ARM is not guaranteed.
-
 Create a new folder
 ```bash
 mkdir ./nexus-terminal && cd ./nexus-terminal
