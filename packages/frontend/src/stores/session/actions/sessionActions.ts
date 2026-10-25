@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useConnectionsStore, type ConnectionInfo } from '../../connections.store'; 
 import { sessions, activeSessionId, sessionOrder, lastUserSwitchAt } from '../state';
+import { sessionTabsWithStatus } from '../getters';
 import { generateSessionId } from '../utils';
 import type { SessionState, SessionKind, RemoteLinkStatus, SshTerminalInstance, StatusMonitorInstance, DockerManagerInstance, SftpManagerInstance, WsManagerInstance } from '../types';
 
@@ -23,6 +24,18 @@ import { useUiNotificationsStore } from '../../uiNotifications.store';
 // --- 辅助函数 (特定于此模块的 actions) ---
 const findConnectionInfo = (connectionId: number | string, connectionsStore: ReturnType<typeof useConnectionsStore>): ConnectionInfo | undefined => {
   return connectionsStore.connections.find(c => c.id === Number(connectionId));
+};
+
+/**
+ * 这条会话能不能当「当前活动会话」？
+ *
+ * 无终端会话（文件管理器绑定别的主机时开的私有 SFTP 通道）没有布局、不进标签栏，
+ * 把它设成活动会话，工作区渲染出来的就是一片空白。
+ */
+const canBeActiveSession = (sessionId: string | null | undefined): boolean => {
+  if (!sessionId) return false;
+  const session = sessions.value.get(sessionId);
+  return !!session && session.headless !== true;
 };
 
 /** 找出"这个连接的某个远程桌面会话"（远程会话不按连接去重 SSH 那套逻辑） */
@@ -327,6 +340,10 @@ export const closeSession = async (
   // 所以既不需要记"待清理"，也不需要调后端原子销毁接口。
   const isRemoteSession = sessionToClose.kind === 'rdp' || sessionToClose.kind === 'vnc';
 
+  // 关之前先把标签栏的真实顺序记下来。
+  // 不能用 `sessions` 的 Map 顺序：里面混着无终端会话，而且 Map 顺序是"创建先后"，不是屏幕上看到的排布。
+  const tabsBeforeClose = sessionTabsWithStatus.value.map(t => t.sessionId);
+
   // 0. 只有「挂起会话」这条显式路径才转入后台挂起（默认是直接断开）。
   //    必须在清理 wsManager / 终端实例之前做，并且要等后端确认真的接管了才敢放手：
   //    后端一旦接管，SSH 引用就从 ws 会话里摘走了，之后怎么关 ws 都杀不到它。
@@ -424,11 +441,24 @@ export const closeSession = async (
   }
 
   // 3. 切换活动标签页
-  if (activeSessionId.value === sessionId) {
-    const remainingSessions = Array.from(sessions.value.keys());
-    const nextActiveId = remainingSessions.length > 0 ? remainingSessions[remainingSessions.length - 1] : null;
+  //
+  // 三个必须守住的点：
+  //   1. 下一个活动会话只能从**标签栏**里挑。`sessions` 里可能还有文件管理器开出来的
+  //      无终端会话（headless）——它没有布局，选中它工作区就是整块空白，
+  //      用户看到的是「关掉一个标签，整个工作区没了」，还得手点一下剩下的标签才恢复；
+  //   2. 位置感：优先关掉那个标签的右边，没有就左边，符合"关掉一个、视线顺移"的直觉；
+  //   3. 收尾兜底：活动会话必须是一个存在且非无终端的会话，否则退到第一个标签。
+  //      （关掉非活动标签时活动会话本来就没变，这一步什么都不做。）
+  if (!canBeActiveSession(activeSessionId.value)) {
+    const closedTabIndex = tabsBeforeClose.indexOf(sessionId);
+    const neighbourRight = closedTabIndex >= 0 ? tabsBeforeClose[closedTabIndex + 1] : undefined;
+    const neighbourLeft = closedTabIndex > 0 ? tabsBeforeClose[closedTabIndex - 1] : undefined;
+    const nextActiveId =
+      [neighbourRight, neighbourLeft, ...tabsBeforeClose].find(
+        (id) => id && id !== sessionId && canBeActiveSession(id)
+      ) ?? null;
     activeSessionId.value = nextActiveId;
-    console.log(`[SessionActions] 关闭活动会话后，切换到: ${nextActiveId}`);
+    console.log(`[SessionActions] 关闭会话后，活动标签切换为: ${nextActiveId}`);
   }
 
   // 4. 【核心强制销毁】立即调用后端原子销毁接口：强制切断SSH + 彻底清理挂起 + 强制从数据库快照剔除落盘（仅针对该 sessionId）
