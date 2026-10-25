@@ -4,6 +4,7 @@ import { clientStates } from '../websocket/state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
 import {
+    chooseSuspendLogBuffer,
     evaluateLeaseWrite,
     isForeignWorkspaceClient,
     removeSessionFromSnapshot,
@@ -208,18 +209,42 @@ export class WorkspaceSyncService {
                     state.suspendLogPath = sessionId;
                 }
 
-                // 写入终端屏幕最新历史 (精准覆盖或清空)
-                const matchedSync = snapshotSessions.find((s: any) => s.sessionId === sessionId);
-                if (matchedSync && typeof matchedSync.terminalBuffer === 'string') {
+                // 写挂起日志：新端恢复时屏幕内容完全来自这份日志，写空 = 整屏被清掉。
+                //
+                // 优先用本端内存里攒下的输出（resume 时以整份日志初始化、之后持续追加），
+                // 它不受"会话 id 每轮都变"的影响；其次是快照（同 id → 同连接兜底）。
+                // 一份都拿不到时**保持现有日志不动** —— 宁可留旧内容，也不能写空。
+                const snapshotExact =
+                    snapshotSessions.find((s: any) => s.sessionId === sessionId) ?? null;
+                const snapshotSameConnection = snapshotSessions.filter(
+                    (s: any) => String(s.connectionId) === String(state.dbConnectionId)
+                );
+                const picked = chooseSuspendLogBuffer({
+                    recentOutput: state.recentOutputBuffer ? state.recentOutputBuffer.join('') : '',
+                    snapshotExact,
+                    snapshotSameConnection,
+                });
+
+                if (picked.buffer) {
                     try {
-                        console.log(`[WorkspaceSyncService] 为挂起会话 ${sessionId} 覆盖同步终端屏幕历史 (字符数: ${matchedSync.terminalBuffer.length})...`);
+                        console.log(
+                            `[WorkspaceSyncService] 为挂起会话 ${sessionId} 写终端历史（来源: ${picked.source}, 字符数: ${picked.buffer.length}）...`
+                        );
                         await temporaryLogStorageService.ensureLogDirectoryExists();
-                        const normalized = matchedSync.terminalBuffer ? matchedSync.terminalBuffer.replace(/\r?\n/g, '\r\n') : '';
-                        const formatted = normalized || '';
-                        await temporaryLogStorageService.overwriteLog(state.suspendLogPath, formatted);
+                        // 内存里是 PTY 原始字节（已带 \r\n，TUI 里可能只有 \n），
+                        // 不能再做换行归一化；快照里是 xterm 序列化文本，需要补 \r。
+                        const payload =
+                            picked.source === 'recent'
+                                ? picked.buffer
+                                : picked.buffer.replace(/\r?\n/g, '\r\n');
+                        await temporaryLogStorageService.overwriteLog(state.suspendLogPath, payload);
                     } catch (logErr) {
-                        console.warn(`[WorkspaceSyncService] 覆盖写入终端历史日志失败:`, logErr);
+                        console.warn(`[WorkspaceSyncService] 写入终端历史日志失败:`, logErr);
                     }
+                } else {
+                    console.warn(
+                        `[WorkspaceSyncService] 会话 ${sessionId} 找不到可用的终端历史（快照与内存都为空），保留现有日志不覆盖`
+                    );
                 }
 
                 const takeoverDetails = {

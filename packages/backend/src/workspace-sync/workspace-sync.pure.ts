@@ -121,6 +121,49 @@ export function shouldHandoverToSuspend(entry: TakeoverCandidates): boolean {
   return Boolean(entry.hasSshClient && entry.hasShellStream);
 }
 
+export interface SuspendBufferChoice {
+  /** 写进挂起日志的内容（空字符串 = 拿不到，不要动现有日志） */
+  buffer: string;
+  /** 来源：recent=本端内存、snapshot=快照同 id、connection=快照同连接、none=无 */
+  source: 'recent' | 'snapshot' | 'connection' | 'none';
+}
+
+/**
+ * 移交挂起时，用哪一份内容写挂起日志？
+ *
+ * 新端恢复这条会话时，屏幕上有什么**完全取决于这份日志**（回放它）。
+ * 所以只要写了空内容，用户看到的就是整屏被清空 —— 反复接管就会一轮比一轮干净。
+ *
+ * 难点在会话 id 会变：每次 resume 拿到的都是新的后端 SID，而云端快照是按「当时的 id」
+ * 存的。接管发生得快时，新端还没来得及把快照按新 id 落库，按 id 就找不到这一条。
+ *
+ * 取值顺序：
+ *   1. 本端内存里攒下的输出 —— resume 时就是用整份日志初始化的（> `fullLogData`），
+ *      之后持续追加，既不受 id 变化影响，也最新；
+ *   2. 快照里 id 完全一致的那条（前端序列化过的屏幕内容，带 SGR）；
+ *   3. 快照里**同一连接且只有一条**的那条 —— id 换代后的兜底；
+ *   4. 都没有 → 返回空，调用方必须保留原日志（绝不能写空去截断）。
+ */
+export function chooseSuspendLogBuffer(input: {
+  recentOutput?: string | null;
+  snapshotExact?: { terminalBuffer?: string } | null;
+  snapshotSameConnection?: Array<{ terminalBuffer?: string }>;
+}): SuspendBufferChoice {
+  const recent = typeof input.recentOutput === 'string' ? input.recentOutput : '';
+  if (recent.length > 0) return { buffer: recent, source: 'recent' };
+
+  const exact = input.snapshotExact?.terminalBuffer;
+  if (typeof exact === 'string' && exact.length > 0) return { buffer: exact, source: 'snapshot' };
+
+  const sameConn = (input.snapshotSameConnection ?? []).filter(
+    (s) => typeof s?.terminalBuffer === 'string' && s.terminalBuffer.length > 0
+  );
+  // 同一连接上开着两条标签时无从判断是哪一条，宁可不覆盖
+  if (sameConn.length === 1) return { buffer: sameConn[0].terminalBuffer as string, source: 'connection' };
+
+  return { buffer: '', source: 'none' };
+}
+
 export interface RemoveSessionResult {
   /** 处理后的快照（输入不会被修改） */
   state: SnapshotLike;

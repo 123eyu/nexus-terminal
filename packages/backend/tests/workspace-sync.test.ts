@@ -7,6 +7,7 @@ import {
   isForeignWorkspaceClient,
   shouldPruneTakeoverSuspend,
   shouldHandoverToSuspend,
+  chooseSuspendLogBuffer,
 } from '../src/workspace-sync/workspace-sync.pure.ts';
 
 // --- 租约判定 ---
@@ -183,4 +184,58 @@ test('shouldHandoverToSuspend：已标记挂起的不重复移交', () => {
 test('shouldHandoverToSuspend：SSH 还没建好 / 没有 shell 通道的不移交', () => {
   assert.equal(shouldHandoverToSuspend({ hasSshClient: false, hasShellStream: true }), false);
   assert.equal(shouldHandoverToSuspend({ hasSshClient: true, hasShellStream: false }), false);
+});
+
+// --- 移交挂起时用哪份终端历史写日志 ---
+
+test('chooseSuspendLogBuffer：优先用本端内存里的输出（不受会话 id 换代影响）', () => {
+  assert.deepEqual(
+    chooseSuspendLogBuffer({
+      recentOutput: 'flood line 1\r\n',
+      snapshotExact: { terminalBuffer: 'snapshot-old' },
+      snapshotSameConnection: [{ terminalBuffer: 'snapshot-conn' }],
+    }),
+    { buffer: 'flood line 1\r\n', source: 'recent' }
+  );
+});
+
+test('chooseSuspendLogBuffer：内存为空时用快照里 id 一致的那条', () => {
+  assert.deepEqual(
+    chooseSuspendLogBuffer({
+      recentOutput: '',
+      snapshotExact: { terminalBuffer: 'snapshot-same-id' },
+      snapshotSameConnection: [{ terminalBuffer: 'snapshot-conn' }],
+    }),
+    { buffer: 'snapshot-same-id', source: 'snapshot' }
+  );
+});
+
+test('chooseSuspendLogBuffer：id 换代了（快照里只有旧 id）时按连接兜底', () => {
+  assert.deepEqual(
+    chooseSuspendLogBuffer({
+      snapshotExact: null,
+      snapshotSameConnection: [{ terminalBuffer: 'prev-generation' }],
+    }),
+    { buffer: 'prev-generation', source: 'connection' }
+  );
+});
+
+test('chooseSuspendLogBuffer：同一连接有多条时不敢乱选', () => {
+  assert.deepEqual(
+    chooseSuspendLogBuffer({
+      snapshotSameConnection: [{ terminalBuffer: 'a' }, { terminalBuffer: 'b' }],
+    }),
+    { buffer: '', source: 'none' }
+  );
+});
+
+test('chooseSuspendLogBuffer：空内容绝不能当成"可用历史"（写下去就是清屏）', () => {
+  assert.deepEqual(
+    chooseSuspendLogBuffer({
+      recentOutput: '',
+      snapshotExact: { terminalBuffer: '' },
+      snapshotSameConnection: [{ terminalBuffer: '' }],
+    }),
+    { buffer: '', source: 'none' }
+  );
 });
