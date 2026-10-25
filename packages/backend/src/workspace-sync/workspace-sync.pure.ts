@@ -97,6 +97,30 @@ export function shouldPruneTakeoverSuspend(
   return !keepOriginalSessionIds.has(original);
 }
 
+/** 参与「该不该在接管时移交挂起」判定的字段（结构类型，便于单测） */
+export interface TakeoverCandidates {
+  /** 无终端会话（文件管理器绑定的私有 SFTP 通道） */
+  isHeadless?: boolean;
+  /** 已经被标记过挂起（正在移交 / 用户已请求） */
+  isMarkedForSuspend?: boolean;
+  /** 是否已经建立了 SSH 客户端与 shell 通道 */
+  hasSshClient: boolean;
+  hasShellStream: boolean;
+}
+
+/**
+ * 接管工作区时，这条会话该不该移交到挂起池？
+ *
+ * 无终端会话**不移交**：它不在标签栏里、不承载任何工作区状态，用户也从没打开过它。
+ * 把它挂进池子，就是「挂起会话里多出一条我没打开过的连接」——
+ * 而新端接管后自己的文件管理器会重新建一条通道，旧的那条留着只会占着 SSH。
+ */
+export function shouldHandoverToSuspend(entry: TakeoverCandidates): boolean {
+  if (entry.isHeadless === true) return false;
+  if (entry.isMarkedForSuspend === true) return false;
+  return Boolean(entry.hasSshClient && entry.hasShellStream);
+}
+
 export interface RemoveSessionResult {
   /** 处理后的快照（输入不会被修改） */
   state: SnapshotLike;

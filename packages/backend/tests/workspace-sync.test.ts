@@ -6,6 +6,7 @@ import {
   removeSessionFromSnapshot,
   isForeignWorkspaceClient,
   shouldPruneTakeoverSuspend,
+  shouldHandoverToSuspend,
 } from '../src/workspace-sync/workspace-sync.pure.ts';
 
 // --- 租约判定 ---
@@ -161,4 +162,25 @@ test('shouldPruneTakeoverSuspend：不是接管产生的（断线/刷新自动�
 
 test('shouldPruneTakeoverSuspend：没有 originalSessionId 的不动（信息不全就别删）', () => {
   assert.equal(shouldPruneTakeoverSuspend({ takeoverRound: 1 }, 3, keep), false);
+});
+
+// --- 接管时该不该把会话移交挂起 ---
+
+const liveSession = { hasSshClient: true, hasShellStream: true };
+
+test('shouldHandoverToSuspend：普通活动会话移交挂起', () => {
+  assert.equal(shouldHandoverToSuspend({ ...liveSession }), true);
+});
+
+test('shouldHandoverToSuspend：无终端会话不移交（否则挂起池里冒出没打开过的连接）', () => {
+  assert.equal(shouldHandoverToSuspend({ ...liveSession, isHeadless: true }), false);
+});
+
+test('shouldHandoverToSuspend：已标记挂起的不重复移交', () => {
+  assert.equal(shouldHandoverToSuspend({ ...liveSession, isMarkedForSuspend: true }), false);
+});
+
+test('shouldHandoverToSuspend：SSH 还没建好 / 没有 shell 通道的不移交', () => {
+  assert.equal(shouldHandoverToSuspend({ hasSshClient: false, hasShellStream: true }), false);
+  assert.equal(shouldHandoverToSuspend({ hasSshClient: true, hasShellStream: false }), false);
 });

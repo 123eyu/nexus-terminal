@@ -107,6 +107,9 @@ export const openNewSession = (
       t,
       {
           isResumeFlow: isResume,
+          // 无终端会话：告诉后端这条通道只用于文件管理器，接管工作区时不要把它挂进
+          // 挂起池（用户从没在标签栏见过它，挂进池子就是「挂起列表里冒出我没打开过的连接」）
+          isHeadless: options?.headless === true,
           getIsMarkedForSuspend: () => {
               return !!newSessionPartial.isMarkedForSuspend;
           }

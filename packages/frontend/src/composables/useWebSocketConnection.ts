@@ -16,13 +16,14 @@ export type WsConnectionStatus = WsConnectionStatusType;
  * @param {Function} t - i18n 翻译函数，从父组件传入
  * @param {object} [options] - 可选参数对象
  * @param {boolean} [options.isResumeFlow=false] - 指示此连接是否用于 SSH 恢复流程
+ * @param {boolean} [options.isHeadless=false] - 是否「无终端会话」（文件管理器绑定的私有 SFTP 通道）
  * @returns 一个包含状态和方法的 WebSocket 连接管理器对象。
  */
 export function createWebSocketConnectionManager(
     sessionId: string,
     dbConnectionId: string,
     t: ReturnType<typeof useI18n>['t'],
-    options?: { isResumeFlow?: boolean; getIsMarkedForSuspend?: () => boolean }
+    options?: { isResumeFlow?: boolean; isHeadless?: boolean; getIsMarkedForSuspend?: () => boolean }
 ) {
     // --- Instance State ---
     // 每个实例拥有独立的 WebSocket 对象、状态和消息处理器
@@ -92,6 +93,8 @@ export function createWebSocketConnectionManager(
             payload: {
                 connectionId: instanceDbConnectionId,
                 sessionId: instanceSessionId, // 显式传递前端当前会话 ID，保证重连时会话 ID 稳定一致
+                // 无终端会话：后端据此在「接管工作区」时跳过它，不往挂起池里塞
+                headless: options?.isHeadless === true,
             },
         });
     };

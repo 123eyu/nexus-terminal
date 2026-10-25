@@ -3,7 +3,12 @@ import * as workspaceSyncRepo from './workspace-sync.repository';
 import { clientStates } from '../websocket/state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
-import { evaluateLeaseWrite, isForeignWorkspaceClient, removeSessionFromSnapshot } from './workspace-sync.pure';
+import {
+    evaluateLeaseWrite,
+    isForeignWorkspaceClient,
+    removeSessionFromSnapshot,
+    shouldHandoverToSuspend,
+} from './workspace-sync.pure';
 
 export interface WorkspaceSyncStatePayload {
     syncEnabled: boolean;
@@ -179,10 +184,21 @@ export class WorkspaceSyncService {
             // 不属于这个工作区，把它们挂走就是"挂起池里冒出一个我没打开过的连接"。
             const isForeignClient = isForeignWorkspaceClient(wsClientId, currentClientId);
             // 匹配同一用户、非当前声明接管客户端、且具有活跃 SSH 连接的会话
+            //
+            // 无终端会话（前端文件管理器绑定主机的私有通道）不参与移交：
+            // 用户从没在标签栏见过它，挂进池子就是「挂起列表里冒出我没打开过的连接」。
+            //
+            // 末尾两个判空与 `shouldHandoverToSuspend` 里的判定重复，是为了让 TS 把
+            // sshClient / sshShellStream 收窄成非空，下面直接拿它们去移交。
             if (
                 state.ws?.userId === userId &&
                 isForeignClient &&
-                !state.isMarkedForSuspend &&
+                shouldHandoverToSuspend({
+                    isHeadless: state.isHeadless === true,
+                    isMarkedForSuspend: state.isMarkedForSuspend === true,
+                    hasSshClient: Boolean(state.sshClient),
+                    hasShellStream: Boolean(state.sshShellStream),
+                }) &&
                 state.sshClient &&
                 state.sshShellStream
             ) {

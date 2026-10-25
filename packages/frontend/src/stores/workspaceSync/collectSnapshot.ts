@@ -23,6 +23,10 @@ import {
  *    存下来会让刷新后的终端变成一块静态 UI，退出 TUI 时还会留一片黑。
  * 3. **分屏 buffer 的 key 必须是先序序号**（pane#0 / pane#1）。
  *    会话树的 paneId 每次刷新都会重新生成，直接拿 paneId 当 key，恢复时必然全部 miss。
+ * 4. **无终端（headless）会话不能存**。它是文件管理器绑定别的主机时开的私有 SFTP 通道，
+ *    没有标签、没有终端内容。一旦写进快照，恢复时会按快照会话当标签恢复 ——
+ *    用户看到的就是「我刚关掉的连接又自己回来了」，而快照里 sessionsCount=1 / tabsCount=0
+ *    正是这种「有会话、没标签」的形态。
  */
 export interface CollectSnapshotDeps {
   syncEnabled: boolean;
@@ -44,11 +48,20 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
   // 若照原样写进快照，刷新后 restoreSessions 会拿 RDP 端口去开 SSH 会话。
   const isRemoteSession = (s: { kind?: string } | undefined) => s?.kind === 'rdp' || s?.kind === 'vnc';
 
+  /**
+   * 无终端会话（文件管理器绑定主机的私有通道）**不进快照**。
+   *
+   * 它不在标签栏里、也没有终端内容，恢复时却会被当成一条普通快照会话开成标签 ——
+   * 「关掉的连接自己又回来了」的根因就在这里。文件管理器需要通道时自己会再建一条。
+   */
+  const isHeadlessSession = (s: { headless?: boolean } | undefined) => s?.headless === true;
+
   const orderedTabs = sessionStore.sessionTabsWithStatus || [];
   const orderedSessionIds = orderedTabs.map((t) => t.sessionId);
-  const allSessionIds = Array.from(sessionStore.sessions.keys()).filter(
-    (id) => !isRemoteSession(sessionStore.sessions.get(id))
-  );
+  const allSessionIds = Array.from(sessionStore.sessions.keys()).filter((id) => {
+    const s = sessionStore.sessions.get(id);
+    return !isRemoteSession(s) && !isHeadlessSession(s);
+  });
   const sortedSessionIds = [
     ...orderedSessionIds.filter((id) => allSessionIds.includes(id)),
     ...allSessionIds.filter((id) => !orderedSessionIds.includes(id)),
@@ -57,7 +70,7 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
   const sessionsList: SyncedSessionInfo[] = [];
   sortedSessionIds.forEach((sId) => {
     const s = sessionStore.sessions.get(sId);
-    if (!s || isRemoteSession(s)) return;
+    if (!s || isRemoteSession(s) || isHeadlessSession(s)) return;
     // 终端屏幕缓冲区：优先用 SerializeAddon（带完整 ANSI 转义、RGB 真彩与格式）
     let terminalBuffer = '';
     if (s.terminalManager && typeof (s.terminalManager as any).serializeTerminal === 'function') {
@@ -199,8 +212,12 @@ export function collectWorkspaceSnapshot(deps: CollectSnapshotDeps): WorkspaceSn
   }));
 
   // 3. 收集所有会话的所有文件管理器实例
+  //
+  // 无终端会话的实例不收集：它不会随快照恢复（会话本身就不进快照），
+  // 留在字典里只会变成恢复时找不到宿主的孤儿条目。
   const allFileManagers: Record<string, SyncedFileManagerInstanceState> = {};
   sessionStore.sessions.forEach((s, sId) => {
+    if (isHeadlessSession(s)) return;
     if (s.sftpManagers) {
       s.sftpManagers.forEach((mgr, instId) => {
         const key = `${sId}:${instId}`;

@@ -64,6 +64,8 @@ export async function handleSshConnect(
         connectionName: 'Connecting...',
         ipAddress: clientIp,
         isShellReady: false,
+        // 无终端会话：前端文件管理器绑定主机时开的私有通道，接管工作区时不参与挂起移交
+        isHeadless: payload?.headless === true,
         recentOutputBuffer: [],
         recentOutputBytes: 0,
         pendingPaneOpens: new Map(),

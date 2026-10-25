@@ -83,8 +83,16 @@ export const cleanupClientConnection = async (sessionId: string | undefined) => 
         if (sftpService) sftpService.cleanupSftpSession(sessionId);
 
         // 3. 处理 SSH 连接 (核心防御：主动关闭或已销毁绝对不挂起)
-        if (state.isExplicitlyClosed) {
-            console.log(`WebSocket: 会话 ${sessionId} 属于显式关闭/彻底销毁，绝不自动挂起，直接释放底层 SSH 资源。`);
+        //
+        // 无终端（headless）会话同样**绝不自动挂起**：它是文件管理器绑定主机时开的私有通道，
+        // 不在标签栏、也不进云端快照。ws 一断就没有宿主了，谁也不会再来 resume 它 ——
+        // 移交进挂起池只会变成「一条我根本没打开过的连接」永久趴在面板里。
+        if (state.isExplicitlyClosed || state.isHeadless) {
+            console.log(
+                state.isHeadless
+                    ? `WebSocket: 会话 ${sessionId} 是无终端会话，断开后直接释放底层 SSH 资源（不转入挂起）。`
+                    : `WebSocket: 会话 ${sessionId} 属于显式关闭/彻底销毁，绝不自动挂起，直接释放底层 SSH 资源。`
+            );
             state.isMarkedForSuspend = false;
             try {
                 state.sshShellStream?.destroy?.();

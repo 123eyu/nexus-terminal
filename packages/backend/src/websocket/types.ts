@@ -28,6 +28,13 @@ export interface ClientState { // 导出以便 Service 可以导入
     dockerShellCache?: Map<string, string>;
     ipAddress?: string; //  IP 地址字段
     isShellReady?: boolean; // 标记 Shell 是否已准备好处理输入和调整大小
+    /**
+     * 无终端会话（前端文件管理器绑定别的主机时开的私有 SFTP 通道）。
+     *
+     * 它不在用户的标签栏里，也不承载任何工作区状态，所以接管工作区时**不参与挂起移交** ——
+     * 否则挂起池里就会冒出「我没打开过的连接」。
+     */
+    isHeadless?: boolean;
     isSuspendedByService?: boolean; // 标记此会话是否已被 SshSuspendService 接管
     isMarkedForSuspend?: boolean; // 标记此会话是否已被用户请求挂起（等待断开连接）
     suspendLogPath?: string;      // 如果标记挂起，则存储日志路径 (基于原始 sessionId)

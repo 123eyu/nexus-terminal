@@ -64,6 +64,20 @@ export const useFileManagerHostsStore = defineStore('fileManagerHosts', () => {
     const ownedSessions = ref<Set<number>>(new Set());
 
     /**
+     * 当前有几个「真终端」会话（不含无终端会话）。
+     *
+     * 0 意味着工作区里一条标签都没有 —— 没有布局、没有 pane 要显示文件管理器。
+     * 这个值既是「该不该补建无终端会话」的开关，也是「该不该把私有通道收掉」的开关。
+     */
+    const terminalSessionCount = (): number => {
+        let n = 0;
+        for (const session of sessions.value.values()) {
+            if (!session.headless) n++;
+        }
+        return n;
+    };
+
+    /**
      * 布局归属键：一台主机上的同一份布局，绑定互通；不同主机各自独立。
      *
      * 解析不出来（会话还没建 / 连接列表没到）时返回 `s:<sessionId>`：
@@ -291,6 +305,15 @@ export const useFileManagerHostsStore = defineStore('fileManagerHosts', () => {
 
     /** 恢复持久化的绑定（把还没建起来的会话补上） */
     const restore = (paneId?: string, ownerSessionId?: string | null) => {
+        // 一条终端会话都没有时不补建。
+        //
+        // 触发时机就是「用户关掉最后一个标签」：绑定是按连接 uuid 存的、不随会话消失，
+        // 这时再去 ensureSession 就等于在空工作区里悄悄开一条**没有标签**的会话，
+        // 它随后被写进云端快照，下次打开网页就被当成标签恢复 ——
+        // 用户看到的是「我刚关掉的连接又自己回来了」。
+        // 刷新后恢复不需要担心：恢复流程建好会话，下面的 watch 会再补一次。
+        if (terminalSessionCount() === 0) return;
+
         const keys = paneId
             ? [compositeKey(ownerKeyFor(ownerSessionId), paneId)].filter(Boolean) as string[]
             : Object.keys(bindings.value);
@@ -298,6 +321,25 @@ export const useFileManagerHostsStore = defineStore('fileManagerHosts', () => {
             const connectionId = referenceOfKey(key);
             if (connectionId == null) continue;
             ensureSession(connectionId);
+        }
+    };
+
+    /** 收掉所有我们自己开的无终端会话（工作区已经没有终端了，这些通道没有宿主） */
+    const closeOwnedSessions = async () => {
+        const connectionIds = Array.from(ownedSessions.value);
+        if (connectionIds.length === 0) return;
+        ownedSessions.value.clear();
+        for (const connectionId of connectionIds) {
+            const sessionId = findSessionIdByConnection(connectionId);
+            const session = sessionId ? sessions.value.get(sessionId) : undefined;
+            // 只关无终端会话：同连接上如果还有用户自己的终端，不能动
+            if (!sessionId || !session?.headless) continue;
+            try {
+                await useSessionStore().closeSession(sessionId);
+                console.log(`[FileManagerHosts] 工作区已无终端会话，关闭连接 ${connectionId} 的无终端会话 ${sessionId}`);
+            } catch (err) {
+                console.warn('[FileManagerHosts] 关闭无终端会话失败:', err);
+            }
         }
     };
 
@@ -324,6 +366,22 @@ export const useFileManagerHostsStore = defineStore('fileManagerHosts', () => {
             restore();
         }
     );
+
+    /**
+     * 终端会话数变化是「工作区还在不在」的唯一信号：
+     *
+     * - 0 → 有：刷新/接管后恢复流程把会话建好了，这时才补建无终端通道
+     *   （挂载早期 `restore()` 会因为「一条终端都没有」直接跳过，不补就永远缺通道）；
+     * - 有 → 0：用户关掉了最后一个标签，私有通道没有宿主了，立即收掉 ——
+     *   否则那条 SSH 会一直挂在后台（还会在下次接管时被挂进挂起池）。
+     */
+    watch(terminalSessionCount, (now, prev) => {
+        if (now > 0 && prev === 0) {
+            restore();
+        } else if (now === 0 && prev > 0) {
+            void closeOwnedSessions();
+        }
+    });
 
     return {
         bindings,
