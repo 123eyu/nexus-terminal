@@ -754,7 +754,8 @@
       "compressSuccess": "压缩 {name} 成功",
       "decompressSuccess": "解压 {name} 成功",
       "pathCopied": "路径已复制到剪贴板",
-      "ownerChanged": "所有者已修改"
+      "ownerChanged": "所有者已修改",
+      "created": "已创建"
     },
     "warnings": {
       "moveSameDirectory": "不能在同一目录下剪切和粘贴。"
@@ -848,8 +849,8 @@
       "placeholders": {
         "newName": "输入新名称",
         "newPermissions": "例如 755 或 0755",
-        "newFile": "输入文件名",
-        "newFolder": "输入文件夹名称"
+        "newFile": "输入文件名，或 ./a/b/1.txt",
+        "newFolder": "输入文件夹名，或 ./a/b/c"
       },
       "chmodHelp": "请输入八进制格式的权限 (例如 755 或 0755)。"
     },

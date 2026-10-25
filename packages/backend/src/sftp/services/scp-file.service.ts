@@ -416,7 +416,7 @@ export class ScpFileService {
     /**
      * 写入文件内容 (通过 SSH 管道流式写入)
      */
-    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string): Promise<void> {
+    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string, createParents?: boolean): Promise<void> {
         const state = this.clientStates.get(sessionId);
         if (!state || !state.sshClient) {
             state?.ws.send(JSON.stringify({ type: 'sftp:writefile:error', path, payload: 'SSH 会话未就绪', requestId }));
@@ -425,9 +425,21 @@ export class ScpFileService {
 
         const normPath = this.normalizePath(path);
         const targetEncoding = encoding || 'utf-8';
-        console.debug(`[SCP ${sessionId}] writefile 开始: ${path} -> ${normPath} (ID: ${requestId}, 编码: ${targetEncoding})`);
+        console.debug(`[SCP ${sessionId}] writefile 开始: ${path} -> ${normPath} (ID: ${requestId}, 编码: ${targetEncoding}, createParents: ${!!createParents})`);
 
         try {
+            // 新建文件允许目标带路径：先把缺的父目录补齐（`cat >` 不会自己建目录）
+            if (createParents) {
+                const parentDir = normPath.substring(0, normPath.lastIndexOf('/')) || '/';
+                if (parentDir !== '/') {
+                    const mkParent = await this.execCommand(state.sshClient, `mkdir -p ${this.escapePath(parentDir)}`);
+                    if (mkParent.code !== 0) {
+                        const errMsg = mkParent.stderr.trim() || `创建父目录失败，退出码: ${mkParent.code}`;
+                        state.ws.send(JSON.stringify({ type: 'sftp:writefile:error', path: normPath, payload: errMsg, requestId }));
+                        return;
+                    }
+                }
+            }
             let buffer: Buffer;
             try {
                 buffer = iconv.encode(data, targetEncoding);

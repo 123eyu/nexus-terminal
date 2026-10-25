@@ -600,7 +600,8 @@
       "compressSuccess": "{name} を正常に圧縮しました",
       "decompressSuccess": "{name} を正常に解凍しました",
       "pathCopied": "パスがクリップボードにコピーされました",
-      "ownerChanged": "所有者を変更しました"
+      "ownerChanged": "所有者を変更しました",
+      "created": "作成しました"
     },
     "prompts": {
       "confirmDeleteFile": "ファイル \"{name}\" を削除しますか？この操作は元に戻せません。",
@@ -695,8 +696,8 @@
       "placeholders": {
         "newName": "新しい名前を入力",
         "newPermissions": "例: 755 または 0755",
-        "newFile": "ファイル名を入力",
-        "newFolder": "フォルダー名を入力"
+        "newFile": "ファイル名、または ./a/b/1.txt",
+        "newFolder": "フォルダー名、または ./a/b/c"
       },
       "chmodHelp": "8進数形式で権限を入力してください (例: 755 または 0755)。"
     },

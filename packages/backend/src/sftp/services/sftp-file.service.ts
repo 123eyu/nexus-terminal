@@ -6,6 +6,45 @@ import * as iconv from 'iconv-lite';
 export class SftpFileService {
     constructor(private clientStates: Map<string, ClientState>) {}
 
+    /**
+     * `mkdir -p` 的 SFTP 实现：逐级建目录，已存在（且确实是目录）就跳过。
+     *
+     * 为什么不直接 `sftp.mkdir(path)`：用户会在新建框里写 `./asd/222/1.txt`，
+     * 中间层级可能一个都不存在，SFTP 的 mkdir 不递归，必然失败。
+     * 也不能把「已存在」一律当成成功 —— 中间被一个同名**文件**挡住时必须报错，
+     * 否则会出现「目录显示建成、文件写不进去」的半截状态。
+     */
+    private ensureDirectories(
+        sftp: NonNullable<ClientState['sftp']>,
+        targetDir: string
+    ): Promise<void> {
+        return new Promise<void>((resolve, reject) => {
+            const segments = targetDir.split('/').filter(Boolean);
+            const step = (index: number): void => {
+                if (index >= segments.length) {
+                    resolve();
+                    return;
+                }
+                const current = '/' + segments.slice(0, index + 1).join('/');
+                sftp.mkdir(current, (err) => {
+                    if (!err) {
+                        step(index + 1);
+                        return;
+                    }
+                    // 已存在：只有确认它是目录才继续往下
+                    sftp.stat(current, (statErr, stats) => {
+                        if (!statErr && stats.isDirectory()) {
+                            step(index + 1);
+                            return;
+                        }
+                        reject(err);
+                    });
+                });
+            };
+            step(0);
+        });
+    }
+
     /** 读取目录内容 */
     async readdir(sessionId: string, path: string, requestId: string): Promise<void> {
         const state = this.clientStates.get(sessionId);
@@ -234,7 +273,7 @@ export class SftpFileService {
     }
 
     /** 写入文件内容 (支持指定编码) */
-    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string): Promise<void> {
+    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string, createParents?: boolean): Promise<void> {
         const state = this.clientStates.get(sessionId);
         if (!state || !state.sftp) {
             console.warn(`[SFTP] SFTP 未准备好，无法在 ${sessionId} 上执行 writefile (ID: ${requestId})`);
@@ -242,8 +281,15 @@ export class SftpFileService {
             return;
         }
         const targetEncoding = encoding || 'utf-8';
-        console.debug(`[SFTP ${sessionId}] Received writefile request for ${path} (ID: ${requestId}, Encoding: ${targetEncoding})`);
+        console.debug(`[SFTP ${sessionId}] Received writefile request for ${path} (ID: ${requestId}, Encoding: ${targetEncoding}, createParents: ${!!createParents})`);
         try {
+            // 新建文件允许目标路径是 `./a/b/1.txt` 这种：先把缺的父目录补齐
+            if (createParents) {
+                const parentDir = path.substring(0, path.lastIndexOf('/')) || '/';
+                if (parentDir !== '/') {
+                    await this.ensureDirectories(state.sftp, parentDir);
+                }
+            }
             let buffer: Buffer;
             try {
                 buffer = iconv.encode(data, targetEncoding);
@@ -319,46 +365,56 @@ export class SftpFileService {
         }
     }
 
-    /** 创建目录 */
-    async mkdir(sessionId: string, path: string, requestId: string): Promise<void> {
+    /** 创建目录（`createParents` 时等价于 `mkdir -p`） */
+    async mkdir(sessionId: string, path: string, requestId: string, createParents?: boolean): Promise<void> {
         const state = this.clientStates.get(sessionId);
         if (!state || !state.sftp) {
             console.warn(`[SFTP] SFTP 未准备好，无法在 ${sessionId} 上执行 mkdir (ID: ${requestId})`);
             state?.ws.send(JSON.stringify({ type: 'sftp:mkdir:error', path: path, payload: 'SFTP 会话未就绪', requestId: requestId }));
             return;
         }
-        console.debug(`[SFTP ${sessionId}] Received mkdir request for ${path} (ID: ${requestId})`);
+        console.debug(`[SFTP ${sessionId}] Received mkdir request for ${path} (ID: ${requestId}, createParents: ${!!createParents})`);
         try {
+            // 新文件夹同样允许写路径：`./a/b/c` 一次建三层
+            if (createParents) {
+                await this.ensureDirectories(state.sftp, path);
+                return this.sendMkdirSuccess(state, sessionId, path, requestId);
+            }
             state.sftp.mkdir(path, (err) => {
                 if (err) {
                     console.error(`[SFTP ${sessionId}] mkdir ${path} failed (ID: ${requestId}):`, err);
                     state.ws.send(JSON.stringify({ type: 'sftp:mkdir:error', path: path, payload: `创建目录失败: ${err.message}`, requestId: requestId }));
                 } else {
-                    console.log(`[SFTP ${sessionId}] mkdir ${path} success (ID: ${requestId}). Fetching stats...`);
-                    state.sftp!.lstat(path, (statErr, stats) => {
-                        if (statErr) {
-                            console.error(`[SFTP ${sessionId}] lstat after mkdir ${path} failed (ID: ${requestId}):`, statErr);
-                            state.ws.send(JSON.stringify({ type: 'sftp:mkdir:success', path: path, payload: null, requestId: requestId }));
-                        } else {
-                            const newItem = {
-                                filename: path.substring(path.lastIndexOf('/') + 1),
-                                longname: '',
-                                attrs: {
-                                    size: stats.size, uid: stats.uid, gid: stats.gid, mode: stats.mode,
-                                    atime: stats.atime * 1000, mtime: stats.mtime * 1000,
-                                    isDirectory: stats.isDirectory(), isFile: stats.isFile(), isSymbolicLink: stats.isSymbolicLink(),
-                                }
-                            };
-                            console.log(`[SFTP ${sessionId}] Sending mkdir success with new item for ${path} (ID: ${requestId})`);
-                            state.ws.send(JSON.stringify({ type: 'sftp:mkdir:success', path: path, payload: newItem, requestId: requestId }));
-                        }
-                    });
+                    this.sendMkdirSuccess(state, sessionId, path, requestId);
                 }
             });
         } catch (error: any) {
             console.error(`[SFTP ${sessionId}] mkdir ${path} caught unexpected error (ID: ${requestId}):`, error);
             state.ws.send(JSON.stringify({ type: 'sftp:mkdir:error', path: path, payload: `创建目录时发生意外错误: ${error.message}`, requestId: requestId }));
         }
+    }
+
+    /** 建目录成功后回读属性（拿不到也要回 success，前端会退回「标记父节点待刷新」） */
+    private sendMkdirSuccess(state: ClientState, sessionId: string, path: string, requestId: string): void {
+        console.log(`[SFTP ${sessionId}] mkdir ${path} success (ID: ${requestId}). Fetching stats...`);
+        state.sftp!.lstat(path, (statErr, stats) => {
+            if (statErr) {
+                console.error(`[SFTP ${sessionId}] lstat after mkdir ${path} failed (ID: ${requestId}):`, statErr);
+                state.ws.send(JSON.stringify({ type: 'sftp:mkdir:success', path: path, payload: null, requestId: requestId }));
+                return;
+            }
+            const newItem = {
+                filename: path.substring(path.lastIndexOf('/') + 1),
+                longname: '',
+                attrs: {
+                    size: stats.size, uid: stats.uid, gid: stats.gid, mode: stats.mode,
+                    atime: stats.atime * 1000, mtime: stats.mtime * 1000,
+                    isDirectory: stats.isDirectory(), isFile: stats.isFile(), isSymbolicLink: stats.isSymbolicLink(),
+                }
+            };
+            console.log(`[SFTP ${sessionId}] Sending mkdir success with new item for ${path} (ID: ${requestId})`);
+            state.ws.send(JSON.stringify({ type: 'sftp:mkdir:success', path: path, payload: newItem, requestId: requestId }));
+        });
     }
 
     /** 删除目录 (强制递归) */

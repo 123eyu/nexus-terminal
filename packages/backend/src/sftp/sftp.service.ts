@@ -166,20 +166,20 @@ export class SftpService {
         return this.fileService.readFile(sessionId, path, requestId, requestedEncoding);
     }
 
-    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string): Promise<void> {
+    async writefile(sessionId: string, path: string, data: string, requestId: string, encoding?: string, createParents?: boolean): Promise<void> {
         const state = this.clientStates.get(sessionId);
         if (state?.activeFileProtocol === 'scp') {
-            return this.scpFileService.writefile(sessionId, path, data, requestId, encoding);
+            return this.scpFileService.writefile(sessionId, path, data, requestId, encoding, createParents);
         }
-        return this.fileService.writefile(sessionId, path, data, requestId, encoding);
+        return this.fileService.writefile(sessionId, path, data, requestId, encoding, createParents);
     }
 
-    async mkdir(sessionId: string, path: string, requestId: string): Promise<void> {
+    async mkdir(sessionId: string, path: string, requestId: string, createParents?: boolean): Promise<void> {
         const state = this.clientStates.get(sessionId);
         if (state?.activeFileProtocol === 'scp') {
             return this.scpFileService.mkdir(sessionId, path, requestId);
         }
-        return this.fileService.mkdir(sessionId, path, requestId);
+        return this.fileService.mkdir(sessionId, path, requestId, createParents);
     }
 
     async rmdir(sessionId: string, path: string, requestId: string): Promise<void> {

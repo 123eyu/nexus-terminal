@@ -755,7 +755,8 @@
       "compressSuccess": "Compressed {name} successfully",
       "decompressSuccess": "Decompressed {name} successfully",
       "pathCopied": "Path copied to clipboard",
-      "ownerChanged": "Ownership updated"
+      "ownerChanged": "Ownership updated",
+      "created": "Created"
     },
     "warnings": {
       "moveSameDirectory": "Cannot cut and paste in the same directory."
@@ -849,8 +850,8 @@
       "placeholders": {
         "newName": "Enter new name",
         "newPermissions": "e.g., 755 or 0755",
-        "newFile": "Enter file name",
-        "newFolder": "Enter folder name"
+        "newFile": "File name, or ./a/b/1.txt",
+        "newFolder": "Folder name, or ./a/b/c"
       },
       "chmodHelp": "Enter permissions in octal format (e.g., 755 or 0755)."
     },

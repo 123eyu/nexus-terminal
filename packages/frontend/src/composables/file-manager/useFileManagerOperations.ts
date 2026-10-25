@@ -4,6 +4,7 @@ import type { ClipboardState, CompressFormat } from './useFileManagerContextMenu
 import type { FileManagerActionConfirmPayload } from './useFileManagerActionModal';
 import type { createSftpActionsManager } from '../useSftpActions';
 import { copyToClipboard } from '../../utils/clipboard';
+import { resolveRemotePath, parentOfRemotePath } from '../../utils/pathUtils';
 
 type SftpManagerInstance = ReturnType<typeof createSftpActionsManager>;
 
@@ -99,24 +100,40 @@ export function useFileManagerOperations(options: FileManagerOperationsOptions) 
         break;
       case 'newFile':
         if (value) {
-          if (manager.fileList.value.some((item: FileListItem) => item.filename === value)) {
-            console.warn(`[FileManager ${sessionId}-${instanceId}] File ${value} already exists.`);
-            return;
-          }
+          if (!canCreateAt(value, manager)) break;
           manager.createFile(value);
         }
         break;
       case 'newFolder':
         if (value) {
-          if (manager.fileList.value.some((item: FileListItem) => item.filename === value)) {
-            console.warn(`[FileManager ${sessionId}-${instanceId}] Folder ${value} already exists.`);
-            return;
-          }
+          if (!canCreateAt(value, manager)) break;
           manager.createDirectory(value);
         }
         break;
     }
     handleModalClose();
+  };
+
+  /**
+   * 新建前的同名拦截。
+   *
+   * 输入框允许写路径（`./a/b/1.txt`、`../x`、`/etc/y`），只有「就建在当前目录」时
+   * 本地列表才足以判断重名；建到别处（或建在需要新建的中间目录里）交给后端。
+   * 放行时返回 true。
+   */
+  const canCreateAt = (rawValue: string, manager: SftpManagerInstance): boolean => {
+    const resolved = resolveRemotePath(manager.currentPath.value, rawValue);
+    if (resolved === '/') {
+      console.warn(`[FileManager ${sessionId}-${instanceId}] 不能把根目录当作新建目标`);
+      return false;
+    }
+    if (parentOfRemotePath(resolved) !== manager.currentPath.value) return true;
+    const name = resolved.substring(resolved.lastIndexOf('/') + 1);
+    if (manager.fileList.value.some((item: FileListItem) => item.filename === name)) {
+      console.warn(`[FileManager ${sessionId}-${instanceId}] ${name} 已存在，跳过创建`);
+      return false;
+    }
+    return true;
   };
 
   const handleDeleteSelectedClick = () => {

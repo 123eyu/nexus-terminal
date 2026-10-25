@@ -2,6 +2,7 @@ import { ref, readonly, reactive, computed, watch, type Ref, type ComputedRef } 
 import type { FileListItem, FileAttributes, EditorFileContent, SftpReadFileSuccessPayload, SftpReadFileRequestPayload } from '../types/sftp.types';
 import type { WebSocketMessage, MessagePayload, MessageHandler } from '../types/websocket.types';
 import { diffDirectoryChildren } from '../utils/fileListDiff';
+import { resolveRemotePath, parentOfRemotePath } from '../utils/pathUtils';
 
 import { useUiNotificationsStore } from '../stores/uiNotifications.store'; 
 import { workspaceEmitter } from './workspaceEvents'; 
@@ -128,6 +129,12 @@ export function createSftpActionsManager(
     // 记录本实例发起的移动/复制请求，避免同会话多窗格并发监听导致重复提示与重复广播
     const pendingMoveRequestIds = new Set<string>();
     const pendingCopyRequestIds = new Set<string>();
+    /**
+     * 本实例「新建文件 / 文件夹」的请求：requestId → 目标绝对路径。
+     * 建在当前目录外（`./a/b/1.txt`、`../x`、`/etc/y`）时界面不会有任何变化，
+     * 得靠它给出「已创建 xxx」的反馈，也顺便避免把编辑器保存也当新建来提示。
+     */
+    const pendingCreateFeedback = new Map<string, string>();
     const pendingDirectoryToLoad = ref<{ path: string; forceRefresh: boolean; silent?: boolean } | null>(null);
 
     // 导航代际：每发生一次"用户主动切目录"就 +1。
@@ -330,29 +337,46 @@ export function createSftpActionsManager(
         sendMessage({ type: 'sftp:readdir', requestId: requestId, payload: { path } });
     };
 
-    const createDirectory = (newDirName: string) => {
+    /**
+     * 新建目录。`target` 既可以是名字，也可以是路径（`./a/b`、`../c`、`/etc/d`）：
+     * 一律先按当前目录解析成绝对路径，再让后端 `mkdir -p` 补齐中间层级。
+     */
+    const createDirectory = (target: string) => {
         if (!isSftpReady.value) {
             uiNotificationsStore.showError(t('fileManager.errors.sftpNotReady'));
-            console.warn(`[SFTP ${instanceSessionId}] 尝试创建目录 ${newDirName} 但 SFTP 未就绪。`); // 日志改为中文
+            console.warn(`[SFTP ${instanceSessionId}] 尝试创建目录 ${target} 但 SFTP 未就绪。`);
             return;
         }
-        const newFolderPath = joinPath(currentPathRef.value, newDirName);
+        const newFolderPath = resolveRemotePath(currentPathRef.value, target);
+        if (newFolderPath === '/') {
+            uiNotificationsStore.showError(t('fileManager.errors.invalidName', '名称无效'));
+            return;
+        }
         const requestId = generateRequestId();
-        sendMessage({ type: 'sftp:mkdir', requestId: requestId, payload: { path: newFolderPath } });
+        pendingCreateFeedback.set(requestId, newFolderPath);
+        sendMessage({ type: 'sftp:mkdir', requestId: requestId, payload: { path: newFolderPath, createParents: true } });
     };
 
-    const createFile = (newFileName: string) => {
+    /**
+     * 新建文件。同 `createDirectory`：支持相对 / 绝对路径，缺失的父目录由后端递归补建。
+     */
+    const createFile = (target: string) => {
         if (!isSftpReady.value) {
             uiNotificationsStore.showError(t('fileManager.errors.sftpNotReady'));
-            console.warn(`[SFTP ${instanceSessionId}] 尝试创建文件 ${newFileName} 但 SFTP 未就绪。`); // 日志改为中文
+            console.warn(`[SFTP ${instanceSessionId}] 尝试创建文件 ${target} 但 SFTP 未就绪。`);
             return;
         }
-        const newFilePath = joinPath(currentPathRef.value, newFileName);
+        const newFilePath = resolveRemotePath(currentPathRef.value, target);
+        if (newFilePath === '/') {
+            uiNotificationsStore.showError(t('fileManager.errors.invalidName', '名称无效'));
+            return;
+        }
         const requestId = generateRequestId();
+        pendingCreateFeedback.set(requestId, newFilePath);
         sendMessage({
             type: 'sftp:writefile',
             requestId: requestId,
-            payload: { path: newFilePath, content: '', encoding: 'utf8' }
+            payload: { path: newFilePath, content: '', encoding: 'utf8', createParents: true }
         });
     };
 
@@ -1075,12 +1099,29 @@ export function createSftpActionsManager(
     };
 
 
+    /**
+     * 新建文件/文件夹的收尾反馈。
+     *
+     * 建在当前目录里时列表会自己冒出来，不需要提示；建在 `./a/b/x`、`../y`、`/etc/z`
+     * 这种当前视图看不见的地方时，只有这条 toast 能告诉用户「确实建好了、建在哪」。
+     * 顺带静默刷一次当前目录：中间层级可能是这次才出现的，树里先放的是占位节点。
+     */
+    const notifyNestedCreate = (requestId: string | undefined, createdPath: string | undefined) => {
+        if (!requestId || !createdPath) return;
+        if (!pendingCreateFeedback.has(requestId)) return; // 不是本实例发起的新建（如编辑器保存）
+        pendingCreateFeedback.delete(requestId);
+        if (parentOfRemotePath(createdPath) === currentPathRef.value) return;
+        uiNotificationsStore.showSuccess(`${t('fileManager.notifications.created', '已创建')} ${createdPath}`);
+        loadDirectory(currentPathRef.value, true, true);
+    };
+
     // 处理创建目录成功
     const onMkdirSuccess = (payload: MessagePayload, message: WebSocketMessage) => {
         const newItem = payload as FileListItem | null; // 后端现在会发送 FileListItem 或 null
         const parentPath = message.path?.substring(0, message.path.lastIndexOf('/')) || '/';
 
         console.log(`[SFTP ${instanceSessionId}] 创建目录成功: ${message.path}`);
+        notifyNestedCreate(message.requestId, message.path);
 
         // *** 修改：直接修改文件树 ***
         if (newItem) {
@@ -1216,6 +1257,7 @@ export function createSftpActionsManager(
         const filename = filePath?.substring(filePath.lastIndexOf('/') + 1);
 
         console.log(`[SFTP ${instanceSessionId}] 写入文件成功: ${filePath}`);
+        notifyNestedCreate(message.requestId, filePath);
 
         // *** 修改：直接修改文件树 ***
         if (updatedItem) {
