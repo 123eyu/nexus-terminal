@@ -58,7 +58,6 @@
 
 ## 🖥️ 桌面端
 
-> 移除了web端的特有功能，如各种登录验证，会话挂起等功能
 
 https://github.com/Heavrnl/nexus-terminal/releases/latest
 
@@ -66,7 +65,6 @@ https://github.com/Heavrnl/nexus-terminal/releases/latest
 
 ### 1️⃣ 配置环境
 
-> 建议在 Debian（AMD64 架构）环境中部署，因本人无 ARM 设备，无法保证其兼容性。
 
 新建文件夹
 ```bash
@@ -133,9 +131,6 @@ docker compose pull
 ```bash
 docker compose up -d
 ```
-
-> 想提前试新版本可以拉 `test` 标签（`heavrnl/nexus-terminal:test`）：它是跟着最新代码走的测试镜像，
-> 随时会被下一次构建覆盖，不保证可用，**不要用在生产**。生产请用版本号或 `latest`。
 
 ## 📚 使用指南
 
