@@ -5,6 +5,10 @@ import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } 
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileFavoritePathsModal from './MobileFavoritePathsModal.vue';
+import {
+  writeFavoriteScopePreference,
+  resolveInitialFavoriteScope,
+} from '../utils/favoriteScopePreference';
 
 const PADDING = 8; // px
 
@@ -48,10 +52,11 @@ const listContainerRef = ref<HTMLElement | null>(null);
 const selectedIndex = ref<number>(0);
 
 /**
- * 列表当前看的是「本机专属」还是「全局」。默认本机 —— 从某个文件管理器里打开收藏夹，
- * 想找的几乎都是当前这台机器上的路径。
+ * 列表当前看的是「本机专属」还是「全局」。
+ * 记住上一次选的（`nexus:file_manager_favorite_scope`），不用每次打开都切一遍；
+ * 没记住过才回到「本机专属」——从文件管理器里打开收藏夹，想找的几乎都是这台机器上的路径。
  */
-const activeScope = ref<FavoritePathScope>('host');
+const activeScope = ref<FavoritePathScope>(resolveInitialFavoriteScope(props.hostUuid));
 
 const scopedPaths = computed(() =>
   favoritePathsStore.favoritePathsFor(activeScope.value, props.hostUuid || null)
@@ -71,6 +76,8 @@ const filteredPaths = computed(() => {
 
 const toggleScope = () => {
   activeScope.value = activeScope.value === 'host' ? 'global' : 'host';
+  // 只有用户真的按了才记 —— 打开时因为缺主机上下文回落成「全局」不算意图
+  writeFavoriteScopePreference(activeScope.value);
   // 列表整体换了一套，选中项跟着回到第一条
   selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
 };
@@ -254,7 +261,7 @@ const handleClickOutside = (event: MouseEvent) => {
 watch(() => props.isVisible, (newValue: boolean) => {
   if (newValue) {
     searchTerm.value = '';
-    activeScope.value = props.hostUuid ? 'host' : 'global';
+    activeScope.value = resolveInitialFavoriteScope(props.hostUuid);
     selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
     isPositioned.value = false;
     if (!props.isMobile) {
@@ -275,7 +282,7 @@ watch(() => props.isVisible, (newValue: boolean) => {
 onMounted(() => {
   if (props.isVisible && !props.isMobile) {
     searchTerm.value = ''; 
-    activeScope.value = props.hostUuid ? 'host' : 'global';
+    activeScope.value = resolveInitialFavoriteScope(props.hostUuid);
     selectedIndex.value = filteredPaths.value.length > 0 ? 0 : -1;
     isPositioned.value = false;
     document.addEventListener('mousedown', handleClickOutside);

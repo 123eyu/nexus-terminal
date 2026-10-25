@@ -6,6 +6,10 @@ import { useSessionStore } from '../stores/session.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
+import {
+  writeFavoriteScopePreference,
+  resolveInitialFavoriteScope,
+} from '../utils/favoriteScopePreference';
 
 const props = defineProps<{
   isVisible: boolean;
@@ -29,8 +33,8 @@ const searchTerm = ref('');
 const showAddEditModal = ref(false);
 const editingPathItem = ref<FavoritePathItem | null>(null);
 
-/** 列表当前看的是「本机专属」还是「全局」，默认本机 */
-const activeScope = ref<FavoritePathScope>('host');
+/** 列表当前看的是「本机专属」还是「全局」：记住上一次选的，不用每次打开都切 */
+const activeScope = ref<FavoritePathScope>(resolveInitialFavoriteScope(props.hostUuid));
 
 const filteredPaths = computed(() => {
   const scoped = favoritePathsStore.favoritePathsFor(activeScope.value, props.hostUuid || null);
@@ -47,6 +51,7 @@ const filteredPaths = computed(() => {
 
 const toggleScope = () => {
   activeScope.value = activeScope.value === 'host' ? 'global' : 'host';
+  writeFavoriteScopePreference(activeScope.value);
 };
 
 const currentSortBy = computed(() => favoritePathsStore.currentSortBy);
@@ -121,7 +126,7 @@ const handleSendToTerminal = (pathItem: FavoritePathItem) => {
 watch(() => props.isVisible, (val) => {
   if (val) {
     searchTerm.value = '';
-    activeScope.value = props.hostUuid ? 'host' : 'global';
+    activeScope.value = resolveInitialFavoriteScope(props.hostUuid);
   }
 });
 </script>
