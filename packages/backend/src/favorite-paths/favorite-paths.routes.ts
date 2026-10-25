@@ -9,6 +9,8 @@ router.use(isAuthenticated);
 
 // 定义路由
 router.post('/', FavoritePathsController.createFavoritePath); // POST /api/favorite-paths
+// 批量迁移要排在 `/:id` 之前：否则以后加 GET /transfer 之类会被当成 id 去解析
+router.post('/transfer', FavoritePathsController.transferFavoritePaths); // POST /api/favorite-paths/transfer
 router.get('/', FavoritePathsController.getAllFavoritePaths); // GET /api/favorite-paths?sortBy=name|usage_count
 router.get('/:id', FavoritePathsController.getFavoritePathById); // GET /api/favorite-paths/:id
 router.put('/:id', FavoritePathsController.updateFavoritePath); // PUT /api/favorite-paths/:id

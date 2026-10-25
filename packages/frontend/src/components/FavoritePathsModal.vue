@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick, type PropTy
 import { useI18n } from 'vue-i18n';
 import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
+import FavoritePathTransferModal from './FavoritePathTransferModal.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileFavoritePathsModal from './MobileFavoritePathsModal.vue';
 import {
@@ -44,6 +45,7 @@ const { showConfirmDialog } = useConfirmDialog();
 
 const searchTerm = ref('');
 const showAddEditModal = ref(false);
+const showTransferModal = ref(false);
 const editingPathItem = ref<FavoritePathItem | null>(null);
 const modalContentRef = ref<HTMLElement | null>(null);
 const modalStyle = ref<Record<string, string>>({});
@@ -147,6 +149,8 @@ const toggleSort = () => {
 };
 
 const closeModal = () => {
+  // 收起收藏夹时把子面板一起关掉，否则浮层没了、迁移面板还孤零零挂在屏幕上
+  showTransferModal.value = false;
   emit('close');
 };
 
@@ -181,6 +185,11 @@ const openAddModal = () => {
 const openEditModal = (pathItem: FavoritePathItem) => {
   editingPathItem.value = { ...pathItem };
   showAddEditModal.value = true;
+};
+
+/** 打开「迁移收藏」面板：源就是当前看的那一组 */
+const openTransferModal = () => {
+  showTransferModal.value = true;
 };
 
 const handleDelete = async (pathItem: FavoritePathItem) => {
@@ -252,7 +261,8 @@ const handleClickOutside = (event: MouseEvent) => {
     return;
   }
   if (modalContentRef.value && !modalContentRef.value.contains(event.target as Node)) {
-    if (!showAddEditModal.value) { 
+    // 打开子面板（编辑表单 / 迁移面板）时，点它们内部不该把收藏夹一起收掉
+    if (!showAddEditModal.value && !showTransferModal.value) { 
       closeModal();
     }
   }
@@ -321,8 +331,8 @@ onBeforeUnmount(() => {
       class="fixed z-[1001] w-72 md:w-80 rounded-md bg-background shadow-lg border border-border/50 max-h-80 flex flex-col overflow-hidden transition-opacity duration-150"
       :class="isPositioned ? 'opacity-100' : 'opacity-0 pointer-events-none'"
     >
-      <!-- 作用域切换：一键在「本机专属 / 全局」之间换下面这份列表 -->
-      <div class="px-2 pt-2 flex-shrink-0">
+      <!-- 作用域切换 + 迁移：切换换下面这份列表，迁移把这一组的收藏搬到别处 -->
+      <div class="px-2 pt-2 flex-shrink-0 flex items-center gap-1.5">
         <button
           type="button"
           @click="toggleScope"
@@ -333,7 +343,15 @@ onBeforeUnmount(() => {
         >
           <i :class="activeScope === 'host' ? 'fas fa-server' : 'fas fa-globe'" class="text-[11px]"></i>
           <span>{{ activeScope === 'host' ? t('favoritePaths.scope.host', '本机专属') : t('favoritePaths.scope.global', '全局') }}</span>
-          <i class="fas fa-exchange-alt text-[9px] opacity-50"></i>
+          <i class="fas fa-sync-alt text-[9px] opacity-50"></i>
+        </button>
+        <button
+          type="button"
+          @click="openTransferModal"
+          class="inline-flex items-center justify-center w-7 h-7 rounded-md border border-border bg-background text-text-secondary transition-colors cursor-pointer hover:bg-primary/10 hover:text-primary"
+          :title="t('favoritePaths.transfer.title', '迁移收藏')"
+        >
+          <i class="fas fa-exchange-alt text-[11px]"></i>
         </button>
       </div>
 
@@ -420,6 +438,15 @@ onBeforeUnmount(() => {
       :host-uuid="props.hostUuid"
       :is-mobile="false"
       @close="showAddEditModal = false"
+    />
+
+    <!-- 迁移收藏（移动 / 复制到全局或某台主机） -->
+    <FavoritePathTransferModal
+      :is-visible="showTransferModal"
+      :source-scope="activeScope"
+      :host-uuid="props.hostUuid"
+      :is-mobile="false"
+      @close="showTransferModal = false"
     />
   </Teleport>
 </template>

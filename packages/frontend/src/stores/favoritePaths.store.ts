@@ -210,6 +210,79 @@ export const useFavoritePathsStore = defineStore('favoritePaths', {
         this.isLoading = false;
       }
     },
+    /**
+     * 批量迁移收藏到另一个作用域。
+     *
+     * 后端在一个事务里做完判重与写入，并把迁移后的完整列表带回来 —— 这里整份替换，
+     * 不做本地增量合并：复制会新增记录、移动会改归属，本地推算一遍反而容易漏。
+     *
+     * @returns 实际移动/复制/跳过的条数，供调用方给用户一句话反馈
+     */
+    async transferFavoritePaths(
+      ids: (string | number)[],
+      mode: 'move' | 'copy',
+      targetScope: FavoritePathScope,
+      targetConnectionUuid: string | null,
+      t: (key: string, params?: Record<string, unknown>) => string
+    ): Promise<{ moved: number; copied: number; skipped: number; total: number }> {
+      const notificationsStore = useUiNotificationsStore();
+      this.isLoading = true;
+      this.error = null;
+      try {
+        const response = await apiClient.post<{
+          favoritePaths: FavoritePathItem[];
+          moved: number;
+          copied: number;
+          skipped: number;
+          total: number;
+        }>('/favorite-paths/transfer', {
+          ids,
+          mode,
+          targetScope,
+          targetConnectionUuid: targetScope === 'host' ? targetConnectionUuid : null,
+        });
+        if (Array.isArray(response.data.favoritePaths)) {
+          this.favoritePaths = response.data.favoritePaths;
+          this._sortFavoritePaths();
+        } else {
+          // fetchFavoritePaths 收的是「(键, 默认文案)」两参形式，这里适配一下
+          await this.fetchFavoritePaths((key, defaultMessage) => t(key) || defaultMessage);
+        }
+
+        const { moved, copied, skipped } = response.data;
+        const done = moved + copied;
+        if (done === 0) {
+          notificationsStore.addNotification({
+            message: t('favoritePaths.transfer.notifications.allSkipped'),
+            type: 'warning',
+          });
+        } else if (skipped > 0) {
+          notificationsStore.addNotification({
+            message: t('favoritePaths.transfer.notifications.partialSuccess', { done, skipped }),
+            type: 'warning',
+          });
+        } else {
+          notificationsStore.addNotification({
+            message:
+              mode === 'move'
+                ? t('favoritePaths.transfer.notifications.moveSuccess', { count: done })
+                : t('favoritePaths.transfer.notifications.copySuccess', { count: done }),
+            type: 'success',
+          });
+        }
+        this.isLoading = false;
+        return { moved, copied, skipped, total: response.data.total };
+      } catch (err: any) {
+        this.error = err.message || 'Failed to transfer favorite paths';
+        console.error('Error transferring favorite paths:', err);
+        notificationsStore.addNotification({
+          message: t('favoritePaths.transfer.notifications.error'),
+          type: 'error',
+        });
+        this.isLoading = false;
+        throw err;
+      }
+    },
     async deleteFavoritePath(id: string, t: (key: string, defaultMessage: string) => string) {
       this.isLoading = true;
       this.error = null;

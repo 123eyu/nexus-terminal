@@ -2116,6 +2116,30 @@
       "host": "このホストのみ",
       "global": "グローバル"
     },
+    "transfer": {
+      "title": "お気に入りを移動",
+      "subtitle": "「{scope}」のお気に入りを移動またはコピーします",
+      "selectLabel": "お気に入りを選択",
+      "selectAll": "すべて選択",
+      "clearAll": "選択を解除",
+      "empty": "このグループにはお気に入りがありません",
+      "modeLabel": "方法",
+      "move": "移動",
+      "copy": "コピー",
+      "targetLabel": "移動先",
+      "sameTarget": "現在のグループと同じです。別の場所を選んでください",
+      "moveHint": "移動すると元のグループからは削除されます。",
+      "copyHint": "コピーすると元のグループは残り、移動先に複製が追加されます。",
+      "submitting": "移動中...",
+      "selectedCount": "{count} 件選択中",
+      "notifications": {
+        "moveSuccess": "{count} 件のお気に入りを移動しました。",
+        "copySuccess": "{count} 件のお気に入りをコピーしました。",
+        "partialSuccess": "{done} 件を移動しました。{skipped} 件は移動先に既に存在するためスキップしました。",
+        "allSkipped": "移動先に既に存在するため、移動できる項目がありません。",
+        "error": "お気に入りの移動に失敗しました。"
+      }
+    },
     "confirmDelete": "Are you sure you want to delete \"{name}\"?",
     "searchPlaceholder": "Search by name or path...",
     "addNew": "Add new favorite path",

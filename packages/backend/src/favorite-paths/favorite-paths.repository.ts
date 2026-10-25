@@ -163,3 +163,86 @@ export const findFavoritePathById = async (id: number): Promise<FavoritePath | u
         throw new Error('无法查找收藏路径');
     }
 };
+/** 批量迁移（移动 / 复制）收藏到另一个作用域的统计结果 */
+export interface FavoritePathTransferResult {
+    /** 成功改归属的条数（move） */
+    moved: number;
+    /** 成功新建副本的条数（copy） */
+    copied: number;
+    /** 目标位置已存在同路径、或源记录已不存在而跳过的条数 */
+    skipped: number;
+}
+
+/**
+ * 把一批收藏「移动 / 复制」到另一个作用域。
+ *
+ * 目标位置用 `(path, scope, connection_uuid)` 判重：两处都有同一个路径时，
+ * 移动等于无操作、复制会多出一条谁也分不清的重复书签 —— 两种都直接跳过，
+ * 由调用方把 skipped 报给用户。
+ *
+ * 全程一个事务：中途失败就整体回滚，不留下「移了一半」的状态。
+ */
+export const transferFavoritePaths = async (
+    ids: number[],
+    mode: 'move' | 'copy',
+    targetScope: 'global' | 'host',
+    targetConnectionUuid: string | null
+): Promise<FavoritePathTransferResult> => {
+    const finalScope: 'global' | 'host' = targetScope === 'host' ? 'host' : 'global';
+    const finalUuid = finalScope === 'host' ? targetConnectionUuid : null;
+    const result: FavoritePathTransferResult = { moved: 0, copied: 0, skipped: 0 };
+    const db = await getDbInstance();
+
+    await runDb(db, 'BEGIN TRANSACTION');
+    try {
+        for (const id of ids) {
+            const row = await getDbRow<FavoritePath>(
+                db,
+                `SELECT id, name, path, is_file, scope, connection_uuid, last_used_at, created_at, updated_at
+                 FROM favorite_paths WHERE id = ?`,
+                [id]
+            );
+            if (!row) {
+                result.skipped += 1;
+                continue;
+            }
+
+            const duplicate = await getDbRow<{ id: number }>(
+                db,
+                `SELECT id FROM favorite_paths
+                 WHERE path = ? AND scope = ? AND IFNULL(connection_uuid, '') = ? AND id <> ?
+                 LIMIT 1`,
+                [row.path, finalScope, finalUuid ?? '', id]
+            );
+            if (duplicate) {
+                result.skipped += 1;
+                continue;
+            }
+
+            if (mode === 'move') {
+                await runDb(
+                    db,
+                    `UPDATE favorite_paths
+                     SET scope = ?, connection_uuid = ?, updated_at = strftime('%s', 'now')
+                     WHERE id = ?`,
+                    [finalScope, finalUuid, id]
+                );
+                result.moved += 1;
+            } else {
+                await runDb(
+                    db,
+                    `INSERT INTO favorite_paths (name, path, is_file, scope, connection_uuid, last_used_at, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))`,
+                    [row.name, row.path, row.is_file, finalScope, finalUuid, row.last_used_at ?? null]
+                );
+                result.copied += 1;
+            }
+        }
+        await runDb(db, 'COMMIT');
+        return result;
+    } catch (err: any) {
+        await runDb(db, 'ROLLBACK').catch(() => {});
+        console.error('迁移收藏路径时出错:', err.message);
+        throw new Error('无法迁移收藏路径');
+    }
+};

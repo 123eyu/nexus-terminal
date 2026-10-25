@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useFavoritePathsStore, type FavoritePathItem, type FavoritePathScope } from '../stores/favoritePaths.store';
 import { useSessionStore } from '../stores/session.store';
 import AddEditFavoritePathForm from './AddEditFavoritePathForm.vue';
+import FavoritePathTransferModal from './FavoritePathTransferModal.vue';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import MobileBottomSheet from './common/MobileBottomSheet.vue';
 import {
@@ -31,6 +32,7 @@ const { showConfirmDialog } = useConfirmDialog();
 
 const searchTerm = ref('');
 const showAddEditModal = ref(false);
+const showTransferModal = ref(false);
 const editingPathItem = ref<FavoritePathItem | null>(null);
 
 /** 列表当前看的是「本机专属」还是「全局」：记住上一次选的，不用每次打开都切 */
@@ -66,6 +68,8 @@ const toggleSort = () => {
 };
 
 const closeModal = () => {
+  // 收起收藏夹时把迁移面板一起关掉，否则抽屉没了、面板还开着
+  showTransferModal.value = false;
   emit('close');
 };
 
@@ -141,8 +145,8 @@ watch(() => props.isVisible, (val) => {
     @close="closeModal"
   >
     <template #sub-header>
-      <!-- 作用域切换：一键在「本机专属 / 全局」之间换下面这份列表 -->
-      <div class="px-4 pt-2.5">
+      <!-- 作用域切换 + 迁移：切换换下面这份列表，迁移把这一组的收藏搬到别处 -->
+      <div class="px-4 pt-2.5 flex items-center gap-2">
         <button
           type="button"
           @click="toggleScope"
@@ -153,7 +157,15 @@ watch(() => props.isVisible, (val) => {
         >
           <i :class="activeScope === 'host' ? 'fas fa-server' : 'fas fa-globe'" class="text-[11px]"></i>
           <span>{{ activeScope === 'host' ? t('favoritePaths.scope.host', '本机专属') : t('favoritePaths.scope.global', '全局') }}</span>
-          <i class="fas fa-exchange-alt text-[9px] opacity-50"></i>
+          <i class="fas fa-sync-alt text-[9px] opacity-50"></i>
+        </button>
+        <button
+          type="button"
+          @click="showTransferModal = true"
+          class="w-8 h-8 flex items-center justify-center rounded-xl border border-border bg-header/60 text-text-secondary transition-colors cursor-pointer active:bg-primary/15"
+          :title="t('favoritePaths.transfer.title', '迁移收藏')"
+        >
+          <i class="fas fa-exchange-alt text-[11px]"></i>
         </button>
       </div>
       <!-- 工具栏：搜索与排序/添加按钮 -->
@@ -246,5 +258,14 @@ watch(() => props.isVisible, (val) => {
     :host-uuid="props.hostUuid"
     :is-mobile="true"
     @close="showAddEditModal = false"
+  />
+
+  <!-- 迁移收藏（移动 / 复制到全局或某台主机） -->
+  <FavoritePathTransferModal
+    :is-visible="showTransferModal"
+    :source-scope="activeScope"
+    :host-uuid="props.hostUuid"
+    :is-mobile="true"
+    @close="showTransferModal = false"
   />
 </template>

@@ -2236,6 +2236,30 @@
       "host": "This host",
       "global": "Global"
     },
+    "transfer": {
+      "title": "Move favorites",
+      "subtitle": "Move or copy the favorites in “{scope}” somewhere else",
+      "selectLabel": "Select favorite paths",
+      "selectAll": "Select all",
+      "clearAll": "Clear selection",
+      "empty": "No favorite paths in this group",
+      "modeLabel": "Mode",
+      "move": "Move",
+      "copy": "Copy",
+      "targetLabel": "Destination",
+      "sameTarget": "That is already the current group — pick another one",
+      "moveHint": "Moved favorites are removed from the source group.",
+      "copyHint": "Copied favorites stay in the source group and a new copy is added at the destination.",
+      "submitting": "Moving...",
+      "selectedCount": "{count} selected",
+      "notifications": {
+        "moveSuccess": "Moved {count} favorite(s).",
+        "copySuccess": "Copied {count} favorite(s).",
+        "partialSuccess": "Transferred {done}, skipped {skipped} already at the destination.",
+        "allSkipped": "These favorites already exist at the destination; nothing to transfer.",
+        "error": "Failed to transfer favorite paths."
+      }
+    },
     "confirmDelete": "Are you sure you want to delete \"{name}\"?",
     "searchPlaceholder": "Search by name or path...",
     "addNew": "Add new favorite path",

@@ -99,3 +99,25 @@ export const updateFavoritePathLastUsed = async (id: number): Promise<boolean> =
 export const getFavoritePathById = async (id: number): Promise<FavoritePath | undefined> => {
     return FavoritePathsRepository.findFavoritePathById(id);
 };
+/**
+ * 批量迁移收藏到另一个作用域（移动 / 复制）。
+ *
+ * 与「逐条 update / create」的差别不只是省几个往返：判重必须在同一把事务里做，
+ * 否则两条同路径的收藏并发迁到同一个目标时会各自看到「目标还没有」，双双落库。
+ */
+export const transferFavoritePaths = async (
+    ids: number[],
+    mode: 'move' | 'copy',
+    targetScope: 'global' | 'host',
+    targetConnectionUuid: string | null
+): Promise<FavoritePathsRepository.FavoritePathTransferResult> => {
+    if (!Array.isArray(ids) || ids.length === 0) {
+        throw new Error('请至少选择一条收藏路径');
+    }
+    const finalScope: 'global' | 'host' = targetScope === 'host' ? 'host' : 'global';
+    const finalUuid = finalScope === 'host' ? targetConnectionUuid : null;
+    if (finalScope === 'host' && !finalUuid) {
+        throw new Error('主机专属收藏缺少归属连接');
+    }
+    return FavoritePathsRepository.transferFavoritePaths(ids, mode, finalScope, finalUuid);
+};

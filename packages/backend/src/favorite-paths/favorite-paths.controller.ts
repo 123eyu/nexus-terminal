@@ -297,3 +297,61 @@ export const updateLastUsedTimestamp = async (req: Request, res: Response): Prom
         res.status(500).json({ message: error.message || '无法更新上次使用时间戳' });
     }
 };
+/**
+ * 批量迁移收藏：把选中的收藏「移动」或「复制」到全局 / 某台主机专属。
+ *
+ * 请求体：`{ ids: number[], mode: 'move' | 'copy', targetScope: 'global' | 'host', targetConnectionUuid?: string }`
+ * 响应里带上迁移后的完整列表，前端直接整份替换即可，不必再拉一次。
+ */
+export const transferFavoritePaths = async (req: Request, res: Response): Promise<void> => {
+    const { ids, mode, targetScope, targetConnectionUuid } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ message: '请至少选择一条收藏路径' });
+        return;
+    }
+    // id 是各端自增的整数，顺手挡掉 NaN / 字符串 / 负数
+    const normalizedIds = ids
+        .map((v: unknown) => (typeof v === 'number' ? v : typeof v === 'string' ? parseInt(v, 10) : NaN))
+        .filter((v: number) => Number.isInteger(v) && v > 0);
+    if (normalizedIds.length === 0) {
+        res.status(400).json({ message: '收藏路径 ID 无效' });
+        return;
+    }
+
+    if (mode !== 'move' && mode !== 'copy') {
+        res.status(400).json({ message: '迁移方式只能是移动或复制' });
+        return;
+    }
+
+    const finalScope = parseScope(targetScope);
+    const finalConnectionUuid = parseConnectionUuid(targetConnectionUuid);
+    if (finalScope === 'host' && !finalConnectionUuid) {
+        res.status(400).json({ message: '主机专属收藏缺少归属连接' });
+        return;
+    }
+
+    try {
+        const result = await FavoritePathsService.transferFavoritePaths(
+            normalizedIds,
+            mode,
+            finalScope,
+            finalConnectionUuid
+        );
+        const favoritePaths = await FavoritePathsService.getAllFavoritePaths('name');
+        res.status(200).json({
+            message: mode === 'move' ? '收藏路径已移动' : '收藏路径已复制',
+            mode,
+            targetScope: finalScope,
+            targetConnectionUuid: finalScope === 'host' ? finalConnectionUuid : null,
+            moved: result.moved,
+            copied: result.copied,
+            skipped: result.skipped,
+            total: normalizedIds.length,
+            favoritePaths,
+        });
+    } catch (error: any) {
+        console.error('[Controller] 迁移收藏路径失败:', error.message);
+        res.status(500).json({ message: error.message || '无法迁移收藏路径' });
+    }
+};
