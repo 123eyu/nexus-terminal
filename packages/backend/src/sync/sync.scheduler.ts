@@ -8,6 +8,31 @@ import { getDataDir } from '../services/storage-path.service';
 import { getServerSyncApiKey } from './sync.middleware';
 import { broadcastSyncInvalidated, notifyLocalFrontendSyncDone } from './sync.ws-broadcaster';
 
+/**
+ * 定时兜底同步间隔。
+ *
+ * 增量同步原本只靠两条腿触发：本地写入（debounce）和云端 WS 长连接的实时通知。
+ * WS 在很多真实部署里是断的（反向代理没开 `Upgrade`、防火墙只放行 HTTP、容器前面有 CDN），
+ * 那时设备只要自己没改过东西，就永远拉不到另一端的变化。定时兜底把「最终一致」
+ * 从「取决于 WS 通不通」变成「最迟一分钟」。
+ */
+const PERIODIC_SYNC_INTERVAL_MS = 60 * 1000;
+
+/**
+ * 这类触发源本身就是「把云端的变化拉下来」，本地没有任何变更也必须跑一轮。
+ *
+ * 之前这份名单只有 `manual / scheduled / ws_*`，于是启动时那次 `catchup_initial`
+ * 在「这台机器自己什么都没改过」的情况下直接空转 —— 正好是最常见的场景：
+ * 设备离线期间另一端改了东西，重启后既没有本地变更来触发同步，
+ * 也等不到那次启动补拉，只能等用户手动点一次同步。
+ */
+const forcesSyncRun = (reason: string): boolean =>
+  reason === 'manual' ||
+  reason === 'periodic' ||
+  reason === 'scheduled' ||
+  reason.startsWith('ws_') ||
+  reason.startsWith('catchup');
+
 export class SyncThrottleScheduler {
   private debounceTimer: NodeJS.Timeout | null = null;
   private maxWaitTimer: NodeJS.Timeout | null = null;
@@ -18,6 +43,10 @@ export class SyncThrottleScheduler {
 
   private retryCount: number = 0;
   private retryTimer: NodeJS.Timeout | null = null;
+
+  /** 单飞锁期间被「必须跑」的触发源吞掉时置位，空闲后重跑必须同样强制 */
+  private forceNextRun: boolean = false;
+  private periodicTimer: NodeJS.Timeout | null = null;
 
   constructor() {
     // 挂接数据库写入网关唤醒器
@@ -82,12 +111,17 @@ export class SyncThrottleScheduler {
     // 单飞锁：若本轮正在执行，置 dirtyWhileRunning 标志并在结束后自动重跑
     if (this.isFlushing) {
       this.dirtyWhileRunning = true;
+      // 吞掉的是「必须跑」的触发源（启动补拉 / WS 刚连上）时，重跑也得强制，
+      // 否则重跑用的 'dirty_rerun' 会因为本地没有变更而空转，这次补拉就彻底丢了
+      if (forcesSyncRun(reason)) this.forceNextRun = true;
       return;
     }
 
     // 事务未提交延后防护：绝不在未提交的事务中执行 flush
     if (isDbInTransaction()) {
-      setTimeout(() => this.flush('retry_after_transaction'), 100);
+      // 重试时保留原触发源：换成 'retry_after_transaction' 会让「必须跑」的
+      // 启动补拉 / WS 补拉在重试这一步退化成「本地无变更就空转」
+      setTimeout(() => this.flush(reason), 100);
       return;
     }
 
@@ -175,8 +209,8 @@ export class SyncThrottleScheduler {
         }
       }
 
-      // 如果有本地变更，或者是由兜底定时器/手动/WS长连接通知调用的，发起一轮同步
-      if (hasLocalChanges || reason === 'manual' || reason === 'scheduled' || reason.startsWith('ws_')) {
+      // 如果有本地变更，或者触发源本身就要求「去云端拉一次」，发起一轮同步
+      if (hasLocalChanges || forcesSyncRun(reason)) {
         const stats = await syncV2Service.executeSyncCycle(vpsUrl, apiKey, apiKey, currentSyncItems);
         if (stats.pushed > 0 || stats.pulled > 0) {
           console.log(`[SyncScheduler] 自动同步完成 (触发源: ${reason})，推送: ${stats.pushed}，拉取: ${stats.pulled}`);
@@ -199,7 +233,9 @@ export class SyncThrottleScheduler {
       this.isFlushing = false;
       if (this.dirtyWhileRunning) {
         this.dirtyWhileRunning = false;
-        setTimeout(() => this.flush('dirty_rerun'), 100);
+        const rerunReason = this.forceNextRun ? 'catchup_after_busy' : 'dirty_rerun';
+        this.forceNextRun = false;
+        setTimeout(() => this.flush(rerunReason), 100);
       }
     }
   }
@@ -265,10 +301,19 @@ export class SyncThrottleScheduler {
     await runDb(db, `UPDATE sync_state SET enabled = 1 WHERE id = 1`);
     console.log(`[SyncScheduler] 触发器已正式激活 (enabled = 1)！共补录 ${totalCatchup} 条存量记录至变更日志。`);
 
-    // 启动后 500ms 自动触发首次同步刷新
+    // 启动后 500ms 自动触发首次同步刷新（本地无变更也会真去云端拉一轮）
     setTimeout(() => {
       this.flush('catchup_initial');
     }, 500);
+
+    // 定时兜底：WS 不通 / 断过之后没接回来时，最迟一分钟也能把云端的变化拉下来
+    if (!this.periodicTimer) {
+      this.periodicTimer = setInterval(() => {
+        void this.flush('periodic');
+      }, PERIODIC_SYNC_INTERVAL_MS);
+      // 不让这个定时器把进程钉住（测试 / 优雅退出时能正常结束）
+      this.periodicTimer.unref?.();
+    }
 
     // 启动每 24 小时一次的墓碑 GC 与变更日志压缩定时器
     setInterval(async () => {
