@@ -22,6 +22,13 @@ export interface SshTerminalDependencies {
     sendMessage: (message: WebSocketMessage) => void;
     onMessage: (type: string, handler: (payload: any, fullMessage?: WebSocketMessage) => void) => () => void;
     isConnected: ComputedRef<boolean>;
+    /**
+     * 跳过退避定时器立刻重连。
+     *
+     * 断线后 ws 要等退避定时器才重连（最长 5s，以前的实现能到 32s）。用户此刻敲键盘
+     * 就说明人在、网也活了，没必要继续等 —— 敲下第一个键就去连，比盯着黄灯等快得多。
+     */
+    retryConnectionNow?: () => void;
 }
 
 // 多终端分屏实例状态
@@ -42,7 +49,7 @@ export interface PaneTerminalInstance {
  */
 export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalDependencies, t: ReturnType<typeof useI18n>['t']) { // +++ Update type of t +++
     // 使用依赖注入的 WebSocket 函数
-    const { sendMessage, onMessage, isConnected } = wsDeps;
+    const { sendMessage, onMessage, isConnected, retryConnectionNow } = wsDeps;
     const highlightStore = useTerminalHighlightStore();
 
     // 多终端分屏实例 Map (支持同一连接挂载多个终端窗口)
@@ -273,6 +280,11 @@ export function createSshTerminalManager(sessionId: string, wsDeps: SshTerminalD
     };
 
     const handleTerminalData = (data: string, paneId?: string) => {
+        // 链路没通时这次输入注定发不出去（sendMessage 只会打一句 warn），
+        // 但用户敲键本身是个强信号：人在，网大概也回来了 —— 顺手把重连提前。
+        if (!isConnected.value) {
+            retryConnectionNow?.();
+        }
         const targetPaneId = resolvePaneIdForSession(paneId) || primaryPaneId.value;
         if (targetPaneId && targetPaneId !== primaryPaneId.value) {
             // 分屏副终端走专属通道输入

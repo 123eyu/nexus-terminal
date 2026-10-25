@@ -118,6 +118,8 @@ export const openNewSession = (
       sendMessage: wsManager.sendMessage,
       onMessage: wsManager.onMessage,
       isConnected: wsManager.isConnected,
+      // 断线时用户敲键盘 → 立即重连，不再干等退避定时器
+      retryConnectionNow: () => { wsManager.retryNow('终端有键盘输入'); },
   };
   const terminalManager = createSshTerminalManager(newSessionId, sshTerminalDeps, t);
   const statusMonitorDeps: StatusMonitorDependencies = {
@@ -236,6 +238,9 @@ export const openNewSession = (
 
   if (newSession.disposables) {
     newSession.disposables.push(unregisterConnectedHandler);
+    // 摘掉 online / visibilitychange 监听器与重连定时器：
+    // 会话关了还留着监听器的话，开关几十次连接就会累积几十个
+    newSession.disposables.push(() => wsManager.dispose());
   }
 
 

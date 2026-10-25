@@ -46,7 +46,19 @@ export function createWebSocketConnectionManager(
     const instanceDbConnectionId = dbConnectionId; // 保存数据库连接 ID
     const getIsMarkedForSuspend = options?.getIsMarkedForSuspend; // +++ 获取回调函数 +++
     let reconnectAttempts = 0; // 重连尝试次数
-    const maxReconnectAttempts = 5; // 最大重连次数
+    /**
+     * 重连等待时长：500ms 起步、指数翻倍、封顶 5s。
+     *
+     * 原来是 2s/4s/8s/16s/32s，而 ws 断开的绝大多数场景是网络抖动（切 WiFi、笔记本
+     * 休眠唤醒、代理抽风）—— 几秒内就恢复了，按 2 的幂爬到 16s/32s，用户看到的就是
+     * 「网早就好了，标签还黄着」。而且原实现第 5 次之后直接置 error 不再重试：
+     * 断网超过 62 秒（2+4+8+16+32）就再也不会自己连回来，只能手动刷新。
+     */
+    const RECONNECT_BASE_DELAY_MS = 500;
+    const RECONNECT_MAX_DELAY_MS = 5000;
+    /** 强制重试的最小间隔：狂敲键盘时不要每个键都去重建一条 ws */
+    const FORCED_RETRY_MIN_GAP_MS = 1200;
+    let lastForcedRetryAt = 0;
     let reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null; // 重连定时器 ID
     let lastUrl = ''; // 保存上次连接的 URL
     let intentionalDisconnect = false; // 标记是否为用户主动断开
@@ -136,7 +148,7 @@ export function createWebSocketConnectionManager(
     };
 
     /**
-     * 安排 WebSocket 重连尝试
+     * 安排 WebSocket 重连尝试（指数退避，但封顶 5s，且永不放弃）
      */
     const scheduleReconnect = () => {
         if (intentionalDisconnect) {
@@ -150,25 +162,93 @@ export function createWebSocketConnectionManager(
             return;
         }
 
-        if (reconnectAttempts >= maxReconnectAttempts) {
-            statusMessage.value = getStatusText('reconnectFailed');
-            connectionStatus.value = 'error'; // 标记为错误状态
+        /**
+         * 已经排了一次就不要再排。
+         *
+         * 断线时 `onerror` 与 `onclose` 会先后触发，两边都会调到这里：原来每次都
+         * `clearTimeout` 再重排，等于**一次断连把退避推两格**（2s → 8s），网络抖
+         * 几下就把重连间隔顶到十几秒 —— 用户感知就是「网络早就恢复了，它还在等」。
+         */
+        if (reconnectTimeoutId) {
             return;
         }
 
         reconnectAttempts++;
-        // 指数退避延迟 (例如: 2s, 4s, 8s, 16s, 32s)
-        const delay = Math.pow(2, reconnectAttempts) * 1000;
-        statusMessage.value = getStatusText('reconnecting', { attempt: reconnectAttempts, delay: delay / 1000 });
+        const delay = Math.min(
+            RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempts - 1),
+            RECONNECT_MAX_DELAY_MS
+        );
+        // 0.5 / 1 / 2 / 4 / 5 ...；整数秒不要显示成 "5.0"
+        const delaySeconds = delay % 1000 === 0 ? delay / 1000 : Number((delay / 1000).toFixed(1));
+        statusMessage.value = getStatusText('reconnecting', { attempt: reconnectAttempts, delay: delaySeconds });
         connectionStatus.value = 'connecting'; // 更新状态为正在连接
 
-        if (reconnectTimeoutId) clearTimeout(reconnectTimeoutId); // 清除旧的定时器
-
         reconnectTimeoutId = setTimeout(() => {
+            reconnectTimeoutId = null;
             if (!intentionalDisconnect && lastUrl) { // 再次检查是否主动断开
                 connect(lastUrl);
             }
         }, delay);
+    };
+
+    /**
+     * 立刻重连，不等退避定时器。
+     *
+     * 触发源是「有理由相信网络已经恢复」的时刻：系统 `online` 事件、页面重新可见、
+     * 用户在终端里敲键。这些信号比定时器可靠得多 —— 用户已经回来干活了，就说明网活了。
+     *
+     * @param reason 触发原因，仅用于日志
+     * @returns 是否真的发起了一次重连
+     */
+    const retryNow = (reason: string): boolean => {
+        if (intentionalDisconnect || !lastUrl) return false;
+        if (connectionStatus.value === 'connected') return false;
+        // 已经在建连（CONNECTING）或已经打开（OPEN）时不用管，重复 new WebSocket 只会打架
+        if (
+            ws.value &&
+            (ws.value.readyState === WebSocket.OPEN || ws.value.readyState === WebSocket.CONNECTING)
+        ) {
+            return false;
+        }
+        const now = Date.now();
+        if (now - lastForcedRetryAt < FORCED_RETRY_MIN_GAP_MS) return false;
+        lastForcedRetryAt = now;
+        if (reconnectTimeoutId) {
+            clearTimeout(reconnectTimeoutId);
+            reconnectTimeoutId = null;
+        }
+        console.log(`[WebSocket ${instanceSessionId}] 立即重连（触发：${reason}）`);
+        connect(lastUrl);
+        return true;
+    };
+
+    // --- 浏览器层面的「网络可能恢复了」信号 ---
+    const onBrowserOnline = () => {
+        if (retryNow('系统报告网络恢复')) return;
+        // 正在建连/已连上时无需处理；但如果连上后 SSH 侧还没就绪，这里也不能催，
+        // 走正常的 ssh:connect / SSH_REATTACH 流程即可。
+    };
+    const onVisibilityChange = () => {
+        // 手机锁屏 / 切到别的 App / 合盖休眠回来：定时器可能被节流甚至冻住，
+        // 回来的瞬间补一次，比等 5s 的退避快得多
+        if (document.visibilityState === 'visible') retryNow('页面重新可见');
+    };
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+        window.addEventListener('online', onBrowserOnline);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+
+    /** 会话关闭时摘掉全局监听器，否则开关连接几十次后会累积一堆 */
+    const dispose = () => {
+        if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+            window.removeEventListener('online', onBrowserOnline);
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+        }
+        if (reconnectTimeoutId) {
+            clearTimeout(reconnectTimeoutId);
+            reconnectTimeoutId = null;
+        }
+        clearReattachTimeout();
     };
 
     /**
@@ -360,13 +440,23 @@ export function createWebSocketConnectionManager(
                 ws.value = null; // 清理实例
                 // 如果不是主动断开，尝试重连
                 if (!intentionalDisconnect) {
+                    // 紧随其后的 onclose 也会调 scheduleReconnect（那边有去重，不会重复排队）。
+                    // 这里先置位，是为了覆盖「只 error 不 close」的极端情况下也能接回原会话，
+                    // 否则重连会闷头发 ssh:connect 换成一个全新的 shell。
+                    awaitingReattach = true;
                     scheduleReconnect();
                 }
             };
 
             ws.value.onclose = (event) => {
-                // 只有在非错误状态下才更新为 disconnected
-                if (connectionStatus.value !== 'error' && connectionStatus.value !== 'disconnected') { // Avoid redundant sets or overriding 'error'
+                // 只有在既非错误、也非已断开、又不在重连排期中时才更新为 disconnected。
+                // 'connecting' 要把「第 N 次重试，Ns 后」的文案保留住 —— 否则 onerror 排好重连后
+                // onclose 又把状态冲成「已关闭」，状态灯会黄→灰→黄地闪。
+                if (
+                    connectionStatus.value !== 'error' &&
+                    connectionStatus.value !== 'disconnected' &&
+                    connectionStatus.value !== 'connecting'
+                ) { // Avoid redundant sets or overriding 'error'
                     connectionStatus.value = 'disconnected';
                     // 如果不是主动断开，显示尝试重连的消息
                     if (!intentionalDisconnect && event.code !== 1000) { // 1000 is normal closure
@@ -392,6 +482,12 @@ export function createWebSocketConnectionManager(
              statusMessage.value = getStatusText('wsError');
              isSftpReady.value = false;
              ws.value = null;
+             // 构造阶段同步抛错（URL 非法、浏览器拒绝建连）时不会有 onerror / onclose，
+             // 不在这里补一次重连就再也没人管这个会话了 —— 状态灯会永远停在出错。
+             if (!intentionalDisconnect) {
+                 awaitingReattach = true;
+                 scheduleReconnect();
+             }
         }
     };
 
@@ -481,5 +577,9 @@ export function createWebSocketConnectionManager(
         disconnect,
         sendMessage,
         onMessage,
+        /** 跳过退避等待，立刻重连（网络恢复 / 页面重新可见 / 用户开始敲键盘时调用） */
+        retryNow,
+        /** 会话关闭时调用：摘掉全局监听器与所有定时器 */
+        dispose,
     };
 }
