@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   evaluateLeaseWrite,
   removeSessionFromSnapshot,
+  isForeignWorkspaceClient,
+  shouldPruneTakeoverSuspend,
 } from '../src/workspace-sync/workspace-sync.pure.ts';
 
 // --- 租约判定 ---
@@ -91,4 +93,72 @@ test('removeSessionFromSnapshot：快照没有 sessions 字段时不抛错', () 
   const result = removeSessionFromSnapshot({}, 's1');
   assert.equal(result.notFound, true);
   assert.equal(result.remainingSessionsCount, 0);
+});
+
+// --- 接管时「谁算别人」 ---
+
+test('isForeignWorkspaceClient：绑了别的 clientId 才算别人', () => {
+  assert.equal(isForeignWorkspaceClient('client_b', 'client_a'), true);
+});
+
+test('isForeignWorkspaceClient：没绑 clientId 的会话不算别人（桌面端 / 旧客户端 / 竞态窗口）', () => {
+  // 这些会话不属于这个工作区，接管时如果顺手挂走，用户就会看到
+  // 「挂起池里出现了一个我根本没打开过的连接」
+  assert.equal(isForeignWorkspaceClient(undefined, 'client_a'), false);
+  assert.equal(isForeignWorkspaceClient(null, 'client_a'), false);
+  assert.equal(isForeignWorkspaceClient('', 'client_a'), false);
+  assert.equal(isForeignWorkspaceClient('   ', 'client_a'), false);
+});
+
+test('isForeignWorkspaceClient：自己不算别人', () => {
+  assert.equal(isForeignWorkspaceClient('client_a', 'client_a'), false);
+  assert.equal(isForeignWorkspaceClient(' client_a ', 'client_a'), false);
+});
+
+// --- 接管遗留挂起条目的清理 ---
+
+const keep = new Set(['live-1', 'live-2']);
+
+test('shouldPruneTakeoverSuspend：上一轮接管留下、快照里已经没有 → 清掉', () => {
+  assert.equal(
+    shouldPruneTakeoverSuspend({ takeoverRound: 2, originalSessionId: 'gone-1' }, 3, keep),
+    true
+  );
+});
+
+test('shouldPruneTakeoverSuspend：本轮刚挂起来的必须留着（新端马上要 resume）', () => {
+  assert.equal(
+    shouldPruneTakeoverSuspend({ takeoverRound: 3, originalSessionId: 'gone-1' }, 3, keep),
+    false
+  );
+});
+
+test('shouldPruneTakeoverSuspend：快照里还在的会话不清（可能是快照滞后）', () => {
+  assert.equal(
+    shouldPruneTakeoverSuspend({ takeoverRound: 2, originalSessionId: 'live-1' }, 3, keep),
+    false
+  );
+});
+
+test('shouldPruneTakeoverSuspend：用户手动挂起的永远不动', () => {
+  assert.equal(
+    shouldPruneTakeoverSuspend(
+      { takeoverRound: 1, originalSessionId: 'gone-1', manuallySuspended: true },
+      3,
+      keep
+    ),
+    false
+  );
+});
+
+test('shouldPruneTakeoverSuspend：不是接管产生的（断线/刷新自动挂起）不动', () => {
+  assert.equal(shouldPruneTakeoverSuspend({ originalSessionId: 'gone-1' }, 3, keep), false);
+  assert.equal(
+    shouldPruneTakeoverSuspend({ takeoverRound: Number.NaN, originalSessionId: 'gone-1' }, 3, keep),
+    false
+  );
+});
+
+test('shouldPruneTakeoverSuspend：没有 originalSessionId 的不动（信息不全就别删）', () => {
+  assert.equal(shouldPruneTakeoverSuspend({ takeoverRound: 1 }, 3, keep), false);
 });

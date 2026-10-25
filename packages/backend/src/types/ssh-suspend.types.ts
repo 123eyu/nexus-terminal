@@ -51,6 +51,14 @@ export interface SuspendSessionDetails {
   /** 多终端分屏独立 Shell 通道映射 (用于多终端保活) */
   paneStreams?: Map<string, any>;
   /**
+   * 由「第几轮工作区接管」创建（`WorkspaceSyncService.claimLease` 递增）。
+   *
+   * 只给「新端接管时把旧端会话移交挂起」这条路打标：这样下一次接管才能认出
+   * 「这条是上一轮留下的、这一轮已经没人会去 resume 的孤儿」并清掉。
+   * 用户手动挂起 / ws 断开自动挂起不带这个值，它们要继续留在挂起面板里。
+   */
+  takeoverRound?: number;
+  /**
    * 是否为「手动挂起」（用户从标签右键菜单主动选「挂起会话」）。
    *
    * 这类会话**只属于挂起池**，和工作区同步彻底无关：

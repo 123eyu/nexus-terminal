@@ -3,7 +3,7 @@ import * as workspaceSyncRepo from './workspace-sync.repository';
 import { clientStates } from '../websocket/state';
 import { sshSuspendService } from '../ssh-suspend/ssh-suspend.service';
 import { temporaryLogStorageService } from '../ssh-suspend/temporary-log-storage.service';
-import { evaluateLeaseWrite, removeSessionFromSnapshot } from './workspace-sync.pure';
+import { evaluateLeaseWrite, isForeignWorkspaceClient, removeSessionFromSnapshot } from './workspace-sync.pure';
 
 export interface WorkspaceSyncStatePayload {
     syncEnabled: boolean;
@@ -75,6 +75,15 @@ export class WorkspaceSyncService {
     private userSockets = new Map<number, Set<AuthenticatedWebSocket>>();
 
     /**
+     * 维护 userId -> 「第几轮接管」。
+     *
+     * 每次租约真正换人 +1，用来给这一轮移交出去的挂起条目打标：
+     * 下一轮接管时就能认出「上一轮留下的、这一轮没人会去 resume 的孤儿」并清掉。
+     * 只存在内存里 —— 重启后挂起池本来就是空的，不需要持久化。
+     */
+    private takeoverRounds = new Map<number, number>();
+
+    /**
      * 注册客户端 WebSocket 连接
      */
     public registerSocket(userId: number, ws: AuthenticatedWebSocket, clientId?: string): void {
@@ -142,8 +151,14 @@ export class WorkspaceSyncService {
 
     /**
      * 将该用户属于其他客户端的活动 SSH 会话自动移交给挂起服务，实现真正的无缝接管
+     *
+     * @param takeoverRound 本轮接管编号，会写进挂起条目，供下一轮清理孤儿用
      */
-    public async suspendOtherClientsSessions(userId: number, currentClientId: string): Promise<void> {
+    public async suspendOtherClientsSessions(
+        userId: number,
+        currentClientId: string,
+        takeoverRound?: number
+    ): Promise<void> {
         let snapshotSessions: any[] = [];
         try {
             const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
@@ -159,10 +174,14 @@ export class WorkspaceSyncService {
 
         for (const [sessionId, state] of clientStates.entries()) {
             const wsClientId = (state.ws as any)?.syncClientId;
+            // 只接管「另一个**参与工作区同步**的客户端」的会话：
+            // 没绑过 clientId 的 ws（桌面端、旧客户端、ws 抢在 store 初始化前连上的窗口期）
+            // 不属于这个工作区，把它们挂走就是"挂起池里冒出一个我没打开过的连接"。
+            const isForeignClient = isForeignWorkspaceClient(wsClientId, currentClientId);
             // 匹配同一用户、非当前声明接管客户端、且具有活跃 SSH 连接的会话
             if (
                 state.ws?.userId === userId &&
-                wsClientId !== currentClientId &&
+                isForeignClient &&
                 !state.isMarkedForSuspend &&
                 state.sshClient &&
                 state.sshShellStream
@@ -195,8 +214,9 @@ export class WorkspaceSyncService {
                     connectionName: state.connectionName || '未知连接',
                     connectionId: String(state.dbConnectionId),
                     logIdentifier: state.suspendLogPath,
+                    // 打上本轮编号：下一轮接管才知道它是"上一轮留下的孤儿"
+                    takeoverRound,
                 };
-
                 const sshClientToPass = state.sshClient;
                 const channelToPass = state.sshShellStream;
                 state.sshClient = undefined as any;
@@ -222,14 +242,74 @@ export class WorkspaceSyncService {
 
     /**
      * 客户端声明接管工作区租约，并通知其他客户端进入遮罩状态
+     *
+     * 【幂等】同一个客户端重复声明（挂载前预取 + 恢复流程、刷新、连点「接管」）
+     * 不能再去"移交别人的会话"—— 那时候没有别人的会话可移交，白白多跑一遍
+     * `suspendOtherClientsSessions`，还会把本端自己的会话当成别的客户端的。
      */
     public async claimLease(userId: number, clientId: string): Promise<void> {
         console.log(`[WorkspaceSyncService] 用户 ${userId} 客户端 ${clientId} 正在声明接管工作区...`);
+
+        let currentOwner: string | null = null;
+        try {
+            const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
+            currentOwner = record?.activeClientId || null;
+        } catch (e) {
+            // 读不到就当换人，按原逻辑走
+        }
+
+        if (currentOwner === clientId) {
+            console.log(`[WorkspaceSyncService] 客户端 ${clientId} 已持有租约，跳过会话移交（幂等声明）`);
+            await workspaceSyncRepo.claimWorkspaceLease(userId, clientId);
+            this.notifyOtherClientsTakeover(userId, clientId);
+            return;
+        }
+
+        const round = (this.takeoverRounds.get(userId) || 0) + 1;
+        this.takeoverRounds.set(userId, round);
+        console.log(`[WorkspaceSyncService] 用户 ${userId} 第 ${round} 轮接管：${currentOwner || '（无）'} -> ${clientId}`);
+
         await workspaceSyncRepo.claimWorkspaceLease(userId, clientId);
         // 1. 自动挂起旧客户端的 SSH 活动会话
-        await this.suspendOtherClientsSessions(userId, clientId);
-        // 2. 广播踢出/遮罩通知
+        await this.suspendOtherClientsSessions(userId, clientId, round);
+        // 2. 清掉上几轮接管留下、这一轮已经没人认领的挂起条目
+        await this.pruneOrphanTakeoverSuspends(userId, round);
+        // 3. 广播踢出/遮罩通知
         this.notifyOtherClientsTakeover(userId, clientId);
+    }
+
+    /**
+     * 清理「上一轮接管留下、这一轮恢复再也用不到」的自动挂起条目。
+     *
+     * 新端恢复时只认领云端快照里还有的会话，其余（旧端自己那一代、快照还没落库的新会话、
+     * 不参与同步的客户端会话）永远没人认领 —— 不清理的话，反复接管几次挂起面板就堆成一串。
+     * 快照为空 / 读失败时**不动手**：宁可留着，也不能把正常挂起清光。
+     */
+    private async pruneOrphanTakeoverSuspends(userId: number, round: number): Promise<void> {
+        const keep = new Set<string>();
+        try {
+            const record = await workspaceSyncRepo.getWorkspaceSyncRecord(userId);
+            if (!record?.state) return;
+            const parsed = JSON.parse(record.state);
+            const sessions = Array.isArray(parsed?.sessions) ? parsed.sessions : [];
+            if (sessions.length === 0) return;
+            for (const item of sessions) {
+                if (item?.sessionId) keep.add(String(item.sessionId));
+            }
+        } catch (e) {
+            return;
+        }
+
+        try {
+            const removed = await sshSuspendService.pruneOrphanTakeoverSessions(userId, round, keep);
+            if (removed.length > 0) {
+                console.log(
+                    `[WorkspaceSyncService] 第 ${round} 轮接管：清掉 ${removed.length} 个上轮遗留的挂起条目 (${removed.join(', ')})`
+                );
+            }
+        } catch (err: any) {
+            console.warn(`[WorkspaceSyncService] 清理上轮遗留挂起条目失败:`, err?.message || err);
+        }
     }
 
     /**

@@ -9,6 +9,7 @@ import {
 } from '../types/ssh-suspend.types';
 import { temporaryLogStorageService, TemporaryLogStorageService } from './temporary-log-storage.service';
 import { ClientState } from '../websocket/types';
+import { shouldPruneTakeoverSuspend } from '../workspace-sync/workspace-sync.pure';
 // clientStates 的直接访问已移除，因为takeOverMarkedSession现在从调用者接收所需信息
 
 /**
@@ -55,6 +56,8 @@ export class SshSuspendService extends EventEmitter {
     paneStreams?: Map<string, any>;
     /** 手动挂起（用户关标签）标记，见 SuspendSessionDetails.manuallySuspended */
     manuallySuspended?: boolean;
+    /** 由第几轮工作区接管创建，见 SuspendSessionDetails.takeoverRound */
+    takeoverRound?: number;
   }): Promise<string | null> {
     const {
       userId,
@@ -68,6 +71,7 @@ export class SshSuspendService extends EventEmitter {
       customSuspendName,
       paneStreams,
       manuallySuspended,
+      takeoverRound,
     } = details;
     console.log(`[SshSuspendService DEBUG] takeOverMarkedSession: Called for userId=${userId}, originalSessionId=${originalSessionId}`);
 
@@ -119,7 +123,28 @@ export class SshSuspendService extends EventEmitter {
       pendingResumeBuffer: undefined,
       paneStreams: paneStreams && paneStreams.size > 0 ? new Map(paneStreams) : undefined,
       manuallySuspended: manuallySuspended === true,
+      takeoverRound,
     };
+
+    /**
+     * 同一条前端会话被挂起两次（工作区接管 与 ws 断开清理抢跑）会留下两份条目，
+     * 挂起面板里就是同一个连接出现两行、点哪个都不对。这里先收掉旧的那份（含它的 SSH 通道）。
+     */
+    for (const [existingId, existing] of Array.from(userSessions.entries())) {
+      if (
+        existingId !== suspendSessionId &&
+        existing.originalSessionId === originalSessionId &&
+        existing.backendSshStatus === 'hanging' &&
+        // 同一条通道不能自己收自己（极端竞态下两次接管拿到的可能是同一份引用）
+        existing.channel !== channel
+      ) {
+        console.warn(
+          `[SshSuspendService WARN] 会话 ${originalSessionId} 已有挂起条目 ${existingId}，先终止旧条目再登记新的 ${suspendSessionId}`
+        );
+        await this.terminateSuspendedSession(userId, existingId);
+        break;
+      }
+    }
 
     userSessions.set(suspendSessionId, sessionDetails);
     console.log(`[SshSuspendService INFO] takeOverMarkedSession: userId=${userId}, originalSessionId=${originalSessionId} taken over. New suspendSessionId=${suspendSessionId}, initial status=${sessionDetails.backendSshStatus}. Log identifier=${logIdentifier}, initialBufferLength=${initialBuffer ? initialBuffer.length : 0}`);
@@ -261,6 +286,37 @@ export class SshSuspendService extends EventEmitter {
       }
     }
     return null;
+  }
+
+  /**
+   * 清掉「上一轮工作区接管留下的、这一轮不会再有人认领」的自动挂起条目。
+   *
+   * 判定见 `shouldPruneTakeoverSuspend`：只动「接管产生的 + 不是本轮 + 云端快照里已经没有」的。
+   * 调用方是 `WorkspaceSyncService.claimLease`，在把旧端会话移交过来之后立刻跑一次 ——
+   * 否则反复接管几次，挂起面板里就会堆出一串用户根本没打开过的会话。
+   *
+   * @returns 被清掉的挂起会话 ID 列表（便于日志/诊断）
+   */
+  async pruneOrphanTakeoverSessions(
+    userId: number,
+    currentRound: number,
+    keepOriginalSessionIds: ReadonlySet<string>
+  ): Promise<string[]> {
+    const userSessions = this.getUserSessions(userId);
+    const removed: string[] = [];
+    for (const [suspendSessionId, details] of Array.from(userSessions.entries())) {
+      if (!shouldPruneTakeoverSuspend(details, currentRound, keepOriginalSessionIds)) continue;
+      try {
+        const ok = await this.terminateSuspendedSession(userId, suspendSessionId);
+        if (ok) removed.push(suspendSessionId);
+      } catch (err: any) {
+        console.warn(
+          `[SshSuspendService WARN] 清理接管遗留的挂起会话 ${suspendSessionId} 失败:`,
+          err?.message || err
+        );
+      }
+    }
+    return removed;
   }
 
   /**
