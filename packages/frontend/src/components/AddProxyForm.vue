@@ -47,12 +47,9 @@ const formTitle = computed(() => {
 });
 
 // 计算属性动态设置提交按钮文本
-const submitButtonText = computed(() => {
-    if (isLoading.value) {
-        return isEditMode.value ? t('proxies.form.saving') : t('proxies.form.adding');
-    }
-    return isEditMode.value ? t('proxies.form.confirmEdit') : t('proxies.form.confirm');
-});
+const submitButtonText = computed(() =>
+    isEditMode.value ? t('proxies.form.confirmEdit') : t('proxies.form.confirm')
+);
 
 // 监听 prop 变化以填充或重置表单
 watch(() => props.proxyToEdit, (newVal) => {

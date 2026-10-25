@@ -92,7 +92,6 @@
             :disabled="isSubmitting"
             class="px-5 py-1.5 text-sm font-medium text-white bg-primary hover:bg-primary/90 active:scale-95 rounded-lg shadow-sm transition-all flex items-center gap-2"
           >
-            <i v-if="isSubmitting" class="fas fa-spinner fa-spin text-xs"></i>
             {{ $t('common.confirm', '确定') }}
           </button>
         </div>

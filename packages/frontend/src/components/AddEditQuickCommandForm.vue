@@ -248,9 +248,8 @@
                 :disabled="isSubmitting || !!commandError"
                 class="h-9 px-5 rounded-lg text-xs md:text-sm font-semibold transition-all bg-primary text-white hover:bg-primary-hover shadow-sm disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
               >
-                <i v-if="isSubmitting" class="fas fa-spinner fa-spin text-xs"></i>
-                <i v-else class="fas fa-check text-xs"></i>
-                <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
+                <i class="fas fa-check text-xs"></i>
+                <span>{{ isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加') }}</span>
               </button>
             </div>
           </div>

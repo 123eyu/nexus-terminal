@@ -164,7 +164,7 @@ const {
           :disabled="isLoading || !form.path.trim()"
           class="flex-1 h-11 rounded-xl bg-primary text-white font-medium text-sm active:scale-95 transition-transform disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
-          {{ isLoading ? t('common.saving', '保存中...') : t('common.save', '保存') }}
+          {{ t('common.save', '保存') }}
         </button>
       </div>
     </div>

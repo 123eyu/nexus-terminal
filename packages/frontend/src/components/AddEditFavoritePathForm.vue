@@ -168,7 +168,7 @@ const {
             @click="handleSubmit"
             :disabled="isLoading || !form.path.trim()"
             class="py-2 px-5 rounded-lg text-sm font-semibold transition-colors duration-150 bg-primary text-white border-none shadow-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed">
-            {{ isLoading ? t('common.saving', 'Saving...') : t('common.save', 'Save') }}
+            {{ t('common.save', 'Save') }}
           </button>
         </div>
       </div>

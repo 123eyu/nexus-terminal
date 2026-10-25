@@ -85,7 +85,7 @@ onMounted(() => {
         :title="isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')"
       >
         <i class="fas fa-check text-[11px]"></i>
-        <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加')) }}</span>
+        <span>{{ isEditing ? t('common.save', '保存') : t('quickCommands.form.add', '添加') }}</span>
       </button>
     </template>
 
@@ -277,7 +277,7 @@ onMounted(() => {
                 class="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 active:scale-98 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <i class="fas fa-check text-xs"></i>
-                <span>{{ isSubmitting ? t('common.saving', '保存中...') : (isEditing ? t('common.save', '保存快捷指令') : t('quickCommands.form.add', '确认添加快捷指令')) }}</span>
+                <span>{{ isEditing ? t('common.save', '保存快捷指令') : t('quickCommands.form.add', '确认添加快捷指令') }}</span>
               </button>
               <button
                 type="button"

@@ -235,8 +235,7 @@ onUnmounted(() => {
             :disabled="isSubmitting || (formData.type === 'SSH' && testStatus === 'testing')"
             class="px-4 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-hover active:scale-95 rounded-xl shadow-xs hover:shadow-primary/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <i v-if="isSubmitting" class="fas fa-spinner fa-spin text-xs"></i>
-            <i v-else-if="isEditMode" class="fas fa-check text-xs"></i>
+            <i v-if="isEditMode" class="fas fa-check text-xs"></i>
             <i v-else class="fas fa-plus text-xs"></i>
             <span>{{ submitButtonText }}</span>
           </button>

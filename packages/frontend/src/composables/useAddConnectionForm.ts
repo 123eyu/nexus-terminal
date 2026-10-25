@@ -117,14 +117,10 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
       return isEditMode.value ? t('connections.form.titleEdit') : t('connections.form.title');
   });
 
-  // 计算属性动态设置提交按钮文本
-  const submitButtonText = computed(() => {
-      // 只看提交态：store 的后台刷新不能把按钮文案顶成「正在添加…」
-      if (isSubmitting.value) {
-          return isEditMode.value ? t('connections.form.saving') : t('connections.form.adding');
-      }
-      return isEditMode.value ? t('connections.form.confirmEdit') : t('connections.form.confirm');
-  });
+  // 提交按钮文案：固定，不做「正在添加…」这类过渡态（提交期间只靠 disabled 表达）
+  const submitButtonText = computed(() =>
+      isEditMode.value ? t('connections.form.confirmEdit') : t('connections.form.confirm')
+  );
 
   // 监听 prop 变化以填充或重置表单
   watch(connectionToEdit, (newVal) => {

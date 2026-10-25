@@ -238,7 +238,7 @@
       </button>
       <button type="submit" :disabled="store.isLoading || !!headerError || testingNotification"
               class="px-4 py-2 bg-button text-button-text rounded-md shadow-sm hover:bg-button-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition duration-150 ease-in-out">
-        {{ store.isLoading ? $t('common.saving') : $t('common.save') }}
+        {{ $t('common.save') }}
       </button>
     </div>
      <div v-if="formError" class="p-3 mt-3 border-l-4 border-error bg-error/10 text-error text-sm rounded">{{ formError }}</div> <!-- Use error colors -->

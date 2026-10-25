@@ -156,9 +156,8 @@
             :disabled="desktopSyncStore.isSyncing"
             class="px-5 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition shadow-sm flex items-center gap-2"
           >
-            <i v-if="desktopSyncStore.isSyncing" class="fas fa-spinner fa-spin text-xs"></i>
-            <i v-else class="fas fa-check text-xs"></i>
-            {{ desktopSyncStore.isSyncing ? $t('settings.desktop.syncing', '正在同步...') : $t('desktop.firstSync.startSync', '确认并开始同步') }}
+            <i class="fas fa-check text-xs"></i>
+            {{ $t('desktop.firstSync.startSync', '确认并开始同步') }}
           </button>
         </div>
       </div>
