@@ -162,7 +162,9 @@ export function useFavoritePathForm(
         );
       }
       emit('saveSuccess');
-      closeModal();
+      // 必须直接 emit close，不能走 closeModal()：它有一道 `!isLoading` 的守卫，
+      // 而此刻 isLoading 还是 true（finally 里才置 false），走它会被静默吞掉 → 保存成功窗口不关
+      emit('close');
     } catch (error: any) {
       console.error('Error saving favorite path:', error);
       errorMessage.value =
