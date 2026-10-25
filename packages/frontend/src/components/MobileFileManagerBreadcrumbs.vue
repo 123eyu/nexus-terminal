@@ -225,7 +225,9 @@ defineExpose({
 </script>
 
 <template>
-  <div class="mobile-breadcrumbs-container relative flex items-center h-10 px-2.5 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0">
+  <!-- 根节点同样要让出宽度（flex-1 + min-w-0）：长路径在段落流里横向滚动，
+       不能把地址栏撑宽 -->
+  <div class="mobile-breadcrumbs-container relative flex items-center h-10 px-2.5 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-1 min-w-0">
     <!-- 最左侧：大触控返回上一级目录按钮 -->
     <button
       type="button"
@@ -245,7 +247,7 @@ defineExpose({
     >
       <div
         ref="breadcrumbStreamRef"
-        class="flex items-center flex-shrink min-w-0 max-w-[calc(100%-36px)] overflow-x-auto no-scrollbar py-0.5"
+        class="flex items-center flex-1 min-w-0 overflow-x-auto no-scrollbar py-0.5"
       >
         <template v-for="(seg, idx) in breadcrumbSegments" :key="seg.path">
           <!-- 根目录图标按钮 -->
@@ -295,9 +297,9 @@ defineExpose({
         </template>
       </div>
 
-      <!-- 右侧空白触控热区，点击唤起底部抽屉 -->
+      <!-- 右侧固定 36px 空白触控热区，点击唤起底部抽屉 -->
       <div
-        class="flex-grow flex-shrink-0 min-w-[36px] h-full cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-100 rounded-sm"
+        class="w-9 flex-shrink-0 h-full cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-100 rounded-sm"
         title="点击打开路径历史与快速跳转"
       ></div>
     </div>

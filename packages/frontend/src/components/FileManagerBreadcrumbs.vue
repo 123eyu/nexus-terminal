@@ -353,10 +353,12 @@ defineExpose({
     @refresh="emit('refresh')"
   />
 
-  <!-- 桌面端全功能面包屑导航与内联输入框 -->
+  <!-- 桌面端全功能面包屑导航与内联输入框
+       根节点必须能让出宽度（flex-1 + min-w-0）：路径很长时靠里面的段落流横向滚动，
+       而不是把地址栏本身撑宽、把整个文件管理器挤出屏幕。 -->
   <div
     v-else
-    class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-shrink-0"
+    class="breadcrumbs-container relative flex items-center h-8 px-2 bg-header/90 border-b border-border/70 text-xs select-none transition-colors duration-150 flex-1 min-w-0"
     :class="{ 'ring-1 ring-primary/40 border-primary/50': isEditing }"
   >
     <!-- 最左侧：返回上一级目录按钮 -->
@@ -377,10 +379,12 @@ defineExpose({
       class="flex items-center flex-grow min-w-0 h-full overflow-hidden"
       @click="startEdit"
     >
-      <!-- 可点击的面包屑段落流：自适应宽度，超出时自动滚动且预留右侧空白 -->
+      <!-- 可点击的面包屑段落流：自己吃掉剩余宽度并在内部横向滚动。
+           不要再用 `max-w-[calc(100%-36px)]` 预留右侧空白 —— 百分比相对的是
+           一个「宽度由内容决定」的容器，等于没约束，路径一长就无限向外扩。 -->
       <div
         ref="breadcrumbStreamRef"
-        class="flex items-center flex-shrink min-w-0 max-w-[calc(100%-36px)] overflow-x-auto no-scrollbar py-0.5"
+        class="flex items-center flex-1 min-w-0 overflow-x-auto no-scrollbar py-0.5"
       >
         <template v-for="(seg, idx) in breadcrumbSegments" :key="seg.path">
           <!-- 根目录纯图标按钮 -->
@@ -432,9 +436,9 @@ defineExpose({
         </template>
       </div>
 
-      <!-- 右侧强制常驻空白点击区域（超出宽度时仍保留至少 36px 空间用于切换输入模式） -->
+      <!-- 右侧固定 36px 空白点击区域（超出宽度时仍保留点击切换输入模式的空间） -->
       <div
-        class="flex-grow flex-shrink-0 min-w-[36px] h-full cursor-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-100 rounded-sm"
+        class="w-9 flex-shrink-0 h-full cursor-text hover:bg-black/5 dark:hover:bg-white/5 transition-colors duration-100 rounded-sm"
         title="点击直接输入路径"
       ></div>
     </div>

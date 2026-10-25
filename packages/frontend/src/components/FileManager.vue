@@ -2212,7 +2212,7 @@ defineExpose({ focusSearchInput, startPathEdit });
       </div>
       <FileManagerBreadcrumbs
         ref="breadcrumbsRef"
-        class="flex-shrink-0 flex-grow min-w-0"
+        class="min-w-0"
         :current-path="currentSftpManager?.currentPath?.value ?? '/'"
         :is-connected="Boolean(props.wsDeps.isConnected.value)"
         :is-loading="Boolean(currentSftpManager?.isLoading?.value)"
