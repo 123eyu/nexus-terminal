@@ -66,6 +66,8 @@
     "updateSuccess": "文件夹更新成功。",
     "deleteFailed": "文件夹 \"{name}\" 删除失败: {error}",
     "errorDelete": "删除文件夹时出错: {error}",
+    "updateFailed": "更新文件夹失败：{error}",
+    "folderDeletedWithCommands": "文件夹及其中的快捷指令已删除",
     "createFailed": "创建文件夹「{name}」失败：{error}",
     "deleteSuccessWithName": "已删除文件夹「{name}」",
     "deleteFailedWithName": "删除文件夹「{name}」失败：{error}"

@@ -92,10 +92,10 @@ const handleCreateNewFolder = () => {
   isInputActive.value = false;
 };
 
-// 全局删除标签 (危险操作，带确认保护)
+// 全局删除文件夹 (危险操作，带确认保护)
 const handleDeleteFolderGlobally = async (folder: GenericFolder) => {
   const confirmed = await showConfirmDialog({
-    message: t('folders.deleteConfirm', { name: folder.name }, `确定要全局删除标签“${folder.name}”吗？此操作无法撤销。`)
+    message: t('folders.prompts.confirmDelete', { name: folder.name })
   });
   if (confirmed) {
     emit('delete-folder', folder.id);
@@ -170,7 +170,7 @@ const handleDeleteFolderGlobally = async (folder: GenericFolder) => {
         <input
           type="text"
           v-model="newFolderName"
-          placeholder="输入新标签名并点击添加..."
+          :placeholder="t('folders.newFolderPlaceholder')"
           @focus="isInputActive = true"
           @keydown.enter.prevent="handleCreateNewFolder"
           class="w-full h-8.5 px-3 text-xs bg-header/20 border border-border/60 rounded-xl text-foreground placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors"

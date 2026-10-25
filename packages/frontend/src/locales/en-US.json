@@ -66,6 +66,8 @@
     "updateSuccess": "Folder updated.",
     "deleteFailed": "Failed to delete folder \"{name}\": {error}",
     "errorDelete": "Error deleting folder: {error}",
+    "updateFailed": "Failed to update folder: {error}",
+    "folderDeletedWithCommands": "Folder and its quick commands deleted",
     "createFailed": "Failed to create folder \"{name}\": {error}",
     "deleteSuccessWithName": "Folder \"{name}\" deleted",
     "deleteFailedWithName": "Failed to delete folder \"{name}\": {error}"

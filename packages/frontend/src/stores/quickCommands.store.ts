@@ -530,13 +530,13 @@ export const useQuickCommandsStore = defineStore('quickCommands', () => {
                     return true;
                 } else {
                     // This case might not happen if backend throws errors instead
-                    error.value = response.data.message || '批量分配标签失败 (未知)';
+                    error.value = response.data.message || '批量分配文件夹失败 (未知)';
                     if (error.value) uiNotificationsStore.showError(error.value); // Check if error.value is not null
                     return false;
                 }
             } catch (err: any) {
                 console.error('[Store] Error assigning folder to commands:', err);
-                error.value = err.response?.data?.message || err.message || '批量分配标签时发生网络或服务器错误';
+                error.value = err.response?.data?.message || err.message || '批量分配文件夹时发生网络或服务器错误';
                 if (error.value) uiNotificationsStore.showError(error.value); // Check if error.value is not null
                 return false;
             } finally {

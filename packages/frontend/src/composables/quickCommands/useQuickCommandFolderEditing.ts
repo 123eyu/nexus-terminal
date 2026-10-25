@@ -69,7 +69,7 @@ export function useQuickCommandFolderEditing(deps: QuickCommandFolderEditingDeps
         // --- 新建标签，并把"未标记"分组里的命令全部挂过去 ---
         const newFolder = await quickCommandFoldersStore.addFolder(newName);
         if (newFolder) {
-          uiNotificationsStore.showSuccess(t('quickCommands.folders.createSuccess'));
+          // 成功提示由 store 统一弹（这里再弹一次会出现「文件夹已创建」+ 别的两条通知）
           const untaggedGroup = deps.groupedCommands.value.find((g) => g.folderId === null);
           const commandIdsToAssign = untaggedGroup ? untaggedGroup.commands.map((c) => c.id) : [];
 
@@ -130,7 +130,6 @@ export function useQuickCommandFolderEditing(deps: QuickCommandFolderEditingDeps
     try {
       const created = await quickCommandFoldersStore.createFolder(name);
       if (created) {
-        uiNotificationsStore.showSuccess(t('folders.folderCreated', '文件夹已创建'));
         await quickCommandFoldersStore.fetchFolders();
         await quickCommandsStore.fetchQuickCommands();
         deps.onFolderCreated?.(created.id);

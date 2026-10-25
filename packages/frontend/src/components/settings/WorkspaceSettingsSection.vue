@@ -432,25 +432,25 @@
           error-key="settings.workspace.error.sidebarPersistentSaveFailed"
         />
 
-        <!-- 显示连接标签 (纯开关) -->
+        <!-- 显示连接文件夹 (纯开关) -->
         <SettingToggle
           setting-key="showConnectionFolders"
           title-key="settings.workspace.showConnectionFoldersTitle"
-          title-fallback="显示连接标签"
+          title-fallback="显示连接文件夹"
           desc-key="settings.workspace.showConnectionFoldersDescription"
-          desc-fallback="关闭后将隐藏连接列表中的标签，并从搜索中排除标签。"
+          desc-fallback="关闭后将隐藏连接列表中的文件夹，并从搜索中排除文件夹名。"
           success-key="settings.workspace.success.showConnectionFoldersSaved"
           error-key="settings.workspace.error.showConnectionFoldersSaveFailed"
           native-boolean
         />
 
-        <!-- 显示快捷指令标签 (纯开关) -->
+        <!-- 显示快捷指令文件夹 (纯开关) -->
         <SettingToggle
           setting-key="showQuickCommandFolders"
           title-key="settings.workspace.showQuickCommandFoldersTitle"
-          title-fallback="显示快捷指令标签"
+          title-fallback="显示快捷指令文件夹"
           desc-key="settings.workspace.showQuickCommandFoldersDescription"
-          desc-fallback="关闭后将隐藏快捷指令列表中的标签，并从搜索中排除标签。"
+          desc-fallback="关闭后将隐藏快捷指令列表中的文件夹，并从搜索中排除文件夹名。"
           success-key="settings.workspace.success.showQuickCommandFoldersSaved"
           error-key="settings.workspace.error.showQuickCommandFoldersSaveFailed"
           native-boolean

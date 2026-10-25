@@ -28,7 +28,7 @@ const getContainerClass = (type: string) => {
   <MobileNotificationDisplay v-if="isMobile" />
 
   <!-- 桌面端原有右上角通知 (完全保持不变) -->
-  <div v-else class="fixed top-4 right-4 z-[1100] flex flex-col items-end">
+  <div v-else class="fixed top-4 right-4 z-[1100] flex flex-col items-end" data-ui-notifications>
     <transition-group
       tag="div"
       enter-active-class="transition duration-500 ease-out"
@@ -41,6 +41,7 @@ const getContainerClass = (type: string) => {
       <div
         v-for="notification in notifications"
         :key="notification.id"
+        data-ui-notification
         :class="[
           'flex items-center p-3 mb-2 rounded shadow-md min-w-[250px] max-w-[400px] opacity-95 text-white', 
           {

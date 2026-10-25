@@ -365,7 +365,7 @@ const handleConnectionModified = async () => {
                 aria-label="Filter connections by folder"
                 :disabled="isLoadingFolders"
               >
-                <option :value="null">{{ t('dashboard.filterFolders.all', '所有标签') }}</option>
+                <option :value="null">{{ t('dashboard.filterFolders.all', '所有文件夹') }}</option>
                 <option v-if="isLoadingFolders" disabled>{{ t('common.loading') }}</option>
                 <option v-for="folder in (folders as FolderInfo[])" :key="folder.id" :value="folder.id">
                   {{ folder.name }}
@@ -478,7 +478,7 @@ const handleConnectionModified = async () => {
             {{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}
           </div>
           <div v-else-if="!isLoadingConnections && selectedFolderId !== null && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
-            {{ t('dashboard.noConnectionsWithFolder', '该标签下没有连接记录') }}
+            {{ t('dashboard.noConnectionsWithFolder', '该文件夹下没有连接记录') }}
           </div>
           <div v-else class="text-center text-text-secondary py-8 text-xs">
             {{ t('dashboard.noConnections', '没有连接记录') }}

@@ -222,7 +222,7 @@ const handleActionDelete = async () => {
                 ref="searchInputRef"
                 type="text"
                 v-model="searchTerm"
-                :placeholder="t('workspaceConnectionList.searchPlaceholder', '搜索服务器名称、IP 或标签...')"
+                :placeholder="t('workspaceConnectionList.searchPlaceholder', '搜索服务器名称、IP 或文件夹...')"
                 class="w-full pl-8 pr-8 py-2 bg-input/80 border border-border/50 rounded-xl text-sm text-foreground placeholder:text-text-secondary/60 focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
               />
               <button

@@ -792,7 +792,7 @@ const handleCreateFolderConfirm = async () => {
   }
   const created = await quickCommandFoldersStore.createFolder(name);
   if (created) {
-    uiNotificationsStore.showSuccess(t('folders.createdSuccess', '文件夹已创建'));
+    // 成功提示由 store 统一弹，这里不再重复
     activeFolder.value = created.id;
   }
   isCreatingFolder.value = false;
@@ -815,10 +815,8 @@ const handleFinishRenameFolder = async () => {
   editingFolderId.value = null;
   if (!newName) return;
 
-  const success = await quickCommandFoldersStore.renameFolder(fid, newName);
-  if (success) {
-    uiNotificationsStore.showSuccess(t('folders.renamedSuccess', '文件夹已重命名'));
-  }
+  // 成功/失败提示由 store 统一弹
+  await quickCommandFoldersStore.renameFolder(fid, newName);
 };
 
 // 文件夹删除触发
@@ -868,8 +866,8 @@ const toggleFolderColorPicker = (folderId: number, e: Event) => {
 };
 
 const handleSaveFolderColor = async (folderId: number, color: string | null) => {
+  // 成功提示由 store 弹（updateFolderColor 会带 folders.colorUpdated 文案）
   await quickCommandFoldersStore.updateFolderColor(folderId, color);
-  uiNotificationsStore.showSuccess(t('folders.colorUpdated', '文件夹背景颜色已更新'));
   activeColorPickerFolderId.value = null;
   activeColorPickerTriggerEl.value = null;
 };
