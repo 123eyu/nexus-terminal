@@ -7,7 +7,7 @@ import {
 import { useConnectionsStore } from '../stores/connections.store';
 
 export interface FavoritePathTransferOptions {
-  /** 迁移源作用域：面板里列出来的就是这一组收藏 */
+  /** 打开面板时默认选中的源作用域（列表页当时看的是哪一组） */
   sourceScope: Ref<FavoritePathScope | undefined>;
   /** 当前文件管理器所在主机（连接 uuid） */
   hostUuid: Ref<string | null | undefined>;
@@ -17,11 +17,23 @@ export interface FavoritePathTransferOptions {
   t: (key: string, params?: Record<string, unknown>) => string;
 }
 
+/** 选择器用的键：`global` 或 `host:<uuid>`。AppSelect 的 value 只吃原始类型。 */
+const GLOBAL_KEY = 'global';
+const HOST_KEY_PREFIX = 'host:';
+
+const parseScopeKey = (key: string): { scope: FavoritePathScope; uuid: string | null } => {
+  if (key.startsWith(HOST_KEY_PREFIX)) {
+    const uuid = key.slice(HOST_KEY_PREFIX.length);
+    return uuid ? { scope: 'host', uuid } : { scope: 'global', uuid: null };
+  }
+  return { scope: 'global', uuid: null };
+};
+
 /**
  * 「迁移收藏」面板的表单逻辑（桌面 / 移动两端共用）。
  *
- * 只负责：列出源收藏、多选、移动还是复制、目标作用域。
- * 目标主机的候选项由组件自己拼（它才知道 connectionsStore 里有哪些 SSH 主机）。
+ * 只负责：选源分组、列出该组收藏、多选、移动还是复制、目标分组。
+ * 主机候选项来自 connectionsStore，两端共用同一份。
  */
 export function useFavoritePathTransfer(options: FavoritePathTransferOptions) {
   const store = useFavoritePathsStore();
@@ -39,11 +51,21 @@ export function useFavoritePathTransfer(options: FavoritePathTransferOptions) {
       .map((c) => ({ uuid: String(c.uuid), name: c.name || c.host }))
   );
 
-  /** 源：当前作用域下可见的全部收藏（不受搜索框影响 —— 搜索是列表页的临时筛选，
+  /** 源分组的默认键：列表页当前看的那一组 */
+  const defaultSourceKey = (): string => {
+    if ((options.sourceScope.value ?? 'host') === 'global') return GLOBAL_KEY;
+    return options.hostUuid.value ? `${HOST_KEY_PREFIX}${options.hostUuid.value}` : GLOBAL_KEY;
+  };
+
+  /** 源分组：面板里列出来的就是这一组收藏 */
+  const sourceKey = ref<string>(defaultSourceKey());
+
+  /** 源：所选分组下的全部收藏（不受搜索框影响 —— 搜索是列表页的临时筛选，
    *  迁移面板里只显示一半条目会让人以为其余的丢了） */
-  const items = computed<FavoritePathItem[]>(() =>
-    store.favoritePathsFor(options.sourceScope.value ?? 'host', options.hostUuid.value || null)
-  );
+  const items = computed<FavoritePathItem[]>(() => {
+    const { scope, uuid } = parseScopeKey(sourceKey.value);
+    return store.favoritePathsFor(scope, uuid);
+  });
 
   const selectedIds = ref<string[]>([]);
   const mode = ref<'move' | 'copy'>('move');
@@ -77,47 +99,44 @@ export function useFavoritePathTransfer(options: FavoritePathTransferOptions) {
 
   const canSubmit = computed(() => selectedItems.value.length > 0 && !isSubmitting.value);
 
-  /** 目标是否就是源本身（全局 → 全局，或本机专属 → 同一台主机） */
-  const isTargetSameAsSource = computed(() => {
-    const source = options.sourceScope.value ?? 'host';
-    if (targetScope.value !== source) return false;
-    if (targetScope.value === 'global') return true;
-    return String(targetConnectionUuid.value || '') === String(options.hostUuid.value || '');
-  });
-
   /**
    * 目标选择器用的键：`global` 或 `host:<uuid>`。
-   * AppSelect 的 value 只吃原始类型，拼成一个字符串比塞对象省事。
    */
   const targetKey = computed<string>({
     get: () =>
-      targetScope.value === 'global' ? 'global' : `host:${targetConnectionUuid.value || ''}`,
+      targetScope.value === 'global' ? GLOBAL_KEY : `${HOST_KEY_PREFIX}${targetConnectionUuid.value || ''}`,
     set: (value: string) => {
-      if (value === 'global') {
-        targetScope.value = 'global';
-        targetConnectionUuid.value = null;
-        return;
-      }
-      if (value.startsWith('host:')) {
-        targetScope.value = 'host';
-        targetConnectionUuid.value = value.slice('host:'.length) || null;
-      }
+      const { scope, uuid } = parseScopeKey(value);
+      targetScope.value = scope;
+      targetConnectionUuid.value = uuid;
     },
   });
 
-  /** 打开面板时的默认目标：不能等于源，否则一进来就是「无操作」 */
-  const resolveDefaultTargetKey = (): string => {
-    if ((options.sourceScope.value ?? 'host') === 'host') return 'global';
-    if (options.hostUuid.value) return `host:${options.hostUuid.value}`;
+  /** 目标是否就是源分组本身（全局 → 全局，或同一台主机） */
+  const isTargetSameAsSource = computed(() => targetKey.value === sourceKey.value);
+
+  /** 某个源分组的默认目标：不能等于源，否则一进来就是「无操作」 */
+  const defaultTargetKeyFor = (source: string): string => {
+    if (source !== GLOBAL_KEY) return GLOBAL_KEY;
+    // 源是全局 → 优先迁到当前文件管理器所在的主机
+    if (options.hostUuid.value) return `${HOST_KEY_PREFIX}${options.hostUuid.value}`;
     const first = hostOptions.value[0];
-    return first ? `host:${first.uuid}` : 'global';
+    return first ? `${HOST_KEY_PREFIX}${first.uuid}` : GLOBAL_KEY;
   };
 
-  /** 打开面板 / 数据变化时重置：清空选择，默认「移动」 */
+  // 换源 = 换一批条目：清空已选，且目标不能停在源上
+  watch(sourceKey, (key) => {
+    selectedIds.value = [];
+    if (targetKey.value === key) targetKey.value = defaultTargetKeyFor(key);
+  });
+
+  /** 打开面板 / 数据变化时重置：源回到列表页那组，清空选择，默认「移动」 */
   const reset = () => {
+    const nextSource = defaultSourceKey();
+    sourceKey.value = nextSource;
     selectedIds.value = [];
     mode.value = 'move';
-    targetKey.value = resolveDefaultTargetKey();
+    targetKey.value = defaultTargetKeyFor(nextSource);
   };
 
   // 父级用 v-if 控制挂载时，组件「一出生就是打开状态」，watch 不会触发 —— 主动初始化一次
@@ -164,6 +183,7 @@ export function useFavoritePathTransfer(options: FavoritePathTransferOptions) {
   return {
     items,
     hostOptions,
+    sourceKey,
     targetKey,
     selectedIds,
     selectedItems,

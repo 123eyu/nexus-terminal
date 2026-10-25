@@ -2237,7 +2237,8 @@
     },
     "transfer": {
       "title": "迁移收藏",
-      "subtitle": "把「{scope}」里的收藏移动或复制到别处",
+      "subtitle": "把收藏移动或复制到别的分组",
+      "sourceLabel": "迁移自",
       "selectLabel": "选择收藏路径",
       "selectAll": "全选",
       "clearAll": "取消全选",
@@ -2249,7 +2250,6 @@
       "sameTarget": "目标就是当前分组，换个位置试试",
       "moveHint": "移动后原分组里不再保留这些收藏。",
       "copyHint": "复制后原分组保留，目标位置新增一份。",
-      "submitting": "迁移中...",
       "selectedCount": "已选 {count} 条",
       "notifications": {
         "moveSuccess": "已移动 {count} 条收藏。",

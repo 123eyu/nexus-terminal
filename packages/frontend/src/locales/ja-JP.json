@@ -2118,7 +2118,8 @@
     },
     "transfer": {
       "title": "お気に入りを移動",
-      "subtitle": "「{scope}」のお気に入りを移動またはコピーします",
+      "subtitle": "お気に入りを別のグループへ移動またはコピーします",
+      "sourceLabel": "移動元",
       "selectLabel": "お気に入りを選択",
       "selectAll": "すべて選択",
       "clearAll": "選択を解除",
@@ -2130,7 +2131,6 @@
       "sameTarget": "現在のグループと同じです。別の場所を選んでください",
       "moveHint": "移動すると元のグループからは削除されます。",
       "copyHint": "コピーすると元のグループは残り、移動先に複製が追加されます。",
-      "submitting": "移動中...",
       "selectedCount": "{count} 件選択中",
       "notifications": {
         "moveSuccess": "{count} 件のお気に入りを移動しました。",

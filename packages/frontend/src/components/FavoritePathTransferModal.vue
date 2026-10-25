@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, toRef, type PropType } from 'vue';
+import { toRef, type PropType } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FavoritePathScope } from '../stores/favoritePaths.store';
 import { useFavoritePathTransfer } from '../composables/useFavoritePathTransfer';
@@ -34,6 +34,7 @@ const { t } = useI18n();
 const {
   items,
   hostOptions,
+  sourceKey,
   targetKey,
   mode,
   isSubmitting,
@@ -51,15 +52,11 @@ const {
   t,
 });
 
-const sourceLabel = computed(() =>
-  props.sourceScope === 'host'
-    ? t('favoritePaths.scope.host', '本机专属')
-    : t('favoritePaths.scope.global', '全局')
-);
-
-/** 目标主机里与源完全重合的那一项：选了等于没迁，置灰 */
-const isSameHostOption = (uuid: string) =>
-  props.sourceScope === 'host' && String(props.hostUuid || '') === String(uuid);
+/** 主机下拉项：当前文件管理器所在的主机标一下，避免和目标里的同名项混起来 */
+const hostLabel = (host: { uuid: string; name: string }) =>
+  String(host.uuid) === String(props.hostUuid || '')
+    ? `${host.name}（${t('favoritePaths.scope.host', '本机专属')}）`
+    : host.name;
 
 const closeModal = () => emit('close');
 
@@ -92,7 +89,7 @@ const handleSubmit = async () => {
               {{ t('favoritePaths.transfer.title', '迁移收藏') }}
             </h2>
             <p class="m-0 mt-1 text-xs text-text-secondary">
-              {{ t('favoritePaths.transfer.subtitle', { scope: sourceLabel }) }}
+              {{ t('favoritePaths.transfer.subtitle', '把收藏移动或复制到别的分组') }}
             </p>
           </div>
           <button
@@ -104,8 +101,25 @@ const handleSubmit = async () => {
           </button>
         </div>
 
+        <!-- 源分组 -->
+        <div class="px-6 pt-2 flex items-center justify-between gap-3 flex-shrink-0">
+          <span class="text-sm font-medium text-text-secondary flex-shrink-0">
+            {{ t('favoritePaths.transfer.sourceLabel', '迁移自') }}
+          </span>
+          <AppSelect v-model="sourceKey" class="flex-1 min-w-0" data-fav-transfer-source>
+            <option value="global">{{ t('favoritePaths.scope.global', '全局') }}</option>
+            <option
+              v-for="host in hostOptions"
+              :key="host.uuid"
+              :value="`host:${host.uuid}`"
+            >
+              {{ hostLabel(host) }}
+            </option>
+          </AppSelect>
+        </div>
+
         <!-- 选择列表 -->
-        <div class="px-6 flex items-center justify-between flex-shrink-0">
+        <div class="px-6 mt-4 flex items-center justify-between flex-shrink-0">
           <span class="text-sm font-medium text-text-secondary">
             {{ t('favoritePaths.transfer.selectLabel', '选择收藏路径') }}
           </span>
@@ -133,6 +147,7 @@ const handleSubmit = async () => {
             v-for="item in items"
             :key="item.id"
             type="button"
+            data-fav-transfer-item
             class="w-full flex items-start gap-2.5 p-2 rounded-md text-left transition-colors cursor-pointer"
             :class="isSelected(item) ? 'bg-primary/10' : 'hover:bg-primary/5'"
             @click="toggleSelect(item)"
@@ -187,15 +202,17 @@ const handleSubmit = async () => {
             <span class="text-sm font-medium text-text-secondary flex-shrink-0">
               {{ t('favoritePaths.transfer.targetLabel', '迁移到') }}
             </span>
-            <AppSelect v-model="targetKey" class="flex-1 min-w-0">
-              <option value="global">{{ t('favoritePaths.scope.global', '全局') }}</option>
+            <AppSelect v-model="targetKey" class="flex-1 min-w-0" data-fav-transfer-target>
+              <option value="global" :disabled="sourceKey === 'global'">
+                {{ t('favoritePaths.scope.global', '全局') }}
+              </option>
               <option
                 v-for="host in hostOptions"
                 :key="host.uuid"
                 :value="`host:${host.uuid}`"
-                :disabled="isSameHostOption(host.uuid)"
+                :disabled="sourceKey === `host:${host.uuid}`"
               >
-                {{ String(host.uuid) === String(props.hostUuid || '') ? `${host.name}（${t('favoritePaths.scope.host', '本机专属')}）` : host.name }}
+                {{ hostLabel(host) }}
               </option>
             </AppSelect>
           </div>
@@ -228,9 +245,9 @@ const handleSubmit = async () => {
             class="py-2 px-5 rounded-lg text-sm font-semibold transition-colors duration-150 bg-primary text-white border-none shadow-md hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
             @click="handleSubmit"
           >
-            {{ isSubmitting
-              ? t('favoritePaths.transfer.submitting', '迁移中...')
-              : (mode === 'move' ? t('favoritePaths.transfer.move', '移动') : t('favoritePaths.transfer.copy', '复制')) }}
+            {{ mode === 'move'
+              ? t('favoritePaths.transfer.move', '移动')
+              : t('favoritePaths.transfer.copy', '复制') }}
           </button>
         </div>
       </div>
