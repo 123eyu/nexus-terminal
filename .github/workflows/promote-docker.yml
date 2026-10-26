@@ -7,6 +7,21 @@ name: Promote Docker Image
 #   · 不用 pull/tag/push → 那样会把多架构 manifest 拍成构建机自己的单架构
 #
 # 用的是 `docker buildx imagetools create`：只读一次 manifest，写一个新的标签指针，几秒钟完成。
+#
+# 两条触发路径：
+#   1. GitHub Release 正式发布（release: published）→ 用**那个标签**当版本号自动 promote
+#      · 标签不是 semver（如 desktop-v1、docs-2026）→ 记一条 notice 后跳过，不算失败
+#      · 预发布（prerelease）不 promote，否则 latest 会被预发布顶掉
+#   2. 手动 workflow_dispatch → 填版本号跑（补发、重跑失败的一次、或指定 digest）
+#
+# 源 manifest 的选取顺序（自动 / 手动都适用）：
+#   a. 显式填了 digest → 用它
+#   b. 版本号标签已经存在 → 以它为源，只补齐 v版本号 / latest
+#      （发 release 时 release-desktop.yml 会 push tag，进而触发 release-docker.yml 构建正式版，
+#        那份镜像同样来自这个 tag 的提交。用已有的版本号标签当源最安全：
+#        test 是浮动标签，可能停在更早或更新的一次构建上。）
+#   c. 否则从 source（默认 test）复制
+#
 # 等价的手动命令（在 CI 的 Step Summary 里也会打印出来）：
 #   docker buildx imagetools create \
 #     -t heavrnl/nexus-terminal:0.9.15 \
@@ -15,6 +30,8 @@ name: Promote Docker Image
 #     heavrnl/nexus-terminal@sha256:xxxx
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -29,7 +46,7 @@ on:
         required: false
         default: ''
       force:
-        description: '版本号标签已存在且 digest 不同时仍然覆盖（默认拒绝）'
+        description: '版本号标签已存在时，强制改用 source 的 manifest（默认以已存在的版本号标签为准）'
         required: false
         type: boolean
         default: false
@@ -45,8 +62,74 @@ env:
   IMAGE: heavrnl/nexus-terminal
 
 jobs:
+  # 先把「这次的版本号是什么、要不要跑」判掉。
+  # 单独一个 job 是为了让「标签不是版本号」这种情况整条流水线是"跳过"而不是"失败"——
+  # 仓库里还会有非版本号的 release，不能每次都留一个红叉。
+  gate:
+    name: 解析发布标签
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    outputs:
+      proceed: ${{ steps.parse.outputs.proceed }}
+      version: ${{ steps.parse.outputs.version }}
+      reason: ${{ steps.parse.outputs.reason }}
+
+    steps:
+      - name: 解析版本号
+        id: parse
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+          IS_DRAFT: ${{ github.event.release.draft }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "release" ]; then
+            echo "触发来源：Release $TAG"
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "::notice::草稿 release 不发布，跳过"
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "reason=草稿" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$IS_PRERELEASE" = "true" ]; then
+              echo "::notice::预发布不 promote（否则 latest 会被预发布顶掉），跳过"
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "reason=预发布" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            raw="$TAG"
+          else
+            echo "触发来源：手动输入"
+            raw="$INPUT_VERSION"
+          fi
+
+          version="${raw#v}"
+
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+            # 自动触发时标签不一定是版本号：跳过，留给人工判断。手动触发则直接报错。
+            if [ "$EVENT" = "release" ]; then
+              echo "::notice::标签 '$raw' 不是版本号，跳过 promote"
+              echo "proceed=false" >> "$GITHUB_OUTPUT"
+              echo "reason=标签不是版本号" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "❌ 版本号格式不对: '$raw'"
+            exit 1
+          fi
+
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "reason=ok" >> "$GITHUB_OUTPUT"
+          echo "版本：$version"
+
   promote:
     name: Retag manifest
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -59,17 +142,6 @@ jobs:
           [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ] \
             || { echo "❌ 缺少 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"; exit 1; }
 
-      - name: 解析版本号
-        id: version
-        run: |
-          set -euo pipefail
-          raw="${{ inputs.version }}"
-          raw="${raw#v}"
-          printf '%s' "$raw" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$' \
-            || { echo "❌ 版本号格式不对: '$raw'"; exit 1; }
-          echo "version=$raw" >> "$GITHUB_OUTPUT"
-          echo "版本：$raw"
-
       - name: 配置 Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -81,25 +153,44 @@ jobs:
 
       # tag 是浮动的（test 随时会被下一次测试覆盖），digest 不会。
       # 所以先把源 digest 读出来，后面所有操作都只认这个 digest。
-      - name: 解析源 manifest digest
+      - name: 选定源 manifest
         id: src
         env:
-          SRC_TAG: ${{ inputs.source }}
+          VER: ${{ needs.gate.outputs.version }}
+          SRC_TAG: ${{ inputs.source || 'test' }}
           SRC_DIGEST: ${{ inputs.digest }}
+          FORCE: ${{ inputs.force }}
         run: |
           set -euo pipefail
+
+          existing="$(docker buildx imagetools inspect "$IMAGE:$VER" \
+                      --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
+
           if [ -n "$SRC_DIGEST" ]; then
             d="$SRC_DIGEST"
+            mode="explicit"
             echo "来源：显式 digest"
+          elif [ -n "$existing" ] && [ "$FORCE" != "true" ]; then
+            # 版本号标签已经存在：可能是上一次 promote 跑过，也可能是发 release 时
+            # release-docker.yml（push tags: v*）先把正式版构建出来了。
+            # 两种情况都该以它为准 —— 它一定对应这个 tag 的提交；
+            # 而 test 是浮动标签，可能停在另一次构建上。
+            d="$existing"
+            mode="align"
+            echo "来源：已存在的 $IMAGE:$VER（这次只补齐 v$VER / latest）"
           else
             d="$(docker buildx imagetools inspect "$IMAGE:$SRC_TAG" \
                  --format '{{.Manifest.Digest}}' || true)"
             [ -n "$d" ] || { echo "❌ 找不到源标签 $IMAGE:$SRC_TAG"; exit 1; }
+            mode="copy"
             echo "来源：$IMAGE:$SRC_TAG"
           fi
+
           printf '%s' "$d" | grep -Eq '^sha256:[0-9a-f]{64}$' \
             || { echo "❌ digest 不合法: '$d'"; exit 1; }
+
           echo "digest=$d" >> "$GITHUB_OUTPUT"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "digest：$d"
 
       - name: 确认源镜像架构完整
@@ -115,37 +206,10 @@ jobs:
           echo "✅ 源镜像 amd64 + arm64 齐全"
 
       # latest 本来就存在，覆盖它是「提升」的本意；
-      # 但版本号标签一旦发出去就不该被悄悄改指向，所以只拦这两个。
-      - name: 检查版本号标签是否已被占用
-        env:
-          VER: ${{ steps.version.outputs.version }}
-          DIGEST: ${{ steps.src.outputs.digest }}
-          FORCE: ${{ inputs.force }}
-        run: |
-          set -euo pipefail
-          for tag in "$VER" "v$VER"; do
-            existing="$(docker buildx imagetools inspect "$IMAGE:$tag" \
-                        --format '{{.Manifest.Digest}}' 2>/dev/null || true)"
-            if [ -z "$existing" ]; then
-              echo "· $tag 尚未发布，可以写"
-              continue
-            fi
-            if [ "$existing" = "$DIGEST" ]; then
-              echo "· $tag 已经指向同一个 digest，跳过"
-              continue
-            fi
-            if [ "$FORCE" = "true" ]; then
-              echo "⚠️ $tag 已存在（$existing → $DIGEST），按 force 覆盖"
-            else
-              echo "❌ $tag 已存在且 digest 不同（现有 $existing，要发布 $DIGEST）"
-              echo "   版本号发出去就不该改指向；确认要覆盖请勾选 force，或换一个版本号。"
-              exit 1
-            fi
-          done
-
+      # 版本号标签一旦发出去就不该被悄悄改指向，所以 force 之外都以已有版本号标签为准。
       - name: 复制 manifest 到正式标签
         env:
-          VER: ${{ steps.version.outputs.version }}
+          VER: ${{ needs.gate.outputs.version }}
           DIGEST: ${{ steps.src.outputs.digest }}
         run: |
           set -euo pipefail
@@ -159,7 +223,7 @@ jobs:
       # 真正要保证的是每个平台下面那个子 manifest 一模一样（层、配置、入口都没动）。
       - name: 校验三个标签与源镜像逐平台一致
         env:
-          VER: ${{ steps.version.outputs.version }}
+          VER: ${{ needs.gate.outputs.version }}
           DIGEST: ${{ steps.src.outputs.digest }}
         run: |
           set -euo pipefail
@@ -179,9 +243,12 @@ jobs:
 
       - name: 输出发布摘要
         env:
-          VER: ${{ steps.version.outputs.version }}
+          VER: ${{ needs.gate.outputs.version }}
           DIGEST: ${{ steps.src.outputs.digest }}
-          SRC_TAG: ${{ inputs.source }}
+          MODE: ${{ steps.src.outputs.mode }}
+          SRC_TAG: ${{ inputs.source || 'test' }}
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           {
             echo "### 🚀 已发布正式版（未重新构建）"
@@ -189,11 +256,20 @@ jobs:
             echo "| 项 | 值 |"
             echo "| --- | --- |"
             echo "| 版本 | \`$VER\` |"
-            echo "| 来源 | \`$IMAGE:$SRC_TAG\` |"
+            if [ "$EVENT" = "release" ]; then
+              echo "| 触发 | Release \`$TAG\` 发布 |"
+            else
+              echo "| 触发 | 手动（源 \`$IMAGE:$SRC_TAG\`） |"
+            fi
+            if [ "$MODE" = "align" ]; then
+              echo "| 来源 | 已存在的 \`$IMAGE:$VER\`，补齐 \`v$VER\` / \`latest\` |"
+            else
+              echo "| 来源 | \`$IMAGE:$SRC_TAG\` |"
+            fi
             echo "| digest | \`$DIGEST\` |"
             echo "| 标签 | \`$VER\` / \`v$VER\` / \`latest\` |"
             echo ""
             echo "拉取：\`docker pull $IMAGE:$VER\`"
             echo ""
-            echo "> 与测试镜像逐平台 digest 一致，线上跑的就是你验过的那份，没有重新构建。"
+            echo "> 与源镜像逐平台 digest 一致，线上跑的就是源里那份，没有重新构建。"
           } >> "$GITHUB_STEP_SUMMARY"
