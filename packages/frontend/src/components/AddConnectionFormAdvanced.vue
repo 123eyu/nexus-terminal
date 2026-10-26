@@ -204,7 +204,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
     <!-- 连接级启动命令（仅 SSH） -->
     <div v-if="props.formData.type === 'SSH'">
       <label for="conn-startup-command" class="block text-xs font-medium text-text-secondary mb-1.5">
-        {{ t('connections.form.startupCommand', '启动命令（可选）') }}
+        {{ t('connections.form.startupCommand', '启动命令') }}
       </label>
       <input
         id="conn-startup-command"

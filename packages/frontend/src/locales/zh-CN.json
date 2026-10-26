@@ -409,7 +409,7 @@
       "fileProtocolAuto": "自动探测",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
-      "startupCommand": "启动命令（可选）",
+      "startupCommand": "启动命令",
       "startupCommandPlaceholder": "连上后自动执行，例如 sudo -i",
       "startupCommandHint": "每次连接终端时自动执行。布局里为窗格配的「自启指令」是独立的一份，两边都配了就都执行。",
       "sftpSudoEnabled": "开启 SFTP sudo 提权",

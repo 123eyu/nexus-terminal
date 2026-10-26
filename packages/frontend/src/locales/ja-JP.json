@@ -258,7 +258,7 @@
       "fileProtocolAuto": "自動検出",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
-      "startupCommand": "起動コマンド（任意）",
+      "startupCommand": "起動コマンド",
       "startupCommandPlaceholder": "ログイン後に自動実行（例: sudo -i）",
       "startupCommandHint": "ターミナル接続のたびに実行されます。レイアウト側のペイン自動実行は別設定で、両方あれば両方実行されます。",
       "sftpSudoEnabled": "SFTP の sudo 昇格を有効化",

@@ -329,7 +329,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
       <!-- 2.5 连接级启动命令（仅 SSH） -->
       <div v-if="props.formData.type === 'SSH'" class="space-y-1.5 pt-1">
         <label for="m-conn-startup-command" class="block text-xs font-medium text-text-secondary">
-          {{ t('connections.form.startupCommand', '启动命令（可选）') }}
+          {{ t('connections.form.startupCommand', '启动命令') }}
         </label>
         <input
           id="m-conn-startup-command"

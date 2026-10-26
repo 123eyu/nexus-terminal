@@ -411,7 +411,7 @@
       "fileProtocolAuto": "Auto Detect",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
-      "startupCommand": "Startup command (optional)",
+      "startupCommand": "Startup command",
       "startupCommandPlaceholder": "Runs after login, e.g. sudo -i",
       "startupCommandHint": "Runs every time a terminal connects. The per-pane auto-exec in layouts is a separate setting; if both are set, both run.",
       "sftpSudoEnabled": "Enable SFTP sudo",
