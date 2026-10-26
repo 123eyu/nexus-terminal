@@ -1096,7 +1096,8 @@ const definedMigrations: Migration[] = [
                 console.log(`[Migrations] Migration 31: connections.${name} 已添加。`);
             };
             await addColumn('startup_command', "startup_command TEXT NOT NULL DEFAULT ''");
-            await addColumn('sftp_sudo_enabled', 'sftp_sudo_enabled INTEGER NOT NULL DEFAULT 0');
+            // 默认开启：提权失败会自动降级到普通 SFTP，所以默认开是安全的
+            await addColumn('sftp_sudo_enabled', 'sftp_sudo_enabled INTEGER NOT NULL DEFAULT 1');
             await addColumn('encrypted_sudo_password', 'encrypted_sudo_password TEXT NULL');
             console.log('[Migrations] Migration 31: connections 启动命令 / SFTP sudo 提权字段迁移完成。');
         }

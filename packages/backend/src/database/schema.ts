@@ -104,7 +104,8 @@ file_protocol TEXT NOT NULL DEFAULT 'auto',
 -- 连接级启动命令：连上终端后自动执行（与布局里的「终端自启指令」互相独立，两边都配了就都执行）
 startup_command TEXT NOT NULL DEFAULT '',
 -- SFTP sudo 提权：开启后用 sudo 启动 sftp-server 开文件通道，读写 root 才能碰的路径
-sftp_sudo_enabled INTEGER NOT NULL DEFAULT 0,
+-- 默认开启：失败会自动退回普通 SFTP，所以默认开是安全的（拿不到 root 只是没加成）
+sftp_sudo_enabled INTEGER NOT NULL DEFAULT 1,
 encrypted_sudo_password TEXT NULL,
 created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
     updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),

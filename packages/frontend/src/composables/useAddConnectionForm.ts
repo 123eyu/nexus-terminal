@@ -66,8 +66,8 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     file_protocol: 'auto' as 'auto' | 'sftp' | 'scp',
     /** 连接级启动命令：连上终端后自动执行；布局里的「自启指令」是另一份，两边都配了就都执行 */
     startup_command: '',
-    /** SFTP sudo 提权：用 `sudo sftp-server` 开文件通道，能读写 root 路径 */
-    sftp_sudo_enabled: false,
+    /** SFTP sudo 提权：用 `sudo sftp-server` 开文件通道，能读写 root 路径。默认开启，失败会自动退回普通 SFTP */
+    sftp_sudo_enabled: true,
     /** sudo 密码明文，只在提交时上行一次；编辑时不回显（留空 = 不改） */
     sudo_password: '',
     /** 只读：后端是否已存了 sudo 密码 */
@@ -198,7 +198,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.background_color = '#3b82f6';
          formData.file_protocol = 'auto';
          formData.startup_command = '';
-         formData.sftp_sudo_enabled = false;
+         formData.sftp_sudo_enabled = true;
          formData.sudo_password = '';
          formData.has_sudo_password = false;
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');

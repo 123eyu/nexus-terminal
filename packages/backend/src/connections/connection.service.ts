@@ -209,7 +209,8 @@ notes: input.notes ?? null, // Add notes field
         background_color: input.background_color ?? null,
         file_protocol: input.file_protocol ?? 'auto',
         startup_command: (input.startup_command ?? '').trim(),
-        sftp_sudo_enabled: input.sftp_sudo_enabled ? 1 : 0,
+        // 默认开启：调用方没显式传就按 1 存（提权失败会自动降级，所以默认开是安全的）
+        sftp_sudo_enabled: input.sftp_sudo_enabled === undefined ? 1 : (input.sftp_sudo_enabled ? 1 : 0),
         encrypted_sudo_password: input.sudo_password ? encrypt(input.sudo_password) : null,
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
