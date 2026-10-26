@@ -270,7 +270,6 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
       <!-- 移动端文件传输协议选择 (仅 SSH 支持) -->
       <div v-if="props.formData.type === 'SSH'" class="space-y-1.5">
         <label class="block text-xs font-medium text-text-secondary">
-          <i class="fas fa-file-export text-blue-400 mr-1"></i>
           {{ t('connections.form.fileProtocol', '文件传输协议') }}
         </label>
         <div class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70 bg-input">
