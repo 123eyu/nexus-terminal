@@ -9,18 +9,22 @@ import { SFTP as SftpProtocol } from 'ssh2/lib/protocol/SFTP.js';
  * 想以 root 跑，只能自己 exec 一条 `sudo sftp-server`，再把这条 exec 通道的
  * stdin/stdout 当成 SFTP 协议的字节流用。
  *
- * 免密（服务器允许免密 sudo，或本来就是 root）：
+ * 先试免密：
  *   `sudo -n /usr/lib/openssh/sftp-server`
  *   加 `-n` 是为了没有免密 sudo 时立刻失败，而不是卡在密码提示上等超时。
  *
- * 需要密码：
+ * 失败且用户填了密码，再试密码版：
  *   `sh -c 'IFS= read -r _p; { printf "%s\n" "$_p"; cat; } | exec sudo -S -p "" <path>'`
  *   第一行是密码，被 `read` 吃掉交给 sudo；之后 `cat` 把剩余字节原样转发给 sftp-server。
  *   密码不进命令行（不进 `ps`、不进 shell history），只走 stdin。
  *
- * ⚠️ 两种模式必须由**服务端**决定：如果服务器其实免密，我们把密码行写进 stdin，
- * 这一行就会落进 sftp-server 的协议流里，包长直接错乱。所以探测阶段顺手跑一次
- * `sudo -n true`，客户端据此决定要不要写密码行。
+ * ⚠️ 为什么靠「先跑一次」而不是事先探测 sudo 要不要密码：
+ * 早期实现用 `sudo -n true` 猜，只要它失败就认为「要密码」。但最小权限的加固机器
+ * 常见配置是 `user ALL=(ALL) NOPASSWD: /usr/lib/openssh/sftp-server` —— 只放开这一条命令，
+ * `sudo -n true` 因不在允许列表而失败，于是被误判成需要密码；而这条路径其实是免密的。
+ * 反过来，凭据时间戳还在缓存里时 `sudo -l` 之类的查询又会误判成免密。
+ * 唯一无歧义的判据就是「这条命令到底跑没跑起来」，所以改成先 exec 免密版，
+ * 握手失败再退到密码版。代价是密码机器上多花一次立刻返回的 exec。
  */
 
 /** 常见发行版里 sftp-server 的落点（Debian/Ubuntu、RHEL/Fedora、Alpine、源码编译） */
@@ -34,13 +38,10 @@ export const SFTP_SERVER_CANDIDATES = [
 ];
 
 /**
- * 找一个可执行的 sftp-server 打到 stdout，顺便报告 sudo 要不要密码。
+ * 找一个可执行的 sftp-server 打到 stdout。
  *
- * 输出两行：
- *   /usr/lib/openssh/sftp-server
- *   nopass | pass
- *
- * 找不到路径时退出码 2（与「找到了但 sudo 要密码」区分开）。
+ * 只负责找路径，不再顺带判断 sudo 要不要密码（见文件头注释）。
+ * 找不到路径时退出码 2，与「找到了但 sudo 跑不起来」区分开。
  */
 export const buildSftpServerProbeCommand = (): string => {
     const candidates = SFTP_SERVER_CANDIDATES.map((p) => `"${p}"`).join(' ');
@@ -50,17 +51,19 @@ export const buildSftpServerProbeCommand = (): string => {
         'do [ -n "$p" ] && [ -x "$p" ] && { printf "%s\\n" "$p"; break; }; done;',
         // 兜底：PATH 里没有、固定路径也没有 → 退出码 2，前端能给出"服务器没装 sftp-server"
         '[ -n "$p" ] && [ -x "$p" ] || exit 2;',
-        'if sudo -n true 2>/dev/null; then echo nopass; else echo pass; fi',
     ].join(' ');
 };
 
+/** 路径来自固定候选，这里仍然加引号防万一 */
+const quotePath = (serverPath: string): string => `"${serverPath.replace(/(["\\$`])/g, '\\$1')}"`;
+
 /**
  * 拼出启动 sudo sftp-server 的命令。
- * 路径来自上面的固定候选（不含引号/空格），这里仍然加引号防万一。
+ * withPassword=false 走免密（`sudo -n`），true 走 `sh -c read` 版本，密码由调用方写进 stdin。
  */
-export const buildSudoSftpCommand = (serverPath: string, needsPassword: boolean): string => {
-    const quoted = `"${serverPath.replace(/(["\\$`])/g, '\\$1')}"`;
-    if (!needsPassword) return `sudo -n ${quoted}`;
+export const buildSudoSftpCommand = (serverPath: string, withPassword = false): string => {
+    const quoted = quotePath(serverPath);
+    if (!withPassword) return `sudo -n ${quoted}`;
     // 注意：printf 的 "\n" 要原样传给远端 printf，所以这里是反斜杠 + n 两个字符
     return `sh -c 'IFS= read -r _p; { printf "%s\\n" "$_p"; cat; } | exec sudo -S -p "" ${quoted}'`;
 };
@@ -97,36 +100,19 @@ const execCapture = (client: Client, command: string, timeoutMs: number): Promis
 };
 
 export interface SudoSftpOptions {
-    /** sudo 密码；留空 = 要求服务器允许免密 sudo */
+    /** sudo 密码；留空 = 只用免密 sudo */
     password?: string;
     /** 启动超时（含探测），默认 15s */
     timeoutMs?: number;
 }
 
-/**
- * 打开一条以 root 身份跑的 SFTP 通道。
- * 失败时直接抛错，调用方负责回退到普通 SFTP（提权只是加分项，不能让文件管理器整个用不了）。
- */
-export const openSudoSftp = async (client: Client, options: SudoSftpOptions = {}): Promise<SFTPWrapper> => {
-    const timeoutMs = options.timeoutMs ?? 15_000;
-
-    const probe = await execCapture(client, buildSftpServerProbeCommand(), Math.min(timeoutMs, 8_000));
-    const lines = probe.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
-    const serverPath = lines[0];
-    const needsPassword = lines[1] !== 'nopass';
-
-    if (!serverPath || probe.code !== 0 || !/^\//.test(serverPath)) {
-        const detail = probe.stderr.trim();
-        throw new Error(`服务器上找不到 sftp-server${detail ? `（${detail}）` : ''}`);
-    }
-
-    // 服务端要密码但用户没填：不要硬闯（写空密码行会把协议流搞乱），直接回退并说明原因
-    if (needsPassword && !options.password) {
-        throw new Error('服务器要求 sudo 密码，请在该连接里填写 sudo 密码');
-    }
-
-    const command = buildSudoSftpCommand(serverPath, needsPassword);
-
+/** 开一条 exec 通道并把它包成 SFTP 协议解析器。password 有值时先往 stdin 写一行。 */
+const openChannel = (
+    client: Client,
+    command: string,
+    password: string | undefined,
+    timeoutMs: number,
+): Promise<SFTPWrapper> => {
     return new Promise<SFTPWrapper>((resolve, reject) => {
         let settled = false;
         let timer: NodeJS.Timeout | undefined;
@@ -152,8 +138,13 @@ export const openSudoSftp = async (client: Client, options: SudoSftpOptions = {}
                 _init: () => void;
             };
 
-            timer = setTimeout(() => {
+            /** 失败时要收掉通道，否则重试密码版会同时挂两条 sftp-server */
+            const closeQuietly = (): void => {
                 try { stream.close(); } catch { /* 通道可能已经没了 */ }
+            };
+
+            timer = setTimeout(() => {
+                closeQuietly();
                 const detail = stderr.trim();
                 finish(() => reject(new Error(`sudo sftp-server 启动超时${detail ? `：${detail}` : '（没有任何输出，可能卡在密码提示或 tty 要求上）'}`)));
             }, timeoutMs);
@@ -168,11 +159,48 @@ export const openSudoSftp = async (client: Client, options: SudoSftpOptions = {}
             });
 
             sftp.on('ready', () => finish(() => resolve(sftp)));
-            sftp.on('error', (sftpErr: Error) => finish(() => reject(sftpErr)));
+            sftp.on('error', (sftpErr: Error) => {
+                closeQuietly();
+                finish(() => reject(sftpErr));
+            });
 
             // 密码必须写在 SFTP 的 INIT 之前：远端 `read` 先吃掉这一行，剩下的才是协议数据
-            if (needsPassword) stream.write(`${options.password}\n`);
+            if (password) stream.write(`${password}\n`);
             sftp._init();
         });
     });
+};
+
+/**
+ * 打开一条以 root 身份跑的 SFTP 通道。
+ * 失败时直接抛错，调用方负责回退到普通 SFTP（提权只是加分项，不能让文件管理器整个用不了）。
+ */
+export const openSudoSftp = async (client: Client, options: SudoSftpOptions = {}): Promise<SFTPWrapper> => {
+    const timeoutMs = options.timeoutMs ?? 15_000;
+
+    const probe = await execCapture(client, buildSftpServerProbeCommand(), Math.min(timeoutMs, 8_000));
+    const serverPath = probe.stdout.split('\n').map((s) => s.trim()).filter(Boolean)[0];
+
+    if (!serverPath || probe.code !== 0 || !/^\//.test(serverPath)) {
+        const detail = probe.stderr.trim();
+        throw new Error(`服务器上找不到 sftp-server${detail ? `（${detail}）` : ''}`);
+    }
+
+    // 一轮：免密。`sudo -n` 需要密码时会立刻退出，不会卡住，所以这条路是零成本的判据。
+    // 超时收紧到 8s：真免密的话握手不用 1s，剩下的时间都是"卡在奇怪的地方"。
+    try {
+        return await openChannel(client, buildSudoSftpCommand(serverPath), undefined, Math.min(timeoutMs, 8_000));
+    } catch (noPassErr: any) {
+        const firstReason = noPassErr?.message || '未知原因';
+        if (!options.password) {
+            throw new Error(`服务器要求 sudo 密码（免密尝试失败：${firstReason}），请在该连接里填写 sudo 密码`);
+        }
+        // 二轮：用户填了密码，用 `sh -c read` 版本重试，密码只走 stdin
+        try {
+            return await openChannel(client, buildSudoSftpCommand(serverPath, true), options.password, timeoutMs);
+        } catch (passErr: any) {
+            const secondReason = passErr?.message || '未知原因';
+            throw new Error(`sudo 提权失败：${secondReason}（免密尝试同样失败：${firstReason}）`);
+        }
+    }
 };
