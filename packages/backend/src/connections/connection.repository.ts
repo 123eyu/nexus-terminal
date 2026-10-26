@@ -22,6 +22,10 @@ interface ConnectionBase {
     notes?: string | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    startup_command?: string;
+    sftp_sudo_enabled?: number | boolean;
+    /** 由 SELECT 里的表达式算出，只读 */
+    has_sudo_password?: number | boolean;
 //    jump_chain: number[] | null; // <-- REMOVE from ConnectionBase
 }
 
@@ -51,6 +55,9 @@ export interface FullConnectionData extends ConnectionBase {
     proxy_type?: 'proxy' | 'jump' | null; // 新增连接本身的 proxy_type
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    startup_command?: string;
+    sftp_sudo_enabled?: number | boolean;
+    encrypted_sudo_password?: string | null;
 }
 
 
@@ -78,6 +85,8 @@ export const findAllConnectionsWithFolders = async (): Promise<ConnectionWithFol
     const sql = `
         SELECT
             c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
+            c.startup_command, c.sftp_sudo_enabled,
+            (c.encrypted_sudo_password IS NOT NULL AND c.encrypted_sudo_password <> '') AS has_sudo_password,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.folder_id) as folder_ids_str
          FROM connections c
@@ -108,6 +117,8 @@ export const findConnectionByIdWithFolders = async (id: number): Promise<Connect
     const sql = `
         SELECT
             c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method, c.proxy_id, c.proxy_type, c.ssh_key_id, c.notes, c.jump_chain, c.background_color, c.file_protocol,
+            c.startup_command, c.sftp_sudo_enabled,
+            (c.encrypted_sudo_password IS NOT NULL AND c.encrypted_sudo_password <> '') AS has_sudo_password,
             c.created_at, c.updated_at, c.last_connected_at,
             GROUP_CONCAT(ct.folder_id) as folder_ids_str
          FROM connections c
@@ -162,7 +173,7 @@ export const findFullConnectionById = async (id: number): Promise<FullConnection
   * 根据名称查找连接 (用于检查名称是否重复)
   */
  export const findConnectionByName = async (name: string): Promise<ConnectionBase | null> => {
-     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
+     const sql = `SELECT id, name, type, host, port, username, auth_method, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, startup_command, sftp_sudo_enabled, created_at, updated_at, last_connected_at FROM connections WHERE name = ?`;
      try {
          const db = await getDbInstance();
          const row = await getDbRow<ConnectionWithFoldersRow>(db, sql, [name]);
@@ -188,8 +199,8 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
     const now = Math.floor(Date.now() / 1000);
     const uuid = (data as any).uuid || crypto.randomUUID();
     const sql = `
-        INSERT INTO connections (uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        INSERT INTO connections (uuid, name, type, host, port, username, auth_method, encrypted_password, encrypted_private_key, encrypted_passphrase, proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color, file_protocol, startup_command, sftp_sudo_enabled, encrypted_sudo_password, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
     const jumpChainStringified = (data.jump_chain && data.jump_chain.length > 0) ? JSON.stringify(data.jump_chain) : null;
     console.log(`[Repository:createConnection] jump_chain input: ${JSON.stringify(data.jump_chain)}, stringified to: ${jumpChainStringified}`);
@@ -207,6 +218,9 @@ export const createConnection = async (data: Omit<FullConnectionData, 'id' | 'cr
         jumpChainStringified,
         data.background_color ?? null,
         data.file_protocol ?? 'auto',
+        data.startup_command ?? '',
+        data.sftp_sudo_enabled ? 1 : 0,
+        data.encrypted_sudo_password ?? null,
         now, now
     ];
     console.log('[Repository:createConnection] SQL:', sql);

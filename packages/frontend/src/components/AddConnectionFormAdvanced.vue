@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import type { ProxyInfo } from '../stores/proxies.store';
 import type { ConnectionInfo } from '../stores/connections.store';
 import AppSelect from './common/AppSelect.vue';
+import ToggleSwitch from './common/ToggleSwitch.vue';
 
 // Define Props
 const props = defineProps({
@@ -17,6 +18,10 @@ const props = defineProps({
       folder_ids: number[];
       notes: string;
       file_protocol?: 'auto' | 'sftp' | 'scp';
+      startup_command?: string;
+      sftp_sudo_enabled?: boolean;
+      sudo_password?: string;
+      has_sudo_password?: boolean;
     }>,
     required: true
   },
@@ -195,6 +200,56 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
           <span>SCP</span>
         </button>
       </div>
+    </div>
+
+    <!-- 连接级启动命令（仅 SSH） -->
+    <div v-if="props.formData.type === 'SSH'">
+      <label for="conn-startup-command" class="block text-xs font-medium text-text-secondary mb-1.5">
+        {{ t('connections.form.startupCommand', '启动命令（可选）') }}
+      </label>
+      <input
+        id="conn-startup-command"
+        v-model="props.formData.startup_command"
+        type="text"
+        spellcheck="false"
+        autocomplete="off"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs font-mono"
+        :placeholder="t('connections.form.startupCommandPlaceholder', '连上后自动执行，例如 sudo -i')"
+      />
+      <p class="mt-1 text-[11px] leading-snug text-text-secondary/80">
+        {{ t('connections.form.startupCommandHint', '每次连接终端时自动执行。布局里为窗格配的「自启指令」是独立的一份，两边都配了就都执行。') }}
+      </p>
+    </div>
+
+    <!-- SFTP sudo 提权（仅 SSH） -->
+    <div v-if="props.formData.type === 'SSH'" class="space-y-2">
+      <div class="flex items-center justify-between gap-3">
+        <label class="text-xs font-medium text-text-secondary">
+          {{ t('connections.form.sftpSudoEnabled', '开启 SFTP sudo 提权') }}
+        </label>
+        <ToggleSwitch
+          :model-value="!!props.formData.sftp_sudo_enabled"
+          size="sm"
+          :aria-label="t('connections.form.sftpSudoEnabled', '开启 SFTP sudo 提权')"
+          @update:model-value="(v: boolean) => (props.formData.sftp_sudo_enabled = v)"
+        />
+      </div>
+      <input
+        v-if="props.formData.sftp_sudo_enabled"
+        :id="'conn-sudo-password'"
+        v-model="props.formData.sudo_password"
+        type="password"
+        autocomplete="new-password"
+        class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
+        :placeholder="t('connections.form.sftpSudoPasswordPlaceholder', '留空则使用免密 sudo')"
+      />
+      <p v-if="props.formData.sftp_sudo_enabled" class="text-[11px] leading-snug text-text-secondary/80">
+        {{
+          props.formData.has_sudo_password && !props.formData.sudo_password
+            ? t('connections.form.sftpSudoPasswordSaved', '已保存过密码，留空表示不修改。')
+            : t('connections.form.sftpSudoHint', '用上面的密码以 sudo 启动 sftp-server，从而读写 root 路径。留空时要求服务器允许免密 sudo。')
+        }}
+      </p>
     </div>
 
     <!-- 备注信息 -->

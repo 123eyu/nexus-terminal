@@ -15,6 +15,12 @@ export interface ConnectionBase {
     jump_chain: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 连接级启动命令：终端连上后自动执行，空字符串表示不执行 */
+    startup_command?: string;
+    /** 是否用 `sudo sftp-server` 开 SFTP 通道（读写 root 才能碰的路径） */
+    sftp_sudo_enabled?: number | boolean;
+    /** 只读：是否已存了 sudo 密码（密码本身永不回传前端） */
+    has_sudo_password?: number | boolean;
 }
 
 export interface ConnectionWithFolders extends ConnectionBase {
@@ -40,6 +46,10 @@ export interface CreateConnectionInput {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    startup_command?: string;
+    sftp_sudo_enabled?: boolean;
+    /** 明文 sudo 密码，后端负责加密落库；不传/空串表示不设置 */
+    sudo_password?: string;
 }
 
 
@@ -61,6 +71,10 @@ export interface UpdateConnectionInput {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    startup_command?: string;
+    sftp_sudo_enabled?: boolean;
+    /** 明文 sudo 密码，后端负责加密落库；不传/空串表示维持原值 */
+    sudo_password?: string;
 }
 
 
@@ -85,10 +99,14 @@ export interface FullConnectionData {
     jump_chain: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    startup_command?: string;
+    sftp_sudo_enabled?: number | boolean;
+    encrypted_sudo_password?: string | null;
 }
 
 export interface DecryptedConnectionCredentials {
     decryptedPassword?: string;
     decryptedPrivateKey?: string;
     decryptedPassphrase?: string;
+    decryptedSudoPassword?: string;
 }

@@ -409,6 +409,13 @@
       "fileProtocolAuto": "自动探测",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
+      "startupCommand": "启动命令（可选）",
+      "startupCommandPlaceholder": "连上后自动执行，例如 sudo -i",
+      "startupCommandHint": "每次连接终端时自动执行。布局里为窗格配的「自启指令」是独立的一份，两边都配了就都执行。",
+      "sftpSudoEnabled": "开启 SFTP sudo 提权",
+      "sftpSudoPasswordPlaceholder": "留空则使用免密 sudo",
+      "sftpSudoPasswordSaved": "已保存过密码，留空表示不修改。",
+      "sftpSudoHint": "用上面的密码以 sudo 启动 sftp-server，从而读写 root 路径。留空时要求服务器允许免密 sudo。",
       "connectionType": "连接类型",
       "typeSsh": "SSH",
       "typeRdp": "RDP",
@@ -592,6 +599,7 @@
     "title": "文件编辑器"
   },
   "fileManager": {
+    "sftpSudoFallback": "SFTP sudo 提权未生效：{reason}。已退回按登录用户权限访问。",
     "modalTitle": "文件管理器",
     "currentPath": "当前路径",
     "loading": "正在加载目录...",

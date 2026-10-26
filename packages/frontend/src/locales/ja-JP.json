@@ -258,6 +258,13 @@
       "fileProtocolAuto": "自動検出",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
+      "startupCommand": "起動コマンド（任意）",
+      "startupCommandPlaceholder": "ログイン後に自動実行（例: sudo -i）",
+      "startupCommandHint": "ターミナル接続のたびに実行されます。レイアウト側のペイン自動実行は別設定で、両方あれば両方実行されます。",
+      "sftpSudoEnabled": "SFTP の sudo 昇格を有効化",
+      "sftpSudoPasswordPlaceholder": "空欄ならパスワードなし sudo を使用",
+      "sftpSudoPasswordSaved": "パスワードは保存済みです。空欄なら変更しません。",
+      "sftpSudoHint": "上記のパスワードで sudo 経由で sftp-server を起動し、root 権限が必要なパスを扱えるようにします。空欄の場合はパスワードなし sudo が必要です。",
       "testConnection": "接続をテスト",
       "testing": "テスト中...",
       "title": "新しい接続を追加",
@@ -438,6 +445,7 @@
     "title": "ファイルエディタ"
   },
   "fileManager": {
+    "sftpSudoFallback": "SFTP の sudo 昇格が有効になりませんでした: {reason}。ログインユーザーの権限で続行します。",
     "modalTitle": "ファイルマネージャー",
     "favoritePathsTooltip": "お気に入りのパス",
     "actions": {

@@ -64,6 +64,14 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
     custom_background_color: false,
     background_color: '#3b82f6',
     file_protocol: 'auto' as 'auto' | 'sftp' | 'scp',
+    /** 连接级启动命令：连上终端后自动执行；布局里的「自启指令」是另一份，两边都配了就都执行 */
+    startup_command: '',
+    /** SFTP sudo 提权：用 `sudo sftp-server` 开文件通道，能读写 root 路径 */
+    sftp_sudo_enabled: false,
+    /** sudo 密码明文，只在提交时上行一次；编辑时不回显（留空 = 不改） */
+    sudo_password: '',
+    /** 只读：后端是否已存了 sudo 密码 */
+    has_sudo_password: false,
   };
   const formData = reactive({ ...initialFormData });
 
@@ -174,6 +182,10 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
               formData.background_color = '#3b82f6';
           }
           formData.file_protocol = newVal.file_protocol ?? 'auto';
+          formData.startup_command = newVal.startup_command ?? '';
+          formData.sftp_sudo_enabled = !!newVal.sftp_sudo_enabled;
+          formData.sudo_password = '';
+          formData.has_sudo_password = !!newVal.has_sudo_password;
      } else {
          Object.assign(formData, initialFormData);
          formData.folder_ids = [];
@@ -185,6 +197,10 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
          formData.custom_background_color = false;
          formData.background_color = '#3b82f6';
          formData.file_protocol = 'auto';
+         formData.startup_command = '';
+         formData.sftp_sudo_enabled = false;
+         formData.sudo_password = '';
+         formData.has_sudo_password = false;
          console.log('[Debug] watch connectionToEdit - formData.jump_chain reset');
          advancedConnectionMode.value = 'proxy'; 
     }
@@ -667,6 +683,11 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
                     proxy_type: formData.proxy_type,
                     background_color: formData.custom_background_color ? (formData.background_color || null) : null,
                     file_protocol: formData.file_protocol || 'auto',
+                    ...(formData.type === 'SSH' ? {
+                        startup_command: (formData.startup_command || '').trim(),
+                        sftp_sudo_enabled: formData.sftp_sudo_enabled,
+                        ...(formData.sudo_password ? { sudo_password: formData.sudo_password } : {}),
+                    } : {}),
                 };
 
                 if (formData.type === 'SSH') {
@@ -748,6 +769,13 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         jump_chain: formData.jump_chain ? JSON.parse(JSON.stringify(formData.jump_chain)) : null,
         background_color: formData.custom_background_color ? (formData.background_color || null) : null,
         file_protocol: formData.file_protocol || 'auto',
+        // 启动命令与 SFTP sudo 提权只对 SSH 有意义。
+        // sudo 密码只在用户填了才上行 —— 留空表示"不改"，这样编辑连接时不必重输密码。
+        ...(formData.type === 'SSH' ? {
+            startup_command: (formData.startup_command || '').trim(),
+            sftp_sudo_enabled: formData.sftp_sudo_enabled,
+            ...(formData.sudo_password ? { sudo_password: formData.sudo_password } : {}),
+        } : {}),
     };
 
     if (formData.type === 'SSH') {

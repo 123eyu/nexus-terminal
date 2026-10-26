@@ -42,6 +42,8 @@ export function createWebSocketConnectionManager(
     const connectionStatus = ref<WsConnectionStatus>('disconnected'); // 连接状态 (使用导出的类型)
     const statusMessage = ref<string>(''); // 状态描述文本
     const isSftpReady = ref<boolean>(false); // SFTP 是否就绪
+    /** sudo 提权失败只提示一次（每次重连都会重新发 sftp_ready，不该刷屏） */
+    let sudoFallbackNotified = false;
     const messageHandlers = new Map<string, Set<MessageHandler>>(); // 此实例的消息处理器注册表
     const instanceSessionId = sessionId; // 保存会话 ID 用于日志
     const instanceDbConnectionId = dbConnectionId; // 保存数据库连接 ID
@@ -420,6 +422,21 @@ export function createWebSocketConnectionManager(
                     } else if (message.type === 'sftp_ready') {
                         console.log(`[WebSocket ${instanceSessionId}] SFTP 会话已就绪。`);
                         isSftpReady.value = true;
+                        // 开了 SFTP sudo 但提权失败时，后端会退回普通 SFTP ——
+                        // 不提示的话用户只会觉得"明明开了提权，怎么还是没权限"。
+                        const sudoFallback = (message.payload as any)?.sudoFallback;
+                        if (sudoFallback && !sudoFallbackNotified) {
+                            sudoFallbackNotified = true;
+                            const reason = String(sudoFallback);
+                            console.warn(`[WebSocket ${instanceSessionId}] SFTP sudo 提权失败，已退回普通权限：${reason}`);
+                            import('../stores/uiNotifications.store')
+                                .then(({ useUiNotificationsStore }) => {
+                                    useUiNotificationsStore().showWarning(
+                                        t('fileManager.sftpSudoFallback', { reason })
+                                    );
+                                })
+                                .catch(() => { /* 拿不到通知 store 时至少后端日志里有 */ });
+                        }
                     }
                     // --- 状态更新结束 ---
 

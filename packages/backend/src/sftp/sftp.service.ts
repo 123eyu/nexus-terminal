@@ -1,4 +1,5 @@
 import { ClientState } from '../websocket/types';
+import { SFTPWrapper } from 'ssh2';
 import {
     SftpCompressRequestPayload,
     SftpDecompressRequestPayload
@@ -8,7 +9,9 @@ import { SftpTransferService } from './services/sftp-transfer.service';
 import { SftpArchiveService } from './services/sftp-archive.service';
 import { SftpUploadService } from './services/sftp-upload.service';
 import { ScpFileService } from './services/scp-file.service';
-import { findConnectionByIdWithFolders } from '../connections/connection.repository';
+import { openSudoSftp } from './services/sudo-sftp';
+import { findFullConnectionById } from '../connections/connection.repository';
+import { decrypt } from '../utils/crypto';
 import { buildChownCommand } from './chown-command';
 
 /**
@@ -52,14 +55,28 @@ export class SftpService {
             return;
         }
 
-        // 获取连接配置的文件协议
+        // 获取连接配置（文件协议 + SFTP sudo 提权）
         let protocolConfig = state.fileProtocolConfig;
-        if (!protocolConfig && state.dbConnectionId) {
+        let sudoEnabled = false;
+        let sudoPassword: string | undefined;
+
+        if (state.dbConnectionId) {
             try {
-                const conn = await findConnectionByIdWithFolders(state.dbConnectionId);
-                if (conn && conn.file_protocol) {
-                    protocolConfig = conn.file_protocol;
-                    state.fileProtocolConfig = protocolConfig;
+                // findFullConnectionById 拿的是 c.*，一次就能拿到 file_protocol 和 sudo 三列
+                const row = await findFullConnectionById(state.dbConnectionId);
+                if (row) {
+                    if (row.file_protocol) {
+                        protocolConfig = row.file_protocol;
+                        state.fileProtocolConfig = protocolConfig;
+                    }
+                    sudoEnabled = !!row.sftp_sudo_enabled;
+                    if (sudoEnabled && row.encrypted_sudo_password) {
+                        try {
+                            sudoPassword = decrypt(row.encrypted_sudo_password);
+                        } catch (decErr: any) {
+                            console.warn(`[FileProtocol] 会话 ${sessionId} 的 sudo 密码解密失败，将尝试免密 sudo:`, decErr?.message || decErr);
+                        }
+                    }
                 }
             } catch (err: any) {
                 console.warn(`[FileProtocol] 查询会话 ${sessionId} 的连接配置失败:`, err.message);
@@ -75,7 +92,30 @@ export class SftpService {
             return;
         }
 
-        // 2. 若配置为 'auto' 或 'sftp'：首先尝试原生 SFTP 协商
+        // 2. 开了 sudo 提权就先试 `sudo sftp-server`。
+        //    提权是加分项：失败一定退回普通 SFTP，并把原因带给前端 ——
+        //    否则用户只是密码填错，整个文件管理器就都用不了了。
+        let sudoFallback: string | undefined;
+        if (sudoEnabled) {
+            try {
+                const sudoSftp = await openSudoSftp(state.sshClient, { password: sudoPassword });
+                console.log(`[SFTP] 会话 ${sessionId} 已通过 sudo 提权打开 SFTP（读写权限等同 root）。`);
+                state.activeFileProtocol = 'sftp';
+                state.sftp = sudoSftp;
+                state.sudoSftp = true;
+                this.bindSftpLifecycle(sessionId, state, sudoSftp);
+                state.ws.send(JSON.stringify({
+                    type: 'sftp_ready',
+                    payload: { connectionId: state.dbConnectionId, sudo: true }
+                }));
+                return;
+            } catch (sudoErr: any) {
+                sudoFallback = sudoErr?.message || '未知原因';
+                console.warn(`[SFTP] 会话 ${sessionId} sudo 提权失败：${sudoFallback}。退回普通 SFTP。`);
+            }
+        }
+
+        // 3. 若配置为 'auto' 或 'sftp'：尝试原生 SFTP 协商
         return new Promise<void>((resolve, reject) => {
             state.sshClient!.sftp((err, sftpInstance) => {
                 if (err) {
@@ -88,7 +128,8 @@ export class SftpService {
                             payload: { 
                                 connectionId: state.dbConnectionId,
                                 protocol: 'scp',
-                                fallback: true
+                                fallback: true,
+                                ...(sudoFallback ? { sudoFallback } : {}),
                             } 
                         }));
                         resolve();
@@ -102,24 +143,43 @@ export class SftpService {
                     console.log(`[SFTP] 为会话 ${sessionId} 初始化 SFTP 会话成功。`);
                     state.activeFileProtocol = 'sftp';
                     state.sftp = sftpInstance;
-                    state.ws.send(JSON.stringify({ type: 'sftp_ready', payload: { connectionId: state.dbConnectionId } }));
-
-                    sftpInstance.on('end', () => {
-                        console.log(`[SFTP] 会话 ${sessionId} 的 SFTP 会话已结束。`);
-                        if (state) state.sftp = undefined;
-                    });
-                    sftpInstance.on('close', () => {
-                        console.log(`[SFTP] 会话 ${sessionId} 的 SFTP 会话已关闭。`);
-                        if (state) state.sftp = undefined;
-                    });
-                    sftpInstance.on('error', (sftpErr: Error) => {
-                        console.error(`[SFTP] 会话 ${sessionId} 的 SFTP 会话出错:`, sftpErr);
-                        if (state) state.sftp = undefined;
-                        state?.ws.send(JSON.stringify({ type: 'sftp_error', payload: { connectionId: state.dbConnectionId, message: 'SFTP 会话错误' } }));
-                    });
+                    state.ws.send(JSON.stringify({
+                        type: 'sftp_ready',
+                        payload: { connectionId: state.dbConnectionId, ...(sudoFallback ? { sudoFallback } : {}) }
+                    }));
+                    this.bindSftpLifecycle(sessionId, state, sftpInstance);
                     resolve();
                 }
             });
+        });
+    }
+
+    /**
+     * 统一挂 SFTP 通道的生命周期回调：通道一断就把 state.sftp 清掉，
+     * 免得后续所有文件操作对着一个已经死掉的通道发请求。
+     */
+    private bindSftpLifecycle(sessionId: string, state: ClientState, sftpInstance: SFTPWrapper): void {
+        sftpInstance.on('end', () => {
+            console.log(`[SFTP] 会话 ${sessionId} 的 SFTP 会话已结束。`);
+            if (state) {
+                state.sftp = undefined;
+                state.sudoSftp = false;
+            }
+        });
+        sftpInstance.on('close', () => {
+            console.log(`[SFTP] 会话 ${sessionId} 的 SFTP 会话已关闭。`);
+            if (state) {
+                state.sftp = undefined;
+                state.sudoSftp = false;
+            }
+        });
+        sftpInstance.on('error', (sftpErr: Error) => {
+            console.error(`[SFTP] 会话 ${sessionId} 的 SFTP 会话出错:`, sftpErr);
+            if (state) {
+                state.sftp = undefined;
+                state.sudoSftp = false;
+            }
+            state?.ws.send(JSON.stringify({ type: 'sftp_error', payload: { connectionId: state.dbConnectionId, message: 'SFTP 会话错误' } }));
         });
     }
 

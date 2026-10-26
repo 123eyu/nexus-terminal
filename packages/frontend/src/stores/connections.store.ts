@@ -25,6 +25,12 @@ export interface ConnectionInfo {
     jump_chain?: number[] | null;
     background_color?: string | null;
     file_protocol?: 'auto' | 'sftp' | 'scp' | null;
+    /** 连接级启动命令：终端连上后自动执行（与布局里的自启指令各自独立，都配了就都执行） */
+    startup_command?: string;
+    /** 是否用 `sudo sftp-server` 开 SFTP 通道 */
+    sftp_sudo_enabled?: number | boolean;
+    /** 只读：后端是否已存 sudo 密码（密码本身不回传） */
+    has_sudo_password?: number | boolean;
     /** 进入 Docker 容器的命令模板：'' = 自动探测；支持 {id}/{name}/{shell} 占位符 */
 }
 

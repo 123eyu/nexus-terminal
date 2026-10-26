@@ -5,6 +5,7 @@ import { useDeviceDetection } from '../composables/useDeviceDetection';
 import { useAppearanceStore } from '../stores/appearance.store';
 import { useSettingsStore } from '../stores/settings.store';
 import { useSessionStore } from '../stores/session.store'; 
+import { useConnectionsStore } from '../stores/connections.store';
 import { storeToRefs } from 'pinia';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
@@ -1139,6 +1140,7 @@ const handleTerminalDrop = (event: DragEvent) => {
 // --- 终端多窗格聚焦与自动执行指令支持 ---
 const currentSession = computed(() => sessionStore.sessions.get(props.sessionId));
 const terminalManagerInstance = computed(() => currentSession.value?.terminalManager);
+const connectionsStore = useConnectionsStore();
 
 // 辅助函数：匹配按键与自定义快捷键规则
 const isShortcutMatched = (e: KeyboardEvent, shortcutStr: string): boolean => {
@@ -1171,7 +1173,7 @@ const isShortcutMatched = (e: KeyboardEvent, shortcutStr: string): boolean => {
 const hasExecutedAutoCmd = ref(false);
 
 const checkAndExecuteAutoCmd = () => {
-  if (hasExecutedAutoCmd.value || !props.autoExecConfig) return;
+  if (hasExecutedAutoCmd.value) return;
   const isConnected = terminalManagerInstance.value?.isSshConnected?.value;
   if (!isConnected) return;
 
@@ -1182,19 +1184,35 @@ const checkAndExecuteAutoCmd = () => {
   }
 
   const targetConnId = String(currentSession.value?.connectionId || '');
-  const rawCmd = props.autoExecConfig.connectionCommands?.[targetConnId] ?? props.autoExecConfig.defaultCommand;
-  const cmdToExec = typeof rawCmd === 'string' ? rawCmd.trim() : '';
 
-  if (cmdToExec.length > 0) {
-    hasExecutedAutoCmd.value = true;
-    console.log(`[Terminal Pane ${props.paneId || 'default'}] 触发 SSH 连接自动执行指令: ${cmdToExec}`);
+  // 两份配置互不覆盖，都配了就都执行：
+  //   · 连接级「启动命令」——这台机器一律先做的事（比如 sudo -i、cd /app）
+  //   · 布局级「自启指令」——这个窗格额外要做的（按连接 id 命中的规则或默认值）
+  // 顺序上连接级在前，布局指令能落在它建好的环境里。
+  const conn = connectionsStore.connections.find((c) => String(c.id) === targetConnId);
+  const connCmd = typeof conn?.startup_command === 'string' ? conn.startup_command.trim() : '';
+  const layoutRaw = props.autoExecConfig?.connectionCommands?.[targetConnId] ?? props.autoExecConfig?.defaultCommand;
+  const layoutCmd = typeof layoutRaw === 'string' ? layoutRaw.trim() : '';
+
+  // 两边写的是同一条时只发一次 —— 否则 `sudo -i` 会被塞进两个甚至三个 shell 层
+  const cmds: string[] = [];
+  for (const cmd of [connCmd, layoutCmd]) {
+    if (cmd && !cmds.includes(cmd)) cmds.push(cmd);
+  }
+  if (cmds.length === 0) return;
+
+  hasExecutedAutoCmd.value = true;
+  cmds.forEach((cmdToExec, index) => {
+    // 逐条发、每条留出执行时间：一次性把 "sudo -i\rcd /app\r" 灌进去，
+    // 后一条会在 sudo 还没切完 shell 时丢掉。
     setTimeout(() => {
       if (terminalManagerInstance.value && typeof terminalManagerInstance.value.sendData === 'function') {
+        console.log(`[Terminal Pane ${props.paneId || 'default'}] 触发 SSH 连接自动执行指令: ${cmdToExec}`);
         terminal?.writeln(`\r\n\x1b[35m⚡ [自动执行指令]: ${cmdToExec}\x1b[0m\r\n`);
         terminalManagerInstance.value.sendData(cmdToExec + '\r', props.paneId);
       }
-    }, 350);
-  }
+    }, 350 + index * 450);
+  });
 };
 
 watch(() => terminalManagerInstance.value?.isSshConnected?.value, (connected) => {

@@ -1072,6 +1072,34 @@ const definedMigrations: Migration[] = [
         execute: async (): Promise<void> => {
             console.log('[Migrations] Migration 30: path_history.connection_uuid 已就绪（老记录保持 NULL，不再出现）。');
         }
+    },
+    {
+        id: 31,
+        name: 'Add startup_command / sftp_sudo columns to connections',
+        check: async (db: Database): Promise<boolean> => {
+            if (!(await tableExists(db, 'connections'))) return false;
+            // 三列任意一列缺失都要补，所以分开判、缺一列就整体走一遍（下面的 ALTER 逐条判断过）
+            const hasStartup = await columnExists(db, 'connections', 'startup_command');
+            const hasSudoEnabled = await columnExists(db, 'connections', 'sftp_sudo_enabled');
+            const hasSudoPassword = await columnExists(db, 'connections', 'encrypted_sudo_password');
+            return !(hasStartup && hasSudoEnabled && hasSudoPassword);
+        },
+        sql: 'SELECT 1;',
+        execute: async (db: Database): Promise<void> => {
+            // 逐列判断再加：一次跑一堆 ALTER 时，只要有一列已存在就会 duplicate column 中断整个脚本，
+            // 后面的列永远补不上（这也是 schema.ts 与迁移必须各写一份、不能只改其一的原因）。
+            const addColumn = async (name: string, ddl: string): Promise<void> => {
+                if (await columnExists(db, 'connections', name)) return;
+                await new Promise<void>((resolve, reject) => {
+                    db.run(`ALTER TABLE connections ADD COLUMN ${ddl}`, (err) => (err ? reject(err) : resolve()));
+                });
+                console.log(`[Migrations] Migration 31: connections.${name} 已添加。`);
+            };
+            await addColumn('startup_command', "startup_command TEXT NOT NULL DEFAULT ''");
+            await addColumn('sftp_sudo_enabled', 'sftp_sudo_enabled INTEGER NOT NULL DEFAULT 0');
+            await addColumn('encrypted_sudo_password', 'encrypted_sudo_password TEXT NULL');
+            console.log('[Migrations] Migration 31: connections 启动命令 / SFTP sudo 提权字段迁移完成。');
+        }
     }
 
 ];

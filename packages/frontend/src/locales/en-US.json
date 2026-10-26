@@ -411,6 +411,13 @@
       "fileProtocolAuto": "Auto Detect",
       "fileProtocolSftp": "SFTP",
       "fileProtocolScp": "SCP",
+      "startupCommand": "Startup command (optional)",
+      "startupCommandPlaceholder": "Runs after login, e.g. sudo -i",
+      "startupCommandHint": "Runs every time a terminal connects. The per-pane auto-exec in layouts is a separate setting; if both are set, both run.",
+      "sftpSudoEnabled": "Enable SFTP sudo",
+      "sftpSudoPasswordPlaceholder": "Leave empty to use passwordless sudo",
+      "sftpSudoPasswordSaved": "A password is already saved; leave empty to keep it.",
+      "sftpSudoHint": "Starts sftp-server through sudo with the password above, so root-only paths become usable. Leave empty if the server allows passwordless sudo.",
       "connectionType": "Connection Type:",
       "typeSsh": "SSH",
       "typeRdp": "RDP",
@@ -593,6 +600,7 @@
     "title": "File Editor"
   },
   "fileManager": {
+    "sftpSudoFallback": "SFTP sudo did not take effect: {reason}. Falling back to the login user's permissions.",
     "modalTitle": "File Manager",
     "currentPath": "Current Path",
     "loading": "Loading directory...",

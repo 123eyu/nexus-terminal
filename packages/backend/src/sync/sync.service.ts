@@ -173,6 +173,7 @@ export const syncService = {
         `SELECT c.id, c.uuid, c.name, c.type, c.host, c.port, c.username, c.auth_method,
                 c.encrypted_password, c.encrypted_private_key, c.encrypted_passphrase,
                 c.proxy_type, c.notes, c.jump_chain, c.background_color, c.file_protocol,
+                c.startup_command, c.sftp_sudo_enabled, c.encrypted_sudo_password,
                 c.created_at, c.updated_at,
                 p.uuid as proxy_uuid, sk.uuid as ssh_key_uuid
          FROM connections c
@@ -216,6 +217,9 @@ export const syncService = {
             jump_chain: r.jump_chain || null,
             background_color: r.background_color || null,
             file_protocol: r.file_protocol || 'auto',
+            startup_command: r.startup_command || '',
+            sftp_sudo_enabled: r.sftp_sudo_enabled ? 1 : 0,
+            encrypted_sudo_password: envelopeCryptoService.convertLocalToEnvelope(r.encrypted_sudo_password, apiKey),
             folder_uuids: tagUuids,
             file_highlights: highlightRows,
             created_at: r.created_at,
@@ -760,6 +764,7 @@ export const syncService = {
         const localEncPwd = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_password, apiKey);
         const localEncKey = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_private_key, apiKey);
         const localEncPass = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_passphrase, apiKey);
+        const localEncSudo = envelopeCryptoService.convertEnvelopeToLocal(item.data.encrypted_sudo_password, apiKey);
 
         // 解析依赖关系 ID
         let resolvedProxyId: number | null = null;
@@ -788,8 +793,9 @@ export const syncService = {
             `INSERT INTO connections (uuid, name, type, host, port, username, auth_method,
                                      encrypted_password, encrypted_private_key, encrypted_passphrase,
                                      proxy_id, proxy_type, ssh_key_id, notes, jump_chain, background_color,
-                                     file_protocol, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                     file_protocol, startup_command, sftp_sudo_enabled, encrypted_sudo_password,
+                                     created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               item.uuid,
               item.data.name || null,
@@ -808,6 +814,9 @@ export const syncService = {
               item.data.jump_chain ? JSON.stringify(item.data.jump_chain) : null,
               item.data.background_color || null,
               item.data.file_protocol || 'auto',
+              item.data.startup_command || '',
+              item.data.sftp_sudo_enabled ? 1 : 0,
+              localEncSudo,
               item.data.created_at || item.updated_at,
               item.updated_at
             ]
@@ -820,7 +829,7 @@ export const syncService = {
             `UPDATE connections SET name = ?, type = ?, host = ?, port = ?, username = ?, auth_method = ?,
                                    encrypted_password = ?, encrypted_private_key = ?, encrypted_passphrase = ?,
                                    proxy_id = ?, proxy_type = ?, ssh_key_id = ?, notes = ?, jump_chain = ?, background_color = ?,
-                                   file_protocol = ?, updated_at = ?
+                                   file_protocol = ?, startup_command = ?, sftp_sudo_enabled = ?, encrypted_sudo_password = ?, updated_at = ?
              WHERE uuid = ?`,
             [
               item.data.name || null,
@@ -839,6 +848,9 @@ export const syncService = {
               item.data.jump_chain ? JSON.stringify(item.data.jump_chain) : null,
               item.data.background_color || null,
               item.data.file_protocol || 'auto',
+              item.data.startup_command || '',
+              item.data.sftp_sudo_enabled ? 1 : 0,
+              localEncSudo,
               item.updated_at,
               item.uuid
             ]

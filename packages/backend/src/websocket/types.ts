@@ -17,6 +17,8 @@ export interface ClientState { // 导出以便 Service 可以导入
     dbConnectionId: number;
     connectionName?: string; // 连接名称字段
     sftp?: SFTPWrapper; //  sftp 实例 (由 SftpService 管理)
+    /** 这条 SFTP 通道是不是通过 `sudo sftp-server` 开的（读写等同 root） */
+    sudoSftp?: boolean;
     activeFileProtocol?: 'sftp' | 'scp'; // 当前会话激活的文件传输协议驱动
     fileProtocolConfig?: 'auto' | 'sftp' | 'scp'; // 数据库中配置的文件传输协议选项
     statusIntervalId?: NodeJS.Timeout; // 状态轮询 ID (由 StatusMonitorService 管理)

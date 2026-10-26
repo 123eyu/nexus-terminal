@@ -208,6 +208,9 @@ notes: input.notes ?? null, // Add notes field
         jump_chain: processedJumpChain,
         background_color: input.background_color ?? null,
         file_protocol: input.file_protocol ?? 'auto',
+        startup_command: (input.startup_command ?? '').trim(),
+        sftp_sudo_enabled: input.sftp_sudo_enabled ? 1 : 0,
+        encrypted_sudo_password: input.sudo_password ? encrypt(input.sudo_password) : null,
     };
     // Remove ssh_key_id property if it's null before logging/saving if repository expects exact type match without optional nulls
     const finalConnectionData = { ...connectionData };
@@ -295,6 +298,15 @@ export const updateConnection = async (id: number, input: UpdateConnectionInput)
     if (input.ssh_key_id !== undefined) dataToUpdate.ssh_key_id = input.ssh_key_id;
     if (input.background_color !== undefined) dataToUpdate.background_color = input.background_color;
     if (input.file_protocol !== undefined) dataToUpdate.file_protocol = input.file_protocol;
+    if (input.startup_command !== undefined) dataToUpdate.startup_command = (input.startup_command ?? '').trim();
+    if (input.sftp_sudo_enabled !== undefined) dataToUpdate.sftp_sudo_enabled = input.sftp_sudo_enabled ? 1 : 0;
+    // sudo 密码：不传 / 空串 = 保留原值（前端不回显密码，编辑时留空就是"不改"）。
+    // 关掉提权时顺手把密码清掉，避免下次打开还留着旧密码。
+    if (input.sftp_sudo_enabled === false) {
+        dataToUpdate.encrypted_sudo_password = null;
+    } else if (input.sudo_password) {
+        dataToUpdate.encrypted_sudo_password = encrypt(input.sudo_password);
+    }
 
     // 处理认证方法更改或凭证更新 (根据 targetType)
     // Use the validated targetType for logic
@@ -482,7 +494,7 @@ export const deleteConnection = async (id: number): Promise<boolean> => {
  */
 export const getConnectionWithDecryptedCredentials = async (
     id: number
-): Promise<{ connection: ConnectionWithFolders; decryptedPassword?: string; decryptedPrivateKey?: string; decryptedPassphrase?: string } | null> => {
+): Promise<{ connection: ConnectionWithFolders; decryptedPassword?: string; decryptedPrivateKey?: string; decryptedPassphrase?: string; decryptedSudoPassword?: string } | null> => {
     // 1. 获取完整的连接数据（包含加密字段和可能的 ssh_key_id）
     const fullConnectionDbRow = await ConnectionRepository.findFullConnectionById(id);
     if (!fullConnectionDbRow) {
@@ -513,6 +525,7 @@ export const getConnectionWithDecryptedCredentials = async (
     let decryptedPassword: string | undefined = undefined;
     let decryptedPrivateKey: string | undefined = undefined;
     let decryptedPassphrase: string | undefined = undefined;
+    let decryptedSudoPassword: string | undefined = undefined;
 
     try {
         // Decrypt password if method is 'password' and encrypted password exists
@@ -545,6 +558,11 @@ export const getConnectionWithDecryptedCredentials = async (
                  // No key available to decrypt
             }
         }
+
+        // SFTP sudo 密码是独立的一份（可能和登录密码不同，也可能留空走免密 sudo）
+        if (fullConnection.encrypted_sudo_password) {
+            decryptedSudoPassword = decrypt(fullConnection.encrypted_sudo_password);
+        }
     } catch (error: any) { // Catch decryption or key fetching errors
         console.error(`[Service:getConnWithDecrypt] Failed to decrypt credentials for connection ID ${id}:`, error);
         // Decide how to handle decryption errors. Throw? Return null password?
@@ -559,6 +577,7 @@ export const getConnectionWithDecryptedCredentials = async (
         decryptedPassword,
         decryptedPrivateKey,
         decryptedPassphrase,
+        decryptedSudoPassword,
     };
 };
 // 注意：testConnection 逻辑在 SshService。
@@ -600,6 +619,11 @@ export const cloneConnection = async (originalId: number, newName: string): Prom
         proxy_type: originalFullConnection.proxy_type ?? null, // 新增 proxy_type 复制
         notes: originalFullConnection.notes ?? null, // 确保 notes 被复制
         jump_chain: originalFullConnection.jump_chain ? JSON.parse(originalFullConnection.jump_chain) as number[] : null, // 复制并解析 jump_chain
+        background_color: originalFullConnection.background_color ?? null,
+        file_protocol: originalFullConnection.file_protocol ?? 'auto',
+        startup_command: originalFullConnection.startup_command ?? '',
+        sftp_sudo_enabled: originalFullConnection.sftp_sudo_enabled ? 1 : 0,
+        encrypted_sudo_password: originalFullConnection.encrypted_sudo_password ?? null,
         // 移除不存在的 RDP 字段复制
         // ...(originalFullConnection.rdp_security && { rdp_security: originalFullConnection.rdp_security }),
         // ...(originalFullConnection.rdp_ignore_cert !== undefined && { rdp_ignore_cert: originalFullConnection.rdp_ignore_cert }),
