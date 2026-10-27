@@ -17,11 +17,16 @@
     </div>
 
     <div class="session-list-container flex-grow overflow-y-auto">
-      <div v-if="isLoading" class="text-center p-4">
-        <i class="pi pi-spin pi-spinner" style="font-size: 2rem"></i>
-        <p>{{ $t('suspendedSshSessions.loading') }}</p>
+      <!-- 首屏骨架：只有「从没拉到过数据」时才出现。拿到过一次之后，
+           轮询与重新打开都走静默刷新，列表原地更新，不再整块切成转圈。 -->
+      <div v-if="showInitialLoading" class="sss-skeleton" role="status" :aria-label="$t('suspendedSshSessions.loading')">
+        <div v-for="i in 3" :key="i" class="sss-skeleton-item">
+          <div class="sss-skeleton-line sss-skeleton-line--title"></div>
+          <div class="sss-skeleton-line sss-skeleton-line--sub"></div>
+          <div class="sss-skeleton-line sss-skeleton-line--time"></div>
+        </div>
       </div>
-      <div v-else-if="filteredSessions.length === 0 && !isLoading" class="text-center p-4">
+      <div v-else-if="filteredSessions.length === 0" class="text-center p-4">
         <p>{{ $t('suspendedSshSessions.noResults') }}</p>
       </div>
       <ul v-else class="list-none p-0 m-0">
@@ -135,7 +140,7 @@ import { useWorkspaceEventEmitter } from '../composables/workspaceEvents'; // ++
 const { t } = useI18n();
 const emitWorkspaceEvent = useWorkspaceEventEmitter(); // +++ 获取事件发射器 +++
 const sessionStore = useSessionStore();
-const { suspendedSshSessions: storeSuspendedSshSessions, isLoadingSuspendedSessions: isLoading } = storeToRefs(sessionStore);
+const { suspendedSshSessions: storeSuspendedSshSessions, isLoadingSuspendedSessions: isLoading, suspendedSshSessionsLoaded } = storeToRefs(sessionStore);
 
 const searchTerm = ref('');
 
@@ -143,6 +148,16 @@ const searchTerm = ref('');
 const editingSuspendSessionId = ref<string | null>(null);
 const currentEditingNameValue = ref<string>('');
 const nameInputRef = ref<HTMLInputElement | null>(null);
+
+const props = withDefaults(defineProps<{
+  /** 面板是否处于展示状态。挂起时停掉轮询，重新展示时立刻静默对齐一次 */
+  isActive?: boolean;
+}>(), {
+  isActive: true,
+});
+
+/** 只有「从没成功拉到过列表」才走首屏骨架，之后的刷新全是静默的 */
+const showInitialLoading = computed(() => isLoading.value && !suspendedSshSessionsLoaded.value);
 
 // +++ 监听编辑ID变化以聚焦输入框 +++
 watch(editingSuspendSessionId, async (newId) => {
@@ -275,32 +290,49 @@ const exportLog = async (session: SuspendedSshSession) => {
 
 let fetchIntervalId: number | undefined;
 
-onMounted(async () => {
-  const connectionsStore = useConnectionsStore(); // +++ 获取 Connections Store 实例 +++
-  // 确保连接列表已加载或正在加载
-  // 通常 store 的 fetch 方法会处理重复调用或自行管理加载状态
-  try {
-    console.log('[SuspendedSshSessionsView] Ensuring connections are fetched.');
-    await connectionsStore.fetchConnections(); // +++ 获取连接列表 +++
-  } catch (error) {
-    console.error('[SuspendedSshSessionsView] Error fetching connections:', error);
-    // 根据需要处理错误，例如显示通知
-  }
-
-  // 立即获取一次挂起会话数据 (显示加载指示器)
-  await sessionStore.fetchSuspendedSshSessions();
-  
-  // 设置定时器，每3秒获取一次挂起会话数据 (不显示加载指示器)
-  fetchIntervalId = window.setInterval(async () => {
-    await sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
+const startPolling = () => {
+  if (fetchIntervalId) return;
+  fetchIntervalId = window.setInterval(() => {
+    // 轮询永远静默：列表留在原地更新，不亮加载态
+    void sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
   }, 3000);
+};
+
+const stopPolling = () => {
+  if (fetchIntervalId) {
+    clearInterval(fetchIntervalId);
+    fetchIntervalId = undefined;
+  }
+};
+
+onMounted(async () => {
+  const connectionsStore = useConnectionsStore();
+
+  // 先取列表，不等连接列表：连接只是「恢复」时才用得到，
+  // 放在首屏前面只会把骨架多拖几百毫秒。
+  await sessionStore.fetchSuspendedSshSessions();
+  void connectionsStore.fetchConnections().catch((error) => {
+    console.error('[SuspendedSshSessionsView] Error fetching connections:', error);
+  });
+
+  if (props.isActive) {
+    startPolling();
+  }
+});
+
+// 面板重新展示：先静默对齐一次（关闭期间轮询是停的），再恢复轮询
+watch(() => props.isActive, (active) => {
+  if (!active) {
+    stopPolling();
+    return;
+  }
+  searchTerm.value = '';
+  void sessionStore.fetchSuspendedSshSessions({ showLoadingIndicator: false });
+  startPolling();
 });
 
 onUnmounted(() => {
-  // 组件卸载时清除定时器
-  if (fetchIntervalId) {
-    clearInterval(fetchIntervalId);
-  }
+  stopPolling();
 });
 
 </script>
@@ -378,6 +410,65 @@ onUnmounted(() => {
   pointer-events: none;
   color: var(--text-color);
   background-color: color-mix(in oklab, var(--text-color) 8%, transparent);
+}
+
+/* 首屏骨架：只在真正的第一次加载时出现，形状和真实条目一致，
+ * 数据到了直接替换，不会出现「转圈 → 空列表 → 列表」两段跳。 */
+.sss-skeleton {
+  padding: 0.25rem 0 0;
+}
+
+.sss-skeleton-item {
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid color-mix(in oklab, var(--text-color) 12%, transparent);
+  border-radius: 0.375rem;
+}
+
+.sss-skeleton-line {
+  height: 0.625rem;
+  border-radius: 9999px;
+  background-color: color-mix(in oklab, var(--text-color) 9%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--text-color) 7%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: sss-shimmer 1.4s ease-in-out infinite;
+}
+
+.sss-skeleton-line + .sss-skeleton-line {
+  margin-top: 0.5rem;
+}
+
+.sss-skeleton-line--title {
+  width: 46%;
+  height: 0.875rem;
+}
+
+.sss-skeleton-line--sub {
+  width: 68%;
+}
+
+.sss-skeleton-line--time {
+  width: 34%;
+}
+
+@keyframes sss-shimmer {
+  0% {
+    background-position: 140% 0;
+  }
+  100% {
+    background-position: -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sss-skeleton-line {
+    animation: none;
+  }
 }
 
 /* 保持与 QuickCommandsView 类似的简洁风格 */

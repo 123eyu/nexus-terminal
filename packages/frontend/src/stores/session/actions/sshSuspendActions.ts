@@ -1,6 +1,6 @@
 
 import { v4 as uuidv4 } from 'uuid';
-import { sessions, suspendedSshSessions, isLoadingSuspendedSessions, activeSessionId, lastUserSwitchAt } from '../state';
+import { sessions, suspendedSshSessions, isLoadingSuspendedSessions, suspendedSshSessionsLoaded, activeSessionId, lastUserSwitchAt } from '../state';
 import type {
   MessagePayload,
   SshMarkForSuspendReqMessage,
@@ -175,36 +175,59 @@ export const requestUnmarkSshSuspend = (sessionId: string): void => {
   }
 };
 
+/** 正在进行的挂起列表请求：轮询与 ws 事件同时触发时合流成一次 */
+let inflightSuspendedFetch: Promise<void> | null = null;
+/** 拉取失败的通知节流，避免轮询把通知栏刷满 */
+let lastFetchErrorNotifiedAt = 0;
+const FETCH_ERROR_NOTIFY_INTERVAL_MS = 60_000;
+
 /**
  * 获取挂起的 SSH 会话列表 (通过 HTTP API)
+ *
+ * 只在「从没成功拉到过列表」时才亮加载态。3 秒轮询、ws 重连、面板每次打开都会调到这里，
+ * 每次亮一次加载态就等于界面反复从列表闪成转圈再闪回来；有了首次成功标记之后，
+ * 后面的刷新全是静默的：数据原地替换，界面不动。
  */
 export const fetchSuspendedSshSessions = async (options?: { showLoadingIndicator?: boolean }): Promise<void> => {
-  const shouldShowLoading = options?.showLoadingIndicator ?? true;
+  const shouldShowLoading = (options?.showLoadingIndicator ?? true) && !suspendedSshSessionsLoaded.value;
 
-  if (shouldShowLoading) {
-    isLoadingSuspendedSessions.value = true;
-  }
-  try {
-    // 假设后端 API 端点为 /api/ssh/suspended-sessions
-    // 并且它返回 SuspendedSshSession[] 类型的数据
-    const response = await apiClient.get<SuspendedSshSession[]>('ssh-suspend/suspended-sessions');
-    suspendedSshSessions.value = response.data;
-    console.log(`[${t('term.sshSuspend')}] 已通过 HTTP 获取挂起列表，数量: ${response.data.length}`);
-  } catch (error) {
-    console.error(`[${t('term.sshSuspend')}] 通过 HTTP 获取挂起列表失败:`, error);
-    // 可选：通知用户错误
-    const uiNotificationsStore = useUiNotificationsStore();
-    uiNotificationsStore.addNotification({
-      type: 'error',
-      message: t('sshSuspend.notifications.fetchListError', { error: String(error) }),
-    });
-    // 即使失败，也可能需要清空旧数据或保留旧数据，具体取决于产品需求
-    // suspendedSshSessions.value = []; // 例如，失败时清空
-  } finally {
+  // 并发合流：轮询和 ws 事件经常在同一时刻触发，没必要打两次请求
+  if (inflightSuspendedFetch) return inflightSuspendedFetch;
+
+  const task = (async (): Promise<void> => {
     if (shouldShowLoading) {
-      isLoadingSuspendedSessions.value = false;
+      isLoadingSuspendedSessions.value = true;
     }
-  }
+    try {
+      // 假设后端 API 端点为 /api/ssh/suspended-sessions
+      // 并且它返回 SuspendedSshSession[] 类型的数据
+      const response = await apiClient.get<SuspendedSshSession[]>('ssh-suspend/suspended-sessions');
+      suspendedSshSessions.value = response.data;
+      suspendedSshSessionsLoaded.value = true;
+      console.log(`[${t('term.sshSuspend')}] 已通过 HTTP 获取挂起列表，数量: ${response.data.length}`);
+    } catch (error) {
+      console.error(`[${t('term.sshSuspend')}] 通过 HTTP 获取挂起列表失败:`, error);
+      // 轮询失败时每分钟最多提示一次：后端抖一下不该把通知栏刷满
+      const now = Date.now();
+      if (now - lastFetchErrorNotifiedAt > FETCH_ERROR_NOTIFY_INTERVAL_MS) {
+        lastFetchErrorNotifiedAt = now;
+        useUiNotificationsStore().addNotification({
+          type: 'error',
+          message: t('sshSuspend.notifications.fetchListError', { error: String(error) }),
+        });
+      }
+      // 即使失败，也可能需要清空旧数据或保留旧数据，具体取决于产品需求
+      // suspendedSshSessions.value = []; // 例如，失败时清空
+    } finally {
+      if (shouldShowLoading) {
+        isLoadingSuspendedSessions.value = false;
+      }
+      inflightSuspendedFetch = null;
+    }
+  })();
+
+  inflightSuspendedFetch = task;
+  return task;
 };
 
 /**

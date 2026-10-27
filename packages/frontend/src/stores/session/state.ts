@@ -35,3 +35,11 @@ export const sessionOrder = ref<string[]>(initialSessionOrder);
 // --- SSH Suspend Mode State ---
 export const suspendedSshSessions = ref<SuspendedSshSession[]>([]);
 export const isLoadingSuspendedSessions = ref<boolean>(false);
+/**
+ * 是否已经成功拉过一次挂起列表。
+ *
+ * 有它之后，「加载中」只属于真正的首屏：3 秒轮询、ws 重连、面板每次打开
+ * 都会重新请求一次，如果每次都亮加载态，面板就会一遍遍从列表闪成转圈再闪回来。
+ * 列表是空的也算拉过一次 —— 空态是正确结果，不该每次打开都重走一遍过渡。
+ */
+export const suspendedSshSessionsLoaded = ref<boolean>(false);

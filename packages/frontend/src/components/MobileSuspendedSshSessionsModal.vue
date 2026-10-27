@@ -43,8 +43,9 @@ onUnmounted(() => {
     icon="fas fa-pause-circle"
     height="h-[72vh]"
     max-height="max-h-[80vh]"
+    keep-alive
     @close="closeModal"
   >
-    <SuspendedSshSessionsView />
+    <SuspendedSshSessionsView :is-active="props.isVisible" />
   </MobileBottomSheet>
 </template>

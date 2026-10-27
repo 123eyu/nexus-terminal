@@ -11,6 +11,7 @@ import {
   activeSessionId,
   suspendedSshSessions,
   isLoadingSuspendedSessions,
+  suspendedSshSessionsLoaded,
   sessionOrder,
 } from './session/state';
 import { useWorkspaceSyncStore } from './workspaceSync.store';
@@ -161,6 +162,7 @@ export const useSessionStore = defineStore('session', () => {
     // SSH Suspend Mode State
     suspendedSshSessions,
     isLoadingSuspendedSessions,
+    suspendedSshSessionsLoaded,
 
     // Getters (直接从 getters 模块导出)
     sessionTabs,
