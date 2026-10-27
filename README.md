@@ -7,7 +7,7 @@
 <br>
 [中文](./README.md) | [English](./doc/README_EN.md)
 
-[docker-url]: https://hub.docker.com/r/heavrnl/nexus-terminal-frontend
+[docker-url]: https://hub.docker.com/r/heavrnl/nexus-terminal
 
 </div>
 
