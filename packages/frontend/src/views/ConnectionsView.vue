@@ -151,7 +151,7 @@ const folderCountMap = computed(() => {
 
 // 当前展示的文件夹名
 const currentFolderTitle = computed(() => {
-  if (activeFolder.value === 'all') return t('folders.all', '全部连接');
+  if (activeFolder.value === 'all') return t('folders.all', '全部主机');
   if (activeFolder.value === 'uncategorized') return t('folders.uncategorized', '未分类');
   const found = folders.value.find(f => f.id === activeFolder.value);
   return found ? found.name : t('folders.title', '文件夹');
@@ -510,7 +510,7 @@ const invertSelection = () => {
 
 const openBatchEditModal = () => {
   if (selectedConnectionIdsForBatch.value.size === 0) {
-    showAlertDialog({ title: t('common.alert', '提示'), message: t('connections.batchEdit.noSelectionForEdit', '请至少选择一个连接进行编辑。') });
+    showAlertDialog({ title: t('common.alert', '提示'), message: t('connections.batchEdit.noSelectionForEdit', '请至少选择一个主机进行编辑。') });
     return;
   }
   showBatchEditForm.value = true;
@@ -541,7 +541,7 @@ const handleBatchDeleteConnections = async () => {
     try {
       const idsToDelete = Array.from(selectedConnectionIdsForBatch.value);
       await connectionsStore.deleteBatchConnections(idsToDelete);
-      showAlertDialog({ title: t('common.success', '成功'), message: t('connections.batchEdit.successMessage', '选中的连接已成功删除。') });
+      showAlertDialog({ title: t('common.success', '成功'), message: t('connections.batchEdit.successMessage', '选中的主机已成功删除。') });
       selectedConnectionIdsForBatch.value.clear();
       await connectionsStore.fetchConnections();
     } catch (error: any) {
@@ -627,7 +627,7 @@ const handleTestAllFilteredConnections = async () => {
 const getSingleTestButtonInfo = (connId: number | undefined, connType: string | undefined) => {
   const state = connId ? connectionTestStates.value.get(connId) : undefined;
   if (connType !== 'SSH') {
-    return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: t('connections.test.onlySshSupportedTest', '仅SSH连接支持测试。') };
+    return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: t('connections.test.onlySshSupportedTest', '仅 SSH 主机支持测试。') };
   }
   if (!connId) {
     return { textKey: 'connections.actions.test', iconClass: 'fas fa-plug', disabled: true, loading: false, title: '' };
@@ -672,7 +672,7 @@ const handleConnectAllFilteredConnections = async () => {
           <i class="fas fa-network-wired text-base"></i>
         </div>
         <div>
-          <h1 class="text-xl md:text-2xl font-bold tracking-tight text-foreground">{{ t('nav.connections', '连接管理') }}</h1>
+          <h1 class="text-xl md:text-2xl font-bold tracking-tight text-foreground">{{ t('nav.connections', '主机管理') }}</h1>
           <p class="text-xs text-text-secondary">
             {{ t('folders.dragTip', '按文件夹层级分类管理主机，支持拖拽快速归类') }}
           </p>
@@ -686,7 +686,7 @@ const handleConnectAllFilteredConnections = async () => {
           class="h-9 px-3.5 bg-primary text-white rounded-lg shadow-sm hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary/50 transition duration-150 flex items-center gap-1.5 text-xs md:text-sm font-semibold"
         >
           <i class="fas fa-plus"></i>
-          <span>{{ t('connections.addConnection', '新建连接') }}</span>
+          <span>{{ t('connections.addConnection', '新建主机') }}</span>
         </button>
       </div>
     </div>
@@ -713,7 +713,7 @@ const handleConnectAllFilteredConnections = async () => {
           >
             <div class="flex items-center gap-2.5 truncate">
               <i class="fas fa-layer-group w-4 text-center text-primary"></i>
-              <span class="truncate">{{ t('folders.all', '全部连接') }}</span>
+              <span class="truncate">{{ t('folders.all', '全部主机') }}</span>
             </div>
             <span
               class="px-2 h-5 min-w-[20px] flex items-center justify-center text-xs rounded-full font-medium"
@@ -936,7 +936,7 @@ const handleConnectAllFilteredConnections = async () => {
               <input
                 type="text"
                 v-model="searchQuery"
-                :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索连接...')"
+                :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索主机...')"
                 class="w-full h-8 pl-8 pr-3 text-xs bg-input border border-border/70 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition duration-150"
               />
             </div>
@@ -992,7 +992,7 @@ const handleConnectAllFilteredConnections = async () => {
             >
               <i v-if="isConnectingAll" class="fas fa-spinner fa-spin text-xs"></i>
               <i v-else class="fas fa-network-wired text-xs"></i>
-              <span class="hidden md:inline">{{ t('workspaceConnectionList.connectAllSshInGroupMenu', '全部连接') }}</span>
+              <span class="hidden md:inline">{{ t('workspaceConnectionList.connectAllSshInGroupMenu', '全部主机') }}</span>
             </button>
           </div>
         </div>
@@ -1109,7 +1109,7 @@ const handleConnectAllFilteredConnections = async () => {
 
                     <!-- Connection Name -->
                     <h3 class="font-semibold text-sm text-foreground truncate" :title="conn.name || conn.host">
-                      {{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}
+                      {{ conn.name || conn.host || t('connections.unnamedFallback', '未命名主机') }}
                     </h3>
                   </div>
 
@@ -1260,8 +1260,8 @@ const handleConnectAllFilteredConnections = async () => {
           <!-- Empty State -->
           <div v-else class="flex flex-col items-center justify-center h-64 text-text-secondary text-sm">
             <i class="fas fa-folder-open text-4xl mb-3 opacity-30"></i>
-            <p v-if="searchQuery" class="text-xs">{{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}</p>
-            <p v-else-if="activeFolder !== 'all'" class="text-xs">{{ t('folders.emptyFolder', '该文件夹下暂无连接') }}</p>
+            <p v-if="searchQuery" class="text-xs">{{ t('dashboard.noConnectionsMatchSearch', '没有主机匹配搜索条件') }}</p>
+            <p v-else-if="activeFolder !== 'all'" class="text-xs">{{ t('folders.emptyFolder', '该文件夹下暂无主机') }}</p>
             <p v-else class="text-xs">{{ t('dashboard.noConnections', '没有连接记录') }}</p>
             <button
               @click="openAddConnectionForm"

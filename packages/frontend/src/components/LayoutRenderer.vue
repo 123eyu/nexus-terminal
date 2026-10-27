@@ -247,7 +247,7 @@ const isSessionDependentSidebarPane = (paneName: PaneName | null): boolean => {
 
 // 面板标签 (Similar to LayoutConfigurator)
 const paneLabels = computed(() => ({
-  connections: t('layout.pane.connections', '连接列表'),
+  connections: t('layout.pane.connections', '主机列表'),
   terminal: t('layout.pane.terminal', '终端'),
   commandBar: t('layout.pane.commandBar', '命令栏'),
   fileManager: t('layout.pane.fileManager', '文件管理器'),

@@ -427,7 +427,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
       if (upper === 'SSH' || upper === 'RDP' || upper === 'VNC') {
         type = upper;
       } else {
-        return { message: `不支持的连接类型: ${val}`, code: 'unsupportedType', params: { type: val } };
+        return { message: `不支持的主机类型: ${val}`, code: 'unsupportedType', params: { type: val } };
       }
     } else if (flagLower === 'name' || flagLower === 'n') {
       customName = val;
@@ -453,7 +453,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
   }
 
   if (positionalTokens.length === 0) {
-    return { message: '缺少主机地址或连接目标', code: 'missingTarget' };
+    return { message: '缺少主机地址或目标', code: 'missingTarget' };
   }
 
   // [user[:password]@]host[:port] —— 只在**这一个 token 里**找 @，
@@ -503,7 +503,7 @@ export function parseScriptLine(rawLine: string): { skipped: true } | ScriptLine
     }
   } else if (!password) {
     return {
-      message: `缺少认证密码：${type} 连接必须提供密码 (-p)`,
+      message: `缺少认证密码：${type} 主机必须提供密码 (-p)`,
       code: 'missingPassword',
       params: { type },
     };

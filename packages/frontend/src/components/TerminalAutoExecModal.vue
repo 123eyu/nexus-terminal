@@ -114,10 +114,10 @@ const handleSave = () => {
           </div>
           <div>
             <h3 class="text-sm font-semibold text-foreground">
-              {{ t('layoutNodeEditor.autoExecTitle', '终端组件连接自启指令配置') }}
+              {{ t('layoutNodeEditor.autoExecTitle', '终端组件主机自启指令配置') }}
             </h3>
             <p class="text-[11px] text-text-secondary/70">
-              {{ t('layoutNodeEditor.autoExecSubtitle', 'SSH 连接就绪后自动执行指令，可针对特定连接单独定制') }}
+              {{ t('layoutNodeEditor.autoExecSubtitle', 'SSH 连接就绪后自动执行指令，可针对特定主机单独定制') }}
             </p>
           </div>
         </div>
@@ -153,7 +153,7 @@ const handleSave = () => {
         <div class="flex flex-col gap-2.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-medium text-foreground">
-              {{ t('layoutNodeEditor.customRulesLabel', '特定连接专属指令 (高优先级)') }}
+              {{ t('layoutNodeEditor.customRulesLabel', '特定主机专属指令 (高优先级)') }}
             </span>
             <span class="text-[10px] text-text-secondary/60">
               已定制 {{ Object.keys(connectionCommandsMap).length }} 个连接
@@ -176,7 +176,7 @@ const handleSave = () => {
               <input
                 v-model="newConnCommand"
                 type="text"
-                placeholder="该连接专属执行指令..."
+                placeholder="该主机专属执行指令..."
                 class="px-2.5 py-1.5 text-xs rounded-md border border-border bg-[#0d0f15] text-foreground font-mono focus:border-purple-500"
                 @keyup.enter="handleAddConnectionRule"
               />

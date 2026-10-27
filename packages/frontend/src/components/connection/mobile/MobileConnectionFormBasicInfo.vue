@@ -124,7 +124,7 @@ const selectPresetColor = (color: string) => {
     <div class="space-y-1.5">
       <div class="flex items-center justify-between">
         <label for="m-conn-name" class="block text-xs font-medium text-text-secondary">
-          {{ t('connections.form.name', '连接名称') }}
+          {{ t('connections.form.name', '主机名称') }}
         </label>
         <span class="text-[11px] text-text-secondary/70">可选</span>
       </div>

@@ -330,7 +330,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           })
         );
       } else {
-        uiNotificationsStore.showError(t('connections.form.scriptModeEmpty', '没有找到可导入的有效连接配置。'));
+        uiNotificationsStore.showError(t('connections.form.scriptModeEmpty', '没有找到可导入的有效主机配置。'));
       }
       return;
     }
@@ -422,7 +422,7 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
           if (parsed.type !== 'SSH') {
             errorCount++;
             if (!firstErrorEncountered) {
-              firstErrorEncountered = t('connections.script.err.jumpSshOnly', '跳板机链只支持 SSH 连接');
+              firstErrorEncountered = t('connections.script.err.jumpSshOnly', '跳板机链只支持 SSH 主机');
             }
             continue;
           }
@@ -643,19 +643,19 @@ export function useAddConnectionForm(props: AddConnectionFormProps, emit: AddCon
         if (Array.isArray(parsedIpsResult)) {
             const ips = parsedIpsResult;
             if (formData.type === 'SSH' && formData.auth_method === 'key' && !formData.selected_ssh_key_id && !hasInlineSshKey.value) {
-                uiNotificationsStore.showError(t('connections.form.errorSshKeyRequiredForBatch', '批量添加 SSH (密钥认证) 连接时，必须选择一个 SSH 密钥。'));
+                uiNotificationsStore.showError(t('connections.form.errorSshKeyRequiredForBatch', '批量添加 SSH (密钥认证) 主机时，必须选择一个 SSH 密钥。'));
                 return;
             }
             if (formData.type === 'SSH' && formData.auth_method === 'password' && !formData.password) {
-                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchSSH', '批量添加 SSH (密码认证) 连接时，必须提供密码。'));
+                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchSSH', '批量添加 SSH (密码认证) 主机时，必须提供密码。'));
                 return;
             }
             if (formData.type === 'RDP' && !formData.password) {
-                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchRDP', '批量添加 RDP 连接时，必须提供密码。'));
+                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchRDP', '批量添加 RDP 主机时，必须提供密码。'));
                 return;
             }
             if (formData.type === 'VNC' && !formData.vncPassword) {
-                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchVNC', '批量添加 VNC 连接时，必须提供 VNC 密码。'));
+                uiNotificationsStore.showError(t('connections.form.errorPasswordRequiredForBatchVNC', '批量添加 VNC 主机时，必须提供 VNC 密码。'));
                 return;
             }
 

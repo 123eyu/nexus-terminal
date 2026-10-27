@@ -262,7 +262,7 @@ const getJumpHostOptionsForIndex = (currentIndex: number): MobileSelectOption[] 
             v-if="props.connections.filter(c => c.type === 'SSH' && (!props.isEditMode || c.id !== props.formData.id)).length === 0"
             class="text-[11px] text-amber-500 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl leading-relaxed"
           >
-            {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 连接作为跳板机，请先添加其他 SSH 连接。') }}
+            {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 主机作为跳板机，请先添加其他 SSH 主机。') }}
           </div>
         </div>
       </div>

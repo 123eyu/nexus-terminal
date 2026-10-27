@@ -90,7 +90,7 @@ watch(internalVisible, (newVal) => {
 
 const handleSave = async () => {
   if (!props.connectionIds || props.connectionIds.length === 0) {
-    uiNotificationsStore.addNotification({ message: t('connections.batchEdit.noConnectionsToUpdate', '没有选中的连接可供更新'), type: 'warning' });
+    uiNotificationsStore.addNotification({ message: t('connections.batchEdit.noConnectionsToUpdate', '没有选中的主机可供更新'), type: 'warning' });
     return;
   }
 
@@ -206,7 +206,7 @@ onMounted(() => {
         class="bg-background text-foreground p-6 rounded-2xl shadow-2xl border border-border/80 w-full max-w-xl max-h-[90vh] flex flex-col"
       >
         <h3 class="text-xl font-semibold text-center mb-6 flex-shrink-0">
-          {{ t('connections.batchEdit.title', '批量编辑连接') }} ({{ props.connectionIds.length }} {{ t('connections.batchEdit.selectedItems', '项') }})
+          {{ t('connections.batchEdit.title', '批量编辑主机') }} ({{ props.connectionIds.length }} {{ t('connections.batchEdit.selectedItems', '项') }})
         </h3>
 
         <form @submit.prevent="handleSave" class="flex-grow overflow-y-auto pr-2 space-y-4">

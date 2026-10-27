@@ -97,7 +97,7 @@ async function openWithExternalProgram(opts: OpenRemoteFileOptions): Promise<boo
 
   const connectionId = resolveConnectionId(opts);
   if (!connectionId) {
-    notifications.showError(t('fileManager.openExternal.missingConnection', '无法确定连接信息，已改用内置编辑器打开'));
+    notifications.showError(t('fileManager.openExternal.missingConnection', '无法确定主机信息，已改用内置编辑器打开'));
     return false;
   }
 

@@ -147,7 +147,7 @@ const inputClass = computed(() =>
 
       <p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-text-secondary">
         <i class="fas fa-circle-info text-[10px] mt-0.5 shrink-0"></i>
-        <span>{{ t('connections.form.inlineKeyAutoSave', '连接添加成功后会自动保存这把密钥，无需单独保存。') }}</span>
+        <span>{{ t('connections.form.inlineKeyAutoSave', '主机添加成功后会自动保存这把密钥，无需单独保存。') }}</span>
       </p>
     </div>
 

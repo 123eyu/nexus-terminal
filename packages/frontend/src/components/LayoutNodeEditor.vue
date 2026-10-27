@@ -382,7 +382,7 @@ const getChildFlexStyle = (child: LayoutNode) => {
             v-if="node.component === 'terminal'"
             type="button"
             @click.stop="showAutoExecModal = true"
-            :title="t('layoutNodeEditor.configAutoExec', '配置 SSH 连接自启指令')"
+            :title="t('layoutNodeEditor.configAutoExec', '配置 SSH 主机自启指令')"
             class="w-4 h-4 flex items-center justify-center rounded transition-colors cursor-pointer pointer-events-auto"
             :class="hasAutoExecConfig ? 'text-purple-400 bg-purple-500/20' : 'text-text-secondary/60 hover:text-purple-400 hover:bg-purple-500/15'"
           >

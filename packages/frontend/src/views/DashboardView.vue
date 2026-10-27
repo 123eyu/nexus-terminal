@@ -335,7 +335,7 @@ const handleConnectionModified = async () => {
             </div>
             <div class="flex items-center gap-2">
               <h2 class="text-sm md:text-base font-bold text-foreground tracking-tight leading-none">
-                {{ t('dashboard.connectionList', '连接列表') }}
+                {{ t('dashboard.connectionList', '主机列表') }}
               </h2>
               <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-primary/15 text-primary border border-primary/20">
                 {{ filteredAndSortedConnections.length }}
@@ -350,7 +350,7 @@ const handleConnectionModified = async () => {
               <input
                 type="text"
                 v-model="searchQuery"
-                :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索连接...')"
+                :placeholder="t('dashboard.searchConnectionsPlaceholder', '搜索主机...')"
                 class="h-8 pl-7 pr-2.5 text-xs border border-border/70 rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary w-full shadow-2xs transition-all"
                 style="background-color: var(--app-bg-color);"
               />
@@ -398,7 +398,7 @@ const handleConnectionModified = async () => {
               <!-- 新建连接按钮 -->
               <button
                 @click="openAddConnectionForm"
-                :title="t('connections.addConnection', '新建连接')"
+                :title="t('connections.addConnection', '新建主机')"
                 class="h-8 px-2.5 bg-primary text-white rounded-xl shadow-xs hover:bg-primary-hover active:scale-95 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all flex items-center gap-1.5 text-xs font-semibold cursor-pointer shrink-0"
               >
                 <i class="fas fa-plus text-[10px]"></i>
@@ -435,7 +435,7 @@ const handleConnectionModified = async () => {
                     ]"
                     :style="conn.background_color ? { color: conn.background_color } : {}"
                   ></i>
-                  <span class="text-foreground">{{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}</span>
+                  <span class="text-foreground">{{ conn.name || conn.host || t('connections.unnamedFallback', '未命名主机') }}</span>
                 </span>
                 <span class="text-xs text-text-secondary font-mono block truncate mt-0.5" :title="`${conn.username}@${conn.host}:${conn.port}`">
                   {{ conn.username }}@{{ conn.host }}:{{ conn.port }}
@@ -475,7 +475,7 @@ const handleConnectionModified = async () => {
             </li>
           </ul>
           <div v-else-if="!isLoadingConnections && searchQuery && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
-            {{ t('dashboard.noConnectionsMatchSearch', '没有连接匹配搜索条件') }}
+            {{ t('dashboard.noConnectionsMatchSearch', '没有主机匹配搜索条件') }}
           </div>
           <div v-else-if="!isLoadingConnections && selectedFolderId !== null && filteredAndSortedConnections.length === 0" class="text-center text-text-secondary py-8 text-xs">
             {{ t('dashboard.noConnectionsWithFolder', '该文件夹下没有连接记录') }}

@@ -161,7 +161,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         v-if="props.connections.filter(c => c.type === 'SSH' && (!props.isEditMode || c.id !== props.formData.id)).length === 0"
         class="text-xs text-text-secondary p-2.5 border border-border/70 rounded-xl bg-input"
       >
-        {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 连接作为跳板机') }}
+        {{ t('connections.form.noAvailableSshConnectionsForJump', '暂无可用的 SSH 主机作为跳板机') }}
       </div>
     </div>
 
@@ -259,7 +259,7 @@ const getAvailableJumpHostsForIndex = (currentIndex: number): ConnectionInfo[] =
         v-model="props.formData.notes"
         rows="2"
         class="w-full px-3 py-2 text-xs md:text-sm border border-border/70 rounded-xl text-foreground bg-input focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all shadow-2xs"
-        :placeholder="t('connections.form.notesPlaceholder', '可选，输入连接补充说明...')"
+        :placeholder="t('connections.form.notesPlaceholder', '可选，输入主机补充说明...')"
       ></textarea>
     </div>
   </div>

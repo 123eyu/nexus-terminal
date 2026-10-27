@@ -206,7 +206,7 @@ const handleActionDelete = async () => {
       <button
         class="px-2.5 py-1 text-xs font-medium rounded-lg bg-primary/10 text-primary hover:bg-primary/20 active:scale-95 transition-all flex items-center gap-1 -mr-1 cursor-pointer"
         @click="handleRequestAdd"
-        :title="t('connections.addConnection', '添加连接')"
+        :title="t('connections.addConnection', '添加主机')"
       >
         <i class="fas fa-plus text-xs"></i>
         <span>{{ t('common.add', '新建') }}</span>
@@ -312,14 +312,14 @@ const handleActionDelete = async () => {
               class="py-16 text-center text-text-secondary flex flex-col items-center justify-center"
             >
               <i class="fas fa-server text-4xl mb-3 opacity-30"></i>
-              <p class="text-sm font-medium mb-1">{{ t('connections.noConnections', '暂无连接配置') }}</p>
+              <p class="text-sm font-medium mb-1">{{ t('connections.noConnections', '暂无主机配置') }}</p>
               <p class="text-xs opacity-70 mb-4">{{ t('connections.createConnectionTip', '点击下方按钮添加第一台服务器') }}</p>
               <button
                 class="px-4 py-2 bg-primary text-button-text rounded-xl text-sm font-medium shadow-md active:scale-95 transition-all flex items-center gap-2"
                 @click="handleRequestAdd"
               >
                 <i class="fas fa-plus text-xs"></i>
-                <span>{{ t('connections.addFirstConnection', '添加第一个连接') }}</span>
+                <span>{{ t('connections.addFirstConnection', '添加第一个主机') }}</span>
               </button>
             </div>
 

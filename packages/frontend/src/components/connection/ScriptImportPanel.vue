@@ -124,7 +124,7 @@ const syntaxFlags = computed(() => [
   { flag: '-type', desc: t('connections.script.flagType', 'SSH / RDP / VNC') },
   { flag: '-port', desc: t('connections.script.flagPort', '端口，也可直接写 host:端口') },
   { flag: '-protocol', desc: t('connections.script.flagProtocol', '文件传输协议 auto / sftp / scp') },
-  { flag: '-jump', desc: t('connections.script.flagJump', '跳板机链，按连接名，逗号分隔') },
+  { flag: '-jump', desc: t('connections.script.flagJump', '跳板机链，按主机名，逗号分隔') },
   { flag: '-color', desc: t('connections.script.flagColor', '卡片底色，如 #3b82f6') },
   { flag: '-proxy', desc: t('connections.script.flagProxy', '网络代理，按代理名') },
 ]);
@@ -186,7 +186,7 @@ const inputClass = computed(() =>
       wrap="off"
       spellcheck="false"
       :class="inputClass"
-      :placeholder="t('connections.script.placeholder', '一行一个连接，例如：root@10.0.0.5 -p 密码 -folder 生产')"
+      :placeholder="t('connections.script.placeholder', '一行一个主机，例如：root@10.0.0.5 -p 密码 -folder 生产')"
     ></textarea>
 
     <!-- 错误行：当场指出第几行、错在哪 -->

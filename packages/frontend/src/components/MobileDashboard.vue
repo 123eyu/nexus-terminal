@@ -91,15 +91,15 @@ watch(sortOrder, (val) => {
 
 // 排序选项配置
 const sortConfig: { value: SortOption; label: string; icon: string }[] = [
-  { value: 'last_connected_at', label: '最近连接', icon: 'fa-clock' },
-  { value: 'name', label: '连接名称', icon: 'fa-font' },
+  { value: 'last_connected_at', label: '最近使用', icon: 'fa-clock' },
+  { value: 'name', label: '主机名称', icon: 'fa-font' },
   { value: 'type', label: '协议类型', icon: 'fa-layer-group' },
   { value: 'created_at', label: '创建时间', icon: 'fa-calendar-plus' },
 ];
 
 const currentSortLabel = computed(() => {
   const item = sortConfig.find(s => s.value === sortBy.value);
-  return item ? item.label : '最近连接';
+  return item ? item.label : '最近使用';
 });
 
 // 过滤和排序连接列表
@@ -295,7 +295,7 @@ const handleDeleteConnection = async (conn: ConnectionInfo) => {
   closeActionMenu();
   const confirmed = await showConfirmDialog({
     title: t('common.confirmationTitle', '确认删除'),
-    message: `确定要删除连接「${conn.name || conn.host}」吗？此操作无法撤销。`,
+    message: `确定要删除主机「${conn.name || conn.host}」吗？此操作无法撤销。`,
     confirmText: t('common.delete', '删除'),
     cancelText: t('common.cancel', '取消'),
   });
@@ -306,7 +306,7 @@ const handleDeleteConnection = async (conn: ConnectionInfo) => {
       if (success) {
         uiNotificationsStore.addNotification({
           type: 'success',
-          message: `已成功删除连接「${conn.name || conn.host}」`
+          message: `已成功删除主机「${conn.name || conn.host}」`
         });
       }
     } catch (err) {
@@ -601,7 +601,7 @@ onMounted(async () => {
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-1.5">
                     <h3 class="text-sm font-bold text-foreground truncate leading-tight">
-                      {{ conn.name || conn.host || t('connections.unnamedFallback', '未命名连接') }}
+                      {{ conn.name || conn.host || t('connections.unnamedFallback', '未命名主机') }}
                     </h3>
                     <span class="px-1.5 py-0.2 text-[9px] font-mono font-semibold rounded bg-muted text-muted-foreground uppercase flex-shrink-0">
                       {{ conn.type }}

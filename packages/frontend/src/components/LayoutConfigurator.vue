@@ -218,7 +218,7 @@ async function handleDeleteCurrentPreset() {
     return;
   }
   const confirmed = await showConfirmDialog({
-    message: `确定要删除预设【${currentPreset.value.name}】吗？绑定的连接将自动恢复为默认布局。`
+    message: `确定要删除预设【${currentPreset.value.name}】吗？绑定的主机将自动恢复为默认布局。`
   });
   if (confirmed) {
     const deletedName = currentPreset.value.name;
@@ -284,7 +284,7 @@ async function confirmBindConnections() {
   showBindConnectionsModal.value = false;
   await showAlertDialog({
     title: '绑定成功',
-    message: `已成功将 ${selectedConnectionIds.value.length} 个连接绑定至【${currentPreset.value?.name || '当前预设'}】。`
+    message: `已成功将 ${selectedConnectionIds.value.length} 个主机绑定至【${currentPreset.value?.name || '当前预设'}】。`
   });
 }
 
@@ -509,7 +509,7 @@ const isModified = computed(() => {
 });
 
 const paneLabels = computed(() => ({
-  connections: t('layout.pane.connections', '连接列表'),
+  connections: t('layout.pane.connections', '主机列表'),
   terminal: t('layout.pane.terminal', '终端'),
   commandBar: t('layout.pane.commandBar', '命令栏'),
   fileManager: t('layout.pane.fileManager', '文件管理器'),
@@ -799,7 +799,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
             type="button"
             @click="openBindConnectionsModal"
             class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 transition-colors shadow-xs cursor-pointer"
-            title="指定哪些 SSH 连接使用该布局"
+            title="指定哪些 SSH 主机使用该布局"
           >
             <i class="fas fa-link text-[11px]"></i>
             <span>指定连接</span>
@@ -1215,7 +1215,7 @@ const handleAvailablePaneDragEnd = (event: any) => {
               <input
                 v-model="connectionSearchKeyword"
                 type="text"
-                placeholder="搜索连接名 / 主机..."
+                placeholder="搜索主机名 / 地址..."
                 class="w-full bg-background-alt border border-border/70 rounded-lg pl-7 pr-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary"
               />
             </div>

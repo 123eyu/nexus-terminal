@@ -140,7 +140,7 @@ const handleHostIconMouseLeave = () => {
 
     <!-- 连接类型 -->
     <div>
-      <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionType', '连接类型') }}</label>
+      <label class="block text-xs font-medium text-text-secondary mb-1.5">{{ t('connections.form.connectionType', '主机类型') }}</label>
       <div
         class="grid grid-cols-3 gap-1.5 p-1 rounded-xl border border-border/70 bg-input"
       >

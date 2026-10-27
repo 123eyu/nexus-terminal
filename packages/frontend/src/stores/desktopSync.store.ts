@@ -50,11 +50,11 @@ export interface SyncCategoryOption {
 export const SYNC_CATEGORIES: SyncCategoryOption[] = [
   {
     key: 'connections',
-    label: '连接与资产',
-    description: 'SSH 连接、分组、密钥、代理与常用路径',
+    label: '主机与资产',
+    description: 'SSH 主机、分组、密钥、代理与常用路径',
     items: [
-      { key: 'connections.hosts', label: '连接', description: '主机信息、跳板/代理绑定、端口转发、文件夹配色' },
-      { key: 'connections.folders', label: '连接文件夹', description: '文件夹及其背景颜色' },
+      { key: 'connections.hosts', label: '主机', description: '主机信息、跳板/代理绑定、端口转发、文件夹配色' },
+      { key: 'connections.folders', label: '主机文件夹', description: '文件夹及其背景颜色' },
       { key: 'connections.keys', label: 'SSH 密钥', description: '密钥与口令（信封加密传输）' },
       { key: 'connections.proxies', label: '代理服务器', description: 'SOCKS / HTTP 代理配置' },
       { key: 'connections.favoritePaths', label: '常用路径', description: '文件管理器中收藏的路径' },
@@ -88,7 +88,7 @@ export const SYNC_CATEGORIES: SyncCategoryOption[] = [
     label: '工作区布局',
     description: '面板布局、视图状态与界面设置',
     items: [
-      { key: 'layout.presets', label: '布局预设', description: '布局预设及其「指定连接」绑定' },
+      { key: 'layout.presets', label: '布局预设', description: '布局预设及其「指定主机」绑定' },
       { key: 'layout.componentStates', label: '面板视图状态', description: '文件管理器平铺/路径同步、快捷指令视图等' },
       { key: 'layout.focusSwitcher', label: '焦点切换顺序', description: 'Alt+ 快捷键与切换顺序' },
       { key: 'layout.uiSettings', label: '界面设置', description: '其余界面偏好（主题模式、字号缩进等）' },

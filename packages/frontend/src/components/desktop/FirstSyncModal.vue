@@ -134,7 +134,7 @@
                   {{ $t('desktop.firstSync.localToCloudTitle', '以当前本地为准 (覆盖云端)') }}
                 </span>
                 <p class="text-xs text-text-secondary mt-1 leading-relaxed">
-                  {{ $t('desktop.firstSync.localToCloudDesc', '适合 VPS 刚全新部署的场景。将当前客户端所有本地连接与密钥完整推送到 VPS，覆盖云端。') }}
+                  {{ $t('desktop.firstSync.localToCloudDesc', '适合 VPS 刚全新部署的场景。将当前客户端所有本地主机与密钥完整推送到 VPS，覆盖云端。') }}
                 </p>
               </div>
             </div>
