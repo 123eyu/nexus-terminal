@@ -20,8 +20,7 @@ concurrency:
 jobs:
   static-checks:
     name: Typecheck & Schema Drift
-    runs-on: self-hosted
-    container: node:22-bookworm
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
